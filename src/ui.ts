@@ -21,6 +21,8 @@ interface UiState {
 	typeErrors: string[];
 	selectedTypeId: string | null;
 	editingEntityId: string | null;
+	/** Form to scroll into view and focus after the next render (set when Edit is clicked). */
+	focusForm: "type" | "entity" | null;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -68,6 +70,7 @@ export function render(root: HTMLElement, store: Store): void {
 		typeErrors: [],
 		selectedTypeId: store.data.types[0]?.id ?? null,
 		editingEntityId: null,
+		focusForm: null,
 	};
 
 	function resetTypeForm(): void {
@@ -84,6 +87,12 @@ export function render(root: HTMLElement, store: Store): void {
 			state.editingEntityId = null;
 		}
 		root.replaceChildren(typesSection(), entitiesSection());
+		if (state.focusForm) {
+			const form = root.querySelector<HTMLFormElement>(`#${state.focusForm}-form`);
+			state.focusForm = null;
+			form?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+			form?.querySelector<HTMLElement>("input, select, textarea")?.focus({ preventScroll: true });
+		}
 	}
 
 	function propertyRow(prop: DraftProperty, i: number): HTMLElement {
@@ -190,6 +199,8 @@ export function render(root: HTMLElement, store: Store): void {
 		const form = el(
 			"form",
 			{
+				id: "type-form",
+				className: "card",
 				onsubmit: (e) => {
 					e.preventDefault();
 					const props = state.draftProps.map((p) => ({
@@ -216,8 +227,8 @@ export function render(root: HTMLElement, store: Store): void {
 			el("h3", {}, editingType ? `Edit ${editingType.name}` : "New type"),
 			el(
 				"label",
-				{},
-				"Type name ",
+				{ className: "field" },
+				el("span", {}, "Type name"),
 				el("input", {
 					value: state.draftName,
 					placeholder: "e.g. Book",
@@ -227,20 +238,24 @@ export function render(root: HTMLElement, store: Store): void {
 				}),
 			),
 			el("h3", {}, "Properties"),
-			el("p", { className: "builtin" }, el("strong", {}, "id"), " · ULID, automatic"),
-			el("p", { className: "builtin" }, el("strong", {}, "name"), " · text, required"),
-			el("p", { className: "builtin" }, el("strong", {}, "content"), " · multiline"),
 			el(
-				"label",
-				{ className: "field wide" },
-				el("span", { className: "muted" }, "Default text (template)"),
-				el("textarea", {
-					rows: 4,
-					value: state.draftContentTemplate,
-					oninput: (e) => {
-						state.draftContentTemplate = (e.target as HTMLTextAreaElement).value;
-					},
-				}),
+				"div",
+				{ className: "builtin" },
+				el("p", {}, el("strong", {}, "id"), " · ULID, automatic"),
+				el("p", {}, el("strong", {}, "name"), " · text, required"),
+				el("p", {}, el("strong", {}, "content"), " · multiline"),
+				el(
+					"label",
+					{ className: "field wide" },
+					el("span", {}, "Default text (template)"),
+					el("textarea", {
+						rows: 4,
+						value: state.draftContentTemplate,
+						oninput: (e) => {
+							state.draftContentTemplate = (e.target as HTMLTextAreaElement).value;
+						},
+					}),
+				),
 			),
 			...state.draftProps.map(propertyRow),
 			el(
@@ -283,53 +298,62 @@ export function render(root: HTMLElement, store: Store): void {
 			...store.data.types.map((type) =>
 				el(
 					"li",
-					{ className: "row" },
-					el("strong", {}, type.name),
+					{ className: type.id === state.editingTypeId ? "type-item current" : "type-item" },
 					el(
-						"span",
-						{ className: "muted" },
-						type.properties.map((p) => describeProperty(p, store.data.types)).join(", "),
+						"div",
+						{},
+						el("strong", {}, type.name),
+						el(
+							"p",
+							{ className: "muted" },
+							type.properties.map((p) => describeProperty(p, store.data.types)).join(", ") || "no properties",
+						),
 					),
 					el(
-						"button",
-						{
-							type: "button",
-							onclick: () => {
-								state.editingTypeId = type.id;
-								state.draftName = type.name;
-								state.draftContentTemplate = type.contentTemplate;
-								state.draftProps = type.properties.map((p) => ({
-									...p,
-									options: [...p.options],
-									reference: p.reference && { ...p.reference },
-								}));
-								state.typeErrors = [];
-								rerender();
-							},
-						},
-						"Edit",
-					),
-					el(
-						"button",
-						{
-							type: "button",
-							onclick: () => {
-								const referrers = store.typeReferrers(type.id);
-								if (referrers.length > 0) {
-									alert(
-										`Can't delete ${type.name}: used by ${referrers.join(", ")}. Remove or change those properties first.`,
-									);
-									return;
-								}
-								const count = store.data.entities.filter((e) => e.typeId === type.id).length;
-								if (confirm(`Delete type "${type.name}" and its ${count} entities?`)) {
-									store.deleteType(type.id);
-									if (state.editingTypeId === type.id) resetTypeForm();
+						"div",
+						{ className: "actions" },
+						el(
+							"button",
+							{
+								type: "button",
+								onclick: () => {
+									state.editingTypeId = type.id;
+									state.draftName = type.name;
+									state.draftContentTemplate = type.contentTemplate;
+									state.draftProps = type.properties.map((p) => ({
+										...p,
+										options: [...p.options],
+										reference: p.reference && { ...p.reference },
+									}));
+									state.typeErrors = [];
+									state.focusForm = "type";
 									rerender();
-								}
+								},
 							},
-						},
-						"Delete",
+							"Edit",
+						),
+						el(
+							"button",
+							{
+								type: "button",
+								onclick: () => {
+									const referrers = store.typeReferrers(type.id);
+									if (referrers.length > 0) {
+										alert(
+											`Can't delete ${type.name}: used by ${referrers.join(", ")}. Remove or change those properties first.`,
+										);
+										return;
+									}
+									const count = store.data.entities.filter((e) => e.typeId === type.id).length;
+									if (confirm(`Delete type "${type.name}" and its ${count} entities?`)) {
+										store.deleteType(type.id);
+										if (state.editingTypeId === type.id) resetTypeForm();
+										rerender();
+									}
+								},
+							},
+							"Delete",
+						),
 					),
 				),
 			),
@@ -339,13 +363,14 @@ export function render(root: HTMLElement, store: Store): void {
 			"section",
 			{},
 			el("h2", {}, "Entity types"),
-			form,
 			store.data.types.length > 0 ? list : el("p", { className: "muted" }, "No types yet."),
+			form,
 		);
 	}
 
 	function entitiesSection(): HTMLElement {
-		const section = el("section", {}, el("h2", {}, "Entities"));
+		const header = el("div", { className: "section-header" }, el("h2", {}, "Entities"));
+		const section = el("section", {}, header);
 		const type = store.data.types.find((t) => t.id === state.selectedTypeId);
 		if (!type) {
 			section.append(el("p", { className: "muted" }, "Create an entity type first."));
@@ -355,6 +380,7 @@ export function render(root: HTMLElement, store: Store): void {
 		const typeSelect = el(
 			"select",
 			{
+				ariaLabel: "Entity type",
 				onchange: () => {
 					state.selectedTypeId = typeSelect.value;
 					state.editingEntityId = null;
@@ -367,8 +393,8 @@ export function render(root: HTMLElement, store: Store): void {
 		const entities = store.data.entities.filter((e) => e.typeId === type.id);
 		const editing = entities.find((e) => e.id === state.editingEntityId);
 
+		header.append(typeSelect);
 		section.append(
-			el("label", {}, "Type ", typeSelect),
 			entityForm(type, editing),
 			entities.length > 0 ? entityTable(type, entities) : el("p", { className: "muted" }, `No ${type.name} entities yet.`),
 		);
@@ -383,6 +409,8 @@ export function render(root: HTMLElement, store: Store): void {
 		return el(
 			"form",
 			{
+				id: "entity-form",
+				className: "card",
 				onsubmit: (e) => {
 					e.preventDefault();
 					const name = nameInput.value;
@@ -478,7 +506,7 @@ export function render(root: HTMLElement, store: Store): void {
 		return { prop, element: el("label", { className: "field" }, label, input), read: () => input.value };
 	}
 
-	function entityTable(type: EntityType, entities: Entity[]): HTMLTableElement {
+	function entityTable(type: EntityType, entities: Entity[]): HTMLElement {
 		const names = new Map(store.data.entities.map((e) => [e.id, e.name]));
 		const format = (p: PropertyDef, value: PropertyValue | undefined): string => {
 			if (value === null || value === undefined) return "—";
@@ -486,7 +514,7 @@ export function render(root: HTMLElement, store: Store): void {
 			return p.kind === "reference" ? parts.map((id) => names.get(id) ?? "?").join(", ") : parts.join(", ");
 		};
 
-		return el(
+		const table = el(
 			"table",
 			{},
 			el(
@@ -508,44 +536,50 @@ export function render(root: HTMLElement, store: Store): void {
 					el(
 						"tr",
 						{},
-						el("td", { className: "mono" }, entity.id),
+						el("td", { className: "mono nowrap", title: entity.id }, `…${entity.id.slice(-8)}`),
 						el("td", {}, entity.name),
 						...type.properties.map((p) => el("td", {}, format(p, entity.values[p.id]))),
 						el(
 							"td",
-							{ className: "row" },
+							{},
 							el(
-								"button",
-								{
-									type: "button",
-									onclick: () => {
-										state.editingEntityId = entity.id;
-										rerender();
-									},
-								},
-								"Edit",
-							),
-							el(
-								"button",
-								{
-									type: "button",
-									onclick: () => {
-										const refs = store.referencesTo(entity.id);
-										const warning = refs > 0 ? ` It's referenced ${refs} times; those references will be removed.` : "";
-										if (confirm(`Delete "${entity.name}"?${warning}`)) {
-											store.deleteEntity(entity.id);
-											if (state.editingEntityId === entity.id) state.editingEntityId = null;
+								"div",
+								{ className: "actions" },
+								el(
+									"button",
+									{
+										type: "button",
+										onclick: () => {
+											state.editingEntityId = entity.id;
+											state.focusForm = "entity";
 											rerender();
-										}
+										},
 									},
-								},
-								"Delete",
+									"Edit",
+								),
+								el(
+									"button",
+									{
+										type: "button",
+										onclick: () => {
+											const refs = store.referencesTo(entity.id);
+											const warning = refs > 0 ? ` It's referenced ${refs} times; those references will be removed.` : "";
+											if (confirm(`Delete "${entity.name}"?${warning}`)) {
+												store.deleteEntity(entity.id);
+												if (state.editingEntityId === entity.id) state.editingEntityId = null;
+												rerender();
+											}
+										},
+									},
+									"Delete",
+								),
 							),
 						),
 					),
 				),
 			),
 		);
+		return el("div", { className: "table-wrap" }, table);
 	}
 
 	rerender();

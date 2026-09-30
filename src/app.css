@@ -1,20 +1,66 @@
+:root {
+	--text: #1a1a1a;
+	--muted: #666;
+	--border: #d4d4d4;
+	--border-strong: #999;
+	--surface: #fff;
+	--surface-inset: #f6f6f6;
+	--accent: #222;
+	--highlight: #eef3ff;
+	--error: #b00020;
+	--focus: #3b6fe0;
+}
+
 body {
 	font-family: system-ui, sans-serif;
-	padding: 1.5rem;
+	color: var(--text);
+	background: var(--surface-inset);
+	padding: 1.5rem 1rem;
 }
 
 main {
-	max-width: 48rem;
+	max-width: 80rem;
 	margin-inline: auto;
 	display: grid;
-	gap: 2.5rem;
+	gap: 1.5rem;
+	align-items: start;
 }
 
-section,
+@media (min-width: 64rem) {
+	main {
+		grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr);
+	}
+}
+
+section {
+	min-width: 0;
+	display: grid;
+	gap: 1rem;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	padding: 1.25rem;
+}
+
 form {
 	display: grid;
 	gap: 0.75rem;
 	justify-items: start;
+}
+
+.card {
+	background: var(--surface-inset);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 1rem;
+}
+
+.section-header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
 }
 
 h2 {
@@ -30,26 +76,41 @@ h3 {
 input,
 select,
 textarea {
-	border: 1px solid #999;
+	border: 1px solid var(--border-strong);
 	border-radius: 4px;
 	padding: 0.25rem 0.5rem;
+	background: var(--surface);
 }
 
 button {
-	border: 1px solid #999;
+	border: 1px solid var(--border-strong);
 	border-radius: 4px;
 	padding: 0.25rem 0.75rem;
+	background: var(--surface);
+}
+
+button:hover:not(:disabled) {
+	background: var(--surface-inset);
 }
 
 button.primary {
-	background: #222;
+	background: var(--accent);
 	color: #fff;
-	border-color: #222;
+	border-color: var(--accent);
+}
+
+button.primary:hover:not(:disabled) {
+	background: #444;
 }
 
 button:disabled {
 	opacity: 0.4;
 	cursor: not-allowed;
+}
+
+:is(button, input, select, textarea):focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 1px;
 }
 
 .row {
@@ -59,9 +120,20 @@ button:disabled {
 	gap: 0.5rem;
 }
 
+.actions {
+	display: flex;
+	gap: 0.25rem;
+	white-space: nowrap;
+}
+
 .field {
 	display: grid;
 	gap: 0.25rem;
+}
+
+.field input:not([type="checkbox"]),
+.field select {
+	width: min(100%, 28rem);
 }
 
 .wide {
@@ -72,9 +144,21 @@ button:disabled {
 	width: 100%;
 }
 
-.property {
+.property,
+.builtin {
+	justify-self: stretch;
 	display: grid;
 	gap: 0.5rem;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 0.75rem;
+	background: var(--surface);
+}
+
+.builtin {
+	color: var(--muted);
+	background: var(--surface-inset);
+	border-style: dashed;
 }
 
 .type-list {
@@ -82,13 +166,28 @@ button:disabled {
 	gap: 0.5rem;
 }
 
+.type-item {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: start;
+	gap: 0.5rem;
+	padding: 0.5rem 0.75rem;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+}
+
+.type-item.current {
+	background: var(--highlight);
+	border-color: var(--focus);
+}
+
+.type-item .muted {
+	font-size: 0.9em;
+}
+
 .checklist {
 	display: grid;
 	gap: 0.25rem;
-}
-
-.builtin {
-	color: #666;
 }
 
 .mono {
@@ -96,12 +195,20 @@ button:disabled {
 	font-size: 0.85em;
 }
 
+.nowrap {
+	white-space: nowrap;
+}
+
 .muted {
-	color: #666;
+	color: var(--muted);
 }
 
 .error {
-	color: #b00020;
+	color: var(--error);
+}
+
+.table-wrap {
+	overflow-x: auto;
 }
 
 table {
@@ -110,11 +217,13 @@ table {
 
 th,
 td {
-	border-bottom: 1px solid #ddd;
+	border-bottom: 1px solid var(--border);
 	padding: 0.4rem 0.5rem;
 	text-align: left;
+	vertical-align: top;
 }
 
 th {
 	font-weight: 600;
+	white-space: nowrap;
 }
