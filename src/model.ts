@@ -50,8 +50,9 @@ export interface Entity {
 	values: Record<string, PropertyValue>;
 }
 
-/** An entity placed on the canvas, in world coordinates. Each entity has at most one card. */
+/** An entity placed on the canvas, in world coordinates. An entity can have several cards. */
 export interface CanvasCard {
+	id: string;
 	entityId: string;
 	x: number;
 	y: number;
@@ -59,7 +60,10 @@ export interface CanvasCard {
 	height: number;
 }
 
-export interface CanvasData {
+/** A named canvas with its own cards and pan/zoom. */
+export interface Board {
+	id: string;
+	name: string;
 	/** Later cards are drawn on top. */
 	cards: CanvasCard[];
 	viewport: Viewport;
@@ -71,7 +75,8 @@ export const MIN_CARD_SIZE = { width: 160, height: 80 } as const;
 export interface AppData {
 	types: EntityType[];
 	entities: Entity[];
-	canvas: CanvasData;
+	/** Never empty. */
+	boards: Board[];
 }
 
 /** Maps each entity id to its type id, so reference values can be checked. */

@@ -7,8 +7,8 @@ import {
 	entityTypeMap,
 	migrateValues,
 	type AppData,
+	type Board,
 	type CanvasCard,
-	type CanvasData,
 	type DraftProperty,
 	type Entity,
 	type EntityType,
@@ -18,23 +18,41 @@ import {
 
 export type Store = ReturnType<typeof createStore>;
 
+function newBoard(name: string): Board {
+	return { id: crypto.randomUUID(), name, cards: [], viewport: defaultViewport() };
+}
+
 function emptyData(): AppData {
-	return { types: [], entities: [], canvas: { cards: [], viewport: defaultViewport() } };
+	return { types: [], entities: [], boards: [newBoard("Board 1")] };
 }
 
 const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
-/** Keeps only well-formed cards and viewport; anything else falls back to an empty canvas. */
-function normalizeCanvas(canvas: Partial<CanvasData> | undefined): CanvasData {
-	const cards = Array.isArray(canvas?.cards)
-		? canvas.cards.filter(
-				(c: Partial<CanvasCard>) =>
-					typeof c.entityId === "string" && isNumber(c.x) && isNumber(c.y) && isNumber(c.width) && isNumber(c.height),
-			)
+/** Keeps only well-formed cards and viewport; anything else falls back to defaults. Cards and boards saved without an id get one. */
+function normalizeBoard(board: Partial<Board> | undefined, fallbackName: string): Board {
+	const cards = Array.isArray(board?.cards)
+		? board.cards
+				.filter(
+					(c: Partial<CanvasCard>) =>
+						typeof c.entityId === "string" && isNumber(c.x) && isNumber(c.y) && isNumber(c.width) && isNumber(c.height),
+				)
+				.map((c: CanvasCard) => ({ ...c, id: typeof c.id === "string" ? c.id : crypto.randomUUID() }))
 		: [];
-	const v = canvas?.viewport;
+	const v = board?.viewport;
 	const viewport = v && isNumber(v.x) && isNumber(v.y) && isNumber(v.zoom) ? { ...v, zoom: clampZoom(v.zoom) } : defaultViewport();
-	return { cards, viewport };
+	return {
+		id: typeof board?.id === "string" ? board.id : crypto.randomUUID(),
+		name: typeof board?.name === "string" && board.name.trim() !== "" ? board.name : fallbackName,
+		cards,
+		viewport,
+	};
+}
+
+/** Reads the boards, including the single `canvas` saved by the version before boards existed. */
+function normalizeBoards(data: AppData & { canvas?: Partial<Board> }): Board[] {
+	const raw: Partial<Board>[] = Array.isArray(data.boards) ? data.boards : data.canvas ? [data.canvas] : [];
+	const boards = raw.map((b, i) => normalizeBoard(b, `Board ${i + 1}`));
+	return boards.length > 0 ? boards : [newBoard("Board 1")];
 }
 
 /** Re-validates every entity's values against its type's current properties, e.g. dropping references to deleted entities. */
@@ -47,14 +65,14 @@ function reconcile(data: AppData): AppData {
 			...e,
 			values: migrateValues(e.values, typesById.get(e.typeId)?.properties ?? [], entityTypes),
 		})),
-		canvas: { ...data.canvas, cards: data.canvas.cards.filter((c) => entityTypes.has(c.entityId)) },
+		boards: data.boards.map((b) => ({ ...b, cards: b.cards.filter((c) => entityTypes.has(c.entityId)) })),
 	};
 }
 
 /** Fills in fields that data saved by earlier versions may lack (e.g. number/boolean/date kinds, non-string values, entity names, ULIDs). */
 function normalize(data: AppData): AppData {
 	return {
-		canvas: normalizeCanvas(data.canvas),
+		boards: normalizeBoards(data),
 		types: data.types.map((type) => ({
 			...type,
 			contentTemplate: typeof type.contentTemplate === "string" ? type.contentTemplate : "",
@@ -121,6 +139,19 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 		}
 	}
 
+	function updateBoard(boardId: string, fn: (board: Board) => Board): void {
+		data = { ...data, boards: data.boards.map((b) => (b.id === boardId ? fn(b) : b)) };
+		save();
+	}
+
+	/** Applies fn to the board holding the card (card ids are unique across boards). */
+	function updateCardBoard(cardId: string, fn: (board: Board, card: CanvasCard) => Board): void {
+		for (const board of data.boards) {
+			const card = board.cards.find((c) => c.id === cardId);
+			if (card) return updateBoard(board.id, (b) => fn(b, card));
+		}
+	}
+
 	return {
 		get data(): AppData {
 			return data;
@@ -174,38 +205,52 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 			save();
 		},
 
-		/** Puts an entity's card at (x, y) on top of the others, creating it with the default size if needed. */
-		placeCard(entityId: string, x: number, y: number): void {
-			const existing = data.canvas.cards.find((c) => c.entityId === entityId);
-			const card: CanvasCard = { ...(existing ?? { entityId, ...DEFAULT_CARD_SIZE }), x, y };
-			data = {
-				...data,
-				canvas: { ...data.canvas, cards: [...data.canvas.cards.filter((c) => c.entityId !== entityId), card] },
-			};
+		addBoard(name: string): Board {
+			const board = newBoard(name.trim() || `Board ${data.boards.length + 1}`);
+			data = { ...data, boards: [...data.boards, board] };
+			save();
+			return board;
+		},
+
+		renameBoard(boardId: string, name: string): void {
+			if (name.trim() === "") return;
+			updateBoard(boardId, (b) => ({ ...b, name: name.trim() }));
+		},
+
+		/** Deletes a board and its cards (never the entities). The last board can't be deleted. */
+		deleteBoard(boardId: string): void {
+			if (data.boards.length <= 1) return;
+			data = { ...data, boards: data.boards.filter((b) => b.id !== boardId) };
 			save();
 		},
 
-		resizeCard(entityId: string, width: number, height: number): void {
+		/** Adds a new card for the entity at (x, y), on top of the board's other cards. */
+		addCard(boardId: string, entityId: string, x: number, y: number): CanvasCard {
+			const card: CanvasCard = { id: crypto.randomUUID(), entityId, x, y, ...DEFAULT_CARD_SIZE };
+			updateBoard(boardId, (b) => ({ ...b, cards: [...b.cards, card] }));
+			return card;
+		},
+
+		/** Moves a card to (x, y) and brings it to the front. */
+		moveCard(cardId: string, x: number, y: number): void {
+			updateCardBoard(cardId, (b, card) => ({
+				...b,
+				cards: [...b.cards.filter((c) => c.id !== cardId), { ...card, x, y }],
+			}));
+		},
+
+		resizeCard(cardId: string, width: number, height: number): void {
 			const size = { width: Math.max(MIN_CARD_SIZE.width, width), height: Math.max(MIN_CARD_SIZE.height, height) };
-			data = {
-				...data,
-				canvas: {
-					...data.canvas,
-					cards: data.canvas.cards.map((c) => (c.entityId === entityId ? { ...c, ...size } : c)),
-				},
-			};
-			save();
+			updateCardBoard(cardId, (b) => ({ ...b, cards: b.cards.map((c) => (c.id === cardId ? { ...c, ...size } : c)) }));
 		},
 
-		/** Takes the card off the canvas; the entity itself stays. */
-		removeCard(entityId: string): void {
-			data = { ...data, canvas: { ...data.canvas, cards: data.canvas.cards.filter((c) => c.entityId !== entityId) } };
-			save();
+		/** Takes the card off its board; the entity itself stays. */
+		removeCard(cardId: string): void {
+			updateCardBoard(cardId, (b) => ({ ...b, cards: b.cards.filter((c) => c.id !== cardId) }));
 		},
 
-		setViewport(viewport: Viewport): void {
-			data = { ...data, canvas: { ...data.canvas, viewport: { ...viewport, zoom: clampZoom(viewport.zoom) } } };
-			save();
+		setViewport(boardId: string, viewport: Viewport): void {
+			updateBoard(boardId, (b) => ({ ...b, viewport: { ...viewport, zoom: clampZoom(viewport.zoom) } }));
 		},
 
 		/** How many property values (across all entities) point to this entity. */
