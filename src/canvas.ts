@@ -1,5 +1,5 @@
-import { el } from "./dom.js";
-import { DEFAULT_CARD_SIZE, MIN_CARD_SIZE, type Board, type CanvasCard, type Entity } from "./model.js";
+import { el, typeDot } from "./dom.js";
+import { DEFAULT_CARD_SIZE, MIN_CARD_SIZE, type Board, type CanvasCard, type Entity, type EntityType } from "./model.js";
 import type { Store } from "./store.js";
 import { defaultViewport, screenToWorld, zoomAt, type Viewport } from "./viewport.js";
 
@@ -223,7 +223,7 @@ export function canvasView(store: Store): HTMLElement {
 				el(
 					"div",
 					{ className: "panel-group" },
-					el("h3", {}, type.name),
+					el("h3", {}, typeDot(type.color), type.name),
 					el(
 						"ul",
 						{},
@@ -250,21 +250,21 @@ export function canvasView(store: Store): HTMLElement {
 
 	function renderCards(): void {
 		const entities = new Map(store.data.entities.map((e) => [e.id, e]));
-		const typeNames = new Map(store.data.types.map((t) => [t.id, t.name]));
+		const types = new Map(store.data.types.map((t) => [t.id, t]));
 		layer.replaceChildren(
 			...currentBoard().cards.flatMap((card) => {
 				const entity = entities.get(card.entityId);
-				return entity ? [cardElement(card, entity, typeNames.get(entity.typeId) ?? "")] : [];
+				return entity ? [cardElement(card, entity, types.get(entity.typeId))] : [];
 			}),
 		);
 	}
 
-	function cardElement(card: CanvasCard, entity: Entity, typeName: string): HTMLElement {
-		const header = el(
-			"header",
-			{},
-			el("strong", {}, entity.name),
-			el("span", { className: "muted" }, typeName),
+	function cardElement(card: CanvasCard, entity: Entity, type: EntityType | undefined): HTMLElement {
+		// Top bar in the type's color: type label and ×.
+		const bar = el(
+			"div",
+			{ className: "card-bar" },
+			el("span", { className: "card-type" }, type?.name ?? ""),
 			el(
 				"button",
 				{
@@ -280,6 +280,14 @@ export function canvasView(store: Store): HTMLElement {
 				},
 				"×",
 			),
+		);
+		if (type) bar.style.background = type.color;
+		const header = el(
+			"header",
+			{},
+			bar,
+			// Wraps up to three lines; the full name is in the tooltip.
+			el("strong", { className: "card-title", title: entity.name }, entity.name),
 		);
 		const content = entity.content.trim()
 			? el("div", { className: "card-content" }, entity.content)
@@ -393,15 +401,19 @@ export function canvasView(store: Store): HTMLElement {
 		renderPanel();
 	});
 
+	// Two groups that each stay on one line; on a narrow canvas the zoom group moves below.
 	const toolbar = el(
 		"div",
 		{ className: "canvas-toolbar" },
-		boardControls,
-		el("span", { className: "toolbar-separator" }),
-		el("button", { type: "button", ariaLabel: "Zoom out", onclick: () => zoomBy(1 / 1.2) }, "−"),
-		zoomLabel,
-		el("button", { type: "button", ariaLabel: "Zoom in", onclick: () => zoomBy(1.2) }, "+"),
-		el("button", { type: "button", onclick: () => setViewport(defaultViewport()) }, "Reset view"),
+		el("div", { className: "toolbar-group" }, boardControls),
+		el(
+			"div",
+			{ className: "toolbar-group" },
+			el("button", { type: "button", ariaLabel: "Zoom out", onclick: () => zoomBy(1 / 1.2) }, "−"),
+			zoomLabel,
+			el("button", { type: "button", ariaLabel: "Zoom in", onclick: () => zoomBy(1.2) }, "+"),
+			el("button", { type: "button", onclick: () => setViewport(defaultViewport()) }, "Reset view"),
+		),
 	);
 
 	applyViewport();

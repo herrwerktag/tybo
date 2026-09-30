@@ -1,7 +1,10 @@
 import {
 	PROPERTY_KINDS,
+	TYPE_COLORS,
 	entityTypeMap,
 	migrateValues,
+	moveItem,
+	nextTypeColor,
 	parseValue,
 	validateType,
 	type DraftProperty,
@@ -12,20 +15,25 @@ import {
 	type PropertyValue,
 } from "./model.js";
 import { canvasView } from "./canvas.js";
-import { el } from "./dom.js";
+import { el, typeDot } from "./dom.js";
 import type { Store } from "./store.js";
 
 interface UiState {
 	editingTypeId: string | null;
 	draftName: string;
 	draftContentTemplate: string;
+	draftColor: string;
 	draftProps: DraftProperty[];
 	typeErrors: string[];
 	selectedTypeId: string | null;
 	editingEntityId: string | null;
 	/** Form to scroll into view and focus after the next render (set when Edit is clicked). */
 	focusForm: "type" | "entity" | null;
+	/** Drag handle to focus after the next render, so keyboard reordering keeps focus on the moved property. */
+	focusHandle: number | null;
 }
+
+const PROPERTY_MIME = "application/x-property-index";
 
 /** Counts existing non-empty values of the type's entities that saving these properties would change or clear. */
 function countChangedValues(entities: Entity[], props: DraftProperty[], entityTypes: ReadonlyMap<string, string>): number {
@@ -58,17 +66,20 @@ export function render(root: HTMLElement, store: Store): void {
 		editingTypeId: null,
 		draftName: "",
 		draftContentTemplate: "",
+		draftColor: nextTypeColor(store.data.types.map((t) => t.color)),
 		draftProps: [],
 		typeErrors: [],
 		selectedTypeId: store.data.types[0]?.id ?? null,
 		editingEntityId: null,
 		focusForm: null,
+		focusHandle: null,
 	};
 
 	function resetTypeForm(): void {
 		state.editingTypeId = null;
 		state.draftName = "";
 		state.draftContentTemplate = "";
+		state.draftColor = nextTypeColor(store.data.types.map((t) => t.color));
 		state.draftProps = [];
 		state.typeErrors = [];
 	}
@@ -85,6 +96,10 @@ export function render(root: HTMLElement, store: Store): void {
 				? canvasView(store)
 				: el("div", { className: "data-view" }, typesSection(), entitiesSection()),
 		);
+		if (state.focusHandle !== null) {
+			root.querySelectorAll<HTMLElement>(".drag-handle")[state.focusHandle]?.focus();
+			state.focusHandle = null;
+		}
 		if (state.focusForm) {
 			const form = root.querySelector<HTMLFormElement>(`#${state.focusForm}-form`);
 			state.focusForm = null;
@@ -116,12 +131,43 @@ export function render(root: HTMLElement, store: Store): void {
 			},
 			...PROPERTY_KINDS.map((kind) => el("option", { value: kind, selected: kind === prop.kind }, kind)),
 		);
+		const moveTo = (to: number) => {
+			if (to < 0 || to >= state.draftProps.length || to === i) return;
+			state.draftProps = moveItem(state.draftProps, i, to);
+			state.focusHandle = to;
+			rerender();
+		};
+		const handle = el(
+			"button",
+			{
+				type: "button",
+				className: "drag-handle",
+				title: "Drag to reorder, or use the arrow keys",
+				ariaLabel: `Move property ${prop.name.trim() || i + 1}; use the arrow keys`,
+				onkeydown: (e) => {
+					if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+						e.preventDefault();
+						moveTo(e.key === "ArrowUp" ? i - 1 : i + 1);
+					}
+				},
+				// Only the handle makes the card draggable, so text in its inputs stays selectable.
+				onpointerdown: () => {
+					row.draggable = true;
+				},
+				// A click without a drag: stop the card being draggable again (a real drag ends in dragend).
+				onpointerup: () => {
+					row.draggable = false;
+				},
+			},
+			"⠿",
+		);
 		const row = el(
 			"div",
 			{ className: "property" },
 			el(
 				"div",
 				{ className: "row" },
+				handle,
 				el("input", {
 					placeholder: "Property name",
 					ariaLabel: "Property name",
@@ -144,6 +190,39 @@ export function render(root: HTMLElement, store: Store): void {
 				),
 			),
 		);
+		const clearDropMarker = () => row.classList.remove("drop-before", "drop-after");
+		const dropsBefore = (e: DragEvent) => {
+			const rect = row.getBoundingClientRect();
+			return e.clientY < rect.top + rect.height / 2;
+		};
+		row.addEventListener("dragstart", (e) => {
+			e.dataTransfer?.setData(PROPERTY_MIME, String(i));
+			if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+			row.classList.add("dragging");
+		});
+		row.addEventListener("dragend", () => {
+			row.draggable = false;
+			row.classList.remove("dragging");
+		});
+		row.addEventListener("dragover", (e) => {
+			if (!e.dataTransfer?.types.includes(PROPERTY_MIME)) return;
+			e.preventDefault();
+			e.dataTransfer.dropEffect = "move";
+			const before = dropsBefore(e);
+			row.classList.toggle("drop-before", before);
+			row.classList.toggle("drop-after", !before);
+		});
+		row.addEventListener("dragleave", clearDropMarker);
+		row.addEventListener("drop", (e) => {
+			const from = Number(e.dataTransfer?.getData(PROPERTY_MIME));
+			clearDropMarker();
+			if (!Number.isInteger(from)) return;
+			e.preventDefault();
+			// Index among the other properties, once the dragged one is taken out.
+			const target = dropsBefore(e) ? i : i + 1;
+			state.draftProps = moveItem(state.draftProps, from, from < target ? target - 1 : target);
+			rerender();
+		});
 		if (prop.kind === "options") {
 			row.append(
 				el(
@@ -199,6 +278,34 @@ export function render(root: HTMLElement, store: Store): void {
 		return row;
 	}
 
+	/** Palette swatches for the type form; the current color is pressed. */
+	function colorPicker(): HTMLElement {
+		return el(
+			"div",
+			{ className: "field" },
+			el("span", {}, "Color"),
+			el(
+				"div",
+				{ className: "swatches" },
+				...TYPE_COLORS.map(({ name, value }) => {
+					const swatch = el("button", {
+						type: "button",
+						className: "swatch",
+						title: name,
+						ariaLabel: name,
+						ariaPressed: String(value === state.draftColor),
+						onclick: () => {
+							state.draftColor = value;
+							rerender();
+						},
+					});
+					swatch.style.background = value;
+					return swatch;
+				}),
+			),
+		);
+	}
+
 	function typesSection(): HTMLElement {
 		const editingType = store.data.types.find((t) => t.id === state.editingTypeId);
 
@@ -220,10 +327,10 @@ export function render(root: HTMLElement, store: Store): void {
 						const entities = store.data.entities.filter((en) => en.typeId === editingType.id);
 						const changed = countChangedValues(entities, props, entityTypeMap(store.data));
 						if (changed > 0 && !confirm(`This changes or clears ${changed} existing values. Continue?`)) return;
-						store.updateType(editingType.id, state.draftName, props, state.draftContentTemplate);
+						store.updateType(editingType.id, state.draftName, props, state.draftContentTemplate, state.draftColor);
 						state.selectedTypeId = editingType.id;
 					} else {
-						state.selectedTypeId = store.addType(state.draftName, props, state.draftContentTemplate).id;
+						state.selectedTypeId = store.addType(state.draftName, props, state.draftContentTemplate, state.draftColor).id;
 					}
 					state.editingEntityId = null;
 					resetTypeForm();
@@ -243,6 +350,7 @@ export function render(root: HTMLElement, store: Store): void {
 					},
 				}),
 			),
+			colorPicker(),
 			el("h3", {}, "Properties"),
 			el(
 				"div",
@@ -308,7 +416,7 @@ export function render(root: HTMLElement, store: Store): void {
 					el(
 						"div",
 						{},
-						el("strong", {}, type.name),
+						el("strong", {}, typeDot(type.color), type.name),
 						el(
 							"p",
 							{ className: "muted" },
@@ -326,6 +434,7 @@ export function render(root: HTMLElement, store: Store): void {
 									state.editingTypeId = type.id;
 									state.draftName = type.name;
 									state.draftContentTemplate = type.contentTemplate;
+								state.draftColor = type.color;
 									state.draftProps = type.properties.map((p) => ({
 										...p,
 										options: [...p.options],

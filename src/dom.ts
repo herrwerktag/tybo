@@ -8,3 +8,10 @@ export function el<K extends keyof HTMLElementTagNameMap>(
 	node.append(...children);
 	return node;
 }
+
+/** A small colored circle marking an entity type. */
+export function typeDot(color: string): HTMLElement {
+	const dot = el("span", { className: "type-dot", ariaHidden: "true" });
+	dot.style.background = color;
+	return dot;
+}

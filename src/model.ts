@@ -30,6 +30,28 @@ export interface EntityType {
 	properties: PropertyDef[];
 	/** Default text for the `content` of new entities of this type; empty means none. */
 	contentTemplate: string;
+	/** Hex color, e.g. for the top bar of the type's cards on the canvas. */
+	color: string;
+}
+
+/** Soft, clearly distinct colors that dark text stays readable on. */
+export const TYPE_COLORS: readonly { name: string; value: string }[] = [
+	{ name: "Red", value: "#f9c9c9" },
+	{ name: "Orange", value: "#fbd9b0" },
+	{ name: "Yellow", value: "#f6e8a6" },
+	{ name: "Green", value: "#c8ebbf" },
+	{ name: "Teal", value: "#b9e4df" },
+	{ name: "Blue", value: "#c4dafa" },
+	{ name: "Violet", value: "#d6ccf7" },
+	{ name: "Pink", value: "#f4c6e3" },
+	{ name: "Gray", value: "#dcdcdc" },
+];
+
+/** The first palette color not in use; once all are taken, colors repeat in palette order. */
+export function nextTypeColor(usedColors: readonly string[]): string {
+	const used = new Set(usedColors.map((c) => c.toLowerCase()));
+	const free = TYPE_COLORS.find((c) => !used.has(c.value));
+	return (free ?? TYPE_COLORS[usedColors.length % TYPE_COLORS.length]!).value;
 }
 
 /** Text, an option, one referenced entity id, or several referenced entity ids (never an empty list). */
@@ -77,6 +99,14 @@ export interface AppData {
 	entities: Entity[];
 	/** Never empty. */
 	boards: Board[];
+}
+
+/** Returns a copy of the list with the item at `from` moved to index `to`. */
+export function moveItem<T>(items: readonly T[], from: number, to: number): T[] {
+	const result = [...items];
+	const [item] = result.splice(from, 1);
+	if (item !== undefined) result.splice(Math.max(0, Math.min(to, result.length)), 0, item);
+	return result;
 }
 
 /** Maps each entity id to its type id, so reference values can be checked. */

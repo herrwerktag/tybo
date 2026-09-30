@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { migrateValues, parseValue, validateType, type PropertyDef } from "./model.js";
+import { TYPE_COLORS, migrateValues, moveItem, nextTypeColor, parseValue, validateType, type PropertyDef } from "./model.js";
 
 const noTypes = new Set<string>();
 const noEntities = new Map<string, string>();
@@ -92,4 +92,22 @@ test("validateType: a reference needs an existing target type", () => {
 	assert.deepEqual(validateType("Book", [author], new Set(["person"])), []);
 	assert.ok(validateType("Book", [author], noTypes).length > 0);
 	assert.ok(validateType("Book", [{ ...author, reference: null }], new Set(["person"])).length > 0);
+});
+
+test("nextTypeColor picks the first unused palette color, then repeats", () => {
+	const palette = TYPE_COLORS.map((c) => c.value);
+	assert.equal(nextTypeColor([]), palette[0]);
+	assert.equal(nextTypeColor([palette[0]!, palette[2]!]), palette[1]);
+	assert.equal(nextTypeColor([palette[0]!.toUpperCase()]), palette[1]);
+	assert.equal(nextTypeColor(palette), palette[0]);
+	assert.equal(nextTypeColor([...palette, palette[0]!]), palette[1]);
+});
+
+test("moveItem moves one item and leaves the input unchanged", () => {
+	const items = ["a", "b", "c", "d"];
+	assert.deepEqual(moveItem(items, 0, 2), ["b", "c", "a", "d"]);
+	assert.deepEqual(moveItem(items, 3, 0), ["d", "a", "b", "c"]);
+	assert.deepEqual(moveItem(items, 1, 1), items);
+	assert.deepEqual(moveItem(items, 1, 99), ["a", "c", "d", "b"]);
+	assert.deepEqual(items, ["a", "b", "c", "d"]);
 });

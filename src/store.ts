@@ -6,6 +6,7 @@ import {
 	PROPERTY_KINDS,
 	entityTypeMap,
 	migrateValues,
+	nextTypeColor,
 	type AppData,
 	type Board,
 	type CanvasCard,
@@ -70,11 +71,22 @@ function reconcile(data: AppData): AppData {
 }
 
 /** Fills in fields that data saved by earlier versions may lack (e.g. number/boolean/date kinds, non-string values, entity names, ULIDs). */
+const isColor = (v: unknown): v is string => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
+
 function normalize(data: AppData): AppData {
+	// Types saved before colors existed get the next free palette colors, in order.
+	const usedColors = data.types.map((t) => t.color).filter(isColor);
+	const colorFor = (color: unknown) => {
+		if (isColor(color)) return color;
+		const next = nextTypeColor(usedColors);
+		usedColors.push(next);
+		return next;
+	};
 	return {
 		boards: normalizeBoards(data),
 		types: data.types.map((type) => ({
 			...type,
+			color: colorFor(type.color),
 			contentTemplate: typeof type.contentTemplate === "string" ? type.contentTemplate : "",
 			properties: type.properties.map((prop) => ({
 				...prop,
@@ -157,21 +169,35 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 			return data;
 		},
 
-		addType(name: string, properties: DraftProperty[], contentTemplate: string): EntityType {
+		/** Without a color, the type gets the first palette color no other type uses. */
+		addType(
+			name: string,
+			properties: DraftProperty[],
+			contentTemplate: string,
+			color = nextTypeColor(data.types.map((t) => t.color)),
+		): EntityType {
 			const type: EntityType = {
 				id: crypto.randomUUID(),
 				name: name.trim(),
 				properties: toPropertyDefs(properties),
 				contentTemplate,
+				color,
 			};
 			data = { ...data, types: [...data.types, type] };
 			save();
 			return type;
 		},
 
-		/** Existing entities keep their content when the template changes. */
-		updateType(typeId: string, name: string, properties: DraftProperty[], contentTemplate: string): void {
-			const updated: EntityType = { id: typeId, name: name.trim(), properties: toPropertyDefs(properties), contentTemplate };
+		/** Existing entities keep their content when the template changes. Without a color, the type keeps its own. */
+		updateType(typeId: string, name: string, properties: DraftProperty[], contentTemplate: string, color?: string): void {
+			const current = data.types.find((t) => t.id === typeId);
+			const updated: EntityType = {
+				id: typeId,
+				name: name.trim(),
+				properties: toPropertyDefs(properties),
+				contentTemplate,
+				color: color ?? current?.color ?? nextTypeColor(data.types.map((t) => t.color)),
+			};
 			data = reconcile({ ...data, types: data.types.map((t) => (t.id === typeId ? updated : t)) });
 			save();
 		},

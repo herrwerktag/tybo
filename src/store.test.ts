@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AppData, DraftProperty } from "./model.js";
+import { TYPE_COLORS, type AppData, type DraftProperty } from "./model.js";
 import { createStore, type Store } from "./store.js";
 import { isUlid } from "./ulid.js";
 
@@ -390,5 +390,36 @@ test("each board has its own cards and viewport; card changes stay on their boar
 	assert.deepEqual(
 		store.data.boards.map((b) => b.cards.length),
 		[0, 0],
+	);
+});
+
+test("types get distinct palette colors; a chosen color is kept and can be changed", () => {
+	const palette = TYPE_COLORS.map((c) => c.value);
+	const store = createStore(memoryStorage());
+	const a = store.addType("A", [], "");
+	const b = store.addType("B", [], "", palette[3]);
+	const c = store.addType("C", [], "");
+	assert.deepEqual([a.color, b.color, c.color], [palette[0], palette[3], palette[1]]);
+
+	store.updateType(a.id, "A", [], "");
+	assert.equal(store.data.types[0]?.color, palette[0]);
+	store.updateType(a.id, "A", [], "", palette[5]);
+	assert.equal(store.data.types[0]?.color, palette[5]);
+});
+
+test("types saved without a color get the next free ones in order", () => {
+	const palette = TYPE_COLORS.map((c) => c.value);
+	const old = {
+		types: [
+			{ id: "a", name: "A", properties: [] },
+			{ id: "b", name: "B", properties: [], color: palette[0] },
+			{ id: "c", name: "C", properties: [], color: "not a color" },
+		],
+		entities: [],
+	};
+	const { types } = createStore(memoryStorage({ "entities-app": JSON.stringify(old) })).data;
+	assert.deepEqual(
+		types.map((t) => t.color),
+		[palette[1], palette[0], palette[2]],
 	);
 });
