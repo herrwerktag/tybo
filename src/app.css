@@ -1,0 +1,120 @@
+body {
+	font-family: system-ui, sans-serif;
+	padding: 1.5rem;
+}
+
+main {
+	max-width: 48rem;
+	margin-inline: auto;
+	display: grid;
+	gap: 2.5rem;
+}
+
+section,
+form {
+	display: grid;
+	gap: 0.75rem;
+	justify-items: start;
+}
+
+h2 {
+	font-size: 1.5rem;
+	font-weight: 600;
+}
+
+h3 {
+	font-size: 1.1rem;
+	font-weight: 600;
+}
+
+input,
+select,
+textarea {
+	border: 1px solid #999;
+	border-radius: 4px;
+	padding: 0.25rem 0.5rem;
+}
+
+button {
+	border: 1px solid #999;
+	border-radius: 4px;
+	padding: 0.25rem 0.75rem;
+}
+
+button.primary {
+	background: #222;
+	color: #fff;
+	border-color: #222;
+}
+
+button:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+.row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.field {
+	display: grid;
+	gap: 0.25rem;
+}
+
+.wide {
+	justify-self: stretch;
+}
+
+.wide textarea {
+	width: 100%;
+}
+
+.property {
+	display: grid;
+	gap: 0.5rem;
+}
+
+.type-list {
+	display: grid;
+	gap: 0.5rem;
+}
+
+.checklist {
+	display: grid;
+	gap: 0.25rem;
+}
+
+.builtin {
+	color: #666;
+}
+
+.mono {
+	font-family: ui-monospace, monospace;
+	font-size: 0.85em;
+}
+
+.muted {
+	color: #666;
+}
+
+.error {
+	color: #b00020;
+}
+
+table {
+	width: 100%;
+}
+
+th,
+td {
+	border-bottom: 1px solid #ddd;
+	padding: 0.4rem 0.5rem;
+	text-align: left;
+}
+
+th {
+	font-weight: 600;
+}
