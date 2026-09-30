@@ -1,9 +1,14 @@
 import { isUlid, ulid } from "./ulid.js";
+import { clampZoom, defaultViewport, type Viewport } from "./viewport.js";
 import {
+	DEFAULT_CARD_SIZE,
+	MIN_CARD_SIZE,
 	PROPERTY_KINDS,
 	entityTypeMap,
 	migrateValues,
 	type AppData,
+	type CanvasCard,
+	type CanvasData,
 	type DraftProperty,
 	type Entity,
 	type EntityType,
@@ -12,6 +17,25 @@ import {
 } from "./model.js";
 
 export type Store = ReturnType<typeof createStore>;
+
+function emptyData(): AppData {
+	return { types: [], entities: [], canvas: { cards: [], viewport: defaultViewport() } };
+}
+
+const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** Keeps only well-formed cards and viewport; anything else falls back to an empty canvas. */
+function normalizeCanvas(canvas: Partial<CanvasData> | undefined): CanvasData {
+	const cards = Array.isArray(canvas?.cards)
+		? canvas.cards.filter(
+				(c: Partial<CanvasCard>) =>
+					typeof c.entityId === "string" && isNumber(c.x) && isNumber(c.y) && isNumber(c.width) && isNumber(c.height),
+			)
+		: [];
+	const v = canvas?.viewport;
+	const viewport = v && isNumber(v.x) && isNumber(v.y) && isNumber(v.zoom) ? { ...v, zoom: clampZoom(v.zoom) } : defaultViewport();
+	return { cards, viewport };
+}
 
 /** Re-validates every entity's values against its type's current properties, e.g. dropping references to deleted entities. */
 function reconcile(data: AppData): AppData {
@@ -23,12 +47,14 @@ function reconcile(data: AppData): AppData {
 			...e,
 			values: migrateValues(e.values, typesById.get(e.typeId)?.properties ?? [], entityTypes),
 		})),
+		canvas: { ...data.canvas, cards: data.canvas.cards.filter((c) => entityTypes.has(c.entityId)) },
 	};
 }
 
 /** Fills in fields that data saved by earlier versions may lack (e.g. number/boolean/date kinds, non-string values, entity names, ULIDs). */
 function normalize(data: AppData): AppData {
 	return {
+		canvas: normalizeCanvas(data.canvas),
 		types: data.types.map((type) => ({
 			...type,
 			contentTemplate: typeof type.contentTemplate === "string" ? type.contentTemplate : "",
@@ -84,7 +110,7 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 		} catch {
 			// Unreadable or corrupt storage: start fresh.
 		}
-		return { types: [], entities: [] };
+		return emptyData();
 	}
 
 	function save(): void {
@@ -121,6 +147,7 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 
 		deleteType(typeId: string): void {
 			data = reconcile({
+				...data,
 				types: data.types.filter((t) => t.id !== typeId),
 				entities: data.entities.filter((e) => e.typeId !== typeId),
 			});
@@ -144,6 +171,40 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 
 		deleteEntity(entityId: string): void {
 			data = reconcile({ ...data, entities: data.entities.filter((e) => e.id !== entityId) });
+			save();
+		},
+
+		/** Puts an entity's card at (x, y) on top of the others, creating it with the default size if needed. */
+		placeCard(entityId: string, x: number, y: number): void {
+			const existing = data.canvas.cards.find((c) => c.entityId === entityId);
+			const card: CanvasCard = { ...(existing ?? { entityId, ...DEFAULT_CARD_SIZE }), x, y };
+			data = {
+				...data,
+				canvas: { ...data.canvas, cards: [...data.canvas.cards.filter((c) => c.entityId !== entityId), card] },
+			};
+			save();
+		},
+
+		resizeCard(entityId: string, width: number, height: number): void {
+			const size = { width: Math.max(MIN_CARD_SIZE.width, width), height: Math.max(MIN_CARD_SIZE.height, height) };
+			data = {
+				...data,
+				canvas: {
+					...data.canvas,
+					cards: data.canvas.cards.map((c) => (c.entityId === entityId ? { ...c, ...size } : c)),
+				},
+			};
+			save();
+		},
+
+		/** Takes the card off the canvas; the entity itself stays. */
+		removeCard(entityId: string): void {
+			data = { ...data, canvas: { ...data.canvas, cards: data.canvas.cards.filter((c) => c.entityId !== entityId) } };
+			save();
+		},
+
+		setViewport(viewport: Viewport): void {
+			data = { ...data, canvas: { ...data.canvas, viewport: { ...viewport, zoom: clampZoom(viewport.zoom) } } };
 			save();
 		},
 

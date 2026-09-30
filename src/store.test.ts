@@ -12,6 +12,8 @@ function memoryStorage(initial: Record<string, string> = {}) {
 	};
 }
 
+const EMPTY = { types: [], entities: [], canvas: { cards: [], viewport: { x: 0, y: 0, zoom: 1 } } };
+
 const titleDraft: DraftProperty = { name: "title", kind: "text", options: [], reference: null };
 
 test("data persists across store instances", () => {
@@ -138,8 +140,8 @@ test("gives old entities a ULID and a name from their first property", () => {
 });
 
 test("falls back to empty data on corrupt or throwing storage", () => {
-	assert.deepEqual(createStore(memoryStorage({ "entities-app": "{not json" })).data, { types: [], entities: [] });
-	assert.deepEqual(createStore(memoryStorage({ "entities-app": '{"types":1}' })).data, { types: [], entities: [] });
+	assert.deepEqual(createStore(memoryStorage({ "entities-app": "{not json" })).data, EMPTY);
+	assert.deepEqual(createStore(memoryStorage({ "entities-app": '{"types":1}' })).data, EMPTY);
 
 	const throwing = {
 		getItem: () => {
@@ -150,7 +152,7 @@ test("falls back to empty data on corrupt or throwing storage", () => {
 		},
 	};
 	const store = createStore(throwing);
-	assert.deepEqual(store.data, { types: [], entities: [] });
+	assert.deepEqual(store.data, EMPTY);
 	store.addType("Book", [titleDraft], "");
 	assert.equal(store.data.types.length, 1);
 });
@@ -239,4 +241,67 @@ test("old data without content fields loads with empty strings", () => {
 	const store = createStore(memoryStorage({ "entities-app": JSON.stringify(old) }));
 	assert.equal(store.data.types[0]?.contentTemplate, "");
 	assert.equal(store.data.entities[0]?.content, "");
+});
+
+test("placeCard creates a card once, moves it and brings it to the front", () => {
+	const store = createStore(memoryStorage());
+	const note = store.addType("Note", [], "");
+	const a = store.addEntity(note.id, "A", "", {});
+	const b = store.addEntity(note.id, "B", "", {});
+
+	store.placeCard(a.id, 10, 20);
+	store.placeCard(b.id, 30, 40);
+	store.resizeCard(a.id, 300, 200);
+	store.placeCard(a.id, 50, 60);
+
+	assert.deepEqual(store.data.canvas.cards, [
+		{ entityId: b.id, x: 30, y: 40, width: 240, height: 160 },
+		{ entityId: a.id, x: 50, y: 60, width: 300, height: 200 },
+	]);
+});
+
+test("resizeCard enforces the minimum size; removeCard keeps the entity", () => {
+	const store = createStore(memoryStorage());
+	const note = store.addType("Note", [], "");
+	const a = store.addEntity(note.id, "A", "", {});
+	store.placeCard(a.id, 0, 0);
+
+	store.resizeCard(a.id, 10, 10);
+	assert.deepEqual(store.data.canvas.cards[0], { entityId: a.id, x: 0, y: 0, width: 160, height: 80 });
+
+	store.removeCard(a.id);
+	assert.deepEqual(store.data.canvas.cards, []);
+	assert.equal(store.data.entities.length, 1);
+});
+
+test("deleting an entity or its type removes its card", () => {
+	const store = createStore(memoryStorage());
+	const note = store.addType("Note", [], "");
+	const other = store.addType("Other", [], "");
+	const a = store.addEntity(note.id, "A", "", {});
+	const b = store.addEntity(other.id, "B", "", {});
+	const c = store.addEntity(other.id, "C", "", {});
+	store.placeCard(a.id, 0, 0);
+	store.placeCard(b.id, 0, 0);
+	store.placeCard(c.id, 0, 0);
+
+	store.deleteEntity(a.id);
+	store.deleteType(other.id);
+	assert.deepEqual(store.data.canvas.cards, []);
+});
+
+test("cards and viewport persist; bad canvas data falls back to empty", () => {
+	const storage = memoryStorage();
+	const store = createStore(storage);
+	const note = store.addType("Note", [], "");
+	const a = store.addEntity(note.id, "A", "", {});
+	store.placeCard(a.id, 5, 6);
+	store.setViewport({ x: 100, y: -50, zoom: 9 });
+
+	const reloaded = createStore(storage);
+	assert.equal(reloaded.data.canvas.cards[0]?.x, 5);
+	assert.deepEqual(reloaded.data.canvas.viewport, { x: 100, y: -50, zoom: 2 });
+
+	const bad = { types: [], entities: [], canvas: { cards: [{ entityId: "x", x: "1" }], viewport: null } };
+	assert.deepEqual(createStore(memoryStorage({ "entities-app": JSON.stringify(bad) })).data.canvas, EMPTY.canvas);
 });

@@ -11,6 +11,8 @@ import {
 	type PropertyKind,
 	type PropertyValue,
 } from "./model.js";
+import { canvasView } from "./canvas.js";
+import { el } from "./dom.js";
 import type { Store } from "./store.js";
 
 interface UiState {
@@ -23,16 +25,6 @@ interface UiState {
 	editingEntityId: string | null;
 	/** Form to scroll into view and focus after the next render (set when Edit is clicked). */
 	focusForm: "type" | "entity" | null;
-}
-
-function el<K extends keyof HTMLElementTagNameMap>(
-	tag: K,
-	props: Partial<HTMLElementTagNameMap[K]> = {},
-	...children: (Node | string)[]
-): HTMLElementTagNameMap[K] {
-	const node = Object.assign(document.createElement(tag), props);
-	node.append(...children);
-	return node;
 }
 
 /** Counts existing non-empty values of the type's entities that saving these properties would change or clear. */
@@ -86,13 +78,27 @@ export function render(root: HTMLElement, store: Store): void {
 			state.selectedTypeId = store.data.types[0]?.id ?? null;
 			state.editingEntityId = null;
 		}
-		root.replaceChildren(typesSection(), entitiesSection());
+		const view = location.hash === "#canvas" ? "canvas" : "data";
+		root.replaceChildren(
+			navBar(view),
+			view === "canvas"
+				? canvasView(store)
+				: el("div", { className: "data-view" }, typesSection(), entitiesSection()),
+		);
 		if (state.focusForm) {
 			const form = root.querySelector<HTMLFormElement>(`#${state.focusForm}-form`);
 			state.focusForm = null;
 			form?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 			form?.querySelector<HTMLElement>("input, select, textarea")?.focus({ preventScroll: true });
 		}
+	}
+
+	function navBar(view: "data" | "canvas"): HTMLElement {
+		const tab = (id: typeof view, label: string) =>
+			el("a", { href: `#${id}`, className: view === id ? "tab current" : "tab" }, label);
+		const nav = el("nav", { className: "app-nav" }, tab("data", "Data"), tab("canvas", "Canvas"));
+		nav.querySelector(".current")?.setAttribute("aria-current", "page");
+		return nav;
 	}
 
 	function propertyRow(prop: DraftProperty, i: number): HTMLElement {
@@ -582,5 +588,6 @@ export function render(root: HTMLElement, store: Store): void {
 		return el("div", { className: "table-wrap" }, table);
 	}
 
+	window.addEventListener("hashchange", rerender);
 	rerender();
 }

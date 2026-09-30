@@ -15,19 +15,53 @@ body {
 	font-family: system-ui, sans-serif;
 	color: var(--text);
 	background: var(--surface-inset);
-	padding: 1.5rem 1rem;
 }
 
 main {
+	min-height: 100dvh;
+	display: grid;
+	grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* The canvas fills the screen instead of growing the page. */
+main:has(.canvas-view) {
+	height: 100dvh;
+}
+
+.app-nav {
+	display: flex;
+	gap: 0.25rem;
+	padding: 0.5rem 1rem;
+	background: var(--surface);
+	border-bottom: 1px solid var(--border);
+}
+
+.tab {
+	padding: 0.35rem 0.75rem;
+	border-radius: 4px;
+}
+
+.tab:hover:not(.current) {
+	background: var(--surface-inset);
+}
+
+.tab.current {
+	background: var(--accent);
+	color: #fff;
+}
+
+.data-view {
+	width: 100%;
 	max-width: 80rem;
 	margin-inline: auto;
+	padding: 1.5rem 1rem;
 	display: grid;
 	gap: 1.5rem;
 	align-items: start;
 }
 
 @media (min-width: 64rem) {
-	main {
+	.data-view {
 		grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr);
 	}
 }
@@ -226,4 +260,168 @@ td {
 th {
 	font-weight: 600;
 	white-space: nowrap;
+}
+
+/* Canvas view */
+
+.canvas-view {
+	display: grid;
+	grid-template-columns: 16rem minmax(0, 1fr);
+	min-height: 0;
+}
+
+@media (max-width: 40rem) {
+	.canvas-view {
+		grid-template-columns: 1fr;
+		grid-template-rows: auto minmax(0, 1fr);
+	}
+
+	.canvas-panel {
+		max-height: 30dvh;
+	}
+}
+
+.canvas-panel {
+	display: grid;
+	align-content: start;
+	gap: 0.75rem;
+	padding: 1rem;
+	overflow-y: auto;
+	background: var(--surface);
+	border-right: 1px solid var(--border);
+}
+
+.panel-group {
+	display: grid;
+	gap: 0.25rem;
+}
+
+.panel-group ul {
+	display: grid;
+	gap: 0.25rem;
+}
+
+.panel-item {
+	padding: 0.35rem 0.5rem;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	background: var(--surface);
+	cursor: grab;
+	overflow-wrap: anywhere;
+}
+
+.panel-item:hover {
+	border-color: var(--border-strong);
+}
+
+.panel-item.placed {
+	background: var(--surface-inset);
+}
+
+.canvas-main {
+	position: relative;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.canvas-surface {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+	cursor: grab;
+	touch-action: none;
+	background-color: var(--surface-inset);
+	background-image: radial-gradient(circle, var(--border-strong) 1px, transparent 1px);
+}
+
+.canvas-surface.panning {
+	cursor: grabbing;
+}
+
+.canvas-board {
+	position: absolute;
+	left: 0;
+	top: 0;
+	transform-origin: 0 0;
+}
+
+.canvas-card {
+	position: absolute;
+	display: grid;
+	grid-template-rows: auto minmax(0, 1fr);
+	grid-template-columns: minmax(0, 1fr);
+	background: var(--surface);
+	border: 1px solid var(--border-strong);
+	border-radius: 6px;
+	box-shadow: 0 2px 6px rgb(0 0 0 / 0.08);
+	cursor: default;
+}
+
+.canvas-card header {
+	display: flex;
+	align-items: baseline;
+	gap: 0.5rem;
+	padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+	border-bottom: 1px solid var(--border);
+	cursor: move;
+	user-select: none;
+	touch-action: none;
+}
+
+.canvas-card header strong {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.canvas-card header .muted {
+	font-size: 0.85em;
+	white-space: nowrap;
+}
+
+.card-remove {
+	margin-left: auto;
+	border: none;
+	padding: 0 0.35rem;
+	line-height: 1.2;
+}
+
+.card-content {
+	padding: 0.5rem 0.75rem;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	overflow: auto;
+}
+
+.card-resize {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	width: 14px;
+	height: 14px;
+	cursor: nwse-resize;
+	touch-action: none;
+	border-bottom-right-radius: 6px;
+	background: linear-gradient(135deg, transparent 50%, var(--border-strong) 50%);
+}
+
+.canvas-toolbar {
+	position: absolute;
+	top: 0.75rem;
+	right: 0.75rem;
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
+	padding: 0.25rem;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	box-shadow: 0 2px 6px rgb(0 0 0 / 0.08);
+}
+
+.zoom-label {
+	min-width: 3.5rem;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
 }

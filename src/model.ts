@@ -1,3 +1,5 @@
+import type { Viewport } from "./viewport.js";
+
 export type PropertyKind = "text" | "options" | "reference";
 
 export const PROPERTY_KINDS: readonly PropertyKind[] = ["text", "options", "reference"];
@@ -48,9 +50,28 @@ export interface Entity {
 	values: Record<string, PropertyValue>;
 }
 
+/** An entity placed on the canvas, in world coordinates. Each entity has at most one card. */
+export interface CanvasCard {
+	entityId: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+export interface CanvasData {
+	/** Later cards are drawn on top. */
+	cards: CanvasCard[];
+	viewport: Viewport;
+}
+
+export const DEFAULT_CARD_SIZE = { width: 240, height: 160 } as const;
+export const MIN_CARD_SIZE = { width: 160, height: 80 } as const;
+
 export interface AppData {
 	types: EntityType[];
 	entities: Entity[];
+	canvas: CanvasData;
 }
 
 /** Maps each entity id to its type id, so reference values can be checked. */
