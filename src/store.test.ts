@@ -655,3 +655,17 @@ test("older boards load without drawings; malformed drawings are dropped", () =>
 	// Missing text fields get defaults.
 	assert.deepEqual(mixed?.drawings[0], { id: "ok", kind: "ellipse", x: 1, y: 2, width: 3, height: 4, color: "#c4dafa", text: "", textSize: "m" });
 });
+
+test("reload takes over what another tab saved, so saving here keeps it", () => {
+	const storage = memoryStorage();
+	const here = createStore(storage);
+	const otherTab = createStore(storage);
+	const book = otherTab.addType("Book", [titleDraft], "");
+
+	here.reload();
+	assert.deepEqual(here.data.types.map((t) => t.name), ["Book"]);
+	here.addEntity(book.id, "Dune", "", {});
+	const saved = createStore(storage).data;
+	assert.deepEqual(saved.types.map((t) => t.name), ["Book"]);
+	assert.deepEqual(saved.entities.map((e) => e.name), ["Dune"]);
+});

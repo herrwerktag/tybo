@@ -4,7 +4,8 @@ import { test } from "node:test";
 import { text } from "./i18n.js";
 import type { AppData } from "./model.js";
 import { render } from "./ui.js";
-import { createWorkspaces } from "./workspaces.js";
+import { createStore } from "./store.js";
+import { createWorkspaces, dataKey } from "./workspaces.js";
 
 /** Renders the app on a fresh page, with `saved` already in the browser storage. */
 function startApp(saved: Record<string, string> = {}): HTMLElement {
@@ -161,4 +162,37 @@ test("errors thrown outside rendering show in the banner", () => {
 	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
 	assert.equal(banner.hidden, false);
 	assert.match(banner.textContent ?? "", /handler failed/);
+});
+
+/** What a browser does in this tab when another tab saved under `key`. */
+const otherTabSaved = (key: string) =>
+	window.dispatchEvent(new StorageEvent("storage", { key, newValue: localStorage.getItem(key), storageArea: localStorage }));
+
+test("changes saved in another tab show up here, and saving here keeps them", () => {
+	const root = startApp({ "entities-app": library });
+	createStore(localStorage).addType("Film", [], ""); // in the other tab
+	otherTabSaved("entities-app");
+	assert.ok(byText(root, ".type-name", "Film"));
+
+	// Saving here (deleting Dune) mustn't drop the other tab's type.
+	stub({ confirm: () => true });
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.delete).click();
+	assert.deepEqual(savedData().types.map((t) => t.name), ["Book", "Film"]);
+	assert.equal(savedData().entities.length, 0);
+});
+
+test("when another tab deletes the workspace open here, this tab switches to one that's left", () => {
+	const root = startApp();
+	const newForm = root.querySelector<HTMLFormElement>(".workspace-new")!;
+	newForm.querySelector<HTMLInputElement>("input:not([type])")!.value = "Second";
+	byText(newForm, "button", text.create).click();
+	const secondId = createWorkspaces(localStorage, text.defaultWorkspaceName).active.id;
+
+	const otherTab = createWorkspaces(localStorage, text.defaultWorkspaceName);
+	otherTab.remove(secondId);
+	otherTabSaved(dataKey(secondId));
+	otherTabSaved("workspaces");
+
+	assert.equal(root.querySelector(".workspace-name")?.textContent, text.defaultWorkspaceName(1));
+	assert.equal(localStorage.getItem(dataKey(secondId)), null); // not written back
 });

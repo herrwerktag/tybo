@@ -25,7 +25,7 @@ import { canvasView } from "./canvas.js";
 import { downloadFile, el, safeFileName, typeDot } from "./dom.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
 import type { Store } from "./store.js";
-import { exportWorkspace, readWorkspaceFile, type Workspaces } from "./workspaces.js";
+import { INDEX_KEY, dataKey, exportWorkspace, readWorkspaceFile, type Workspaces } from "./workspaces.js";
 
 interface UiState {
 	editingTypeId: string | null;
@@ -1141,6 +1141,20 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 	};
 	window.addEventListener("error", (e) => showUnexpectedError(e.error ?? e.message));
 	window.addEventListener("unhandledrejection", (e) => showUnexpectedError(e.reason));
+
+	// Another tab saved (browsers tell every other tab): take over its changes, so saving here doesn't overwrite them.
+	window.addEventListener("storage", (e) => {
+		if (e.storageArea !== localStorage) return;
+		const cleared = e.key === null;
+		const { id } = workspaces.active;
+		if (cleared || e.key === INDEX_KEY) {
+			workspaces.reload();
+			if (workspaces.active.id !== id) return switchWorkspace(workspaces.active.id); // deleted in the other tab
+		}
+		if (cleared || e.key === dataKey(id)) store.reload();
+		else if (e.key !== INDEX_KEY) return; // another workspace's data, or a preference
+		rerender();
+	});
 
 	window.addEventListener("hashchange", rerender);
 	rerender();

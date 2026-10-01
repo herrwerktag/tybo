@@ -315,6 +315,11 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 			}
 		},
 
+		/** Reads the saved data again, e.g. after another tab saved it, so the next save here doesn't overwrite that. */
+		reload(): void {
+			({ data, problem: loadProblem } = load());
+		},
+
 		/** Calls `listener` whenever `problems.saveFailed` changes. */
 		onProblemsChange(listener: () => void): void {
 			problemListeners.push(listener);

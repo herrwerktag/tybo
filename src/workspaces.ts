@@ -15,7 +15,7 @@ interface WorkspaceIndex {
 
 type WorkspaceStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-const INDEX_KEY = "workspaces";
+export const INDEX_KEY = "workspaces";
 /** The first workspace keeps the key used before workspaces existed, so its data needs no migration. */
 const DEFAULT_ID = "default";
 const LEGACY_DATA_KEY = "entities-app";
@@ -102,6 +102,13 @@ export function createWorkspaces(storage: WorkspaceStorage, defaultName: (n: num
 
 		get active(): WorkspaceInfo {
 			return index.workspaces.find((w) => w.id === index.active) ?? index.workspaces[0]!;
+		},
+
+		/** Reads the list again after another tab changed it. This tab keeps its workspace unless it was deleted there. */
+		reload(): void {
+			const { active } = index;
+			index = load();
+			if (index.workspaces.some((w) => w.id === active)) index = { ...index, active };
 		},
 
 		setActive(id: string): void {

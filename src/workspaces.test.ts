@@ -183,3 +183,22 @@ test("works without crypto.randomUUID, which browsers only offer on HTTPS and lo
 	}
 	assert.equal(typeof crypto.randomUUID, "function");
 });
+
+test("reload picks up another tab's workspaces but keeps this tab's own, unless it was deleted there", () => {
+	const storage = memoryStorage();
+	const here = createWorkspaces(storage, workspaceName);
+	const otherTab = createWorkspaces(storage, workspaceName);
+	const second = otherTab.add("Second");
+	otherTab.setActive(second.id);
+
+	here.reload();
+	assert.deepEqual(here.list.map((w) => w.name), ["Workspace 1", "Second"]);
+	assert.equal(here.active.id, "default");
+
+	here.setActive(second.id);
+	otherTab.reload();
+	otherTab.remove(second.id);
+	here.reload();
+	assert.deepEqual(here.list.map((w) => w.id), ["default"]);
+	assert.equal(here.active.id, "default");
+});
