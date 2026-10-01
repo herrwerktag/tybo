@@ -204,35 +204,43 @@ export function parseValue(
 	return trimmed;
 }
 
+/** A problem with a type definition; the UI turns it into a message in the current language. */
+export type ValidationError =
+	| { code: "typeNameRequired" }
+	| { code: "propertyNameRequired" }
+	| { code: "reservedName" | "duplicateName"; label: string }
+	| { code: "optionsRequired" | "emptyOption" | "duplicateOptions"; label: string }
+	| { code: "referenceTypeRequired"; label: string };
+
 /** Returns a list of problems; an empty list means the type is valid. */
 export function validateType(
 	name: string,
 	properties: Omit<DraftProperty, "id">[],
 	typeIds: ReadonlySet<string>,
-): string[] {
-	const errors: string[] = [];
-	if (name.trim() === "") errors.push("Type name is required.");
+): ValidationError[] {
+	const errors: ValidationError[] = [];
+	if (name.trim() === "") errors.push({ code: "typeNameRequired" });
 	const seen = new Set<string>();
 	for (const prop of properties) {
 		const label = prop.name.trim();
 		const key = label.toLowerCase();
 		if (key === "") {
-			errors.push("Property names are required.");
+			errors.push({ code: "propertyNameRequired" });
 		} else if (RESERVED_PROPERTY_NAMES.includes(key)) {
-			errors.push(`"${label}" is a built-in field and can't be used as a property name.`);
+			errors.push({ code: "reservedName", label });
 		} else if (seen.has(key)) {
-			errors.push(`Duplicate property name "${label}".`);
+			errors.push({ code: "duplicateName", label });
 		}
 		seen.add(key);
 
 		if (prop.kind === "options") {
 			const options = prop.options.map((o) => o.trim());
-			if (options.length === 0) errors.push(`"${label}" needs at least one option.`);
-			if (options.some((o) => o === "")) errors.push(`"${label}" has an empty option.`);
-			if (new Set(options).size !== options.length) errors.push(`"${label}" has duplicate options.`);
+			if (options.length === 0) errors.push({ code: "optionsRequired", label });
+			if (options.some((o) => o === "")) errors.push({ code: "emptyOption", label });
+			if (new Set(options).size !== options.length) errors.push({ code: "duplicateOptions", label });
 		}
 		if (prop.kind === "reference" && !typeIds.has(prop.reference?.typeId ?? "")) {
-			errors.push(`"${label}" needs an entity type to reference.`);
+			errors.push({ code: "referenceTypeRequired", label });
 		}
 	}
 	return errors;

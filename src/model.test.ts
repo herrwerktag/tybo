@@ -150,3 +150,15 @@ test("cardRows: line references are left out while their card is linked, listed 
 	// Without board information nothing is linked, so everything is listed.
 	assert.equal(cardRows(type, entity, names)[0]?.values.length, 2);
 });
+
+test("validateType reports problems as codes with the property label", () => {
+	assert.deepEqual(validateType(" ", [{ ...title, name: "id" }, { ...title, name: "Title" }, { ...title, name: "title" }], noTypes), [
+		{ code: "typeNameRequired" },
+		{ code: "reservedName", label: "id" },
+		{ code: "duplicateName", label: "title" },
+	]);
+	assert.deepEqual(validateType("Book", [{ ...status, options: [] }, author], noTypes), [
+		{ code: "optionsRequired", label: "status" },
+		{ code: "referenceTypeRequired", label: "author" },
+	]);
+});

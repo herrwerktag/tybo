@@ -17,9 +17,11 @@ import {
 	type PropertyDef,
 	type PropertyKind,
 	type PropertyValue,
+	type ValidationError,
 } from "./model.js";
 import { canvasView } from "./canvas.js";
 import { el, typeDot } from "./dom.js";
+import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
 import type { Store } from "./store.js";
 
 interface UiState {
@@ -28,13 +30,15 @@ interface UiState {
 	draftContentTemplate: string;
 	draftColor: string;
 	draftProps: DraftProperty[];
-	typeErrors: string[];
+	typeErrors: ValidationError[];
 	selectedTypeId: string | null;
 	editingEntityId: string | null;
 	/** Form to scroll into view and focus after the next render (set when Edit is clicked). */
 	focusForm: "type" | "entity" | null;
 	/** Drag handle to focus after the next render, so keyboard reordering keeps focus on the moved property. */
 	focusHandle: number | null;
+	/** Whether the settings menu is open (kept across the re-render a language change causes). */
+	settingsOpen: boolean;
 }
 
 const PROPERTY_MIME = "application/x-property-index";
@@ -56,22 +60,13 @@ function describeProperty(p: PropertyDef, types: EntityType[]): string {
 	if (p.kind === "options") return `${p.name}: ${p.options.join(" / ")}`;
 	if (p.kind === "reference") {
 		const target = types.find((t) => t.id === p.reference?.typeId)?.name ?? "?";
-		return `${p.name} → ${target}${p.reference?.multiple ? " (multiple)" : ""}`;
+		return `${p.name} → ${target}${p.reference?.multiple ? text.multipleSuffix : ""}`;
 	}
-	return `${p.name}: text`;
+	return `${p.name}: ${text.kinds.text}`;
 }
 
-const LINE_ARROW_LABELS: readonly [LineArrow, string][] = [
-	["to", "To target"],
-	["from", "From target"],
-	["none", "None"],
-];
-
-const CARD_DISPLAY_LABELS: readonly [CardDisplay, string][] = [
-	["list", "List"],
-	["line", "Line"],
-	["hidden", "Hidden"],
-];
+const LINE_ARROWS: readonly LineArrow[] = ["to", "from", "none"];
+const CARD_DISPLAY_ORDER: readonly CardDisplay[] = ["list", "line", "hidden"];
 
 /** A small label above a control, for the settings inside a property card. */
 function setting(label: string, control: HTMLElement): HTMLElement {
@@ -94,6 +89,7 @@ export function render(root: HTMLElement, store: Store): void {
 		editingEntityId: null,
 		focusForm: null,
 		focusHandle: null,
+		settingsOpen: false,
 	};
 
 	function resetTypeForm(): void {
@@ -132,9 +128,74 @@ export function render(root: HTMLElement, store: Store): void {
 	function navBar(view: "data" | "canvas"): HTMLElement {
 		const tab = (id: typeof view, label: string) =>
 			el("a", { href: `#${id}`, className: view === id ? "tab current" : "tab" }, label);
-		const nav = el("nav", { className: "app-nav" }, tab("data", "Data"), tab("canvas", "Canvas"));
+		const nav = el(
+			"nav",
+			{ className: "app-nav" },
+			tab("data", text.tabData),
+			tab("canvas", text.tabCanvas),
+			settingsMenu(),
+		);
 		nav.querySelector(".current")?.setAttribute("aria-current", "page");
 		return nav;
+	}
+
+	/** ⚙ button at the right of the top bar, opening a small menu; closes on outside click or Escape. */
+	function settingsMenu(): HTMLElement {
+		const languageSelect = el(
+			"select",
+			{
+				onchange: () => {
+					setLanguage(languageSelect.value as Language);
+					state.settingsOpen = true; // keep the menu open in the new language
+					rerender();
+					root.querySelector<HTMLElement>(".settings-menu select")?.focus();
+				},
+			},
+			...LANGUAGES.map(({ code, name }) => el("option", { value: code, lang: code, selected: code === language }, name)),
+		);
+		const menu = el(
+			"div",
+			{ className: "settings-menu", id: "settings-menu", role: "dialog", ariaLabel: text.settings },
+			el("h2", {}, text.settings),
+			el("label", { className: "field" }, el("span", {}, text.language), languageSelect),
+		);
+		const button = el(
+			"button",
+			{ type: "button", className: "settings-button", onclick: () => setOpen(!state.settingsOpen) },
+			el("span", { ariaHidden: "true" }, "⚙"),
+			text.settings,
+		);
+		button.setAttribute("aria-controls", menu.id);
+		button.setAttribute("aria-haspopup", "dialog");
+		const wrapper = el("div", { className: "settings" }, button, menu);
+
+		const stopListening = () => {
+			document.removeEventListener("pointerdown", onPointerDown);
+			document.removeEventListener("keydown", onKeyDown);
+		};
+		function onPointerDown(e: PointerEvent): void {
+			if (!wrapper.isConnected) return stopListening(); // replaced by a re-render
+			if (!wrapper.contains(e.target as Node)) setOpen(false);
+		}
+		function onKeyDown(e: KeyboardEvent): void {
+			if (!wrapper.isConnected) return stopListening();
+			if (e.key === "Escape") {
+				setOpen(false);
+				button.focus();
+			}
+		}
+		function setOpen(open: boolean): void {
+			state.settingsOpen = open;
+			menu.hidden = !open;
+			button.ariaExpanded = String(open);
+			stopListening();
+			if (open) {
+				document.addEventListener("pointerdown", onPointerDown);
+				document.addEventListener("keydown", onKeyDown);
+			}
+		}
+		setOpen(state.settingsOpen);
+		return wrapper;
 	}
 
 	function propertyRow(prop: DraftProperty, i: number): HTMLElement {
@@ -150,7 +211,7 @@ export function render(root: HTMLElement, store: Store): void {
 					rerender();
 				},
 			},
-			...PROPERTY_KINDS.map((kind) => el("option", { value: kind, selected: kind === prop.kind }, kind)),
+			...PROPERTY_KINDS.map((kind) => el("option", { value: kind, selected: kind === prop.kind }, text.kinds[kind])),
 		);
 		const moveTo = (to: number) => {
 			if (to < 0 || to >= state.draftProps.length || to === i) return;
@@ -163,8 +224,8 @@ export function render(root: HTMLElement, store: Store): void {
 			{
 				type: "button",
 				className: "drag-handle",
-				title: "Drag to reorder, or use the arrow keys",
-				ariaLabel: `Move property ${prop.name.trim() || i + 1}; use the arrow keys`,
+				title: text.dragToReorder,
+				ariaLabel: text.moveProperty(prop.name.trim() || String(i + 1)),
 				onkeydown: (e) => {
 					if (e.key === "ArrowUp" || e.key === "ArrowDown") {
 						e.preventDefault();
@@ -183,8 +244,8 @@ export function render(root: HTMLElement, store: Store): void {
 			"⠿",
 		);
 		const nameInput = el("input", {
-			placeholder: "Property name",
-			ariaLabel: "Property name",
+			placeholder: text.propertyName,
+			ariaLabel: text.propertyName,
 			value: prop.name,
 			oninput: (e) => {
 				prop.name = (e.target as HTMLInputElement).value;
@@ -195,8 +256,8 @@ export function render(root: HTMLElement, store: Store): void {
 			{
 				type: "button",
 				className: "property-remove",
-				title: "Remove property",
-				ariaLabel: `Remove property ${prop.name.trim() || i + 1}`,
+				title: text.removeProperty,
+				ariaLabel: text.removePropertyNamed(prop.name.trim() || String(i + 1)),
 				onclick: () => {
 					state.draftProps.splice(i, 1);
 					rerender();
@@ -207,14 +268,14 @@ export function render(root: HTMLElement, store: Store): void {
 		const displaySelect = el(
 			"select",
 			{
-				title: "How this property appears on canvas cards",
+				title: text.onCardHint,
 				onchange: (e) => {
 					prop.cardDisplay = (e.target as HTMLSelectElement).value as CardDisplay;
 					rerender(); // shows or hides the line settings
 				},
 			},
-			...CARD_DISPLAY_LABELS.filter(([display]) => display !== "line" || prop.kind === "reference").map(
-				([display, label]) => el("option", { value: display, selected: display === prop.cardDisplay }, label),
+			...CARD_DISPLAY_ORDER.filter((display) => display !== "line" || prop.kind === "reference").map((display) =>
+				el("option", { value: display, selected: display === prop.cardDisplay }, text.cardDisplays[display]),
 			),
 		);
 		// Handle, name and remove on top; then labeled settings, two per row.
@@ -222,7 +283,7 @@ export function render(root: HTMLElement, store: Store): void {
 			"div",
 			{ className: "property" },
 			el("div", { className: "property-head" }, handle, nameInput, removeButton),
-			el("div", { className: "property-settings" }, setting("Type", kindSelect), setting("On card", displaySelect)),
+			el("div", { className: "property-settings" }, setting(text.settingType, kindSelect), setting(text.settingOnCard, displaySelect)),
 		);
 		const clearDropMarker = () => row.classList.remove("drop-before", "drop-after");
 		const dropsBefore = (e: DragEvent) => {
@@ -260,7 +321,7 @@ export function render(root: HTMLElement, store: Store): void {
 		if (prop.kind === "options") {
 			row.append(
 				setting(
-					"Options (one per line)",
+					text.optionsOnePerLine,
 					el("textarea", {
 						rows: Math.max(3, prop.options.length + 1),
 						value: prop.options.join("\n"),
@@ -278,7 +339,7 @@ export function render(root: HTMLElement, store: Store): void {
 					"div",
 					{ className: "property-settings" },
 					setting(
-						"References",
+						text.references,
 						el(
 							"select",
 							{
@@ -286,7 +347,7 @@ export function render(root: HTMLElement, store: Store): void {
 									reference.typeId = (e.target as HTMLSelectElement).value;
 								},
 							},
-							...(store.data.types.length === 0 ? [el("option", { value: "" }, "(no types yet)")] : []),
+							...(store.data.types.length === 0 ? [el("option", { value: "" }, text.noTypesOption)] : []),
 							...store.data.types.map((t) => el("option", { value: t.id, selected: t.id === reference.typeId }, t.name)),
 						),
 					),
@@ -300,7 +361,7 @@ export function render(root: HTMLElement, store: Store): void {
 								reference.multiple = (e.target as HTMLInputElement).checked;
 							},
 						}),
-						" Allow multiple",
+						` ${text.allowMultiple}`,
 					),
 				),
 			);
@@ -310,7 +371,7 @@ export function render(root: HTMLElement, store: Store): void {
 						"div",
 						{ className: "property-settings" },
 						setting(
-							"Arrow",
+							text.arrow,
 							el(
 								"select",
 								{
@@ -318,16 +379,16 @@ export function render(root: HTMLElement, store: Store): void {
 										reference.arrow = (e.target as HTMLSelectElement).value as LineArrow;
 									},
 								},
-								...LINE_ARROW_LABELS.map(([arrow, label]) =>
-									el("option", { value: arrow, selected: arrow === reference.arrow }, label),
+								...LINE_ARROWS.map((arrow) =>
+									el("option", { value: arrow, selected: arrow === reference.arrow }, text.arrows[arrow]),
 								),
 							),
 						),
 						setting(
-							"Line label",
+							text.lineLabel,
 							el("input", {
 								value: reference.lineLabel,
-								placeholder: prop.name.trim() || "property name",
+								placeholder: prop.name.trim() || text.lineLabelPlaceholder,
 								oninput: (e) => {
 									reference.lineLabel = (e.target as HTMLInputElement).value;
 								},
@@ -345,7 +406,7 @@ export function render(root: HTMLElement, store: Store): void {
 		return el(
 			"div",
 			{ className: "field" },
-			el("span", {}, "Color"),
+			el("span", {}, text.color),
 			el(
 				"div",
 				{ className: "swatches" },
@@ -353,8 +414,8 @@ export function render(root: HTMLElement, store: Store): void {
 					const swatch = el("button", {
 						type: "button",
 						className: "swatch",
-						title: name,
-						ariaLabel: name,
+						title: text.colorNames[name] ?? name,
+						ariaLabel: text.colorNames[name] ?? name,
 						ariaPressed: String(value === state.draftColor),
 						onclick: () => {
 							state.draftColor = value;
@@ -388,7 +449,7 @@ export function render(root: HTMLElement, store: Store): void {
 					if (editingType) {
 						const entities = store.data.entities.filter((en) => en.typeId === editingType.id);
 						const changed = countChangedValues(entities, props, entityTypeMap(store.data));
-						if (changed > 0 && !confirm(`This changes or clears ${changed} existing values. Continue?`)) return;
+						if (changed > 0 && !confirm(text.confirmChangedValues(changed))) return;
 						store.updateType(editingType.id, state.draftName, props, state.draftContentTemplate, state.draftColor);
 						state.selectedTypeId = editingType.id;
 					} else {
@@ -399,31 +460,31 @@ export function render(root: HTMLElement, store: Store): void {
 					rerender();
 				},
 			},
-			el("h3", {}, editingType ? `Edit ${editingType.name}` : "New type"),
+			el("h3", {}, editingType ? text.editNamed(editingType.name) : text.newType),
 			el(
 				"label",
 				{ className: "field" },
-				el("span", {}, "Type name"),
+				el("span", {}, text.typeName),
 				el("input", {
 					value: state.draftName,
-					placeholder: "e.g. Book",
+					placeholder: text.typeNamePlaceholder,
 					oninput: (e) => {
 						state.draftName = (e.target as HTMLInputElement).value;
 					},
 				}),
 			),
 			colorPicker(),
-			el("h3", {}, "Properties"),
+			el("h3", {}, text.properties),
 			el(
 				"div",
 				{ className: "builtin" },
-				el("p", {}, el("strong", {}, "id"), " · ULID, automatic"),
-				el("p", {}, el("strong", {}, "name"), " · text, required"),
-				el("p", {}, el("strong", {}, "content"), " · multiline"),
+				el("p", {}, el("strong", {}, "id"), text.builtinId),
+				el("p", {}, el("strong", {}, "name"), text.builtinName),
+				el("p", {}, el("strong", {}, "content"), text.builtinContent),
 				el(
 					"label",
 					{ className: "field wide" },
-					el("span", {}, "Default text (template)"),
+					el("span", {}, text.contentTemplate),
 					el("textarea", {
 						rows: 4,
 						value: state.draftContentTemplate,
@@ -446,9 +507,9 @@ export function render(root: HTMLElement, store: Store): void {
 							rerender();
 						},
 					},
-					"Add property",
+					text.addProperty,
 				),
-				el("button", { type: "submit", className: "primary" }, editingType ? "Save" : "Create type"),
+				el("button", { type: "submit", className: "primary" }, editingType ? text.save : text.createType),
 				...(editingType
 					? [
 							el(
@@ -460,12 +521,12 @@ export function render(root: HTMLElement, store: Store): void {
 										rerender();
 									},
 								},
-								"Cancel",
+								text.cancel,
 							),
 						]
 					: []),
 			),
-			...state.typeErrors.map((msg) => el("p", { className: "error" }, msg)),
+			...state.typeErrors.map((error) => el("p", { className: "error" }, text.validation(error))),
 		);
 
 		const list = el(
@@ -482,7 +543,7 @@ export function render(root: HTMLElement, store: Store): void {
 						el(
 							"p",
 							{ className: "muted" },
-							type.properties.map((p) => describeProperty(p, store.data.types)).join(", ") || "no properties",
+							type.properties.map((p) => describeProperty(p, store.data.types)).join(", ") || text.noProperties,
 						),
 					),
 					el(
@@ -507,7 +568,7 @@ export function render(root: HTMLElement, store: Store): void {
 									rerender();
 								},
 							},
-							"Edit",
+							text.edit,
 						),
 						el(
 							"button",
@@ -516,20 +577,18 @@ export function render(root: HTMLElement, store: Store): void {
 								onclick: () => {
 									const referrers = store.typeReferrers(type.id);
 									if (referrers.length > 0) {
-										alert(
-											`Can't delete ${type.name}: used by ${referrers.join(", ")}. Remove or change those properties first.`,
-										);
+										alert(text.cannotDeleteType(type.name, referrers.join(", ")));
 										return;
 									}
 									const count = store.data.entities.filter((e) => e.typeId === type.id).length;
-									if (confirm(`Delete type "${type.name}" and its ${count} entities?`)) {
+									if (confirm(text.confirmDeleteType(type.name, count))) {
 										store.deleteType(type.id);
 										if (state.editingTypeId === type.id) resetTypeForm();
 										rerender();
 									}
 								},
 							},
-							"Delete",
+							text.delete,
 						),
 					),
 				),
@@ -539,25 +598,25 @@ export function render(root: HTMLElement, store: Store): void {
 		return el(
 			"section",
 			{},
-			el("h2", {}, "Entity types"),
-			store.data.types.length > 0 ? list : el("p", { className: "muted" }, "No types yet."),
+			el("h2", {}, text.entityTypes),
+			store.data.types.length > 0 ? list : el("p", { className: "muted" }, text.noTypesYet),
 			form,
 		);
 	}
 
 	function entitiesSection(): HTMLElement {
-		const header = el("div", { className: "section-header" }, el("h2", {}, "Entities"));
+		const header = el("div", { className: "section-header" }, el("h2", {}, text.entities));
 		const section = el("section", {}, header);
 		const type = store.data.types.find((t) => t.id === state.selectedTypeId);
 		if (!type) {
-			section.append(el("p", { className: "muted" }, "Create an entity type first."));
+			section.append(el("p", { className: "muted" }, text.createTypeFirst));
 			return section;
 		}
 
 		const typeSelect = el(
 			"select",
 			{
-				ariaLabel: "Entity type",
+				ariaLabel: text.entityType,
 				onchange: () => {
 					state.selectedTypeId = typeSelect.value;
 					state.editingEntityId = null;
@@ -573,7 +632,7 @@ export function render(root: HTMLElement, store: Store): void {
 		header.append(typeSelect);
 		section.append(
 			entityForm(type, editing),
-			entities.length > 0 ? entityTable(type, entities) : el("p", { className: "muted" }, `No ${type.name} entities yet.`),
+			entities.length > 0 ? entityTable(type, entities) : el("p", { className: "muted" }, text.noEntitiesOfType(type.name)),
 		);
 		return section;
 	}
@@ -605,17 +664,17 @@ export function render(root: HTMLElement, store: Store): void {
 					rerender();
 				},
 			},
-			el("h3", {}, editing ? `Edit ${type.name}` : `New ${type.name}`),
+			el("h3", {}, editing ? text.editNamed(type.name) : text.newEntity(type.name)),
 			...(editing
-				? [el("p", { className: "field" }, el("span", {}, "ID"), el("span", { className: "mono" }, editing.id))]
+				? [el("p", { className: "field" }, el("span", {}, text.id), el("span", { className: "mono" }, editing.id))]
 				: []),
-			el("label", { className: "field" }, el("span", {}, "Name"), nameInput),
+			el("label", { className: "field" }, el("span", {}, text.name), nameInput),
 			...fields.map((f) => f.element),
-			el("label", { className: "field wide" }, el("span", {}, "Content"), contentInput),
+			el("label", { className: "field wide" }, el("span", {}, text.content), contentInput),
 			el(
 				"div",
 				{ className: "row" },
-				el("button", { type: "submit", className: "primary" }, editing ? "Save" : "Create"),
+				el("button", { type: "submit", className: "primary" }, editing ? text.save : text.create),
 				...(editing
 					? [
 							el(
@@ -627,7 +686,7 @@ export function render(root: HTMLElement, store: Store): void {
 										rerender();
 									},
 								},
-								"Cancel",
+								text.cancel,
 							),
 						]
 					: []),
@@ -646,7 +705,7 @@ export function render(root: HTMLElement, store: Store): void {
 			const targets = store.data.entities.filter((e) => e.typeId === targetType?.id);
 			const selected = new Set(current === null ? [] : typeof current === "string" ? [current] : current);
 			if (targets.length === 0) {
-				const note = el("span", { className: "muted" }, `No ${targetType?.name ?? ""} entities yet`);
+				const note = el("span", { className: "muted" }, text.noEntitiesOfType(targetType?.name ?? ""));
 				return { prop, element: el("div", { className: "field" }, label, note), read: () => [] };
 			}
 			if (prop.reference?.multiple) {
@@ -670,16 +729,16 @@ export function render(root: HTMLElement, store: Store): void {
 			);
 			return { prop, element: el("label", { className: "field" }, label, select), read: () => select.value };
 		}
-		const text = typeof current === "string" ? current : "";
+		const currentText = typeof current === "string" ? current : "";
 		const input =
 			prop.kind === "options"
 				? el(
 						"select",
 						{},
 						el("option", { value: "" }, "—"),
-						...prop.options.map((o) => el("option", { value: o, selected: o === text }, o)),
+						...prop.options.map((o) => el("option", { value: o, selected: o === currentText }, o)),
 					)
-				: el("input", { value: text });
+				: el("input", { value: currentText });
 		return { prop, element: el("label", { className: "field" }, label, input), read: () => input.value };
 	}
 
@@ -700,8 +759,8 @@ export function render(root: HTMLElement, store: Store): void {
 				el(
 					"tr",
 					{},
-					el("th", {}, "ID"),
-					el("th", {}, "Name"),
+					el("th", {}, text.id),
+					el("th", {}, text.name),
 					...type.properties.map((p) => el("th", {}, p.name)),
 					el("th", {}),
 				),
@@ -732,7 +791,7 @@ export function render(root: HTMLElement, store: Store): void {
 											rerender();
 										},
 									},
-									"Edit",
+									text.edit,
 								),
 								el(
 									"button",
@@ -740,15 +799,14 @@ export function render(root: HTMLElement, store: Store): void {
 										type: "button",
 										onclick: () => {
 											const refs = store.referencesTo(entity.id);
-											const warning = refs > 0 ? ` It's referenced ${refs} times; those references will be removed.` : "";
-											if (confirm(`Delete "${entity.name}"?${warning}`)) {
+											if (confirm(text.confirmDeleteEntity(entity.name, refs))) {
 												store.deleteEntity(entity.id);
 												if (state.editingEntityId === entity.id) state.editingEntityId = null;
 												rerender();
 											}
 										},
 									},
-									"Delete",
+									text.delete,
 								),
 							),
 						),

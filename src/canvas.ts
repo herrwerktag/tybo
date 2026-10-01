@@ -1,5 +1,6 @@
 import { connector, nearest, type Rect } from "./connectors.js";
 import { el, svgEl, typeDot } from "./dom.js";
+import { text } from "./i18n.js";
 import {
 	DEFAULT_CARD_SIZE,
 	MIN_CARD_SIZE,
@@ -13,29 +14,13 @@ import {
 	type EntityType,
 	type LineArrow,
 } from "./model.js";
+import { readPreference, writePreference } from "./preferences.js";
 import type { Store } from "./store.js";
 import { defaultViewport, screenToWorld, zoomAt, type Viewport } from "./viewport.js";
 
 const ENTITY_MIME = "application/x-entity-id";
-/** Per-browser UI preferences, kept outside the app data. */
 const PANEL_COLLAPSED_KEY = "canvas-panel-collapsed";
 const ACTIVE_BOARD_KEY = "canvas-active-board";
-
-function readPreference(key: string): string | null {
-	try {
-		return localStorage.getItem(key);
-	} catch {
-		return null;
-	}
-}
-
-function writePreference(key: string, value: string): void {
-	try {
-		localStorage.setItem(key, value);
-	} catch {
-		// Storage blocked: the choice just isn't remembered.
-	}
-}
 /** Spacing of the background dot grid, in world units. */
 const GRID = 24;
 
@@ -92,8 +77,8 @@ export function canvasView(store: Store): HTMLElement {
 		{
 			type: "button",
 			className: "panel-open",
-			title: "Show entities",
-			ariaLabel: "Show entities",
+			title: text.showEntities,
+			ariaLabel: text.showEntities,
 			ariaExpanded: String(!panelCollapsed),
 			onclick: () => setPanelCollapsed(false),
 		},
@@ -148,7 +133,7 @@ export function canvasView(store: Store): HTMLElement {
 		const boards = store.data.boards;
 		const select = el(
 			"select",
-			{ ariaLabel: "Board", onchange: () => switchBoard(select.value) },
+			{ ariaLabel: text.board, onchange: () => switchBoard(select.value) },
 			...boards.map((b) => el("option", { value: b.id, selected: b.id === boardId }, b.name)),
 		);
 		boardControls.replaceChildren(
@@ -157,44 +142,44 @@ export function canvasView(store: Store): HTMLElement {
 				"button",
 				{
 					type: "button",
-					title: "New board",
+					title: text.newBoard,
 					onclick: () => {
-						const name = prompt("Name of the new board", `Board ${boards.length + 1}`);
+						const name = prompt(text.newBoardPrompt, text.defaultBoardName(boards.length + 1));
 						if (name !== null) switchBoard(store.addBoard(name).id);
 					},
 				},
-				"New",
+				text.newBoardButton,
 			),
 			el(
 				"button",
 				{
 					type: "button",
-					title: "Rename board",
+					title: text.renameBoard,
 					onclick: () => {
-						const name = prompt("Rename board", currentBoard().name);
+						const name = prompt(text.renameBoard, currentBoard().name);
 						if (name === null) return;
 						store.renameBoard(boardId, name);
 						renderBoardControls();
 					},
 				},
-				"Rename",
+				text.renameButton,
 			),
 			el(
 				"button",
 				{
 					type: "button",
 					disabled: boards.length <= 1,
-					title: boards.length <= 1 ? "The last board can't be deleted" : "Delete board",
+					title: boards.length <= 1 ? text.lastBoard : text.deleteBoard,
 					onclick: () => {
 						const board = currentBoard();
 						const cards = board.cards.length;
-						if (!confirm(`Delete board "${board.name}" and its ${cards} cards? The entities stay.`)) return;
+						if (!confirm(text.confirmDeleteBoard(board.name, cards))) return;
 						flushViewport();
 						store.deleteBoard(board.id);
 						switchBoard(store.data.boards[0]!.id);
 					},
 				},
-				"Delete",
+				text.delete,
 			),
 		);
 	}
@@ -221,17 +206,17 @@ export function canvasView(store: Store): HTMLElement {
 			{
 				type: "button",
 				className: "panel-toggle",
-				title: "Hide entities",
-				ariaLabel: "Hide entities",
+				title: text.hideEntities,
+				ariaLabel: text.hideEntities,
 				onclick: () => setPanelCollapsed(true),
 			},
 			"«",
 		);
 
 		panel.replaceChildren(
-			el("div", { className: "panel-header" }, el("h2", {}, "Entities"), toggle),
-			el("p", { className: "muted" }, "Drag onto the canvas."),
-			...(groups.length === 0 ? [el("p", { className: "muted" }, "No entities yet. Create some in the Data view.")] : []),
+			el("div", { className: "panel-header" }, el("h2", {}, text.entities), toggle),
+			el("p", { className: "muted" }, text.dragOntoCanvas),
+			...(groups.length === 0 ? [el("p", { className: "muted" }, text.noEntitiesYet)] : []),
 			...groups.map(({ type, entities }) =>
 				el(
 					"div",
@@ -246,7 +231,7 @@ export function canvasView(store: Store): HTMLElement {
 								"li",
 								{ className: count > 0 ? "panel-item placed" : "panel-item", draggable: true },
 								entity.name,
-								...(count > 0 ? [el("span", { className: "muted" }, count > 1 ? ` · on canvas ×${count}` : " · on canvas")] : []),
+								...(count > 0 ? [el("span", { className: "muted" }, text.onCanvas(count))] : []),
 							);
 							item.addEventListener("dragstart", (e) => {
 								if (!e.dataTransfer) return;
@@ -455,7 +440,7 @@ export function canvasView(store: Store): HTMLElement {
 			...(entity.content.trim()
 				? [el("div", { className: "card-content" }, entity.content)]
 				: rows.length === 0
-					? [el("div", { className: "card-content muted" }, "No content")]
+					? [el("div", { className: "card-content muted" }, text.noContent)]
 					: []),
 		);
 		return { header, body };
@@ -473,8 +458,8 @@ export function canvasView(store: Store): HTMLElement {
 			{
 				type: "button",
 				className: "card-remove",
-				ariaLabel: `Remove ${entity.name} from canvas`,
-				title: "Remove from canvas",
+				ariaLabel: text.removeNamedFromCanvas(entity.name),
+				title: text.removeFromCanvas,
 				onclick: () => {
 					store.removeCard(card.id);
 					renderCards();
@@ -484,7 +469,7 @@ export function canvasView(store: Store): HTMLElement {
 			"×",
 		);
 		const { header, body } = cardParts(entity, type, entityNames, isLinked, { removeButton, previews: true });
-		const resize = el("div", { className: "card-resize", title: "Resize" });
+		const resize = el("div", { className: "card-resize", title: text.resize });
 		const node = el("article", { className: "canvas-card" }, header, body, resize);
 		Object.assign(node.style, {
 			left: `${card.x}px`,
@@ -611,10 +596,10 @@ export function canvasView(store: Store): HTMLElement {
 		el(
 			"div",
 			{ className: "toolbar-group" },
-			el("button", { type: "button", ariaLabel: "Zoom out", onclick: () => zoomBy(1 / 1.2) }, "−"),
+			el("button", { type: "button", ariaLabel: text.zoomOut, title: text.zoomOut, onclick: () => zoomBy(1 / 1.2) }, "−"),
 			zoomLabel,
-			el("button", { type: "button", ariaLabel: "Zoom in", onclick: () => zoomBy(1.2) }, "+"),
-			el("button", { type: "button", onclick: () => setViewport(defaultViewport()) }, "Reset view"),
+			el("button", { type: "button", ariaLabel: text.zoomIn, title: text.zoomIn, onclick: () => zoomBy(1.2) }, "+"),
+			el("button", { type: "button", onclick: () => setViewport(defaultViewport()) }, text.resetView),
 		),
 	);
 
