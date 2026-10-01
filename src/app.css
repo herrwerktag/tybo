@@ -61,6 +61,19 @@ main:has(.canvas-view) {
 	padding: 0.35rem 0.75rem;
 }
 
+/* Undo and redo, left of the menus. */
+.history-buttons {
+	display: flex;
+}
+
+.history-button {
+	border: none;
+	background: transparent;
+	padding: 0.35rem 0.6rem;
+	font-size: 1.1rem;
+	line-height: 1;
+}
+
 .menu-panel {
 	position: absolute;
 	right: 0;

@@ -669,3 +669,62 @@ test("reload takes over what another tab saved, so saving here keeps it", () => 
 	assert.deepEqual(saved.types.map((t) => t.name), ["Book"]);
 	assert.deepEqual(saved.entities.map((e) => e.name), ["Dune"]);
 });
+
+test("undo and redo step through changes, and are saved", () => {
+	const storage = memoryStorage();
+	const store = createStore(storage);
+	assert.deepEqual(store.history, { canUndo: false, canRedo: false });
+	const book = store.addType("Book", [titleDraft], "");
+	const dune = store.addEntity(book.id, "Dune", "", {});
+	store.deleteEntity(dune.id);
+
+	assert.equal(store.undo(), true);
+	assert.deepEqual(store.data.entities.map((e) => e.name), ["Dune"]);
+	assert.deepEqual(createStore(storage).data.entities.map((e) => e.name), ["Dune"]);
+	assert.deepEqual(store.history, { canUndo: true, canRedo: true });
+
+	store.undo();
+	store.undo();
+	assert.deepEqual(store.data.types, []);
+	assert.equal(store.undo(), false);
+
+	store.redo();
+	store.redo();
+	assert.deepEqual(store.data.entities.map((e) => e.name), ["Dune"]);
+
+	// A new change drops what could be redone.
+	store.addBoard("Second");
+	assert.deepEqual(store.history, { canUndo: true, canRedo: false });
+	assert.equal(store.redo(), false);
+});
+
+test("pan and zoom aren't undone, and undo keeps the current view; changes that change nothing aren't recorded", () => {
+	const store = createStore(memoryStorage());
+	const board = firstBoard(store);
+	const card = store.addCard(board.id, "missing", 0, 0); // entity check happens on load only
+	store.setViewport(board.id, { x: 10, y: 20, zoom: 2 });
+	assert.deepEqual(store.history, { canUndo: true, canRedo: false });
+
+	store.moveCard(card.id, 0, 0); // same place
+	store.renameBoard(board.id, board.name);
+	store.undo();
+	assert.deepEqual(firstBoard(store).cards, []);
+	assert.deepEqual(firstBoard(store).viewport, { x: 10, y: 20, zoom: 2 });
+	assert.equal(store.history.canUndo, false);
+});
+
+test("history is limited, cleared on reload, and changes to it are reported", () => {
+	const storage = memoryStorage();
+	const store = createStore(storage);
+	let reported = 0;
+	store.onHistoryChange(() => reported++);
+	for (let i = 0; i < 120; i++) store.addBoard(`B${i}`);
+	let undone = 0;
+	while (store.undo()) undone++;
+	assert.equal(undone, 100);
+	assert.ok(reported > 0);
+
+	store.redo();
+	store.reload(); // e.g. another tab saved: its changes mustn't be undone from here
+	assert.deepEqual(store.history, { canUndo: false, canRedo: false });
+});

@@ -7,9 +7,10 @@ import { render } from "./ui.js";
 import { createStore } from "./store.js";
 import { createWorkspaces, dataKey } from "./workspaces.js";
 
-/** Renders the app on a fresh page, with `saved` already in the browser storage. */
-function startApp(saved: Record<string, string> = {}): HTMLElement {
+/** Renders the app on a fresh page (at `hash`, e.g. "#canvas"), with `saved` already in the browser storage. */
+function startApp(saved: Record<string, string> = {}, hash = ""): HTMLElement {
 	freshDom();
+	location.hash = hash;
 	for (const [key, value] of Object.entries(saved)) localStorage.setItem(key, value);
 	const root = document.querySelector<HTMLElement>("#app")!;
 	render(root, createWorkspaces(localStorage, text.defaultWorkspaceName));
@@ -195,4 +196,55 @@ test("when another tab deletes the workspace open here, this tab switches to one
 
 	assert.equal(root.querySelector(".workspace-name")?.textContent, text.defaultWorkspaceName(1));
 	assert.equal(localStorage.getItem(dataKey(secondId)), null); // not written back
+});
+
+const press = (target: Element, key: string, modifiers: KeyboardEventInit = {}) =>
+	target.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, bubbles: true, cancelable: true, ...modifiers }));
+
+test("a deleted entity comes back with the Undo button, and goes again with Ctrl+Y", () => {
+	const root = startApp({ "entities-app": library });
+	const [undo, redo] = root.querySelectorAll<HTMLButtonElement>(".history-button") as unknown as [HTMLButtonElement, HTMLButtonElement];
+	assert.equal(undo.disabled, true);
+
+	stub({ confirm: () => true });
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.delete).click();
+	assert.equal(undo.disabled, false);
+
+	undo.click();
+	assert.ok(byText(root, "td", "Dune"));
+	assert.equal(savedData().entities.length, 1);
+	assert.equal(redo.disabled, false);
+
+	press(document.body, "y");
+	assert.equal(savedData().entities.length, 0);
+	assert.equal(root.querySelector("td"), null);
+});
+
+test("Ctrl+Z undoes outside text fields; inside one it's left to the browser's text undo", () => {
+	const root = startApp({ "entities-app": library });
+	stub({ confirm: () => true });
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.delete).click();
+
+	const nameInput = root.querySelector<HTMLInputElement>("#entity-form input")!;
+	assert.equal(press(nameInput, "z"), true); // not handled: the default (text undo) isn't prevented
+	assert.equal(savedData().entities.length, 0);
+
+	assert.equal(press(document.body, "z"), false);
+	assert.equal(savedData().entities.length, 1);
+	press(document.body, "z", { shiftKey: true });
+	assert.equal(savedData().entities.length, 0);
+});
+
+test("canvas changes can be undone too: the Undo button follows them without the page being drawn again", () => {
+	const data = JSON.parse(library);
+	data.boards = [{ id: "b", name: "Board 1", cards: [{ id: "c", entityId: "01J00000000000000000000000", x: 0, y: 0, width: 240, height: 160 }], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] }];
+	const root = startApp({ "entities-app": JSON.stringify(data) }, "#canvas");
+	const [undo] = root.querySelectorAll<HTMLButtonElement>(".history-button");
+
+	root.querySelector<HTMLButtonElement>(".canvas-board .card-remove")!.click();
+	assert.equal(root.querySelector(".canvas-board .canvas-card"), null);
+	assert.equal(undo!.disabled, false);
+
+	undo!.click();
+	assert.ok(root.querySelector('.canvas-board .canvas-card[data-card-id="c"]'));
 });

@@ -100,11 +100,35 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 	/** Warnings about the saved data, below the top bar; updated on its own, since failed saves can happen on the canvas. */
 	const banner = el("div", { className: "problem-banner", role: "alert" });
 
-	/** Opens a workspace's store, keeping the banner up to date while it's the active one. */
+	/** Undo and redo in the top bar; updated on their own, since most canvas changes don't draw the page again. */
+	const undoButton = el("button", { type: "button", className: "history-button", onclick: () => undoChange() }, "↶");
+	const redoButton = el("button", { type: "button", className: "history-button", onclick: () => redoChange() }, "↷");
+	const historyButtons = el("div", { className: "history-buttons" }, undoButton, redoButton);
+	const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
+
+	function renderHistoryButtons(): void {
+		const { canUndo, canRedo } = store.history;
+		const shortcut = (key: string) => (isMac ? `⌘${key}` : `Ctrl+${key}`);
+		Object.assign(undoButton, { disabled: !canUndo, title: `${text.undo} (${shortcut("Z")})`, ariaLabel: text.undo });
+		Object.assign(redoButton, { disabled: !canRedo, title: `${text.redo} (${shortcut(isMac ? "⇧Z" : "Y")})`, ariaLabel: text.redo });
+	}
+
+	function undoChange(): void {
+		if (store.undo()) rerender();
+	}
+
+	function redoChange(): void {
+		if (store.redo()) rerender();
+	}
+
+	/** Opens a workspace's store, keeping the banner and undo buttons up to date while it's the active one. */
 	function openStore(id: string): Store {
 		const opened = workspaces.openStore(id);
 		opened.onProblemsChange(() => {
 			if (opened === store) renderBanner();
+		});
+		opened.onHistoryChange(() => {
+			if (opened === store) renderHistoryButtons();
 		});
 		return opened;
 	}
@@ -223,6 +247,7 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 		}
 		const route: Route = location.hash === "#canvas" ? "canvas" : location.hash === "#viewer" ? "viewer" : "data";
 		renderBanner();
+		renderHistoryButtons();
 		root.replaceChildren(
 			// One header, so the page keeps its two rows (top, content) with or without warnings.
 			el("header", {}, navBar(route), banner),
@@ -262,7 +287,7 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 			tab("data", text.tabData),
 			tab("canvas", text.tabCanvas),
 			tab("viewer", text.tabViewer),
-			el("div", { className: "nav-menus" }, workspaceMenu(), settingsMenu()),
+			el("div", { className: "nav-menus" }, historyButtons, workspaceMenu(), settingsMenu()),
 		);
 		nav.querySelector(".current")?.setAttribute("aria-current", "page");
 		return nav;
@@ -1154,6 +1179,18 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 		if (cleared || e.key === dataKey(id)) store.reload();
 		else if (e.key !== INDEX_KEY) return; // another workspace's data, or a preference
 		rerender();
+	});
+
+	// Ctrl/⌘+Z undoes, Ctrl/⌘+Shift+Z or Ctrl+Y redoes; in text fields they stay the browser's own text undo.
+	document.addEventListener("keydown", (e) => {
+		if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+		if ((e.target as Element).closest?.("input, select, textarea, [contenteditable]")) return;
+		const key = e.key.toLowerCase();
+		const redo = (key === "z" && e.shiftKey) || (key === "y" && !e.shiftKey);
+		if (key !== "z" && !redo) return;
+		e.preventDefault();
+		if (redo) redoChange();
+		else undoChange();
 	});
 
 	window.addEventListener("hashchange", rerender);

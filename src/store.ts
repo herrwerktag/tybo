@@ -29,6 +29,9 @@ import {
 
 export type Store = ReturnType<typeof createStore>;
 
+/** How many changes can be undone. */
+const HISTORY_LIMIT = 100;
+
 function newBoard(name: string): Board {
 	return { id: ulid(), name, cards: [], viewport: defaultViewport(), drawings: [] };
 }
@@ -226,6 +229,12 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 	let { data, problem: loadProblem } = load();
 	let saveFailed = false;
 	const problemListeners: (() => void)[] = [];
+	/** Earlier versions of the data for undo (newest last), and undone ones for redo. */
+	let undoStack: AppData[] = [];
+	let redoStack: AppData[] = [];
+	const historyListeners: (() => void)[] = [];
+	/** The data as last saved, to tell changes that change nothing. */
+	let savedJson = JSON.stringify(data);
 
 	function load(): { data: AppData; problem: LoadProblem | null } {
 		let raw: string | null;
@@ -262,10 +271,11 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 	}
 
 	function save(): void {
+		savedJson = JSON.stringify(data);
 		if (loadProblem?.code === "notBackedUp") return; // keep the saved original until it's backed up
 		let failed = false;
 		try {
-			storage.setItem(key, JSON.stringify(data));
+			storage.setItem(key, savedJson);
 		} catch {
 			// Storage full or blocked: keep working in memory, and say so.
 			failed = true;
@@ -276,9 +286,31 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 		}
 	}
 
-	function updateBoard(boardId: string, fn: (board: Board) => Board): void {
-		data = { ...data, boards: data.boards.map((b) => (b.id === boardId ? fn(b) : b)) };
+	/** Makes `next` the data and saves it; the data before goes onto the undo history. Changes that change nothing are skipped. */
+	function change(next: AppData): void {
+		if (JSON.stringify(next) === savedJson) return;
+		undoStack = [...undoStack.slice(1 - HISTORY_LIMIT), data];
+		redoStack = [];
+		data = next;
 		save();
+		for (const listener of historyListeners) listener();
+	}
+
+	/** Undo and redo restore everything but pan and zoom, which stay as they are now. */
+	function restore(snapshot: AppData): void {
+		const viewports = new Map(data.boards.map((b) => [b.id, b.viewport]));
+		data = { ...snapshot, boards: snapshot.boards.map((b) => ({ ...b, viewport: viewports.get(b.id) ?? b.viewport })) };
+		save();
+		for (const listener of historyListeners) listener();
+	}
+
+	const withBoard = (boardId: string, fn: (board: Board) => Board): AppData => ({
+		...data,
+		boards: data.boards.map((b) => (b.id === boardId ? fn(b) : b)),
+	});
+
+	function updateBoard(boardId: string, fn: (board: Board) => Board): void {
+		change(withBoard(boardId, fn));
 	}
 
 	/** Applies fn to the board holding the drawing. */
@@ -318,6 +350,11 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 		/** Reads the saved data again, e.g. after another tab saved it, so the next save here doesn't overwrite that. */
 		reload(): void {
 			({ data, problem: loadProblem } = load());
+			savedJson = JSON.stringify(data);
+			// The history is from before the other tab's changes; undoing it would undo those too.
+			undoStack = [];
+			redoStack = [];
+			for (const listener of historyListeners) listener();
 		},
 
 		/** Calls `listener` whenever `problems.saveFailed` changes. */
@@ -339,8 +376,7 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 				contentTemplate,
 				color,
 			};
-			data = { ...data, types: [...data.types, type] };
-			save();
+			change({ ...data, types: [...data.types, type] });
 			return type;
 		},
 
@@ -354,17 +390,17 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 				contentTemplate,
 				color: color ?? current?.color ?? nextTypeColor(data.types.map((t) => t.color)),
 			};
-			data = reconcile({ ...data, types: data.types.map((t) => (t.id === typeId ? updated : t)) });
-			save();
+			change(reconcile({ ...data, types: data.types.map((t) => (t.id === typeId ? updated : t)) }));
 		},
 
 		deleteType(typeId: string): void {
-			data = reconcile({
-				...data,
-				types: data.types.filter((t) => t.id !== typeId),
-				entities: data.entities.filter((e) => e.typeId !== typeId),
-			});
-			save();
+			change(
+				reconcile({
+					...data,
+					types: data.types.filter((t) => t.id !== typeId),
+					entities: data.entities.filter((e) => e.typeId !== typeId),
+				}),
+			);
 		},
 
 		addEntity(
@@ -375,8 +411,7 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 			description = "",
 		): Entity {
 			const entity: Entity = { id: ulid(), typeId, name: name.trim(), content, description, values };
-			data = { ...data, entities: [...data.entities, entity] };
-			save();
+			change({ ...data, entities: [...data.entities, entity] });
 			return entity;
 		},
 
@@ -388,24 +423,21 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 			values: Record<string, PropertyValue>,
 			description?: string,
 		): void {
-			data = {
+			change({
 				...data,
 				entities: data.entities.map((e) =>
 					e.id === entityId ? { ...e, name: name.trim(), content, description: description ?? e.description, values } : e,
 				),
-			};
-			save();
+			});
 		},
 
 		deleteEntity(entityId: string): void {
-			data = reconcile({ ...data, entities: data.entities.filter((e) => e.id !== entityId) });
-			save();
+			change(reconcile({ ...data, entities: data.entities.filter((e) => e.id !== entityId) }));
 		},
 
 		addBoard(name: string): Board {
 			const board = newBoard(name.trim() || `Board ${data.boards.length + 1}`);
-			data = { ...data, boards: [...data.boards, board] };
-			save();
+			change({ ...data, boards: [...data.boards, board] });
 			return board;
 		},
 
@@ -417,8 +449,7 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 		/** Deletes a board and its cards (never the entities). The last board can't be deleted. */
 		deleteBoard(boardId: string): void {
 			if (data.boards.length <= 1) return;
-			data = { ...data, boards: data.boards.filter((b) => b.id !== boardId) };
-			save();
+			change({ ...data, boards: data.boards.filter((b) => b.id !== boardId) });
 		},
 
 		/** Adds a new card for the entity at (x, y), on top of the board's other cards. */
@@ -461,8 +492,39 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 			updateDrawingBoard(drawingId, (b) => ({ ...b, drawings: b.drawings.filter((d) => d.id !== drawingId) }));
 		},
 
+		/** Pan and zoom are saved, but not part of the undo history. */
 		setViewport(boardId: string, viewport: Viewport): void {
-			updateBoard(boardId, (b) => ({ ...b, viewport: { ...viewport, zoom: clampZoom(viewport.zoom) } }));
+			data = withBoard(boardId, (b) => ({ ...b, viewport: { ...viewport, zoom: clampZoom(viewport.zoom) } }));
+			save();
+		},
+
+		get history(): { canUndo: boolean; canRedo: boolean } {
+			return { canUndo: undoStack.length > 0, canRedo: redoStack.length > 0 };
+		},
+
+		/** Takes back the last change; false if there's none. */
+		undo(): boolean {
+			const previous = undoStack.at(-1);
+			if (!previous) return false;
+			undoStack = undoStack.slice(0, -1);
+			redoStack = [...redoStack, data];
+			restore(previous);
+			return true;
+		},
+
+		/** Makes the last undone change again; false if there's none. */
+		redo(): boolean {
+			const next = redoStack.at(-1);
+			if (!next) return false;
+			redoStack = redoStack.slice(0, -1);
+			undoStack = [...undoStack, data];
+			restore(next);
+			return true;
+		},
+
+		/** Calls `listener` whenever `history` may have changed. */
+		onHistoryChange(listener: () => void): void {
+			historyListeners.push(listener);
 		},
 
 		/** How many property values (across all entities) point to this entity. */

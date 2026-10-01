@@ -54,6 +54,8 @@ const en = {
 		"This page couldn't be shown. Changes saved so far are kept. Reload the page, or first export this workspace to keep a copy.",
 
 	// Common actions
+	undo: "Undo",
+	redo: "Redo",
 	save: "Save",
 	cancel: "Cancel",
 	edit: "Edit",
@@ -245,6 +247,8 @@ const de: Messages = {
 	errorScreenHint:
 		"Diese Seite konnte nicht angezeigt werden. Bisher gespeicherte Änderungen bleiben erhalten. Lade die Seite neu oder exportiere vorher diesen Arbeitsbereich, um eine Kopie zu behalten.",
 
+	undo: "Rückgängig",
+	redo: "Wiederholen",
 	save: "Speichern",
 	cancel: "Abbrechen",
 	edit: "Bearbeiten",
