@@ -45,6 +45,14 @@ const en = {
 	downloadOriginal: "Download original",
 	dismiss: "Dismiss",
 
+	// Unexpected errors
+	unexpectedError: (message: string) =>
+		`Something went wrong: ${message}. Changes saved so far are kept; reloading the page may help.`,
+	reload: "Reload",
+	errorScreenTitle: "Something went wrong",
+	errorScreenHint:
+		"This page couldn't be shown. Changes saved so far are kept. Reload the page, or first export this workspace to keep a copy.",
+
 	// Common actions
 	save: "Save",
 	cancel: "Cancel",
@@ -229,6 +237,13 @@ const de: Messages = {
 	saveFailed: "Änderungen können nicht gespeichert werden: Der Browserspeicher ist voll oder blockiert. Sie bleiben nur erhalten, bis dieser Tab geschlossen wird.",
 	downloadOriginal: "Original herunterladen",
 	dismiss: "Schließen",
+
+	unexpectedError: (message) =>
+		`Etwas ist schiefgelaufen: ${message}. Bisher gespeicherte Änderungen bleiben erhalten; ein Neuladen der Seite kann helfen.`,
+	reload: "Neu laden",
+	errorScreenTitle: "Etwas ist schiefgelaufen",
+	errorScreenHint:
+		"Diese Seite konnte nicht angezeigt werden. Bisher gespeicherte Änderungen bleiben erhalten. Lade die Seite neu oder exportiere vorher diesen Arbeitsbereich, um eine Kopie zu behalten.",
 
 	save: "Speichern",
 	cancel: "Abbrechen",

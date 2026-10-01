@@ -427,6 +427,22 @@ button:disabled {
 	color: var(--error);
 }
 
+/* Shown instead of the page when it can't be drawn. */
+.error-screen {
+	width: 100%;
+	max-width: 40rem;
+	margin: 3rem auto;
+	padding: 0 1rem;
+	display: grid;
+	gap: 0.75rem;
+}
+
+.error-detail {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--error);
+}
+
 .problem-banner p + p {
 	margin-top: 0.25rem;
 }

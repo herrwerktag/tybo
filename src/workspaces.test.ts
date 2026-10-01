@@ -166,3 +166,20 @@ test("importing damaged data repairs and backs it up; with storage full nothing 
 	assert.equal(blocked.addImported("X", { types: [], entities: [] }), null);
 	assert.equal(blocked.list.length, 1);
 });
+
+test("works without crypto.randomUUID, which browsers only offer on HTTPS and localhost", () => {
+	Object.defineProperty(crypto, "randomUUID", { value: undefined, configurable: true });
+	try {
+		const workspaces = createWorkspaces(memoryStorage(), workspaceName);
+		const store = workspaces.openStore(workspaces.add("Plain HTTP").id);
+		const type = store.addType("Book", [titleDraft], "");
+		const entity = store.addEntity(type.id, "Dune", "", {});
+		const board = store.addBoard("Second");
+		store.addCard(board.id, entity.id, 0, 0);
+		store.addDrawing(board.id, { kind: "line", points: [{ x: 0, y: 0 }, { x: 1, y: 1 }], color: "#4a4a4a" });
+		assert.equal(store.data.boards[1]?.drawings.length, 1);
+	} finally {
+		delete (crypto as { randomUUID?: unknown }).randomUUID; // the prototype's method shows through again
+	}
+	assert.equal(typeof crypto.randomUUID, "function");
+});

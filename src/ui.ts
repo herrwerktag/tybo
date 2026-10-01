@@ -44,6 +44,8 @@ interface UiState {
 	openMenu: MenuName | null;
 	/** Whether the warning about this workspace's unreadable saved data was dismissed. */
 	loadProblemDismissed: boolean;
+	/** The last error thrown outside rendering (e.g. in a click handler), shown until the page is reloaded. */
+	unexpectedError: string | null;
 }
 
 type MenuName = "settings" | "workspace";
@@ -85,6 +87,11 @@ function setting(label: string, control: HTMLElement): HTMLElement {
 	return el("label", { className: "field" }, el("span", { className: "setting-label" }, label), control);
 }
 
+/** A thrown value as text for the user. */
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
 function newDraftProperty(): DraftProperty {
 	return { name: "", kind: "text", options: [], reference: null, cardDisplay: "list" };
 }
@@ -117,7 +124,16 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 		focusHandle: null,
 		openMenu: null,
 		loadProblemDismissed: false,
+		unexpectedError: null,
 	};
+
+	const reloadButton = () => el("button", { type: "button", onclick: () => location.reload() }, text.reload);
+
+	function exportActiveWorkspace(): void {
+		const { name } = workspaces.active;
+		const date = new Date().toISOString().slice(0, 10);
+		downloadFile(`${safeFileName(name)} ${date}.json`, exportWorkspace(name, store.data));
+	}
 
 	function renderBanner(): void {
 		const { load, saveFailed } = store.problems;
@@ -137,6 +153,9 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 				]
 			: [];
 		const messages: Node[] = [];
+		if (state.unexpectedError !== null) {
+			messages.push(el("p", {}, text.unexpectedError(state.unexpectedError), " ", reloadButton()));
+		}
 		if (saveFailed) messages.push(el("p", {}, text.saveFailed));
 		if (load?.code === "notBackedUp") {
 			messages.push(el("p", {}, text.loadNotBackedUp, ...download));
@@ -168,7 +187,36 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 		state.typeErrors = [];
 	}
 
+	/** Draws the page; if that fails, shows the error screen instead of a half-drawn page. */
 	function rerender(): void {
+		try {
+			renderPage();
+		} catch (error) {
+			console.error(error);
+			renderErrorScreen(error);
+		}
+	}
+
+	/** The data is still in memory, so it can be exported before reloading. */
+	function renderErrorScreen(error: unknown): void {
+		root.replaceChildren(
+			el(
+				"section",
+				{ className: "error-screen", role: "alert" },
+				el("h2", {}, text.errorScreenTitle),
+				el("p", {}, text.errorScreenHint),
+				el("pre", { className: "error-detail mono" }, errorMessage(error)),
+				el(
+					"div",
+					{ className: "row" },
+					reloadButton(),
+					el("button", { type: "button", onclick: exportActiveWorkspace }, text.exportButton),
+				),
+			),
+		);
+	}
+
+	function renderPage(): void {
 		if (!store.data.types.some((t) => t.id === state.selectedTypeId)) {
 			state.selectedTypeId = store.data.types[0]?.id ?? null;
 			state.editingEntityId = null;
@@ -349,10 +397,7 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 				{
 					type: "button",
 					title: text.exportWorkspace,
-					onclick: () => {
-						const date = new Date().toISOString().slice(0, 10);
-						downloadFile(`${safeFileName(current.name)} ${date}.json`, exportWorkspace(current.name, store.data));
-					},
+					onclick: exportActiveWorkspace,
 				},
 				text.exportButton,
 			),
@@ -1088,6 +1133,14 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 		);
 		return el("div", { className: "table-wrap" }, table);
 	}
+
+	// Errors outside rendering (event handlers, timers, promises) would otherwise go unnoticed.
+	const showUnexpectedError = (error: unknown) => {
+		state.unexpectedError = errorMessage(error);
+		renderBanner();
+	};
+	window.addEventListener("error", (e) => showUnexpectedError(e.error ?? e.message));
+	window.addEventListener("unhandledrejection", (e) => showUnexpectedError(e.reason));
 
 	window.addEventListener("hashchange", rerender);
 	rerender();

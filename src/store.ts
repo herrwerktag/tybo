@@ -30,7 +30,7 @@ import {
 export type Store = ReturnType<typeof createStore>;
 
 function newBoard(name: string): Board {
-	return { id: crypto.randomUUID(), name, cards: [], viewport: defaultViewport(), drawings: [] };
+	return { id: ulid(), name, cards: [], viewport: defaultViewport(), drawings: [] };
 }
 
 function emptyData(): AppData {
@@ -75,12 +75,12 @@ function normalizeBoard(board: Partial<Board> | undefined, fallbackName: string)
 					(c: Partial<CanvasCard>) =>
 						typeof c.entityId === "string" && isNumber(c.x) && isNumber(c.y) && isNumber(c.width) && isNumber(c.height),
 				)
-				.map((c: CanvasCard) => ({ ...c, id: typeof c.id === "string" ? c.id : crypto.randomUUID() }))
+				.map((c: CanvasCard) => ({ ...c, id: typeof c.id === "string" ? c.id : ulid() }))
 		: [];
 	const v = board?.viewport;
 	const viewport = v && isNumber(v.x) && isNumber(v.y) && isNumber(v.zoom) ? { ...v, zoom: clampZoom(v.zoom) } : defaultViewport();
 	return {
-		id: typeof board?.id === "string" ? board.id : crypto.randomUUID(),
+		id: typeof board?.id === "string" ? board.id : ulid(),
 		name: typeof board?.name === "string" && board.name.trim() !== "" ? board.name : fallbackName,
 		cards,
 		viewport,
@@ -210,7 +210,7 @@ function normalize(data: AppData): AppData {
 
 function toPropertyDefs(properties: DraftProperty[]): PropertyDef[] {
 	return properties.map((p) => ({
-		id: p.id ?? crypto.randomUUID(),
+		id: p.id ?? ulid(),
 		name: p.name.trim(),
 		kind: p.kind,
 		options: p.kind === "options" ? p.options.map((o) => o.trim()) : [],
@@ -328,7 +328,7 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 			color = nextTypeColor(data.types.map((t) => t.color)),
 		): EntityType {
 			const type: EntityType = {
-				id: crypto.randomUUID(),
+				id: ulid(),
 				name: name.trim(),
 				properties: toPropertyDefs(properties),
 				contentTemplate,
@@ -418,7 +418,7 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 
 		/** Adds a new card for the entity at (x, y), on top of the board's other cards. */
 		addCard(boardId: string, entityId: string, x: number, y: number): CanvasCard {
-			const card: CanvasCard = { id: crypto.randomUUID(), entityId, x, y, ...DEFAULT_CARD_SIZE };
+			const card: CanvasCard = { id: ulid(), entityId, x, y, ...DEFAULT_CARD_SIZE };
 			updateBoard(boardId, (b) => ({ ...b, cards: [...b.cards, card] }));
 			return card;
 		},
@@ -442,7 +442,7 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 		},
 
 		addDrawing(boardId: string, drawing: NewDrawing): Drawing {
-			const added = { ...drawing, id: crypto.randomUUID() } as Drawing;
+			const added = { ...drawing, id: ulid() } as Drawing;
 			updateBoard(boardId, (b) => ({ ...b, drawings: [...b.drawings, added] }));
 			return added;
 		},

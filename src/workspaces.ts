@@ -1,5 +1,6 @@
 import type { AppData, EntityType } from "./model.js";
 import { createStore, looksLikeAppData, type Store } from "./store.js";
+import { ulid } from "./ulid.js";
 
 /** A workspace: its own entity types, entities and boards, stored under its own key. */
 export interface WorkspaceInfo {
@@ -85,7 +86,7 @@ export function createWorkspaces(storage: WorkspaceStorage, defaultName: (n: num
 	save();
 
 	function newWorkspace(name: string): WorkspaceInfo {
-		return { id: crypto.randomUUID(), name: name.trim() || defaultName(index.workspaces.length + 1) };
+		return { id: ulid(), name: name.trim() || defaultName(index.workspaces.length + 1) };
 	}
 
 	function append(workspace: WorkspaceInfo): WorkspaceInfo {

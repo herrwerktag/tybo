@@ -1,7 +1,10 @@
 /** Crockford base32, as used by ULID (https://github.com/ulid/spec). */
 const ENCODING = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
-/** A 26-character ULID: 10 characters of millisecond timestamp, then 16 random characters. */
+/**
+ * A 26-character ULID: 10 characters of millisecond timestamp, then 16 random characters. Used for all ids, since
+ * unlike crypto.randomUUID it also works outside secure contexts (e.g. the dev server opened over plain HTTP).
+ */
 export function ulid(time = Date.now()): string {
 	let timePart = "";
 	for (let i = 0, t = time; i < 10; i++) {
