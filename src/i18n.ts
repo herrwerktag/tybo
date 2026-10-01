@@ -85,6 +85,10 @@ const en = {
 	arrow: "Arrow",
 	arrows: { to: "To target", from: "From target", none: "None" } satisfies Record<LineArrow, string>,
 	lineLabel: "Line label",
+	shownOnTargetAs: "Shown on target as",
+	setOn: (typeName: string, propertyName: string) => `Set on ${typeName} → ${propertyName}`,
+	shownOnTargetAsPlaceholder: "e.g. responsible for (optional)",
+	shownOnTargetAsHint: "Lists the entities that reference it on the target's cards, form and table. Leave empty to not show it.",
 	lineLabelPlaceholder: "property name",
 	validation: (error: ValidationError): string => {
 		switch (error.code) {
@@ -225,6 +229,11 @@ const de: Messages = {
 	arrow: "Pfeil",
 	arrows: { to: "Zum Ziel", from: "Vom Ziel", none: "Keiner" },
 	lineLabel: "Linienbeschriftung",
+	shownOnTargetAs: "Beim Ziel angezeigt als",
+	setOn: (typeName, propertyName) => `Festgelegt bei ${typeName} → ${propertyName}`,
+	shownOnTargetAsPlaceholder: "z. B. verantwortlich für (optional)",
+	shownOnTargetAsHint:
+		"Zeigt beim Ziel – auf Karten, im Formular und in der Tabelle – die Entitäten, die darauf verweisen. Leer lassen, um es nicht anzuzeigen.",
 	lineLabelPlaceholder: "Name der Eigenschaft",
 	validation: (error) => {
 		switch (error.code) {

@@ -7,6 +7,7 @@ import {
 	cardRows,
 	effectiveCardDisplay,
 	filterEntities,
+	inverseCardRows,
 	referencedIds,
 	type Board,
 	type CanvasCard,
@@ -479,7 +480,11 @@ export function canvasView(store: Store, { readOnly }: { readOnly: boolean }): H
 			el("strong", { className: "card-title", title: entity.name }, entity.name),
 		);
 		// Properties and content scroll together below the fixed header.
-		const rows = type ? cardRows(type, entity, entityNames, isLinked) : [];
+		// Own properties first, then the reverse side of references to this entity (e.g. "responsible for").
+		const rows = [
+			...(type ? cardRows(type, entity, entityNames, isLinked) : []),
+			...inverseCardRows(store.data, entity, entityNames, isLinked),
+		];
 		const body = el(
 			"div",
 			{ className: "card-body" },

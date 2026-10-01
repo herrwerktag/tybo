@@ -106,6 +106,7 @@ function normalize(data: AppData): AppData {
 							...prop.reference,
 							arrow: LINE_ARROWS.includes(prop.reference.arrow) ? prop.reference.arrow : "to",
 							lineLabel: typeof prop.reference.lineLabel === "string" ? prop.reference.lineLabel : "",
+							inverseLabel: typeof prop.reference.inverseLabel === "string" ? prop.reference.inverseLabel : "",
 						}
 					: null,
 				cardDisplay: cardDisplayFor(prop, showOnCard),
@@ -135,7 +136,10 @@ function toPropertyDefs(properties: DraftProperty[]): PropertyDef[] {
 		name: p.name.trim(),
 		kind: p.kind,
 		options: p.kind === "options" ? p.options.map((o) => o.trim()) : [],
-		reference: p.kind === "reference" && p.reference ? { ...p.reference, lineLabel: p.reference.lineLabel.trim() } : null,
+		reference:
+			p.kind === "reference" && p.reference
+				? { ...p.reference, lineLabel: p.reference.lineLabel.trim(), inverseLabel: p.reference.inverseLabel.trim() }
+				: null,
 		cardDisplay: effectiveCardDisplay(p),
 	}));
 }

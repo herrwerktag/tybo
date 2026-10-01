@@ -3,6 +3,8 @@ import {
 	TYPE_COLORS,
 	effectiveCardDisplay,
 	entityTypeMap,
+	inverseReferences,
+	inverseRelations,
 	migrateValues,
 	moveItem,
 	newReference,
@@ -482,6 +484,19 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 					),
 				),
 			);
+			row.append(
+				setting(
+					text.shownOnTargetAs,
+					el("input", {
+						value: reference.inverseLabel,
+						placeholder: text.shownOnTargetAsPlaceholder,
+						title: text.shownOnTargetAsHint,
+						oninput: (e) => {
+							reference.inverseLabel = (e.target as HTMLInputElement).value;
+						},
+					}),
+				),
+			);
 			if (effectiveCardDisplay(prop) === "line") {
 				row.append(
 					el(
@@ -786,6 +801,7 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 				: []),
 			el("label", { className: "field" }, el("span", {}, text.name), nameInput),
 			...fields.map((f) => f.element),
+			...(editing ? inverseFields(editing) : []),
 			el("label", { className: "field wide" }, el("span", {}, text.content), contentInput),
 			el(
 				"div",
@@ -808,6 +824,25 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 					: []),
 			),
 		);
+	}
+
+	/** Read-only fields for the reverse side of references (e.g. "responsible for"); edited on the other entities. */
+	function inverseFields(entity: Entity): HTMLElement[] {
+		const names = new Map(store.data.entities.map((e) => [e.id, e.name]));
+		const found = inverseReferences(store.data, entity);
+		return inverseRelations(store.data.types, entity.typeId).map((relation) => {
+			const ids = found.find((r) => r.prop.id === relation.prop.id)?.entityIds ?? [];
+			const sourceType = store.data.types.find((t) => t.id === relation.sourceTypeId)?.name ?? "?";
+			return el(
+				"div",
+				{ className: "field" },
+				el("span", {}, relation.label),
+				ids.length > 0
+					? el("span", {}, ids.map((id) => names.get(id) ?? "?").join(", "))
+					: el("span", { className: "muted" }, "—"),
+				el("span", { className: "field-hint muted" }, text.setOn(sourceType, relation.prop.name)),
+			);
+		});
 	}
 
 	/** An input for one property in the entity form, plus a function reading its raw value. */
@@ -866,6 +901,14 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 			return p.kind === "reference" ? parts.map((id) => names.get(id) ?? "?").join(", ") : parts.join(", ");
 		};
 
+		// Read-only columns for the reverse side of references to this type, e.g. "responsible for" on Role.
+		const inverseColumns = inverseRelations(store.data.types, type.id);
+		const sourceTypeName = (id: string) => store.data.types.find((t) => t.id === id)?.name ?? "?";
+		const inverseCell = (entity: Entity, propId: string): string => {
+			const ids = inverseReferences(store.data, entity).find((r) => r.prop.id === propId)?.entityIds ?? [];
+			return ids.length > 0 ? ids.map((id) => names.get(id) ?? "?").join(", ") : "—";
+		};
+
 		const table = el(
 			"table",
 			{},
@@ -878,6 +921,9 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 					el("th", {}, text.id),
 					el("th", {}, text.name),
 					...type.properties.map((p) => el("th", {}, p.name)),
+					...inverseColumns.map((c) =>
+						el("th", { className: "inverse", title: text.setOn(sourceTypeName(c.sourceTypeId), c.prop.name) }, c.label),
+					),
 					el("th", {}),
 				),
 			),
@@ -891,6 +937,7 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 						el("td", { className: "mono nowrap", title: entity.id }, `…${entity.id.slice(-8)}`),
 						el("td", {}, entity.name),
 						...type.properties.map((p) => el("td", {}, format(p, entity.values[p.id]))),
+						...inverseColumns.map((c) => el("td", { className: "inverse" }, inverseCell(entity, c.prop.id))),
 						el(
 							"td",
 							{},

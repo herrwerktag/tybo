@@ -13,6 +13,11 @@ export interface ReferenceDef {
 	arrow: LineArrow;
 	/** Text on the line; empty means the property name. */
 	lineLabel: string;
+	/**
+	 * Label for the reverse direction, shown on the referenced entities (e.g. "responsible for" on a Role,
+	 * for Activity.responsible). Empty means the reverse direction isn't shown.
+	 */
+	inverseLabel: string;
 }
 
 export type LineArrow = "to" | "from" | "none";
@@ -20,7 +25,7 @@ export type LineArrow = "to" | "from" | "none";
 export const LINE_ARROWS: readonly LineArrow[] = ["to", "from", "none"];
 
 export function newReference(typeId: string): ReferenceDef {
-	return { typeId, multiple: false, arrow: "to", lineLabel: "" };
+	return { typeId, multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" };
 }
 
 export interface PropertyDef {
@@ -166,6 +171,73 @@ export function cardRows(
 		const values = prop.kind === "reference" ? entityIds.map((id) => entityNames.get(id)!) : raw;
 		if (values.length === 0) return [];
 		return [{ label: prop.name, kind: prop.kind, values, entityIds, targetTypeId: prop.reference?.typeId ?? null }];
+	});
+}
+
+/** Entities pointing at `entity` through one reference property that has an inverse label. */
+export interface InverseReference {
+	label: string;
+	/** The property doing the referencing, on `sourceTypeId`. */
+	prop: PropertyDef;
+	sourceTypeId: string;
+	/** The referencing entities, in entity order. */
+	entityIds: string[];
+}
+
+/** Reference properties (of any type) that target `targetTypeId` and have an inverse label, in type and property order. */
+export function inverseRelations(
+	types: readonly EntityType[],
+	targetTypeId: string,
+): Omit<InverseReference, "entityIds">[] {
+	return types.flatMap((sourceType) =>
+		sourceType.properties.flatMap((prop) => {
+			const label = prop.reference?.inverseLabel.trim() ?? "";
+			if (prop.kind !== "reference" || label === "" || prop.reference?.typeId !== targetTypeId) return [];
+			return [{ label, prop, sourceTypeId: sourceType.id }];
+		}),
+	);
+}
+
+/**
+ * The reverse side of references: for each inverse relation targeting `entity`'s type, the entities whose value
+ * includes `entity` (relations without any are left out). Computed from the stored references, never stored itself.
+ */
+export function inverseReferences(data: Pick<AppData, "types" | "entities">, entity: Entity): InverseReference[] {
+	return inverseRelations(data.types, entity.typeId).flatMap((relation) => {
+		const entityIds = data.entities
+			.filter(
+				(e) =>
+					e.typeId === relation.sourceTypeId && referencedIds(relation.prop, e.values[relation.prop.id]).includes(entity.id),
+			)
+			.map((e) => e.id);
+		return entityIds.length > 0 ? [{ ...relation, entityIds }] : [];
+	});
+}
+
+/**
+ * Card rows for the reverse side of references. Like forward `line` references, entities already connected to
+ * this card by a line (`isLinked` says their card is on the board) are left out.
+ */
+export function inverseCardRows(
+	data: Pick<AppData, "types" | "entities">,
+	entity: Entity,
+	entityNames: ReadonlyMap<string, string>,
+	isLinked: (entityId: string) => boolean = () => false,
+): CardRow[] {
+	return inverseReferences(data, entity).flatMap(({ label, prop, sourceTypeId, entityIds }) => {
+		const shown = entityIds.filter(
+			(id) => entityNames.has(id) && !(effectiveCardDisplay(prop) === "line" && isLinked(id)),
+		);
+		if (shown.length === 0) return [];
+		return [
+			{
+				label,
+				kind: "reference" as const,
+				values: shown.map((id) => entityNames.get(id)!),
+				entityIds: shown,
+				targetTypeId: sourceTypeId,
+			},
+		];
 	});
 }
 

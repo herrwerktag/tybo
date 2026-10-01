@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { TYPE_COLORS, cardRows, filterEntities, migrateValues, moveItem, nextTypeColor, parseValue, validateType, type PropertyDef } from "./model.js";
+import {
+	TYPE_COLORS,
+	cardRows,
+	filterEntities,
+	inverseCardRows,
+	inverseReferences,
+	inverseRelations,
+	migrateValues, moveItem, nextTypeColor, parseValue, validateType, type PropertyDef } from "./model.js";
 
 const noTypes = new Set<string>();
 const noEntities = new Map<string, string>();
@@ -50,8 +57,8 @@ test("migrateValues: text to options keeps values that match an option", () => {
 	assert.deepEqual(migrateValues({ t: "Emma" }, [asOptions], noEntities), { t: null });
 });
 
-const author: PropertyDef = { id: "a", name: "author", kind: "reference", options: [], reference: { typeId: "person", multiple: false, arrow: "to", lineLabel: "" }, cardDisplay: "list" };
-const tags: PropertyDef = { id: "g", name: "tags", kind: "reference", options: [], reference: { typeId: "tag", multiple: true, arrow: "to", lineLabel: "" }, cardDisplay: "list" };
+const author: PropertyDef = { id: "a", name: "author", kind: "reference", options: [], reference: { typeId: "person", multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" };
+const tags: PropertyDef = { id: "g", name: "tags", kind: "reference", options: [], reference: { typeId: "tag", multiple: true, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" };
 const entityTypes = new Map([
 	["p1", "person"],
 	["p2", "person"],
@@ -77,14 +84,14 @@ test("parseValue: a list is not a valid text value", () => {
 });
 
 test("migrateValues: single and multiple references convert into each other", () => {
-	const asMultiple: PropertyDef = { ...author, reference: { typeId: "person", multiple: true, arrow: "to", lineLabel: "" } };
+	const asMultiple: PropertyDef = { ...author, reference: { typeId: "person", multiple: true, arrow: "to", lineLabel: "", inverseLabel: "" } };
 	assert.deepEqual(migrateValues({ a: "p1" }, [asMultiple], entityTypes), { a: ["p1"] });
-	const asSingle: PropertyDef = { ...tags, reference: { typeId: "tag", multiple: false, arrow: "to", lineLabel: "" } };
+	const asSingle: PropertyDef = { ...tags, reference: { typeId: "tag", multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" } };
 	assert.deepEqual(migrateValues({ g: ["t2", "t1"] }, [asSingle], entityTypes), { g: "t2" });
 });
 
 test("migrateValues: changing the target type clears references", () => {
-	const toTag: PropertyDef = { ...author, reference: { typeId: "tag", multiple: false, arrow: "to", lineLabel: "" } };
+	const toTag: PropertyDef = { ...author, reference: { typeId: "tag", multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" } };
 	assert.deepEqual(migrateValues({ a: "p1" }, [toTag], entityTypes), { a: null });
 });
 
@@ -177,4 +184,50 @@ test("filterEntities matches names ignoring case and accents, optionally by type
 	assert.deepEqual(names("  GEMELDET "), ["Incident gemeldet"]);
 	assert.deepEqual(names("", "activity"), ["Überprüfung", "Deployment-Paket erstellen"]);
 	assert.deepEqual(names("paket", "event"), []);
+});
+
+test("inverse references: who points at an entity, only for properties with an inverse label", () => {
+	const ref = (id: string, name: string, inverseLabel: string): PropertyDef => ({
+		id,
+		name,
+		kind: "reference",
+		options: [],
+		reference: { typeId: "role", multiple: false, arrow: "to", lineLabel: "", inverseLabel },
+		cardDisplay: "list",
+	});
+	const responsible = ref("resp", "responsible", "responsible for");
+	const reviewer = ref("rev", "reviewer", ""); // no inverse label: not shown on the role
+	const types = [
+		{ id: "role", name: "Role", properties: [], contentTemplate: "", color: "#c4dafa" },
+		{ id: "activity", name: "Activity", properties: [responsible, reviewer], contentTemplate: "", color: "#c8ebbf" },
+	];
+	const entities = [
+		{ id: "r1", typeId: "role", name: "Dev", content: "", values: {} },
+		{ id: "a1", typeId: "activity", name: "Build", content: "", values: { resp: "r1", rev: "r1" } },
+		{ id: "a2", typeId: "activity", name: "Ship", content: "", values: { resp: "r1" } },
+		{ id: "a3", typeId: "activity", name: "Plan", content: "", values: { resp: null } },
+	];
+	const role = entities[0]!;
+	const data = { types, entities };
+	const names = new Map(entities.map((e) => [e.id, e.name]));
+
+	assert.deepEqual(
+		inverseRelations(types, "role").map((r) => [r.label, r.prop.id, r.sourceTypeId]),
+		[["responsible for", "resp", "activity"]],
+	);
+	assert.deepEqual(
+		inverseReferences(data, role).map((r) => [r.label, r.entityIds]),
+		[["responsible for", ["a1", "a2"]]],
+	);
+	assert.deepEqual(inverseCardRows(data, role, names), [
+		{ label: "responsible for", kind: "reference", values: ["Build", "Ship"], entityIds: ["a1", "a2"], targetTypeId: "activity" },
+	]);
+
+	// Drawn as a line: activities already connected on the board are left out of the row.
+	const asLine = {
+		types: [types[0]!, { ...types[1]!, properties: [{ ...responsible, cardDisplay: "line" as const }, reviewer] }],
+		entities,
+	};
+	assert.deepEqual(inverseCardRows(asLine, role, names, (id) => id === "a1")[0]?.values, ["Ship"]);
+	assert.deepEqual(inverseCardRows(asLine, role, names, () => true), []);
 });
