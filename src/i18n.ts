@@ -23,6 +23,12 @@ const en = {
 	newWorkspace: "New workspace",
 	copyTypesFrom: (name: string) => `Copy entity types from ${name}`,
 	renameWorkspace: "Rename workspace",
+	exportButton: "Export",
+	exportWorkspace: "Download this workspace as a JSON file",
+	importButton: "Import…",
+	importWorkspace: "Add a workspace from an exported JSON file",
+	importInvalid: "This file isn't an exported workspace.",
+	importNoSpace: "The browser storage is full, so the workspace couldn't be imported.",
 	deleteWorkspace: "Delete workspace",
 	lastWorkspace: "The last workspace can't be deleted",
 	confirmDeleteWorkspace: (name: string, types: number, entities: number, boards: number) =>
@@ -36,6 +42,7 @@ const en = {
 	loadNotBackedUp:
 		"Some saved data couldn't be read, and there's no room to back it up. Changes aren't saved, so the original stays untouched. Free up browser storage, then reload.",
 	saveFailed: "Changes can't be saved: the browser storage is full or blocked. They're kept only until this tab is closed.",
+	downloadOriginal: "Download original",
 	dismiss: "Dismiss",
 
 	// Common actions
@@ -202,6 +209,12 @@ const de: Messages = {
 	newWorkspace: "Neuer Arbeitsbereich",
 	copyTypesFrom: (name) => `Entitätstypen aus ${name} übernehmen`,
 	renameWorkspace: "Arbeitsbereich umbenennen",
+	exportButton: "Exportieren",
+	exportWorkspace: "Diesen Arbeitsbereich als JSON-Datei herunterladen",
+	importButton: "Importieren…",
+	importWorkspace: "Einen Arbeitsbereich aus einer exportierten JSON-Datei hinzufügen",
+	importInvalid: "Diese Datei ist kein exportierter Arbeitsbereich.",
+	importNoSpace: "Der Browserspeicher ist voll, daher konnte der Arbeitsbereich nicht importiert werden.",
 	deleteWorkspace: "Arbeitsbereich löschen",
 	lastWorkspace: "Der letzte Arbeitsbereich kann nicht gelöscht werden",
 	confirmDeleteWorkspace: (name, types, entities, boards) =>
@@ -214,6 +227,7 @@ const de: Messages = {
 	loadNotBackedUp:
 		"Ein Teil der gespeicherten Daten konnte nicht gelesen werden, und für eine Sicherung ist kein Platz. Änderungen werden nicht gespeichert, damit das Original erhalten bleibt. Gib Browserspeicher frei und lade die Seite neu.",
 	saveFailed: "Änderungen können nicht gespeichert werden: Der Browserspeicher ist voll oder blockiert. Sie bleiben nur erhalten, bis dieser Tab geschlossen wird.",
+	downloadOriginal: "Original herunterladen",
 	dismiss: "Schließen",
 
 	save: "Speichern",

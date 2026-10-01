@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createStore } from "./store.js";
-import { createWorkspaces, dataKey } from "./workspaces.js";
+import { createWorkspaces, dataKey, exportWorkspace, readWorkspaceFile } from "./workspaces.js";
 
 function memoryStorage(initial: Record<string, string> = {}) {
 	const map = new Map(Object.entries(initial));
@@ -117,4 +117,52 @@ test("workspaces keep their data separate", () => {
 		workspaces.openStore(other.id).data.boards.map((b) => b.name),
 		["Board 1", "Extra"],
 	);
+});
+
+test("an exported workspace imports as a new one with the same data; the others stay untouched", () => {
+	const storage = memoryStorage();
+	const workspaces = createWorkspaces(storage, workspaceName);
+	const source = workspaces.openStore("default");
+	const book = source.addType("Book", [titleDraft], "");
+	const dune = source.addEntity(book.id, "Dune", "Spice", { [book.properties[0]!.id]: "Dune" });
+	source.addCard(source.data.boards[0]!.id, dune.id, 10, 20);
+
+	const file = readWorkspaceFile(exportWorkspace("Library", source.data));
+	assert.equal(file?.name, "Library");
+	const imported = workspaces.addImported(file!.name ?? "", file!.data);
+	assert.equal(imported?.name, "Library");
+	assert.deepEqual(
+		workspaces.list.map((w) => w.name),
+		["Workspace 1", "Library"],
+	);
+	const store = workspaces.openStore(imported!.id);
+	assert.deepEqual(store.data, source.data);
+	assert.equal(store.problems.load, null);
+});
+
+test("workspace files: plain saved data is accepted too; anything else is rejected", () => {
+	const data = { types: [], entities: [], boards: [] };
+	assert.deepEqual(readWorkspaceFile(JSON.stringify(data)), { name: null, data });
+	assert.equal(readWorkspaceFile("{not json"), null);
+	assert.equal(readWorkspaceFile('{"hello":1}'), null);
+	assert.equal(readWorkspaceFile(JSON.stringify({ format: "entities-app-workspace", version: 1, name: "X", data: {} })), null);
+});
+
+test("importing damaged data repairs and backs it up; with storage full nothing is added", () => {
+	const storage = memoryStorage();
+	const workspaces = createWorkspaces(storage, workspaceName);
+	const damaged = { types: [{ id: "t", name: "Book", properties: [] }, "bad"], entities: [] };
+	const store = workspaces.openStore(workspaces.addImported("Damaged", damaged)!.id);
+	assert.deepEqual(
+		store.data.types.map((t) => t.name),
+		["Book"],
+	);
+	assert.equal(store.problems.load?.code, "partlyUnreadable");
+
+	const full = { ...memoryStorage(), setItem: () => {
+		throw new Error("quota");
+	} };
+	const blocked = createWorkspaces(full, workspaceName);
+	assert.equal(blocked.addImported("X", { types: [], entities: [] }), null);
+	assert.equal(blocked.list.length, 1);
 });

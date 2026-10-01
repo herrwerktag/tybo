@@ -120,6 +120,11 @@ const isColor = (v: unknown): v is string => typeof v === "string" && /^#[0-9a-f
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
+/** Whether `value` has the shape of saved data (types and entities lists), so loading can make use of it. */
+export function looksLikeAppData(value: unknown): value is Record<string, unknown> & Pick<AppData, "types" | "entities"> {
+	return isObject(value) && Array.isArray(value.types) && Array.isArray(value.entities);
+}
+
 /**
  * Drops types and properties without a string id and name, and entities without a type id, one by one, so a
  * single malformed item never costs the rest. Missing property lists and values become empty.
@@ -233,7 +238,7 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 		if (raw === null) return { data: emptyData(), problem: null };
 		try {
 			const parsed: unknown = JSON.parse(raw);
-			if (isObject(parsed) && Array.isArray(parsed.types) && Array.isArray(parsed.entities)) {
+			if (looksLikeAppData(parsed)) {
 				const kept = keepWellFormed(parsed as unknown as AppData);
 				const loaded = reconcile(normalize(kept));
 				const complete = itemCount(kept) === itemCount(parsed as unknown as AppData);
@@ -298,6 +303,16 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 		/** Problems reading the saved data, and whether the last save failed (changes are then only in memory). */
 		get problems(): { load: LoadProblem | null; saveFailed: boolean } {
 			return { load: loadProblem, saveFailed };
+		},
+
+		/** The saved text that couldn't be read in full (from its backup, or still under the store's own key); else null. */
+		originalText(): string | null {
+			if (!loadProblem) return null;
+			try {
+				return storage.getItem("backupKey" in loadProblem ? loadProblem.backupKey : key);
+			} catch {
+				return null;
+			}
 		},
 
 		/** Calls `listener` whenever `problems.saveFailed` changes. */

@@ -9,6 +9,22 @@ export function el<K extends keyof HTMLElementTagNameMap>(
 	return node;
 }
 
+/** Saves text as a file through the browser's download. */
+export function downloadFile(fileName: string, contents: string, type = "application/json"): void {
+	const url = URL.createObjectURL(new Blob([contents], { type }));
+	const link = el("a", { href: url, download: fileName });
+	document.body.append(link); // some browsers only follow links in the page
+	link.click();
+	link.remove();
+	// Revoked later, since some browsers start reading the file only after the click returns.
+	setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** A file name from user text: characters most systems forbid become "-". */
+export function safeFileName(name: string): string {
+	return name.replace(/[\\/:*?"<>|]/g, "-").trim() || "workspace";
+}
+
 /** A small colored circle marking an entity type. */
 export function typeDot(color: string): HTMLElement {
 	const dot = el("span", { className: "type-dot", ariaHidden: "true" });

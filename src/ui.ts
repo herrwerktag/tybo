@@ -22,10 +22,10 @@ import {
 	type ValidationError,
 } from "./model.js";
 import { canvasView } from "./canvas.js";
-import { el, typeDot } from "./dom.js";
+import { downloadFile, el, safeFileName, typeDot } from "./dom.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
 import type { Store } from "./store.js";
-import type { Workspaces } from "./workspaces.js";
+import { exportWorkspace, readWorkspaceFile, type Workspaces } from "./workspaces.js";
 
 interface UiState {
 	editingTypeId: string | null;
@@ -121,10 +121,25 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 
 	function renderBanner(): void {
 		const { load, saveFailed } = store.problems;
+		const original = store.originalText();
+		// The saved text that couldn't be read, to fix by hand and import again.
+		const download = original
+			? [
+					" ",
+					el(
+						"button",
+						{
+							type: "button",
+							onclick: () => downloadFile(`${safeFileName(workspaces.active.name)} original.json`, original),
+						},
+						text.downloadOriginal,
+					),
+				]
+			: [];
 		const messages: Node[] = [];
 		if (saveFailed) messages.push(el("p", {}, text.saveFailed));
 		if (load?.code === "notBackedUp") {
-			messages.push(el("p", {}, text.loadNotBackedUp));
+			messages.push(el("p", {}, text.loadNotBackedUp, ...download));
 		} else if (load && !state.loadProblemDismissed) {
 			const message = load.code === "unreadable" ? text.loadUnreadable(load.backupKey) : text.loadPartlyUnreadable(load.backupKey);
 			const dismiss = el(
@@ -138,7 +153,7 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 				},
 				text.dismiss,
 			);
-			messages.push(el("p", {}, message, " ", dismiss));
+			messages.push(el("p", {}, message, ...download, " ", dismiss));
 		}
 		banner.replaceChildren(...messages);
 		banner.hidden = messages.length === 0;
@@ -310,6 +325,41 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 			el("button", { type: "submit", className: "primary" }, text.create),
 		);
 
+		// Export downloads the current workspace; import always adds a new one, so nothing is overwritten.
+		const fileInput = el("input", {
+			type: "file",
+			accept: ".json,application/json",
+			hidden: true,
+			onchange: async () => {
+				const file = fileInput.files?.[0];
+				fileInput.value = "";
+				if (!file) return;
+				const read = readWorkspaceFile(await file.text().catch(() => ""));
+				if (!read) return alert(text.importInvalid);
+				const added = workspaces.addImported(read.name ?? file.name.replace(/\.json$/i, ""), read.data);
+				if (!added) return alert(text.importNoSpace);
+				switchWorkspace(added.id);
+			},
+		});
+		const transfer = el(
+			"div",
+			{ className: "row" },
+			el(
+				"button",
+				{
+					type: "button",
+					title: text.exportWorkspace,
+					onclick: () => {
+						const date = new Date().toISOString().slice(0, 10);
+						downloadFile(`${safeFileName(current.name)} ${date}.json`, exportWorkspace(current.name, store.data));
+					},
+				},
+				text.exportButton,
+			),
+			el("button", { type: "button", title: text.importWorkspace, onclick: () => fileInput.click() }, text.importButton),
+			fileInput,
+		);
+
 		const button = el(
 			"button",
 			{ title: text.workspaces, ariaLabel: text.workspaceMenuLabel(current.name) },
@@ -355,6 +405,7 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 					text.delete,
 				),
 			),
+			transfer,
 			newForm,
 		);
 	}

@@ -1,5 +1,5 @@
-import type { EntityType } from "./model.js";
-import { createStore, type Store } from "./store.js";
+import type { AppData, EntityType } from "./model.js";
+import { createStore, looksLikeAppData, type Store } from "./store.js";
 
 /** A workspace: its own entity types, entities and boards, stored under its own key. */
 export interface WorkspaceInfo {
@@ -21,6 +21,32 @@ const LEGACY_DATA_KEY = "entities-app";
 
 export function dataKey(workspaceId: string): string {
 	return workspaceId === DEFAULT_ID ? LEGACY_DATA_KEY : `${LEGACY_DATA_KEY}:${workspaceId}`;
+}
+
+/** Marks an exported workspace file. */
+const EXPORT_FORMAT = "entities-app-workspace";
+
+/** A workspace as a JSON file: its name and data, marked with the format and its version. */
+export function exportWorkspace(name: string, data: AppData): string {
+	return JSON.stringify({ format: EXPORT_FORMAT, version: 1, name, exportedAt: new Date().toISOString(), data }, null, 2);
+}
+
+/**
+ * Reads an exported workspace file, or plain saved data (e.g. a downloaded backup; it has no name). Null if it's
+ * neither. The data is only checked for its outline; the store checks and repairs the rest when it loads it.
+ */
+export function readWorkspaceFile(text: string): { name: string | null; data: unknown } | null {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch {
+		return null;
+	}
+	const file = parsed as { format?: unknown; name?: unknown; data?: unknown } | null;
+	if (file?.format === EXPORT_FORMAT) {
+		return looksLikeAppData(file.data) ? { name: typeof file.name === "string" ? file.name : null, data: file.data } : null;
+	}
+	return looksLikeAppData(parsed) ? { name: null, data: parsed } : null;
 }
 
 export type Workspaces = ReturnType<typeof createWorkspaces>;
@@ -58,6 +84,16 @@ export function createWorkspaces(storage: WorkspaceStorage, defaultName: (n: num
 
 	save();
 
+	function newWorkspace(name: string): WorkspaceInfo {
+		return { id: crypto.randomUUID(), name: name.trim() || defaultName(index.workspaces.length + 1) };
+	}
+
+	function append(workspace: WorkspaceInfo): WorkspaceInfo {
+		index = { ...index, workspaces: [...index.workspaces, workspace] };
+		save();
+		return workspace;
+	}
+
 	return {
 		get list(): readonly WorkspaceInfo[] {
 			return index.workspaces;
@@ -75,19 +111,25 @@ export function createWorkspaces(storage: WorkspaceStorage, defaultName: (n: num
 
 		/** Adds a workspace, empty or starting with copies of the given entity types (no entities or boards). */
 		add(name: string, copyTypesFrom: readonly EntityType[] = []): WorkspaceInfo {
-			const workspace: WorkspaceInfo = {
-				id: crypto.randomUUID(),
-				name: name.trim() || defaultName(index.workspaces.length + 1),
-			};
+			const workspace = newWorkspace(name);
 			try {
 				// The store fills in the rest (a default board, defaults for any missing fields) when it loads this.
 				storage.setItem(dataKey(workspace.id), JSON.stringify({ types: copyTypesFrom, entities: [], boards: [] }));
 			} catch {
 				// Storage blocked: the workspace starts empty.
 			}
-			index = { ...index, workspaces: [...index.workspaces, workspace] };
-			save();
-			return workspace;
+			return append(workspace);
+		},
+
+		/** Adds a workspace holding imported data. Null if it couldn't be stored (then nothing is added). */
+		addImported(name: string, data: unknown): WorkspaceInfo | null {
+			const workspace = newWorkspace(name);
+			try {
+				storage.setItem(dataKey(workspace.id), JSON.stringify(data));
+			} catch {
+				return null; // storage full or blocked
+			}
+			return append(workspace);
 		},
 
 		rename(id: string, name: string): void {

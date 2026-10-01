@@ -212,6 +212,7 @@ test("unreadable data is backed up before starting fresh; data that loads fine i
 	assert.equal(problem?.code, "unreadable");
 	assert.ok(problem && "backupKey" in problem);
 	assert.equal(storage.getItem(problem.backupKey), "{not json");
+	assert.equal(store.originalText(), "{not json");
 
 	store.addType("Book", [titleDraft], "");
 	const reloaded = createStore(storage);
@@ -234,6 +235,7 @@ test("when the backup can't be written, saving stays paused so the original isn'
 	store.addType("Book", [titleDraft], "");
 	assert.equal(store.data.types.length, 1);
 	assert.equal(map.get("entities-app"), "{not json");
+	assert.equal(store.originalText(), "{not json");
 });
 
 test("failed saves are reported until a save succeeds again", () => {
