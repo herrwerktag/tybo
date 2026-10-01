@@ -19,6 +19,21 @@ export interface PropertyDef {
 	options: string[];
 	/** The target of a `reference` property; null for other kinds. */
 	reference: ReferenceDef | null;
+	/** How the value appears on the entity's canvas cards. */
+	cardDisplay: CardDisplay;
+}
+
+/**
+ * `list`: in the card's label/value list. `line`: references only, drawn as a connector to the
+ * target's card (listed instead while that card isn't on the board). `hidden`: not on cards.
+ */
+export type CardDisplay = "list" | "line" | "hidden";
+
+export const CARD_DISPLAYS: readonly CardDisplay[] = ["list", "line", "hidden"];
+
+/** `line` only applies to references; other kinds fall back to `list`. */
+export function effectiveCardDisplay(prop: Pick<PropertyDef, "kind" | "cardDisplay">): CardDisplay {
+	return prop.cardDisplay === "line" && prop.kind !== "reference" ? "list" : prop.cardDisplay;
 }
 
 /** A property as edited in the type form: existing properties keep their id, new ones have none. */
@@ -99,6 +114,45 @@ export interface AppData {
 	entities: Entity[];
 	/** Never empty. */
 	boards: Board[];
+}
+
+/** One label/value row on a canvas card. */
+export interface CardRow {
+	label: string;
+	kind: PropertyKind;
+	/** Text, the chosen option, or the names of the referenced entities. */
+	values: string[];
+	/** For references: the type the entities belong to (for its color). */
+	targetTypeId: string | null;
+}
+
+/** The ids of the entities a property value references (empty for other kinds or no value). */
+export function referencedIds(prop: PropertyDef, value: PropertyValue | undefined): string[] {
+	if (prop.kind !== "reference" || value === null || value === undefined) return [];
+	return typeof value === "string" ? [value] : value;
+}
+
+/**
+ * The rows a card shows, in property order: `list` properties with a value, plus the targets of `line`
+ * properties that `isLinked` says can't be drawn as a line (their card isn't on the board).
+ */
+export function cardRows(
+	type: EntityType,
+	entity: Entity,
+	entityNames: ReadonlyMap<string, string>,
+	isLinked: (entityId: string) => boolean = () => false,
+): CardRow[] {
+	return type.properties.flatMap((prop) => {
+		const value = entity.values[prop.id];
+		const display = effectiveCardDisplay(prop);
+		if (display === "hidden" || value === null || value === undefined) return [];
+		let raw = typeof value === "string" ? [value] : value;
+		if (display === "line") raw = raw.filter((id) => !isLinked(id));
+		const values =
+			prop.kind === "reference" ? raw.flatMap((id) => entityNames.get(id) ?? []) : raw;
+		if (values.length === 0) return [];
+		return [{ label: prop.name, kind: prop.kind, values, targetTypeId: prop.reference?.typeId ?? null }];
+	});
 }
 
 /** Returns a copy of the list with the item at `from` moved to index `to`. */

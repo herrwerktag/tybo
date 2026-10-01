@@ -1,12 +1,14 @@
 import {
 	PROPERTY_KINDS,
 	TYPE_COLORS,
+	effectiveCardDisplay,
 	entityTypeMap,
 	migrateValues,
 	moveItem,
 	nextTypeColor,
 	parseValue,
 	validateType,
+	type CardDisplay,
 	type DraftProperty,
 	type Entity,
 	type EntityType,
@@ -57,8 +59,14 @@ function describeProperty(p: PropertyDef, types: EntityType[]): string {
 	return `${p.name}: text`;
 }
 
+const CARD_DISPLAY_LABELS: readonly [CardDisplay, string][] = [
+	["list", "On card: list"],
+	["line", "On card: line"],
+	["hidden", "Hidden on card"],
+];
+
 function newDraftProperty(): DraftProperty {
-	return { name: "", kind: "text", options: [], reference: null };
+	return { name: "", kind: "text", options: [], reference: null, cardDisplay: "list" };
 }
 
 export function render(root: HTMLElement, store: Store): void {
@@ -123,6 +131,7 @@ export function render(root: HTMLElement, store: Store): void {
 				ariaLabel: "Property type",
 				onchange: () => {
 					prop.kind = kindSelect.value as PropertyKind;
+					prop.cardDisplay = effectiveCardDisplay(prop);
 					if (prop.kind === "reference" && !prop.reference) {
 						prop.reference = { typeId: store.data.types[0]?.id ?? "", multiple: false };
 					}
@@ -177,6 +186,19 @@ export function render(root: HTMLElement, store: Store): void {
 					},
 				}),
 				kindSelect,
+				el(
+					"select",
+					{
+						ariaLabel: "Card display",
+						title: "How this property appears on canvas cards",
+						onchange: (e) => {
+							prop.cardDisplay = (e.target as HTMLSelectElement).value as CardDisplay;
+						},
+					},
+					...CARD_DISPLAY_LABELS.filter(([display]) => display !== "line" || prop.kind === "reference").map(
+						([display, label]) => el("option", { value: display, selected: display === prop.cardDisplay }, label),
+					),
+				),
 				el(
 					"button",
 					{

@@ -419,6 +419,42 @@ th {
 	transform-origin: 0 0;
 }
 
+/* Connector lines live in world coordinates at the layer's origin and never catch the pointer. */
+.connectors {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 1px;
+	height: 1px;
+	overflow: visible;
+	pointer-events: none;
+	color: var(--border-strong);
+}
+
+.connector-line {
+	fill: none;
+	stroke: #8a8a8a;
+	stroke-width: 1.5;
+}
+
+.connector-arrow {
+	stroke: #8a8a8a;
+	stroke-width: 1;
+	stroke-linejoin: round;
+}
+
+.connector-label {
+	font-size: 12px;
+	fill: var(--muted);
+	text-anchor: middle;
+	dominant-baseline: middle;
+	/* A halo in the canvas color keeps the label readable where it crosses the line. */
+	paint-order: stroke;
+	stroke: var(--surface-inset);
+	stroke-width: 4px;
+	stroke-linejoin: round;
+}
+
 .canvas-card {
 	position: absolute;
 	display: grid;
@@ -484,11 +520,73 @@ th {
 	background: rgb(0 0 0 / 0.08);
 }
 
+.card-body {
+	overflow: auto;
+}
+
+/* Label column, value column. */
+.card-props {
+	display: grid;
+	grid-template-columns: minmax(3.5rem, 35%) minmax(0, 1fr);
+	gap: 0.3rem 0.5rem;
+	align-items: baseline;
+	padding: 0.5rem 0.75rem;
+	font-size: 0.9em;
+}
+
+.card-props dt {
+	color: var(--muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.prop-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.prop-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem;
+}
+
+.chip {
+	display: inline-flex;
+	align-items: center;
+	max-width: 100%;
+	padding: 0 0.45rem;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background: var(--surface-inset);
+	font-size: 0.9em;
+	line-height: 1.6;
+	overflow-wrap: anywhere;
+}
+
+/* Small corners (not a pill) so long names wrap cleanly. */
+.ref-tag {
+	max-width: 100%;
+	padding: 0.05rem 0.4rem;
+	border-radius: 4px;
+	background: var(--surface-inset);
+	color: rgb(0 0 0 / 0.8);
+	font-size: 0.9em;
+	line-height: 1.45;
+	overflow-wrap: anywhere;
+}
+
+/* Separates the property list from the content below it. */
+.card-props + .card-content {
+	border-top: 1px solid var(--border);
+}
+
 .card-content {
 	padding: 0.5rem 0.75rem;
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
-	overflow: auto;
 }
 
 .card-resize {

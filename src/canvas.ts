@@ -1,5 +1,17 @@
-import { el, typeDot } from "./dom.js";
-import { DEFAULT_CARD_SIZE, MIN_CARD_SIZE, type Board, type CanvasCard, type Entity, type EntityType } from "./model.js";
+import { connector, nearest, type Rect } from "./connectors.js";
+import { el, svgEl, typeDot } from "./dom.js";
+import {
+	DEFAULT_CARD_SIZE,
+	MIN_CARD_SIZE,
+	cardRows,
+	effectiveCardDisplay,
+	referencedIds,
+	type Board,
+	type CanvasCard,
+	type CardRow,
+	type Entity,
+	type EntityType,
+} from "./model.js";
 import type { Store } from "./store.js";
 import { defaultViewport, screenToWorld, zoomAt, type Viewport } from "./viewport.js";
 
@@ -248,18 +260,98 @@ export function canvasView(store: Store): HTMLElement {
 		);
 	}
 
+	/** Lines from `line` reference properties, under the cards. */
+	const connectorLayer = svgEl("svg", { class: "connectors", "aria-hidden": "true" });
+	/** Card positions and sizes by card id; updated live while dragging or resizing. */
+	let cardRects = new Map<string, Rect>();
+	/** One entry per drawn reference: from a card to the nearest of the target entity's cards. */
+	let links: { fromCardId: string; targetCardIds: string[]; label: string; color: string }[] = [];
+
 	function renderCards(): void {
+		const board = currentBoard();
 		const entities = new Map(store.data.entities.map((e) => [e.id, e]));
+		const entityNames = new Map(store.data.entities.map((e) => [e.id, e.name]));
 		const types = new Map(store.data.types.map((t) => [t.id, t]));
-		layer.replaceChildren(
-			...currentBoard().cards.flatMap((card) => {
-				const entity = entities.get(card.entityId);
-				return entity ? [cardElement(card, entity, types.get(entity.typeId))] : [];
+		const cardsByEntity = new Map<string, CanvasCard[]>();
+		for (const card of board.cards) cardsByEntity.set(card.entityId, [...(cardsByEntity.get(card.entityId) ?? []), card]);
+
+		cardRects = new Map(board.cards.map((c) => [c.id, { x: c.x, y: c.y, width: c.width, height: c.height }]));
+		links = [];
+		const cardNodes = board.cards.flatMap((card) => {
+			const entity = entities.get(card.entityId);
+			if (!entity) return [];
+			const type = types.get(entity.typeId);
+			// Other cards on this board showing the given entity.
+			const targetCards = (entityId: string) => (cardsByEntity.get(entityId) ?? []).filter((c) => c.id !== card.id);
+			for (const prop of type?.properties ?? []) {
+				if (effectiveCardDisplay(prop) !== "line") continue;
+				const color = types.get(prop.reference?.typeId ?? "")?.color ?? "";
+				for (const id of referencedIds(prop, entity.values[prop.id])) {
+					const targets = targetCards(id);
+					if (targets.length > 0) {
+						links.push({ fromCardId: card.id, targetCardIds: targets.map((c) => c.id), label: prop.name, color });
+					}
+				}
+			}
+			return [cardElement(card, entity, type, entityNames, (id) => targetCards(id).length > 0)];
+		});
+		layer.replaceChildren(connectorLayer, ...cardNodes);
+		drawConnectors();
+	}
+
+	function drawConnectors(): void {
+		connectorLayer.replaceChildren(
+			...links.flatMap(({ fromCardId, targetCardIds, label, color }) => {
+				const from = cardRects.get(fromCardId);
+				const to = from && nearest(from, targetCardIds.flatMap((id) => cardRects.get(id) ?? []));
+				if (!from || !to) return [];
+				const { path, mid, arrow } = connector(from, to);
+				return [
+					svgEl(
+						"g",
+						{ class: "connector" },
+						svgEl("path", { class: "connector-line", d: path }),
+						svgEl("polygon", { class: "connector-arrow", points: arrow, fill: color || "currentColor" }),
+						svgEl("text", { class: "connector-label", x: mid.x, y: mid.y }, label),
+					),
+				];
 			}),
 		);
 	}
 
-	function cardElement(card: CanvasCard, entity: Entity, type: EntityType | undefined): HTMLElement {
+	/** Label/value rows: text as plain text, options as a grey chip, references as tags in the target type's color. */
+	function propertyList(rows: CardRow[]): HTMLElement {
+		return el(
+			"dl",
+			{ className: "card-props" },
+			...rows.flatMap((row) => {
+				const color = store.data.types.find((t) => t.id === row.targetTypeId)?.color;
+				const value =
+					row.kind === "text"
+						? el("dd", { className: "prop-text", title: row.values.join("") }, ...row.values)
+						: el(
+								"dd",
+								{ className: "prop-chips" },
+								...row.values.map((v) => {
+									if (row.kind !== "reference") return el("span", { className: "chip" }, v);
+									// Same color as the top bar of the card it points to.
+									const tag = el("span", { className: "ref-tag" }, v);
+									if (color) tag.style.background = color;
+									return tag;
+								}),
+							);
+				return [el("dt", { title: row.label }, row.label), value];
+			}),
+		);
+	}
+
+	function cardElement(
+		card: CanvasCard,
+		entity: Entity,
+		type: EntityType | undefined,
+		entityNames: ReadonlyMap<string, string>,
+		isLinked: (entityId: string) => boolean,
+	): HTMLElement {
 		// Top bar in the type's color: type label and ×.
 		const bar = el(
 			"div",
@@ -289,11 +381,20 @@ export function canvasView(store: Store): HTMLElement {
 			// Wraps up to three lines; the full name is in the tooltip.
 			el("strong", { className: "card-title", title: entity.name }, entity.name),
 		);
-		const content = entity.content.trim()
-			? el("div", { className: "card-content" }, entity.content)
-			: el("div", { className: "card-content muted" }, "No content");
+		// Properties and content scroll together below the fixed header.
+		const rows = type ? cardRows(type, entity, entityNames, isLinked) : [];
+		const body = el(
+			"div",
+			{ className: "card-body" },
+			...(rows.length > 0 ? [propertyList(rows)] : []),
+			...(entity.content.trim()
+				? [el("div", { className: "card-content" }, entity.content)]
+				: rows.length === 0
+					? [el("div", { className: "card-content muted" }, "No content")]
+					: []),
+		);
 		const resize = el("div", { className: "card-resize", title: "Resize" });
-		const node = el("article", { className: "canvas-card" }, header, content, resize);
+		const node = el("article", { className: "canvas-card" }, header, body, resize);
 		Object.assign(node.style, {
 			left: `${card.x}px`,
 			top: `${card.y}px`,
@@ -309,8 +410,12 @@ export function canvasView(store: Store): HTMLElement {
 			trackPointer(
 				e,
 				(dx, dy) => {
-					node.style.left = `${card.x + dx / zoom}px`;
-					node.style.top = `${card.y + dy / zoom}px`;
+					const x = card.x + dx / zoom;
+					const y = card.y + dy / zoom;
+					node.style.left = `${x}px`;
+					node.style.top = `${y}px`;
+					cardRects.set(card.id, { x, y, width: card.width, height: card.height });
+					drawConnectors();
 				},
 				(dx, dy) => {
 					store.moveCard(card.id, card.x + dx / zoom, card.y + dy / zoom);
@@ -334,6 +439,8 @@ export function canvasView(store: Store): HTMLElement {
 					const { width, height } = size(dx, dy);
 					node.style.width = `${width}px`;
 					node.style.height = `${height}px`;
+					cardRects.set(card.id, { x: card.x, y: card.y, width, height });
+					drawConnectors();
 				},
 				(dx, dy) => {
 					const { width, height } = size(dx, dy);
@@ -375,8 +482,8 @@ export function canvasView(store: Store): HTMLElement {
 				zoomBy(Math.exp(-e.deltaY * scale * 0.01), e.clientX - rect.left, e.clientY - rect.top);
 				return;
 			}
-			const content = (e.target as Element).closest(".card-content");
-			if (content && content.scrollHeight > content.clientHeight) return; // let long content scroll
+			const body = (e.target as Element).closest(".card-body");
+			if (body && body.scrollHeight > body.clientHeight) return; // let long card bodies scroll
 			e.preventDefault();
 			setViewport({ ...viewport, x: viewport.x - e.deltaX * scale, y: viewport.y - e.deltaY * scale });
 		},

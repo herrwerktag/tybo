@@ -3,7 +3,9 @@ import { clampZoom, defaultViewport, type Viewport } from "./viewport.js";
 import {
 	DEFAULT_CARD_SIZE,
 	MIN_CARD_SIZE,
+	CARD_DISPLAYS,
 	PROPERTY_KINDS,
+	effectiveCardDisplay,
 	entityTypeMap,
 	migrateValues,
 	nextTypeColor,
@@ -71,6 +73,12 @@ function reconcile(data: AppData): AppData {
 }
 
 /** Fills in fields that data saved by earlier versions may lack (e.g. number/boolean/date kinds, non-string values, entity names, ULIDs). */
+/** Reads `cardDisplay`, or converts the `showOnCard` checkbox saved by the previous version. */
+function cardDisplayFor(prop: PropertyDef, showOnCard: unknown): PropertyDef["cardDisplay"] {
+	if (CARD_DISPLAYS.includes(prop.cardDisplay)) return effectiveCardDisplay(prop);
+	return showOnCard === false ? "hidden" : "list";
+}
+
 const isColor = (v: unknown): v is string => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
 
 function normalize(data: AppData): AppData {
@@ -88,11 +96,12 @@ function normalize(data: AppData): AppData {
 			...type,
 			color: colorFor(type.color),
 			contentTemplate: typeof type.contentTemplate === "string" ? type.contentTemplate : "",
-			properties: type.properties.map((prop) => ({
+			properties: type.properties.map(({ showOnCard, ...prop }: PropertyDef & { showOnCard?: unknown }) => ({
 				...prop,
 				kind: PROPERTY_KINDS.includes(prop.kind) ? prop.kind : "text",
 				options: Array.isArray(prop.options) ? prop.options : [],
 				reference: prop.reference ?? null,
+				cardDisplay: cardDisplayFor(prop, showOnCard),
 			})),
 		})),
 		entities: data.entities.map((entity) => {
@@ -120,6 +129,7 @@ function toPropertyDefs(properties: DraftProperty[]): PropertyDef[] {
 		kind: p.kind,
 		options: p.kind === "options" ? p.options.map((o) => o.trim()) : [],
 		reference: p.kind === "reference" && p.reference ? { ...p.reference } : null,
+		cardDisplay: effectiveCardDisplay(p),
 	}));
 }
 

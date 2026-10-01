@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { TYPE_COLORS, migrateValues, moveItem, nextTypeColor, parseValue, validateType, type PropertyDef } from "./model.js";
+import { TYPE_COLORS, cardRows, migrateValues, moveItem, nextTypeColor, parseValue, validateType, type PropertyDef } from "./model.js";
 
 const noTypes = new Set<string>();
 const noEntities = new Map<string, string>();
 
-const title: PropertyDef = { id: "t", name: "title", kind: "text", options: [], reference: null };
-const status: PropertyDef = { id: "s", name: "status", kind: "options", options: ["Draft", "Published"], reference: null };
+const title: PropertyDef = { id: "t", name: "title", kind: "text", options: [], reference: null, cardDisplay: "list" };
+const status: PropertyDef = { id: "s", name: "status", kind: "options", options: ["Draft", "Published"], reference: null, cardDisplay: "list" };
 
 test("parseValue: text trims and treats empty as null", () => {
 	assert.equal(parseValue(title, "  hi  "), "hi");
@@ -50,8 +50,8 @@ test("migrateValues: text to options keeps values that match an option", () => {
 	assert.deepEqual(migrateValues({ t: "Emma" }, [asOptions], noEntities), { t: null });
 });
 
-const author: PropertyDef = { id: "a", name: "author", kind: "reference", options: [], reference: { typeId: "person", multiple: false } };
-const tags: PropertyDef = { id: "g", name: "tags", kind: "reference", options: [], reference: { typeId: "tag", multiple: true } };
+const author: PropertyDef = { id: "a", name: "author", kind: "reference", options: [], reference: { typeId: "person", multiple: false }, cardDisplay: "list" };
+const tags: PropertyDef = { id: "g", name: "tags", kind: "reference", options: [], reference: { typeId: "tag", multiple: true }, cardDisplay: "list" };
 const entityTypes = new Map([
 	["p1", "person"],
 	["p2", "person"],
@@ -110,4 +110,43 @@ test("moveItem moves one item and leaves the input unchanged", () => {
 	assert.deepEqual(moveItem(items, 1, 1), items);
 	assert.deepEqual(moveItem(items, 1, 99), ["a", "c", "d", "b"]);
 	assert.deepEqual(items, ["a", "b", "c", "d"]);
+});
+
+test("cardRows lists visible properties with a value, in order, with reference names", () => {
+	const hidden: PropertyDef = { ...title, id: "h", name: "internal", cardDisplay: "hidden" };
+	const type = { id: "book", name: "Book", properties: [title, hidden, status, author, tags], contentTemplate: "", color: "#dcdcdc" };
+	const names = new Map([
+		["p1", "Frank"],
+		["t1", "Sci-fi"],
+		["t2", "Classic"],
+	]);
+	const entity = {
+		id: "e",
+		typeId: "book",
+		name: "Dune",
+		content: "",
+		values: { t: "Dune", h: "secret", s: null, a: "p1", g: ["t1", "gone", "t2"] },
+	};
+	assert.deepEqual(cardRows(type, entity, names), [
+		{ label: "title", kind: "text", values: ["Dune"], targetTypeId: null },
+		{ label: "author", kind: "reference", values: ["Frank"], targetTypeId: "person" },
+		{ label: "tags", kind: "reference", values: ["Sci-fi", "Classic"], targetTypeId: "tag" },
+	]);
+	assert.deepEqual(cardRows(type, { ...entity, values: { a: "gone" } }, names), []);
+});
+
+test("cardRows: line references are left out while their card is linked, listed otherwise", () => {
+	const asLine: PropertyDef = { ...tags, cardDisplay: "line" };
+	const type = { id: "book", name: "Book", properties: [asLine], contentTemplate: "", color: "#dcdcdc" };
+	const names = new Map([
+		["t1", "Sci-fi"],
+		["t2", "Classic"],
+	]);
+	const entity = { id: "e", typeId: "book", name: "Dune", content: "", values: { g: ["t1", "t2"] } };
+	assert.deepEqual(cardRows(type, entity, names, (id) => id === "t1"), [
+		{ label: "tags", kind: "reference", values: ["Classic"], targetTypeId: "tag" },
+	]);
+	assert.deepEqual(cardRows(type, entity, names, () => true), []);
+	// Without board information nothing is linked, so everything is listed.
+	assert.equal(cardRows(type, entity, names)[0]?.values.length, 2);
 });

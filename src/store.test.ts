@@ -23,7 +23,7 @@ function assertEmpty(data: AppData) {
 /** The first board, which a fresh store always has. */
 const firstBoard = (store: Store) => store.data.boards[0]!;
 
-const titleDraft: DraftProperty = { name: "title", kind: "text", options: [], reference: null };
+const titleDraft: DraftProperty = { name: "title", kind: "text", options: [], reference: null, cardDisplay: "list" };
 
 test("data persists across store instances", () => {
 	const storage = memoryStorage();
@@ -61,7 +61,7 @@ test("addEntity assigns a ULID; updateEntity keeps it", () => {
 
 test("updateType keeps property ids and migrates only that type's entities", () => {
 	const store = createStore(memoryStorage());
-	const book = store.addType("Book", [titleDraft, { name: "status", kind: "options", options: ["Draft", "Published"], reference: null }], "");
+	const book = store.addType("Book", [titleDraft, { name: "status", kind: "options", options: ["Draft", "Published"], reference: null, cardDisplay: "list" }], "");
 	const film = store.addType("Film", [titleDraft], "");
 	const title = book.properties[0]!;
 	const status = book.properties[1]!;
@@ -72,7 +72,7 @@ test("updateType keeps property ids and migrates only that type's entities", () 
 	store.updateType(book.id, "Novel", [
 		{ ...title, name: "name" },
 		{ ...status, options: ["Published"] },
-		{ name: "author", kind: "text", options: [], reference: null },
+		{ name: "author", kind: "text", options: [], reference: null, cardDisplay: "list" },
 	], "");
 
 	const novel = store.data.types.find((t) => t.id === book.id)!;
@@ -121,6 +121,7 @@ test("loads data saved with the old number/boolean/date kinds as text", () => {
 		kind: "text",
 		options: [],
 		reference: null,
+		cardDisplay: "list",
 	});
 	assert.equal(store.data.entities[0]?.values.p, "42");
 });
@@ -171,8 +172,8 @@ function referenceSetup() {
 	const person = store.addType("Person", [], "");
 	const tag = store.addType("Tag", [], "");
 	const book = store.addType("Book", [
-		{ name: "author", kind: "reference", options: [], reference: { typeId: person.id, multiple: false } },
-		{ name: "tags", kind: "reference", options: [], reference: { typeId: tag.id, multiple: true } },
+		{ name: "author", kind: "reference", options: [], reference: { typeId: person.id, multiple: false }, cardDisplay: "list" },
+		{ name: "tags", kind: "reference", options: [], reference: { typeId: tag.id, multiple: true }, cardDisplay: "list" },
 	], "");
 	const [author, tags] = [book.properties[0]!, book.properties[1]!];
 	const frank = store.addEntity(person.id, "Frank", "", {});
@@ -199,7 +200,7 @@ test("deleting an entity removes it from single and multiple references", () => 
 test("typeReferrers lists other types' reference properties, not self-references", () => {
 	const { store, person, tag, book } = referenceSetup();
 	store.updateType(person.id, "Person", [
-		{ name: "friend", kind: "reference", options: [], reference: { typeId: person.id, multiple: false } },
+		{ name: "friend", kind: "reference", options: [], reference: { typeId: person.id, multiple: false }, cardDisplay: "list" },
 	], "");
 	assert.deepEqual(store.typeReferrers(person.id), ["Book.author"]);
 	assert.deepEqual(store.typeReferrers(tag.id), ["Book.tags"]);
@@ -217,7 +218,7 @@ test("reference values persist across store instances", () => {
 	const store = createStore(storage);
 	const tag = store.addType("Tag", [], "");
 	const book = store.addType("Book", [
-		{ name: "tags", kind: "reference", options: [], reference: { typeId: tag.id, multiple: true } },
+		{ name: "tags", kind: "reference", options: [], reference: { typeId: tag.id, multiple: true }, cardDisplay: "list" },
 	], "");
 	const scifi = store.addEntity(tag.id, "Sci-fi", "", {});
 	const dune = store.addEntity(book.id, "Dune", "", { [book.properties[0]!.id]: [scifi.id] });
@@ -422,4 +423,25 @@ test("types saved without a color get the next free ones in order", () => {
 		types.map((t) => t.color),
 		[palette[1], palette[0], palette[2]],
 	);
+});
+
+test("cardDisplay is saved per property; line falls back to list for non-references", () => {
+	const storage = memoryStorage();
+	const store = createStore(storage);
+	const type = store.addType("Book", [{ ...titleDraft, cardDisplay: "hidden" }], "");
+	assert.equal(createStore(storage).data.types[0]?.properties[0]?.cardDisplay, "hidden");
+
+	store.updateType(type.id, "Book", [{ ...type.properties[0]!, cardDisplay: "line" }], "");
+	assert.equal(store.data.types[0]?.properties[0]?.cardDisplay, "list");
+});
+
+test("the old showOnCard checkbox converts to cardDisplay", () => {
+	const prop = (id: string, extra: object) => ({ id, name: id, kind: "text", options: [], reference: null, ...extra });
+	const old = {
+		types: [{ id: "b", name: "Book", properties: [prop("shown", { showOnCard: true }), prop("off", { showOnCard: false }), prop("older", {})] }],
+		entities: [],
+	};
+	const [shown, off, older] = createStore(memoryStorage({ "entities-app": JSON.stringify(old) })).data.types[0]!.properties;
+	assert.deepEqual([shown?.cardDisplay, off?.cardDisplay, older?.cardDisplay], ["list", "hidden", "list"]);
+	assert.ok(!("showOnCard" in shown!));
 });

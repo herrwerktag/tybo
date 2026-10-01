@@ -15,3 +15,17 @@ export function typeDot(color: string): HTMLElement {
 	dot.style.background = color;
 	return dot;
 }
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** Like el(), for SVG elements: properties are set as attributes. */
+export function svgEl<K extends keyof SVGElementTagNameMap>(
+	tag: K,
+	attributes: Record<string, string | number> = {},
+	...children: (Node | string)[]
+): SVGElementTagNameMap[K] {
+	const node = document.createElementNS(SVG_NS, tag);
+	for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, String(value));
+	node.append(...children);
+	return node;
+}
