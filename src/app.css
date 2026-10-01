@@ -115,6 +115,10 @@ main:has(.canvas-view) {
 	font-weight: 600;
 }
 
+.workspace-option[aria-current="true"]:hover:not(:disabled) {
+	background: var(--highlight);
+}
+
 .workspace-new {
 	display: grid;
 	gap: 0.5rem;
@@ -873,9 +877,49 @@ button.ref-tag {
 	color: #fff;
 }
 
-.toolbar-swatch {
+/* More specific than the general button hover, which would make the white icon unreadable on light grey. */
+.tool-button[aria-pressed="true"]:hover:not(:disabled) {
+	background: #444;
+}
+
+/* Drawing tools: a vertical column on the left edge of the canvas. */
+.drawing-tools {
+	position: absolute;
+	left: 0.75rem;
+	top: 50%;
+	transform: translateY(-50%);
+	flex-direction: column;
+}
+
+/* Colors, text size and Delete: bottom left, next to the tools; shown only while drawing or with a selection. */
+.drawing-style {
+	position: absolute;
+	left: 0.75rem;
+	bottom: 0.75rem;
+	/* Leave room for the zoom controls on the right. */
+	max-width: calc(100% - 20rem);
+	flex-wrap: wrap;
+}
+
+.toolbar-group[hidden] {
+	display: none;
+}
+
+/* Zoom: bottom right. */
+.canvas-zoom {
+	position: absolute;
+	right: 0.75rem;
+	bottom: 0.75rem;
+}
+
+/* Smaller than the swatches in the type form (more specific than .swatch, which comes later). */
+.swatch.toolbar-swatch {
 	width: 1.25rem;
 	height: 1.25rem;
+}
+
+.swatch.toolbar-swatch[aria-pressed="true"] {
+	outline-offset: 1px;
 }
 
 /* Connector lines live in world coordinates at the layer's origin and never catch the pointer. */

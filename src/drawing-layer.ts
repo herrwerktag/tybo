@@ -417,9 +417,11 @@ export function createDrawingLayer(options: {
 			}),
 		);
 
-		// The color applies to the selected drawing, or else to the next one drawn.
+		// The color applies to the selected drawing, or else to the next one drawn. The bar is only shown
+		// while drawing or with a drawing selected, so it isn't in the way while arranging cards.
 		const selected = selectedId ? find(selectedId) : undefined;
 		const current = selected?.color ?? color;
+		styleBar.hidden = tool === "select" && !selected;
 		styleBar.replaceChildren(
 			...DRAWING_COLORS.map(({ name, value }) => {
 				const swatch = el("button", {

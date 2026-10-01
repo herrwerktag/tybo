@@ -825,24 +825,20 @@ export function canvasView(
 		});
 	}
 
-	// Two groups that each stay on one line; on a narrow canvas the zoom group moves below.
-	const toolbar = el(
+	// Each control group has its own place: boards top right, drawing tools on the left edge with their style
+	// bar at the bottom left (see CSS), zoom bottom right.
+	const toolbar = el("div", { className: "canvas-toolbar" }, el("div", { className: "toolbar-group" }, boardControls));
+	const zoomBar = el(
 		"div",
-		{ className: "canvas-toolbar" },
-		el("div", { className: "toolbar-group" }, boardControls),
-		...(readOnly ? [] : [drawing.toolbar, drawing.styleBar]),
+		{ className: "toolbar-group canvas-zoom" },
+		el("button", { type: "button", ariaLabel: text.zoomOut, title: text.zoomOut, onclick: () => zoomBy(1 / 1.2) }, "−"),
+		zoomLabel,
+		el("button", { type: "button", ariaLabel: text.zoomIn, title: text.zoomIn, onclick: () => zoomBy(1.2) }, "+"),
+		// The viewer resets to the board's saved view; the editor to the default.
 		el(
-			"div",
-			{ className: "toolbar-group" },
-			el("button", { type: "button", ariaLabel: text.zoomOut, title: text.zoomOut, onclick: () => zoomBy(1 / 1.2) }, "−"),
-			zoomLabel,
-			el("button", { type: "button", ariaLabel: text.zoomIn, title: text.zoomIn, onclick: () => zoomBy(1.2) }, "+"),
-			// The viewer resets to the board's saved view; the editor to the default.
-			el(
-				"button",
-				{ type: "button", onclick: () => setViewport(readOnly ? { ...currentBoard().viewport } : defaultViewport()) },
-				text.resetView,
-			),
+			"button",
+			{ type: "button", onclick: () => setViewport(readOnly ? { ...currentBoard().viewport } : defaultViewport()) },
+			text.resetView,
 		),
 	);
 
@@ -851,7 +847,13 @@ export function canvasView(
 	if (!readOnly) buildPanel();
 	renderPanel();
 	renderCards();
-	canvasMain.append(surface, ...(readOnly ? [] : [openPanelButton]), toolbar, preview);
+	canvasMain.append(
+		surface,
+		...(readOnly ? [] : [openPanelButton, drawing.toolbar, drawing.styleBar]),
+		toolbar,
+		zoomBar,
+		preview,
+	);
 	view.append(...(readOnly ? [] : [panel]), canvasMain, details);
 	return view;
 }
