@@ -1,3 +1,4 @@
+import type { Point } from "./connectors.js";
 import type { Viewport } from "./viewport.js";
 
 export type PropertyKind = "text" | "options" | "reference";
@@ -79,6 +80,12 @@ export const TYPE_COLORS: readonly { name: string; value: string }[] = [
 	{ name: "Gray", value: "#dcdcdc" },
 ];
 
+/** Colors for drawings: the type colors plus dark grey (for strong lines and text). */
+export const DRAWING_COLORS: readonly { name: string; value: string }[] = [
+	...TYPE_COLORS,
+	{ name: "Dark", value: "#4a4a4a" },
+];
+
 /** The first palette color not in use; once all are taken, colors repeat in palette order. */
 export function nextTypeColor(usedColors: readonly string[]): string {
 	const used = new Set(usedColors.map((c) => c.toLowerCase()));
@@ -123,7 +130,43 @@ export interface Board {
 	/** Later cards are drawn on top. */
 	cards: CanvasCard[];
 	viewport: Viewport;
+	/** Shapes, lines, text and pen strokes, drawn behind the cards; later ones on top. */
+	drawings: Drawing[];
 }
+
+export type TextSize = "s" | "m" | "l";
+export const TEXT_SIZES: readonly TextSize[] = ["s", "m", "l"];
+
+/** A rectangle, ellipse or free text box; all can hold text. */
+export interface BoxDrawing {
+	id: string;
+	kind: "rect" | "ellipse" | "text";
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	/** A value from DRAWING_COLORS. */
+	color: string;
+	text: string;
+	textSize: TextSize;
+}
+
+/** A line or arrow (two points) or a freehand pen stroke. */
+export interface PathDrawing {
+	id: string;
+	kind: "line" | "arrow" | "pen";
+	points: Point[];
+	/** A value from DRAWING_COLORS. */
+	color: string;
+}
+
+export type Drawing = BoxDrawing | PathDrawing;
+
+/** Rectangles, ellipses and text boxes (as opposed to lines, arrows and pen strokes). */
+export function isBox(drawing: Drawing): drawing is BoxDrawing {
+	return drawing.kind === "rect" || drawing.kind === "ellipse" || drawing.kind === "text";
+}
+export type NewDrawing = Omit<BoxDrawing, "id"> | Omit<PathDrawing, "id">;
 
 export const DEFAULT_CARD_SIZE = { width: 240, height: 160 } as const;
 export const MIN_CARD_SIZE = { width: 160, height: 80 } as const;

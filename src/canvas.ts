@@ -1,5 +1,6 @@
 import { connector, nearest, type Rect } from "./connectors.js";
-import { el, svgEl, typeDot } from "./dom.js";
+import { createDrawingLayer } from "./drawing-layer.js";
+import { CLICK_TOLERANCE, el, svgEl, trackPointer, typeDot } from "./dom.js";
 import { text } from "./i18n.js";
 import {
 	DEFAULT_CARD_SIZE,
@@ -24,38 +25,8 @@ import { defaultViewport, screenToWorld, zoomAt, type Viewport } from "./viewpor
 const ENTITY_MIME = "application/x-entity-id";
 const PANEL_COLLAPSED_KEY = "canvas-panel-collapsed";
 const ACTIVE_BOARD_KEY = "canvas-active-board";
-/** Pointer movement (in screen pixels) below which a press and release counts as a click, not a drag. */
-const CLICK_TOLERANCE = 3;
 /** Spacing of the background dot grid, in world units. */
 const GRID = 24;
-
-/** Follows a pointer from pointerdown until release, reporting the movement in screen pixels. */
-function trackPointer(
-	e: PointerEvent,
-	onMove: (dx: number, dy: number) => void,
-	onEnd: (dx: number, dy: number) => void,
-): void {
-	const target = e.currentTarget as HTMLElement;
-	const startX = e.clientX;
-	const startY = e.clientY;
-	let dx = 0;
-	let dy = 0;
-	target.setPointerCapture(e.pointerId);
-	const move = (ev: PointerEvent) => {
-		dx = ev.clientX - startX;
-		dy = ev.clientY - startY;
-		onMove(dx, dy);
-	};
-	const end = () => {
-		target.removeEventListener("pointermove", move);
-		target.removeEventListener("pointerup", end);
-		target.removeEventListener("pointercancel", end);
-		onEnd(dx, dy);
-	};
-	target.addEventListener("pointermove", move);
-	target.addEventListener("pointerup", end);
-	target.addEventListener("pointercancel", end);
-}
 
 /**
  * The board canvas. With `readOnly` (the Viewer) it only displays: no side panel, no board editing,
@@ -104,12 +75,36 @@ export function canvasView(
 	const surface = el("div", { className: "canvas-surface" }, layer);
 	const zoomLabel = el("span", { className: "zoom-label" });
 
+	// Shapes, lines, text and pen strokes: below the connector lines and cards.
+	const drawing = createDrawingLayer({
+		store,
+		readOnly,
+		boardId: () => boardId,
+		zoom: () => viewport.zoom,
+		toWorld: (clientX, clientY) => {
+			const rect = surface.getBoundingClientRect();
+			return screenToWorld(viewport, clientX - rect.left, clientY - rect.top);
+		},
+		captureTarget: () => surface,
+		// A card and a drawing are never selected at the same time.
+		onSelect: (drawingId) => {
+			if (drawingId) select(null);
+		},
+		onToolChange: (tool) => surface.classList.toggle("drawing-tool", tool !== "select"),
+	});
+	/** The zoom the drawings' selection handles were last drawn for (they keep their screen size). */
+	let drawnZoom = viewport.zoom;
+
 	function applyViewport(): void {
 		layer.style.transform = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`;
 		const grid = GRID * viewport.zoom;
 		surface.style.backgroundSize = `${grid}px ${grid}px`;
 		surface.style.backgroundPosition = `${viewport.x}px ${viewport.y}px`;
 		zoomLabel.textContent = `${Math.round(viewport.zoom * 100)}%`;
+		if (viewport.zoom !== drawnZoom) {
+			drawnZoom = viewport.zoom;
+			drawing.render();
+		}
 	}
 
 	/** Panning and zooming fire many events; save once they settle. */
@@ -136,6 +131,7 @@ export function canvasView(
 		boardId = id;
 		writePreference(ACTIVE_BOARD_KEY, id);
 		viewport = { ...currentBoard().viewport };
+		drawing.deselect();
 		applyViewport();
 		renderBoardControls();
 		renderPanel();
@@ -362,6 +358,7 @@ export function canvasView(
 
 	function select(entityId: string | null, cardId: string | null = null): void {
 		selected = entityId ? { entityId, cardId } : null;
+		if (entityId) drawing.deselect();
 		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card")) {
 			node.classList.toggle("selected", cardId !== null && node.dataset.cardId === cardId);
 		}
@@ -504,7 +501,8 @@ export function canvasView(
 			}
 			return [cardElement(card, entity, type, entityNames, (id) => targetCards(id).length > 0)];
 		});
-		layer.replaceChildren(connectorLayer, connectorLabels, ...cardNodes);
+		layer.replaceChildren(drawing.element, connectorLayer, connectorLabels, ...cardNodes);
+		drawing.render();
 		measureCompactCards();
 		drawConnectors();
 		// On the first render the canvas isn't on the page yet, so heights can only be measured a frame later.
@@ -749,6 +747,18 @@ export function canvasView(
 		return node;
 	}
 
+	// With a drawing tool active, pressing anywhere on the canvas except on a card starts a new drawing
+	// (in the capture phase, so it wins over panning and selecting).
+	if (!readOnly) {
+		surface.addEventListener(
+			"pointerdown",
+			(e) => {
+				if (!(e.target as Element).closest(".canvas-card")) drawing.startCreate(e);
+			},
+			{ capture: true },
+		);
+	}
+
 	// Any drag, pan or zoom on the canvas closes the preview.
 	surface.addEventListener("pointerdown", hidePreview, { capture: true });
 	surface.addEventListener("wheel", hidePreview, { capture: true, passive: true });
@@ -767,8 +777,11 @@ export function canvasView(
 			(dx, dy) => {
 				surface.classList.remove("panning");
 				saveViewportSoon();
-				// A click on the empty canvas (no real pan) closes the details.
-				if (Math.hypot(dx, dy) < 3) select(null);
+				// A click on the empty canvas (no real pan) closes the details and deselects any drawing.
+				if (Math.hypot(dx, dy) < CLICK_TOLERANCE) {
+					select(null);
+					drawing.deselect();
+				}
 			},
 		);
 	});
@@ -817,6 +830,7 @@ export function canvasView(
 		"div",
 		{ className: "canvas-toolbar" },
 		el("div", { className: "toolbar-group" }, boardControls),
+		...(readOnly ? [] : [drawing.toolbar, drawing.styleBar]),
 		el(
 			"div",
 			{ className: "toolbar-group" },

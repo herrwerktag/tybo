@@ -737,6 +737,147 @@ button.ref-tag {
 	outline-offset: 1px;
 }
 
+/* Drawings (shapes, lines, text, pen) in world coordinates, below connectors and cards. The SVG itself never
+   catches the pointer; the drawings in it do (in the editor). */
+.drawings {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 1px;
+	height: 1px;
+	overflow: visible;
+	pointer-events: none;
+}
+
+.drawing {
+	pointer-events: auto;
+	cursor: move;
+}
+
+.read-only .drawing {
+	pointer-events: none;
+}
+
+.drawing-shape {
+	stroke-width: 1.5;
+}
+
+.drawing-textbox {
+	fill: transparent;
+}
+
+.drawing-stroke {
+	fill: none;
+	stroke-width: 2.5;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+/* A wide invisible stroke so thin lines are easy to grab. */
+.drawing-hit {
+	fill: none;
+	stroke: transparent;
+	stroke-width: 14;
+}
+
+.drawing-arrowhead {
+	stroke-width: 1;
+	stroke-linejoin: round;
+}
+
+.drawings foreignObject {
+	overflow: visible;
+}
+
+/* The text editor sits in the SVG, which ignores the pointer; the editor itself must not. */
+.drawing-editor-box {
+	pointer-events: auto;
+}
+
+/* Text in shapes is centered; free text starts at the top left. Both wrap. */
+.drawing-label,
+.drawing-editor {
+	width: 100%;
+	height: 100%;
+	padding: 6px 8px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	line-height: 1.3;
+}
+
+.drawing-label {
+	display: flex;
+}
+
+.drawing-label.centered {
+	align-items: center;
+	justify-content: center;
+	text-align: center;
+}
+
+.drawing-editor {
+	display: block;
+	resize: none;
+	border: 1px dashed var(--focus);
+	border-radius: 4px;
+	background: rgb(255 255 255 / 0.85);
+	font: inherit;
+}
+
+.drawing-editor.centered {
+	text-align: center;
+}
+
+.size-s {
+	font-size: 13px;
+}
+
+.size-m {
+	font-size: 16px;
+}
+
+.size-l {
+	font-size: 24px;
+	font-weight: 600;
+}
+
+.selection-outline {
+	fill: none;
+	stroke: var(--focus);
+	pointer-events: none;
+}
+
+.selection-handle {
+	fill: var(--surface);
+	stroke: var(--focus);
+	pointer-events: auto;
+}
+
+/* While a drawing tool is active, the canvas draws instead of panning. */
+.canvas-surface.drawing-tool {
+	cursor: crosshair;
+}
+
+.canvas-surface.drawing-tool .drawing {
+	cursor: crosshair;
+}
+
+.tool-button {
+	min-width: 2rem;
+	padding: 0.25rem 0.5rem;
+}
+
+.tool-button[aria-pressed="true"] {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: #fff;
+}
+
+.toolbar-swatch {
+	width: 1.25rem;
+	height: 1.25rem;
+}
+
 /* Connector lines live in world coordinates at the layer's origin and never catch the pointer. */
 .connectors {
 	position: absolute;

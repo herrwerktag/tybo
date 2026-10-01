@@ -1,4 +1,5 @@
-import type { CardDisplay, LineArrow, PropertyKind, ValidationError } from "./model.js";
+import type { Tool } from "./drawings.js";
+import type { CardDisplay, LineArrow, PropertyKind, TextSize, ValidationError } from "./model.js";
 import { readPreference, writePreference } from "./preferences.js";
 
 export type Language = "en" | "de";
@@ -52,6 +53,7 @@ const en = {
 		Violet: "Violet",
 		Pink: "Pink",
 		Gray: "Gray",
+		Dark: "Dark gray",
 	} as Record<string, string>,
 	properties: "Properties",
 	builtinId: " · ULID, automatic",
@@ -157,6 +159,22 @@ const en = {
 	zoomOut: "Zoom out",
 	zoomIn: "Zoom in",
 	resetView: "Reset view",
+
+	// Drawing tools
+	drawingTools: "Drawing tools",
+	drawingStyle: "Drawing style",
+	tools: {
+		select: "Select",
+		rect: "Rectangle",
+		ellipse: "Ellipse",
+		line: "Line",
+		arrow: "Arrow",
+		text: "Text",
+		pen: "Pen",
+	} satisfies Record<Tool, string>,
+	textSize: "Text size",
+	textSizes: { s: "small", m: "medium", l: "large" } satisfies Record<TextSize, string>,
+	deleteDrawing: "Delete drawing",
 };
 
 export type Messages = typeof en;
@@ -202,6 +220,7 @@ const de: Messages = {
 		Violet: "Violett",
 		Pink: "Rosa",
 		Gray: "Grau",
+		Dark: "Dunkelgrau",
 	},
 	properties: "Eigenschaften",
 	builtinId: " · ULID, automatisch",
@@ -304,6 +323,21 @@ const de: Messages = {
 	zoomOut: "Verkleinern",
 	zoomIn: "Vergrößern",
 	resetView: "Ansicht zurücksetzen",
+
+	drawingTools: "Zeichenwerkzeuge",
+	drawingStyle: "Zeichenstil",
+	tools: {
+		select: "Auswählen",
+		rect: "Rechteck",
+		ellipse: "Ellipse",
+		line: "Linie",
+		arrow: "Pfeil",
+		text: "Text",
+		pen: "Stift",
+	},
+	textSize: "Textgröße",
+	textSizes: { s: "klein", m: "mittel", l: "groß" },
+	deleteDrawing: "Zeichnung löschen",
 };
 
 const MESSAGES: Record<Language, Messages> = { en, de };

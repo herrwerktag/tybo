@@ -17,7 +17,7 @@ function assertEmpty(data: AppData) {
 	assert.deepEqual(data.types, []);
 	assert.deepEqual(data.entities, []);
 	assert.equal(data.boards.length, 1);
-	assert.deepEqual({ ...data.boards[0], id: "" }, { id: "", name: "Board 1", cards: [], viewport: { x: 0, y: 0, zoom: 1 } });
+	assert.deepEqual({ ...data.boards[0], id: "" }, { id: "", name: "Board 1", cards: [], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] });
 }
 
 /** The first board, which a fresh store always has. */
@@ -495,4 +495,64 @@ test("description: saved on add, kept when an update leaves it out, defaults to 
 		entities: [{ id: "01ARYZ6S41TSV4RRFFQ69G5FAV", typeId: "n", name: "Old", content: "", values: {} }],
 	};
 	assert.equal(createStore(memoryStorage({ "entities-app": JSON.stringify(old) })).data.entities[0]?.description, "");
+});
+
+test("drawings: added, replaced and removed on their own board", () => {
+	const storage = memoryStorage();
+	const store = createStore(storage);
+	const one = firstBoard(store);
+	const two = store.addBoard("Two");
+	const rect = store.addDrawing(one.id, {
+		kind: "rect",
+		x: 0,
+		y: 0,
+		width: 100,
+		height: 50,
+		color: "#f9c9c9",
+		text: "Phase 1",
+		textSize: "m",
+	});
+	const arrow = store.addDrawing(two.id, { kind: "arrow", points: [{ x: 0, y: 0 }, { x: 10, y: 10 }], color: "#4a4a4a" });
+
+	store.replaceDrawing({ ...rect, text: "Phase A" } as typeof rect);
+	assert.deepEqual(
+		createStore(storage).data.boards.map((b) => b.drawings),
+		[[{ ...rect, text: "Phase A" }], [arrow]],
+	);
+
+	store.removeDrawing(arrow.id);
+	assert.deepEqual(store.data.boards[1]?.drawings, []);
+	assert.equal(store.data.boards[0]?.drawings.length, 1);
+});
+
+test("older boards load without drawings; malformed drawings are dropped", () => {
+	const saved = {
+		types: [],
+		entities: [],
+		boards: [
+			{ id: "old", name: "Old", cards: [], viewport: { x: 0, y: 0, zoom: 1 } },
+			{
+				id: "mixed",
+				name: "Mixed",
+				cards: [],
+				viewport: { x: 0, y: 0, zoom: 1 },
+				drawings: [
+					{ id: "ok", kind: "ellipse", x: 1, y: 2, width: 3, height: 4, color: "#c4dafa" },
+					{ id: "no-size", kind: "rect", x: 1, y: 2, color: "#c4dafa" },
+					{ id: "one-point", kind: "line", points: [{ x: 0, y: 0 }], color: "#c4dafa" },
+					{ id: "three-points", kind: "arrow", points: [{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 2 }], color: "#c4dafa" },
+					{ id: "pen", kind: "pen", points: [{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 2 }], color: "#c4dafa" },
+					{ id: "unknown", kind: "star", color: "#c4dafa" },
+				],
+			},
+		],
+	};
+	const [old, mixed] = createStore(memoryStorage({ "entities-app": JSON.stringify(saved) })).data.boards;
+	assert.deepEqual(old?.drawings, []);
+	assert.deepEqual(
+		mixed?.drawings.map((d) => d.id),
+		["ok", "pen"],
+	);
+	// Missing text fields get defaults.
+	assert.deepEqual(mixed?.drawings[0], { id: "ok", kind: "ellipse", x: 1, y: 2, width: 3, height: 4, color: "#c4dafa", text: "", textSize: "m" });
 });

@@ -1,4 +1,5 @@
 import { isUlid, ulid } from "./ulid.js";
+import type { Point } from "./connectors.js";
 import { clampZoom, defaultViewport, type Viewport } from "./viewport.js";
 import {
 	DEFAULT_CARD_SIZE,
@@ -11,8 +12,14 @@ import {
 	migrateValues,
 	nextTypeColor,
 	type AppData,
+	TEXT_SIZES,
 	type Board,
+	type BoxDrawing,
 	type CanvasCard,
+	type Drawing,
+	type NewDrawing,
+	type PathDrawing,
+	type TextSize,
 	type DraftProperty,
 	type Entity,
 	type EntityType,
@@ -23,7 +30,7 @@ import {
 export type Store = ReturnType<typeof createStore>;
 
 function newBoard(name: string): Board {
-	return { id: crypto.randomUUID(), name, cards: [], viewport: defaultViewport() };
+	return { id: crypto.randomUUID(), name, cards: [], viewport: defaultViewport(), drawings: [] };
 }
 
 function emptyData(): AppData {
@@ -31,6 +38,34 @@ function emptyData(): AppData {
 }
 
 const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+const isPoint = (p: unknown): p is Point => isNumber((p as Point | null)?.x) && isNumber((p as Point | null)?.y);
+
+/** A well-formed drawing, or null. Boards saved before drawings existed have none. */
+function normalizeDrawing(raw: unknown): Drawing | null {
+	const d = raw as Partial<BoxDrawing> & Partial<Omit<PathDrawing, "kind">> & { kind?: unknown };
+	if (typeof d?.id !== "string" || typeof d.color !== "string") return null;
+	if (d.kind === "rect" || d.kind === "ellipse" || d.kind === "text") {
+		if (![d.x, d.y, d.width, d.height].every(isNumber)) return null;
+		return {
+			id: d.id,
+			kind: d.kind,
+			x: d.x!,
+			y: d.y!,
+			width: d.width!,
+			height: d.height!,
+			color: d.color,
+			text: typeof d.text === "string" ? d.text : "",
+			textSize: TEXT_SIZES.includes(d.textSize as TextSize) ? (d.textSize as TextSize) : "m",
+		};
+	}
+	if (d.kind === "line" || d.kind === "arrow" || d.kind === "pen") {
+		const points = Array.isArray(d.points) ? d.points.filter(isPoint).map((p) => ({ x: p.x, y: p.y })) : [];
+		if (points.length < 2 || (d.kind !== "pen" && points.length !== 2)) return null;
+		return { id: d.id, kind: d.kind, points, color: d.color };
+	}
+	return null;
+}
 
 /** Keeps only well-formed cards and viewport; anything else falls back to defaults. Cards and boards saved without an id get one. */
 function normalizeBoard(board: Partial<Board> | undefined, fallbackName: string): Board {
@@ -49,6 +84,7 @@ function normalizeBoard(board: Partial<Board> | undefined, fallbackName: string)
 		name: typeof board?.name === "string" && board.name.trim() !== "" ? board.name : fallbackName,
 		cards,
 		viewport,
+		drawings: Array.isArray(board?.drawings) ? board.drawings.flatMap((d) => normalizeDrawing(d) ?? []) : [],
 	};
 }
 
@@ -176,6 +212,12 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 	function updateBoard(boardId: string, fn: (board: Board) => Board): void {
 		data = { ...data, boards: data.boards.map((b) => (b.id === boardId ? fn(b) : b)) };
 		save();
+	}
+
+	/** Applies fn to the board holding the drawing. */
+	function updateDrawingBoard(drawingId: string, fn: (board: Board) => Board): void {
+		const board = data.boards.find((b) => b.drawings.some((d) => d.id === drawingId));
+		if (board) updateBoard(board.id, fn);
 	}
 
 	/** Applies fn to the board holding the card (card ids are unique across boards). */
@@ -310,6 +352,21 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 		/** Takes the card off its board; the entity itself stays. */
 		removeCard(cardId: string): void {
 			updateCardBoard(cardId, (b) => ({ ...b, cards: b.cards.filter((c) => c.id !== cardId) }));
+		},
+
+		addDrawing(boardId: string, drawing: NewDrawing): Drawing {
+			const added = { ...drawing, id: crypto.randomUUID() } as Drawing;
+			updateBoard(boardId, (b) => ({ ...b, drawings: [...b.drawings, added] }));
+			return added;
+		},
+
+		/** Replaces the drawing with the same id (on whichever board it is). */
+		replaceDrawing(drawing: Drawing): void {
+			updateDrawingBoard(drawing.id, (b) => ({ ...b, drawings: b.drawings.map((d) => (d.id === drawing.id ? drawing : d)) }));
+		},
+
+		removeDrawing(drawingId: string): void {
+			updateDrawingBoard(drawingId, (b) => ({ ...b, drawings: b.drawings.filter((d) => d.id !== drawingId) }));
 		},
 
 		setViewport(boardId: string, viewport: Viewport): void {
