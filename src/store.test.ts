@@ -7,6 +7,7 @@ import { isUlid } from "./ulid.js";
 function memoryStorage(initial: Record<string, string> = {}) {
 	const map = new Map(Object.entries(initial));
 	return {
+		map,
 		getItem: (key: string) => map.get(key) ?? null,
 		setItem: (key: string, value: string) => void map.set(key, value),
 	};
@@ -165,6 +166,102 @@ test("falls back to empty data on corrupt or throwing storage", () => {
 	assertEmpty(store.data);
 	store.addType("Book", [titleDraft], "");
 	assert.equal(store.data.types.length, 1);
+});
+
+test("one malformed type or entity is dropped on its own; the original is backed up first", () => {
+	const saved = JSON.stringify({
+		types: [
+			{ id: "broken", name: "Broken" }, // no properties: loads with none
+			{ id: "b", name: "Book", properties: [{ id: "t", name: "title", kind: "text" }, "not a property"] },
+			"not a type",
+		],
+		entities: [
+			{ id: "x", typeId: "b", name: "Dune", values: { t: "Dune" } },
+			{ id: "y", typeId: "b", name: "No values" },
+			{ name: "no type id" },
+		],
+		boards: [],
+	});
+	const storage = memoryStorage({ "entities-app": saved });
+	const store = createStore(storage);
+	assert.deepEqual(
+		store.data.types.map((t) => [t.id, t.properties.map((p) => p.id)]),
+		[["broken", []], ["b", ["t"]]],
+	);
+	assert.deepEqual(
+		store.data.entities.map((e) => [e.name, e.values]),
+		[["Dune", { t: "Dune" }], ["No values", {}]],
+	);
+
+	const problem = store.problems.load;
+	assert.equal(problem?.code, "partlyUnreadable");
+	assert.ok(problem && "backupKey" in problem && problem.backupKey.startsWith("entities-app:backup:"));
+	assert.equal(storage.getItem(problem.backupKey), saved);
+
+	// Saving overwrites the original, but the backup stays.
+	store.addBoard("New");
+	assert.notEqual(storage.getItem("entities-app"), saved);
+	assert.equal(storage.getItem(problem.backupKey), saved);
+});
+
+test("unreadable data is backed up before starting fresh; data that loads fine isn't", () => {
+	const storage = memoryStorage({ "entities-app": "{not json" });
+	const store = createStore(storage);
+	assertEmpty(store.data);
+	const problem = store.problems.load;
+	assert.equal(problem?.code, "unreadable");
+	assert.ok(problem && "backupKey" in problem);
+	assert.equal(storage.getItem(problem.backupKey), "{not json");
+
+	store.addType("Book", [titleDraft], "");
+	const reloaded = createStore(storage);
+	assert.equal(reloaded.problems.load, null);
+	assert.equal(createStore(memoryStorage()).problems.load, null);
+	assert.equal([...storage.map.keys()].filter((k) => k.includes(":backup:")).length, 1);
+});
+
+test("when the backup can't be written, saving stays paused so the original isn't overwritten", () => {
+	const map = new Map([["entities-app", "{not json"]]);
+	const storage = {
+		getItem: (key: string) => map.get(key) ?? null,
+		setItem: (key: string, value: string) => {
+			if (key.includes(":backup:")) throw new Error("quota");
+			map.set(key, value);
+		},
+	};
+	const store = createStore(storage);
+	assert.deepEqual(store.problems.load, { code: "notBackedUp" });
+	store.addType("Book", [titleDraft], "");
+	assert.equal(store.data.types.length, 1);
+	assert.equal(map.get("entities-app"), "{not json");
+});
+
+test("failed saves are reported until a save succeeds again", () => {
+	let full = false;
+	const map = new Map<string, string>();
+	const storage = {
+		getItem: (key: string) => map.get(key) ?? null,
+		setItem: (key: string, value: string) => {
+			if (full) throw new Error("quota");
+			map.set(key, value);
+		},
+	};
+	const store = createStore(storage);
+	let notified = 0;
+	store.onProblemsChange(() => notified++);
+
+	store.addBoard("A");
+	assert.equal(store.problems.saveFailed, false);
+	full = true;
+	store.addBoard("B");
+	store.addBoard("C");
+	assert.equal(store.problems.saveFailed, true);
+	assert.equal(notified, 1);
+	full = false;
+	store.addBoard("D");
+	assert.equal(store.problems.saveFailed, false);
+	assert.equal(notified, 2);
+	assert.equal(JSON.parse(map.get("entities-app")!).boards.length, 5);
 });
 
 function referenceSetup() {

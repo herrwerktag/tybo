@@ -118,6 +118,42 @@ function cardDisplayFor(prop: PropertyDef, showOnCard: unknown): PropertyDef["ca
 
 const isColor = (v: unknown): v is string => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
 
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/**
+ * Drops types and properties without a string id and name, and entities without a type id, one by one, so a
+ * single malformed item never costs the rest. Missing property lists and values become empty.
+ */
+function keepWellFormed(data: AppData): AppData {
+	return {
+		...data,
+		types: data.types.flatMap((type: unknown) => {
+			if (!isObject(type) || typeof type.id !== "string" || typeof type.name !== "string") return [];
+			const properties = Array.isArray(type.properties)
+				? type.properties.filter((p: unknown) => isObject(p) && typeof p.id === "string" && typeof p.name === "string")
+				: [];
+			return [{ ...(type as unknown as EntityType), properties }];
+		}),
+		entities: data.entities.flatMap((entity: unknown) => {
+			if (!isObject(entity) || typeof entity.typeId !== "string") return [];
+			return [{ ...(entity as unknown as Entity), values: isObject(entity.values) ? (entity.values as Entity["values"]) : {} }];
+		}),
+	};
+}
+
+/** Types, their properties and entities: if loading leaves fewer than were saved, some saved data was dropped. */
+function itemCount(data: AppData): number {
+	const properties = data.types.reduce((n, t) => n + (Array.isArray(t?.properties) ? t.properties.length : 0), 0);
+	return data.types.length + properties + data.entities.length;
+}
+
+/** What went wrong reading the saved data; the UI shows it as a warning. */
+export type LoadProblem =
+	/** Nothing (`unreadable`) or not everything could be read; the saved text was copied to `backupKey` first. */
+	| { code: "unreadable" | "partlyUnreadable"; backupKey: string }
+	/** Not everything could be read, and the saved text couldn't be copied aside: saving is paused to keep it. */
+	| { code: "notBackedUp" };
+
 function normalize(data: AppData): AppData {
 	// Types saved before colors existed get the next free palette colors, in order.
 	const usedColors = data.types.map((t) => t.color).filter(isColor);
@@ -182,30 +218,56 @@ function toPropertyDefs(properties: DraftProperty[]): PropertyDef[] {
 }
 
 export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key = "entities-app") {
-	let data = load();
+	let { data, problem: loadProblem } = load();
+	let saveFailed = false;
+	const problemListeners: (() => void)[] = [];
 
-	function load(): AppData {
+	function load(): { data: AppData; problem: LoadProblem | null } {
+		let raw: string | null;
 		try {
-			const parsed: unknown = JSON.parse(storage.getItem(key) ?? "null");
-			if (
-				parsed &&
-				typeof parsed === "object" &&
-				Array.isArray((parsed as AppData).types) &&
-				Array.isArray((parsed as AppData).entities)
-			) {
-				return reconcile(normalize(parsed as AppData));
+			raw = storage.getItem(key);
+		} catch {
+			// Storage blocked: nothing to protect; failed saves are reported.
+			return { data: emptyData(), problem: null };
+		}
+		if (raw === null) return { data: emptyData(), problem: null };
+		try {
+			const parsed: unknown = JSON.parse(raw);
+			if (isObject(parsed) && Array.isArray(parsed.types) && Array.isArray(parsed.entities)) {
+				const kept = keepWellFormed(parsed as unknown as AppData);
+				const loaded = reconcile(normalize(kept));
+				const complete = itemCount(kept) === itemCount(parsed as unknown as AppData);
+				return { data: loaded, problem: complete ? null : backUp(raw, "partlyUnreadable") };
 			}
 		} catch {
-			// Unreadable or corrupt storage: start fresh.
+			// Not JSON, or too broken to load at all: start fresh.
 		}
-		return emptyData();
+		return { data: emptyData(), problem: backUp(raw, "unreadable") };
+	}
+
+	/** Copies the saved text aside before a save can overwrite it. */
+	function backUp(raw: string, code: "unreadable" | "partlyUnreadable"): LoadProblem {
+		const backupKey = `${key}:backup:${new Date().toISOString()}`;
+		try {
+			storage.setItem(backupKey, raw);
+			return { code, backupKey };
+		} catch {
+			return { code: "notBackedUp" };
+		}
 	}
 
 	function save(): void {
+		if (loadProblem?.code === "notBackedUp") return; // keep the saved original until it's backed up
+		let failed = false;
 		try {
 			storage.setItem(key, JSON.stringify(data));
 		} catch {
-			// Storage full or blocked: keep working in memory.
+			// Storage full or blocked: keep working in memory, and say so.
+			failed = true;
+		}
+		if (failed !== saveFailed) {
+			saveFailed = failed;
+			for (const listener of problemListeners) listener();
 		}
 	}
 
@@ -231,6 +293,16 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 	return {
 		get data(): AppData {
 			return data;
+		},
+
+		/** Problems reading the saved data, and whether the last save failed (changes are then only in memory). */
+		get problems(): { load: LoadProblem | null; saveFailed: boolean } {
+			return { load: loadProblem, saveFailed };
+		},
+
+		/** Calls `listener` whenever `problems.saveFailed` changes. */
+		onProblemsChange(listener: () => void): void {
+			problemListeners.push(listener);
 		},
 
 		/** Without a color, the type gets the first palette color no other type uses. */

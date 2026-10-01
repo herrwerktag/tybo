@@ -28,6 +28,16 @@ const en = {
 	confirmDeleteWorkspace: (name: string, types: number, entities: number, boards: number) =>
 		`Delete workspace "${name}" with ${types} entity types, ${entities} entities and ${boards} boards? This can't be undone.`,
 
+	// Problems with the saved data
+	loadUnreadable: (backupKey: string) =>
+		`The saved data couldn't be read, so this workspace started empty. The original is kept in the browser storage under "${backupKey}".`,
+	loadPartlyUnreadable: (backupKey: string) =>
+		`Some saved data couldn't be read and was left out. The original is kept in the browser storage under "${backupKey}".`,
+	loadNotBackedUp:
+		"Some saved data couldn't be read, and there's no room to back it up. Changes aren't saved, so the original stays untouched. Free up browser storage, then reload.",
+	saveFailed: "Changes can't be saved: the browser storage is full or blocked. They're kept only until this tab is closed.",
+	dismiss: "Dismiss",
+
 	// Common actions
 	save: "Save",
 	cancel: "Cancel",
@@ -196,6 +206,15 @@ const de: Messages = {
 	lastWorkspace: "Der letzte Arbeitsbereich kann nicht gelöscht werden",
 	confirmDeleteWorkspace: (name, types, entities, boards) =>
 		`Arbeitsbereich „${name}“ mit ${types} Entitätstypen, ${entities} Entitäten und ${boards} Boards löschen? Das kann nicht rückgängig gemacht werden.`,
+
+	loadUnreadable: (backupKey) =>
+		`Die gespeicherten Daten konnten nicht gelesen werden, daher beginnt dieser Arbeitsbereich leer. Das Original liegt im Browserspeicher unter „${backupKey}“.`,
+	loadPartlyUnreadable: (backupKey) =>
+		`Ein Teil der gespeicherten Daten konnte nicht gelesen werden und fehlt. Das Original liegt im Browserspeicher unter „${backupKey}“.`,
+	loadNotBackedUp:
+		"Ein Teil der gespeicherten Daten konnte nicht gelesen werden, und für eine Sicherung ist kein Platz. Änderungen werden nicht gespeichert, damit das Original erhalten bleibt. Gib Browserspeicher frei und lade die Seite neu.",
+	saveFailed: "Änderungen können nicht gespeichert werden: Der Browserspeicher ist voll oder blockiert. Sie bleiben nur erhalten, bis dieser Tab geschlossen wird.",
+	dismiss: "Schließen",
 
 	save: "Speichern",
 	cancel: "Abbrechen",

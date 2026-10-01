@@ -42,6 +42,8 @@ interface UiState {
 	focusHandle: number | null;
 	/** The open top-bar menu, if any (kept across re-renders, e.g. a language change). */
 	openMenu: MenuName | null;
+	/** Whether the warning about this workspace's unreadable saved data was dismissed. */
+	loadProblemDismissed: boolean;
 }
 
 type MenuName = "settings" | "workspace";
@@ -88,8 +90,20 @@ function newDraftProperty(): DraftProperty {
 }
 
 export function render(root: HTMLElement, workspaces: Workspaces): void {
+	/** Warnings about the saved data, below the top bar; updated on its own, since failed saves can happen on the canvas. */
+	const banner = el("div", { className: "problem-banner", role: "alert" });
+
+	/** Opens a workspace's store, keeping the banner up to date while it's the active one. */
+	function openStore(id: string): Store {
+		const opened = workspaces.openStore(id);
+		opened.onProblemsChange(() => {
+			if (opened === store) renderBanner();
+		});
+		return opened;
+	}
+
 	/** The active workspace's data; replaced when switching workspaces. */
-	let store: Store = workspaces.openStore(workspaces.active.id);
+	let store: Store = openStore(workspaces.active.id);
 	const state: UiState = {
 		editingTypeId: null,
 		draftName: "",
@@ -102,7 +116,33 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 		focusForm: null,
 		focusHandle: null,
 		openMenu: null,
+		loadProblemDismissed: false,
 	};
+
+	function renderBanner(): void {
+		const { load, saveFailed } = store.problems;
+		const messages: Node[] = [];
+		if (saveFailed) messages.push(el("p", {}, text.saveFailed));
+		if (load?.code === "notBackedUp") {
+			messages.push(el("p", {}, text.loadNotBackedUp));
+		} else if (load && !state.loadProblemDismissed) {
+			const message = load.code === "unreadable" ? text.loadUnreadable(load.backupKey) : text.loadPartlyUnreadable(load.backupKey);
+			const dismiss = el(
+				"button",
+				{
+					type: "button",
+					onclick: () => {
+						state.loadProblemDismissed = true;
+						renderBanner();
+					},
+				},
+				text.dismiss,
+			);
+			messages.push(el("p", {}, message, " ", dismiss));
+		}
+		banner.replaceChildren(...messages);
+		banner.hidden = messages.length === 0;
+	}
 
 	function resetTypeForm(): void {
 		state.editingTypeId = null;
@@ -119,8 +159,10 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 			state.editingEntityId = null;
 		}
 		const route: Route = location.hash === "#canvas" ? "canvas" : location.hash === "#viewer" ? "viewer" : "data";
+		renderBanner();
 		root.replaceChildren(
-			navBar(route),
+			// One header, so the page keeps its two rows (top, content) with or without warnings.
+			el("header", {}, navBar(route), banner),
 			route === "data"
 				? el("div", { className: "data-view" }, typesSection(), entitiesSection())
 				: canvasView(store, {
@@ -320,7 +362,8 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 	/** Opens another workspace: its own types, entities and boards, in the same tab. */
 	function switchWorkspace(id: string): void {
 		workspaces.setActive(id);
-		store = workspaces.openStore(workspaces.active.id);
+		store = openStore(workspaces.active.id);
+		state.loadProblemDismissed = false;
 		resetTypeForm();
 		state.selectedTypeId = store.data.types[0]?.id ?? null;
 		state.editingEntityId = null;

@@ -419,6 +419,22 @@ button:disabled {
 	white-space: nowrap;
 }
 
+/* Warnings about the saved data (unreadable data, failed saves), below the top bar. */
+.problem-banner {
+	padding: 0.5rem 1rem;
+	background: #fdecee;
+	border-bottom: 1px solid var(--error);
+	color: var(--error);
+}
+
+.problem-banner p + p {
+	margin-top: 0.25rem;
+}
+
+.problem-banner button {
+	margin-left: 0.5rem;
+}
+
 .muted {
 	color: var(--muted);
 }
