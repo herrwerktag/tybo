@@ -4,6 +4,7 @@ import {
 	DEFAULT_CARD_SIZE,
 	MIN_CARD_SIZE,
 	CARD_DISPLAYS,
+	LINE_ARROWS,
 	PROPERTY_KINDS,
 	effectiveCardDisplay,
 	entityTypeMap,
@@ -100,7 +101,13 @@ function normalize(data: AppData): AppData {
 				...prop,
 				kind: PROPERTY_KINDS.includes(prop.kind) ? prop.kind : "text",
 				options: Array.isArray(prop.options) ? prop.options : [],
-				reference: prop.reference ?? null,
+				reference: prop.reference
+					? {
+							...prop.reference,
+							arrow: LINE_ARROWS.includes(prop.reference.arrow) ? prop.reference.arrow : "to",
+							lineLabel: typeof prop.reference.lineLabel === "string" ? prop.reference.lineLabel : "",
+						}
+					: null,
 				cardDisplay: cardDisplayFor(prop, showOnCard),
 			})),
 		})),
@@ -128,7 +135,7 @@ function toPropertyDefs(properties: DraftProperty[]): PropertyDef[] {
 		name: p.name.trim(),
 		kind: p.kind,
 		options: p.kind === "options" ? p.options.map((o) => o.trim()) : [],
-		reference: p.kind === "reference" && p.reference ? { ...p.reference } : null,
+		reference: p.kind === "reference" && p.reference ? { ...p.reference, lineLabel: p.reference.lineLabel.trim() } : null,
 		cardDisplay: effectiveCardDisplay(p),
 	}));
 }

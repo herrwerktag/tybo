@@ -70,21 +70,22 @@ export interface Connector {
 	path: string;
 	/** Middle of the curve, for the label. */
 	mid: Point;
-	/** Arrowhead triangle at the target, as SVG polygon points. */
-	arrow: string;
+	/** Arrowhead triangle at the target, as SVG polygon points; null without an arrow. */
+	arrow: string | null;
 }
 
 const ARROW_LENGTH = 10;
 const ARROW_HALF_WIDTH = 5;
 
-export function connector(from: Rect, to: Rect): Connector {
+export function connector(from: Rect, to: Rect, withArrow = true): Connector {
 	const { fromSide, toSide } = facingSides(from, to);
 	const start = sideMidpoint(from, fromSide);
 	const end = sideMidpoint(to, toSide);
 	const n1 = NORMALS[fromSide];
 	const n2 = NORMALS[toSide];
-	// The line stops at the arrow's base, so its end doesn't poke through the arrowhead.
-	const lineEnd = { x: end.x + n2.x * ARROW_LENGTH, y: end.y + n2.y * ARROW_LENGTH };
+	// With an arrow, the line stops at its base, so the line's end doesn't poke through the arrowhead.
+	const inset = withArrow ? ARROW_LENGTH : 0;
+	const lineEnd = { x: end.x + n2.x * inset, y: end.y + n2.y * inset };
 	const reach = Math.max(30, Math.hypot(lineEnd.x - start.x, lineEnd.y - start.y) / 2);
 	const c1 = { x: start.x + n1.x * reach, y: start.y + n1.y * reach };
 	const c2 = { x: lineEnd.x + n2.x * reach, y: lineEnd.y + n2.y * reach };
@@ -99,7 +100,7 @@ export function connector(from: Rect, to: Rect): Connector {
 	return {
 		path: `M ${fmt(start)} C ${fmt(c1)} ${fmt(c2)} ${fmt(lineEnd)}`,
 		mid,
-		arrow: `${fmt(end)} ${fmt(left)} ${fmt(right)}`,
+		arrow: withArrow ? `${fmt(end)} ${fmt(left)} ${fmt(right)}` : null,
 	};
 }
 

@@ -172,8 +172,8 @@ function referenceSetup() {
 	const person = store.addType("Person", [], "");
 	const tag = store.addType("Tag", [], "");
 	const book = store.addType("Book", [
-		{ name: "author", kind: "reference", options: [], reference: { typeId: person.id, multiple: false }, cardDisplay: "list" },
-		{ name: "tags", kind: "reference", options: [], reference: { typeId: tag.id, multiple: true }, cardDisplay: "list" },
+		{ name: "author", kind: "reference", options: [], reference: { typeId: person.id, multiple: false, arrow: "to", lineLabel: "" }, cardDisplay: "list" },
+		{ name: "tags", kind: "reference", options: [], reference: { typeId: tag.id, multiple: true, arrow: "to", lineLabel: "" }, cardDisplay: "list" },
 	], "");
 	const [author, tags] = [book.properties[0]!, book.properties[1]!];
 	const frank = store.addEntity(person.id, "Frank", "", {});
@@ -200,7 +200,7 @@ test("deleting an entity removes it from single and multiple references", () => 
 test("typeReferrers lists other types' reference properties, not self-references", () => {
 	const { store, person, tag, book } = referenceSetup();
 	store.updateType(person.id, "Person", [
-		{ name: "friend", kind: "reference", options: [], reference: { typeId: person.id, multiple: false }, cardDisplay: "list" },
+		{ name: "friend", kind: "reference", options: [], reference: { typeId: person.id, multiple: false, arrow: "to", lineLabel: "" }, cardDisplay: "list" },
 	], "");
 	assert.deepEqual(store.typeReferrers(person.id), ["Book.author"]);
 	assert.deepEqual(store.typeReferrers(tag.id), ["Book.tags"]);
@@ -209,7 +209,7 @@ test("typeReferrers lists other types' reference properties, not self-references
 
 test("updateType: changing a reference's target type clears its values", () => {
 	const { store, tag, book, author, tags, dune } = referenceSetup();
-	store.updateType(book.id, "Book", [{ ...author, reference: { typeId: tag.id, multiple: false } }, tags], "");
+	store.updateType(book.id, "Book", [{ ...author, reference: { typeId: tag.id, multiple: false, arrow: "to", lineLabel: "" } }, tags], "");
 	assert.equal(store.data.entities.find((e) => e.id === dune.id)?.values[author.id], null);
 });
 
@@ -218,7 +218,7 @@ test("reference values persist across store instances", () => {
 	const store = createStore(storage);
 	const tag = store.addType("Tag", [], "");
 	const book = store.addType("Book", [
-		{ name: "tags", kind: "reference", options: [], reference: { typeId: tag.id, multiple: true }, cardDisplay: "list" },
+		{ name: "tags", kind: "reference", options: [], reference: { typeId: tag.id, multiple: true, arrow: "to", lineLabel: "" }, cardDisplay: "list" },
 	], "");
 	const scifi = store.addEntity(tag.id, "Sci-fi", "", {});
 	const dune = store.addEntity(book.id, "Dune", "", { [book.properties[0]!.id]: [scifi.id] });
@@ -444,4 +444,24 @@ test("the old showOnCard checkbox converts to cardDisplay", () => {
 	const [shown, off, older] = createStore(memoryStorage({ "entities-app": JSON.stringify(old) })).data.types[0]!.properties;
 	assert.deepEqual([shown?.cardDisplay, off?.cardDisplay, older?.cardDisplay], ["list", "hidden", "list"]);
 	assert.ok(!("showOnCard" in shown!));
+});
+
+test("references get arrow and line label defaults; the label is trimmed", () => {
+	const old = {
+		types: [
+			{ id: "p", name: "Person", properties: [] },
+			{
+				id: "b",
+				name: "Book",
+				properties: [{ id: "a", name: "author", kind: "reference", options: [], reference: { typeId: "p", multiple: false } }],
+			},
+		],
+		entities: [],
+	};
+	const store = createStore(memoryStorage({ "entities-app": JSON.stringify(old) }));
+	const author = store.data.types[1]!.properties[0]!;
+	assert.deepEqual(author.reference, { typeId: "p", multiple: false, arrow: "to", lineLabel: "" });
+
+	store.updateType("b", "Book", [{ ...author, reference: { ...author.reference!, arrow: "from", lineLabel: "  wrote  " } }], "");
+	assert.deepEqual(store.data.types[1]!.properties[0]!.reference, { typeId: "p", multiple: false, arrow: "from", lineLabel: "wrote" });
 });

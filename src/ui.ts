@@ -5,11 +5,13 @@ import {
 	entityTypeMap,
 	migrateValues,
 	moveItem,
+	newReference,
 	nextTypeColor,
 	parseValue,
 	validateType,
 	type CardDisplay,
 	type DraftProperty,
+	type LineArrow,
 	type Entity,
 	type EntityType,
 	type PropertyDef,
@@ -59,11 +61,22 @@ function describeProperty(p: PropertyDef, types: EntityType[]): string {
 	return `${p.name}: text`;
 }
 
-const CARD_DISPLAY_LABELS: readonly [CardDisplay, string][] = [
-	["list", "On card: list"],
-	["line", "On card: line"],
-	["hidden", "Hidden on card"],
+const LINE_ARROW_LABELS: readonly [LineArrow, string][] = [
+	["to", "To target"],
+	["from", "From target"],
+	["none", "None"],
 ];
+
+const CARD_DISPLAY_LABELS: readonly [CardDisplay, string][] = [
+	["list", "List"],
+	["line", "Line"],
+	["hidden", "Hidden"],
+];
+
+/** A small label above a control, for the settings inside a property card. */
+function setting(label: string, control: HTMLElement): HTMLElement {
+	return el("label", { className: "field" }, el("span", { className: "setting-label" }, label), control);
+}
 
 function newDraftProperty(): DraftProperty {
 	return { name: "", kind: "text", options: [], reference: null, cardDisplay: "list" };
@@ -128,12 +141,11 @@ export function render(root: HTMLElement, store: Store): void {
 		const kindSelect = el(
 			"select",
 			{
-				ariaLabel: "Property type",
 				onchange: () => {
 					prop.kind = kindSelect.value as PropertyKind;
 					prop.cardDisplay = effectiveCardDisplay(prop);
 					if (prop.kind === "reference" && !prop.reference) {
-						prop.reference = { typeId: store.data.types[0]?.id ?? "", multiple: false };
+						prop.reference = newReference(store.data.types[0]?.id ?? "");
 					}
 					rerender();
 				},
@@ -170,47 +182,47 @@ export function render(root: HTMLElement, store: Store): void {
 			},
 			"⠿",
 		);
+		const nameInput = el("input", {
+			placeholder: "Property name",
+			ariaLabel: "Property name",
+			value: prop.name,
+			oninput: (e) => {
+				prop.name = (e.target as HTMLInputElement).value;
+			},
+		});
+		const removeButton = el(
+			"button",
+			{
+				type: "button",
+				className: "property-remove",
+				title: "Remove property",
+				ariaLabel: `Remove property ${prop.name.trim() || i + 1}`,
+				onclick: () => {
+					state.draftProps.splice(i, 1);
+					rerender();
+				},
+			},
+			"✕",
+		);
+		const displaySelect = el(
+			"select",
+			{
+				title: "How this property appears on canvas cards",
+				onchange: (e) => {
+					prop.cardDisplay = (e.target as HTMLSelectElement).value as CardDisplay;
+					rerender(); // shows or hides the line settings
+				},
+			},
+			...CARD_DISPLAY_LABELS.filter(([display]) => display !== "line" || prop.kind === "reference").map(
+				([display, label]) => el("option", { value: display, selected: display === prop.cardDisplay }, label),
+			),
+		);
+		// Handle, name and remove on top; then labeled settings, two per row.
 		const row = el(
 			"div",
 			{ className: "property" },
-			el(
-				"div",
-				{ className: "row" },
-				handle,
-				el("input", {
-					placeholder: "Property name",
-					ariaLabel: "Property name",
-					value: prop.name,
-					oninput: (e) => {
-						prop.name = (e.target as HTMLInputElement).value;
-					},
-				}),
-				kindSelect,
-				el(
-					"select",
-					{
-						ariaLabel: "Card display",
-						title: "How this property appears on canvas cards",
-						onchange: (e) => {
-							prop.cardDisplay = (e.target as HTMLSelectElement).value as CardDisplay;
-						},
-					},
-					...CARD_DISPLAY_LABELS.filter(([display]) => display !== "line" || prop.kind === "reference").map(
-						([display, label]) => el("option", { value: display, selected: display === prop.cardDisplay }, label),
-					),
-				),
-				el(
-					"button",
-					{
-						type: "button",
-						onclick: () => {
-							state.draftProps.splice(i, 1);
-							rerender();
-						},
-					},
-					"Remove",
-				),
-			),
+			el("div", { className: "property-head" }, handle, nameInput, removeButton),
+			el("div", { className: "property-settings" }, setting("Type", kindSelect), setting("On card", displaySelect)),
 		);
 		const clearDropMarker = () => row.classList.remove("drop-before", "drop-after");
 		const dropsBefore = (e: DragEvent) => {
@@ -247,10 +259,8 @@ export function render(root: HTMLElement, store: Store): void {
 		});
 		if (prop.kind === "options") {
 			row.append(
-				el(
-					"label",
-					{ className: "field" },
-					el("span", { className: "muted" }, "Options (one per line)"),
+				setting(
+					"Options (one per line)",
 					el("textarea", {
 						rows: Math.max(3, prop.options.length + 1),
 						value: prop.options.join("\n"),
@@ -266,11 +276,9 @@ export function render(root: HTMLElement, store: Store): void {
 			row.append(
 				el(
 					"div",
-					{ className: "row" },
-					el(
-						"label",
-						{},
-						"References ",
+					{ className: "property-settings" },
+					setting(
+						"References",
 						el(
 							"select",
 							{
@@ -284,7 +292,7 @@ export function render(root: HTMLElement, store: Store): void {
 					),
 					el(
 						"label",
-						{},
+						{ className: "checkbox-setting" },
 						el("input", {
 							type: "checkbox",
 							checked: reference.multiple,
@@ -296,6 +304,38 @@ export function render(root: HTMLElement, store: Store): void {
 					),
 				),
 			);
+			if (effectiveCardDisplay(prop) === "line") {
+				row.append(
+					el(
+						"div",
+						{ className: "property-settings" },
+						setting(
+							"Arrow",
+							el(
+								"select",
+								{
+									onchange: (e) => {
+										reference.arrow = (e.target as HTMLSelectElement).value as LineArrow;
+									},
+								},
+								...LINE_ARROW_LABELS.map(([arrow, label]) =>
+									el("option", { value: arrow, selected: arrow === reference.arrow }, label),
+								),
+							),
+						),
+						setting(
+							"Line label",
+							el("input", {
+								value: reference.lineLabel,
+								placeholder: prop.name.trim() || "property name",
+								oninput: (e) => {
+									reference.lineLabel = (e.target as HTMLInputElement).value;
+								},
+							}),
+						),
+					),
+				);
+			}
 		}
 		return row;
 	}

@@ -50,8 +50,8 @@ test("migrateValues: text to options keeps values that match an option", () => {
 	assert.deepEqual(migrateValues({ t: "Emma" }, [asOptions], noEntities), { t: null });
 });
 
-const author: PropertyDef = { id: "a", name: "author", kind: "reference", options: [], reference: { typeId: "person", multiple: false }, cardDisplay: "list" };
-const tags: PropertyDef = { id: "g", name: "tags", kind: "reference", options: [], reference: { typeId: "tag", multiple: true }, cardDisplay: "list" };
+const author: PropertyDef = { id: "a", name: "author", kind: "reference", options: [], reference: { typeId: "person", multiple: false, arrow: "to", lineLabel: "" }, cardDisplay: "list" };
+const tags: PropertyDef = { id: "g", name: "tags", kind: "reference", options: [], reference: { typeId: "tag", multiple: true, arrow: "to", lineLabel: "" }, cardDisplay: "list" };
 const entityTypes = new Map([
 	["p1", "person"],
 	["p2", "person"],
@@ -77,14 +77,14 @@ test("parseValue: a list is not a valid text value", () => {
 });
 
 test("migrateValues: single and multiple references convert into each other", () => {
-	const asMultiple = { ...author, reference: { typeId: "person", multiple: true } };
+	const asMultiple: PropertyDef = { ...author, reference: { typeId: "person", multiple: true, arrow: "to", lineLabel: "" } };
 	assert.deepEqual(migrateValues({ a: "p1" }, [asMultiple], entityTypes), { a: ["p1"] });
-	const asSingle = { ...tags, reference: { typeId: "tag", multiple: false } };
+	const asSingle: PropertyDef = { ...tags, reference: { typeId: "tag", multiple: false, arrow: "to", lineLabel: "" } };
 	assert.deepEqual(migrateValues({ g: ["t2", "t1"] }, [asSingle], entityTypes), { g: "t2" });
 });
 
 test("migrateValues: changing the target type clears references", () => {
-	const toTag = { ...author, reference: { typeId: "tag", multiple: false } };
+	const toTag: PropertyDef = { ...author, reference: { typeId: "tag", multiple: false, arrow: "to", lineLabel: "" } };
 	assert.deepEqual(migrateValues({ a: "p1" }, [toTag], entityTypes), { a: null });
 });
 

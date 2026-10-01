@@ -9,6 +9,18 @@ export interface ReferenceDef {
 	typeId: string;
 	/** Whether several entities can be picked instead of one. */
 	multiple: boolean;
+	/** Where the arrowhead goes when drawn as a line: at the referenced card, at this card, or nowhere. */
+	arrow: LineArrow;
+	/** Text on the line; empty means the property name. */
+	lineLabel: string;
+}
+
+export type LineArrow = "to" | "from" | "none";
+
+export const LINE_ARROWS: readonly LineArrow[] = ["to", "from", "none"];
+
+export function newReference(typeId: string): ReferenceDef {
+	return { typeId, multiple: false, arrow: "to", lineLabel: "" };
 }
 
 export interface PropertyDef {

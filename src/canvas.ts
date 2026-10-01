@@ -11,6 +11,7 @@ import {
 	type CardRow,
 	type Entity,
 	type EntityType,
+	type LineArrow,
 } from "./model.js";
 import type { Store } from "./store.js";
 import { defaultViewport, screenToWorld, zoomAt, type Viewport } from "./viewport.js";
@@ -262,10 +263,12 @@ export function canvasView(store: Store): HTMLElement {
 
 	/** Lines from `line` reference properties, under the cards. */
 	const connectorLayer = svgEl("svg", { class: "connectors", "aria-hidden": "true" });
+	/** Property-name labels at the lines' midpoints: above the lines, below the cards. */
+	const connectorLabels = el("div", { className: "connector-labels", ariaHidden: "true" });
 	/** Card positions and sizes by card id; updated live while dragging or resizing. */
 	let cardRects = new Map<string, Rect>();
 	/** One entry per drawn reference: from a card to the nearest of the target entity's cards. */
-	let links: { fromCardId: string; targetCardIds: string[]; label: string; color: string }[] = [];
+	let links: { fromCardId: string; targetCardIds: string[]; label: string; color: string; arrow: LineArrow }[] = [];
 
 	function renderCards(): void {
 		const board = currentBoard();
@@ -289,34 +292,48 @@ export function canvasView(store: Store): HTMLElement {
 				for (const id of referencedIds(prop, entity.values[prop.id])) {
 					const targets = targetCards(id);
 					if (targets.length > 0) {
-						links.push({ fromCardId: card.id, targetCardIds: targets.map((c) => c.id), label: prop.name, color });
+						links.push({
+							fromCardId: card.id,
+							targetCardIds: targets.map((c) => c.id),
+							label: prop.reference?.lineLabel || prop.name,
+							color,
+							arrow: prop.reference?.arrow ?? "to",
+						});
 					}
 				}
 			}
 			return [cardElement(card, entity, type, entityNames, (id) => targetCards(id).length > 0)];
 		});
-		layer.replaceChildren(connectorLayer, ...cardNodes);
+		layer.replaceChildren(connectorLayer, connectorLabels, ...cardNodes);
 		drawConnectors();
 	}
 
 	function drawConnectors(): void {
-		connectorLayer.replaceChildren(
-			...links.flatMap(({ fromCardId, targetCardIds, label, color }) => {
-				const from = cardRects.get(fromCardId);
-				const to = from && nearest(from, targetCardIds.flatMap((id) => cardRects.get(id) ?? []));
-				if (!from || !to) return [];
-				const { path, mid, arrow } = connector(from, to);
-				return [
-					svgEl(
-						"g",
-						{ class: "connector" },
-						svgEl("path", { class: "connector-line", d: path }),
-						svgEl("polygon", { class: "connector-arrow", points: arrow, fill: color || "currentColor" }),
-						svgEl("text", { class: "connector-label", x: mid.x, y: mid.y }, label),
-					),
-				];
-			}),
-		);
+		const lines: SVGElement[] = [];
+		const labels: HTMLElement[] = [];
+		for (const { fromCardId, targetCardIds, label, color, arrow } of links) {
+			const from = cardRects.get(fromCardId);
+			const to = from && nearest(from, targetCardIds.flatMap((id) => cardRects.get(id) ?? []));
+			if (!from || !to) continue;
+			// "from" draws the same curve the other way round, so the arrowhead lands on this card.
+			const shape = arrow === "from" ? connector(to, from) : connector(from, to, arrow === "to");
+			const { path, mid } = shape;
+			lines.push(
+				svgEl(
+					"g",
+					{ class: "connector" },
+					svgEl("path", { class: "connector-line", d: path }),
+					...(shape.arrow
+						? [svgEl("polygon", { class: "connector-arrow", points: shape.arrow, fill: color || "currentColor" })]
+						: []),
+				),
+			);
+			const tag = el("span", { className: "connector-label" }, label);
+			Object.assign(tag.style, { left: `${mid.x}px`, top: `${mid.y}px` });
+			labels.push(tag);
+		}
+		connectorLayer.replaceChildren(...lines);
+		connectorLabels.replaceChildren(...labels);
 	}
 
 	/** Label/value rows: text as plain text, options as a grey chip, references as tags in the target type's color. */

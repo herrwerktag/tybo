@@ -24,3 +24,9 @@ test("connector runs from the source's right edge to just before the target's le
 	assert.equal(c.arrow, "300,25 290,20 290,30");
 	assert.deepEqual(c.mid, { x: 195, y: 25 });
 });
+
+test("connector without an arrow runs all the way to the target's edge", () => {
+	const c = connector(box(0, 0), box(300, 0), false);
+	assert.match(c.path, / 300,25$/);
+	assert.equal(c.arrow, null);
+});
