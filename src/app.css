@@ -672,6 +672,11 @@ button.ref-tag {
 	color: var(--muted);
 }
 
+/* A card with nothing below the name: the header is the whole card. */
+.canvas-card header:last-child {
+	border-bottom: none;
+}
+
 .canvas-card.selected {
 	outline: 2px solid var(--focus);
 	outline-offset: 2px;

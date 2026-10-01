@@ -24,6 +24,8 @@ import { defaultViewport, screenToWorld, zoomAt, type Viewport } from "./viewpor
 const ENTITY_MIME = "application/x-entity-id";
 const PANEL_COLLAPSED_KEY = "canvas-panel-collapsed";
 const ACTIVE_BOARD_KEY = "canvas-active-board";
+/** Pointer movement (in screen pixels) below which a press and release counts as a click, not a drag. */
+const CLICK_TOLERANCE = 3;
 /** Spacing of the background dot grid, in world units. */
 const GRID = 24;
 
@@ -323,7 +325,7 @@ export function canvasView(
 		const type = store.data.types.find((t) => t.id === entity.typeId);
 		const entityNames = new Map(store.data.entities.map((e) => [e.id, e.name]));
 		const { header, body } = cardParts(entity, type, entityNames, () => false, { previews: false });
-		preview.replaceChildren(header, body);
+		preview.replaceChildren(header, ...(body ? [body] : []));
 		preview.hidden = false;
 
 		// The whole card, as tall as the canvas allows.
@@ -334,7 +336,7 @@ export function canvasView(
 		preview.style.maxHeight = `${area.height - 2 * margin}px`;
 		const { offsetWidth: width, offsetHeight: height } = preview;
 		// Fade the bottom only if even the full canvas height isn't enough.
-		preview.classList.toggle("clipped", body.scrollHeight > body.clientHeight);
+		preview.classList.toggle("clipped", !!body && body.scrollHeight > body.clientHeight);
 
 		// Below the tag if it fits, else above; otherwise as low as fits inside the canvas (it may cover the tag,
 		// which is fine because the preview never catches the pointer).
@@ -503,9 +505,31 @@ export function canvasView(
 			return [cardElement(card, entity, type, entityNames, (id) => targetCards(id).length > 0)];
 		});
 		layer.replaceChildren(connectorLayer, connectorLabels, ...cardNodes);
+		measureCompactCards();
 		drawConnectors();
+		// On the first render the canvas isn't on the page yet, so heights can only be measured a frame later.
+		requestAnimationFrame(() => {
+			if (measureCompactCards()) drawConnectors();
+		});
 		if (selected?.cardId && !board.cards.some((c) => c.id === selected!.cardId)) selected = { ...selected, cardId: null };
 		renderDetails(); // the entity may have changed or been removed
+	}
+
+	/**
+	 * Compact cards are as tall as their contents need, not their saved height, so lines must attach to the
+	 * measured height. Returns whether any height changed. (offsetHeight ignores the zoom, so it's in world units.)
+	 */
+	function measureCompactCards(): boolean {
+		let changed = false;
+		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card.compact")) {
+			const id = node.dataset.cardId ?? "";
+			const rect = cardRects.get(id);
+			if (rect && node.offsetHeight > 0 && rect.height !== node.offsetHeight) {
+				cardRects.set(id, { ...rect, height: node.offsetHeight });
+				changed = true;
+			}
+		}
+		return changed;
 	}
 
 	function drawConnectors(): void {
@@ -574,7 +598,7 @@ export function canvasView(
 		entityNames: ReadonlyMap<string, string>,
 		isLinked: (entityId: string) => boolean,
 		options: { removeButton?: HTMLElement; previews: boolean },
-	): { header: HTMLElement; body: HTMLElement } {
+	): { header: HTMLElement; body: HTMLElement | null } {
 		// Top bar in the type's color: type label (and × on real cards).
 		const bar = el(
 			"div",
@@ -596,16 +620,17 @@ export function canvasView(
 			...(type ? cardRows(type, entity, entityNames, isLinked) : []),
 			...inverseCardRows(store.data, entity, entityNames, isLinked),
 		];
-		const body = el(
-			"div",
-			{ className: "card-body" },
-			...(rows.length > 0 ? [propertyList(rows, options.previews)] : []),
-			...(entity.content.trim()
-				? [el("div", { className: "card-content" }, entity.content)]
-				: rows.length === 0
-					? [el("div", { className: "card-content muted" }, text.noContent)]
-					: []),
-		);
+		// Nothing to show below the name: no body at all (a compact card).
+		const content = entity.content.trim();
+		const body =
+			rows.length > 0 || content
+				? el(
+						"div",
+						{ className: "card-body" },
+						...(rows.length > 0 ? [propertyList(rows, options.previews)] : []),
+						...(content ? [el("div", { className: "card-content" }, entity.content)] : []),
+					)
+				: null;
 		return { header, body };
 	}
 
@@ -637,42 +662,57 @@ export function canvasView(
 			...(removeButton ? { removeButton } : {}),
 			previews: true,
 		});
-		const node = el("article", { className: selected?.cardId === card.id ? "canvas-card selected" : "canvas-card" }, header, body);
+		// Without content a card fits what it shows (bar, name, maybe properties); there's nothing to resize.
+		// Only cards with content keep a saved height, so long text can be given more or less room.
+		const compact = !entity.content.trim();
+		const node = el("article", { className: "canvas-card" }, header, ...(body ? [body] : []));
+		node.classList.toggle("compact", compact);
+		node.classList.toggle("selected", selected?.cardId === card.id);
 		node.dataset.cardId = card.id;
-		// Clicking a card shows its details (in the editor, finishing a drag does too; see below).
+		// Only a click shows the card's details; the browser also fires a click after dragging or resizing,
+		// which the drag handlers mark on the card so it can be ignored here.
 		node.addEventListener("click", (e) => {
-			if (!(e.target as Element).closest("button, .ref-tag")) select(entity.id, card.id);
+			if (node.dataset.dragged) {
+				delete node.dataset.dragged;
+				return;
+			}
+			if (!(e.target as Element).closest("button, .ref-tag, .card-resize")) select(entity.id, card.id);
 		});
 		Object.assign(node.style, {
 			left: `${card.x}px`,
 			top: `${card.y}px`,
 			width: `${card.width}px`,
-			height: `${card.height}px`,
+			...(compact ? {} : { height: `${card.height}px` }),
 		});
 		// The viewer only looks: no moving or resizing.
 		if (readOnly) return node;
 
 		const resize = el("div", { className: "card-resize", title: text.resize });
-		node.append(resize);
+		if (!compact) node.append(resize);
 
 		header.addEventListener("pointerdown", (e) => {
 			if (e.button !== 0 || (e.target as Element).closest("button")) return;
 			e.preventDefault();
-			layer.append(node); // on top while dragging
 			const { zoom } = viewport;
+			let dragging = false;
 			trackPointer(
 				e,
 				(dx, dy) => {
+					// Small jitter during a click doesn't move the card.
+					if (!dragging && Math.hypot(dx, dy) < CLICK_TOLERANCE) return;
+					if (!dragging) layer.append(node); // on top while dragging
+					dragging = true;
 					const x = card.x + dx / zoom;
 					const y = card.y + dy / zoom;
 					node.style.left = `${x}px`;
 					node.style.top = `${y}px`;
-					cardRects.set(card.id, { x, y, width: card.width, height: card.height });
+					cardRects.set(card.id, { x, y, width: card.width, height: compact ? node.offsetHeight : card.height });
 					drawConnectors();
 				},
 				(dx, dy) => {
+					if (!dragging) return; // a click: the click handler selects the card
+					node.dataset.dragged = "true";
 					store.moveCard(card.id, card.x + dx / zoom, card.y + dy / zoom);
-					selected = { entityId: entity.id, cardId: card.id };
 					renderCards();
 				},
 			);
