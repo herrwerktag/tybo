@@ -5,8 +5,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/*.test.ts"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.app.json",
+    "test": "tsx --test src/*.test.ts",
+    "check": "pnpm typecheck && pnpm test && pnpm build"
   },
   "keywords": [],
   "author": "",
