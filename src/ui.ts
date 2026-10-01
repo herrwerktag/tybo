@@ -43,6 +43,9 @@ interface UiState {
 
 const PROPERTY_MIME = "application/x-property-index";
 
+/** The page shown, from the URL hash: data editing, board editing (canvas) or read-only boards (viewer). */
+type Route = "data" | "canvas" | "viewer";
+
 /** Counts existing non-empty values of the type's entities that saving these properties would change or clear. */
 function countChangedValues(entities: Entity[], props: DraftProperty[], entityTypes: ReadonlyMap<string, string>): number {
 	const kept = props.flatMap((p) => (p.id ? [{ ...p, id: p.id }] : []));
@@ -108,12 +111,12 @@ export function render(root: HTMLElement, store: Store): void {
 			state.selectedTypeId = store.data.types[0]?.id ?? null;
 			state.editingEntityId = null;
 		}
-		const view = location.hash === "#canvas" ? "canvas" : "data";
+		const route: Route = location.hash === "#canvas" ? "canvas" : location.hash === "#viewer" ? "viewer" : "data";
 		root.replaceChildren(
-			navBar(view),
-			view === "canvas"
-				? canvasView(store)
-				: el("div", { className: "data-view" }, typesSection(), entitiesSection()),
+			navBar(route),
+			route === "data"
+				? el("div", { className: "data-view" }, typesSection(), entitiesSection())
+				: canvasView(store, { readOnly: route === "viewer" }),
 		);
 		if (state.focusHandle !== null) {
 			root.querySelectorAll<HTMLElement>(".drag-handle")[state.focusHandle]?.focus();
@@ -127,14 +130,15 @@ export function render(root: HTMLElement, store: Store): void {
 		}
 	}
 
-	function navBar(view: "data" | "canvas"): HTMLElement {
-		const tab = (id: typeof view, label: string) =>
-			el("a", { href: `#${id}`, className: view === id ? "tab current" : "tab" }, label);
+	function navBar(route: Route): HTMLElement {
+		const tab = (id: Route, label: string) =>
+			el("a", { href: `#${id}`, className: route === id ? "tab current" : "tab" }, label);
 		const nav = el(
 			"nav",
 			{ className: "app-nav" },
 			tab("data", text.tabData),
 			tab("canvas", text.tabCanvas),
+			tab("viewer", text.tabViewer),
 			settingsMenu(),
 		);
 		nav.querySelector(".current")?.setAttribute("aria-current", "page");

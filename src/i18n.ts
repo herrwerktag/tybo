@@ -13,6 +13,7 @@ const en = {
 	// Navigation and settings
 	tabData: "Data",
 	tabCanvas: "Canvas",
+	tabViewer: "Viewer",
 	settings: "Settings",
 	language: "Language",
 
@@ -141,6 +142,7 @@ export type Messages = typeof en;
 const de: Messages = {
 	tabData: "Daten",
 	tabCanvas: "Canvas",
+	tabViewer: "Betrachter",
 	settings: "Einstellungen",
 	language: "Sprache",
 

@@ -400,6 +400,17 @@ th {
 	min-height: 0;
 }
 
+/* Viewer: no side panel, so the canvas is the only column (also on narrow screens). */
+.canvas-view.read-only {
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-rows: minmax(0, 1fr);
+}
+
+/* Cards can't be dragged in the viewer. */
+.read-only .canvas-card header {
+	cursor: default;
+}
+
 /* Collapsed: the panel is gone entirely; a floating button over the canvas brings it back. */
 .canvas-view.panel-collapsed {
 	grid-template-columns: minmax(0, 1fr);

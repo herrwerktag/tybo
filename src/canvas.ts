@@ -52,7 +52,11 @@ function trackPointer(
 	target.addEventListener("pointercancel", end);
 }
 
-export function canvasView(store: Store): HTMLElement {
+/**
+ * The board canvas. With `readOnly` (the Viewer) it only displays: no side panel, no board editing,
+ * no moving, resizing, removing or dropping cards, and pan/zoom are never saved.
+ */
+export function canvasView(store: Store, { readOnly }: { readOnly: boolean }): HTMLElement {
 	let boardId = readPreference(ACTIVE_BOARD_KEY) ?? "";
 	const currentBoard = (): Board => store.data.boards.find((b) => b.id === boardId) ?? store.data.boards[0]!;
 	boardId = currentBoard().id;
@@ -62,7 +66,9 @@ export function canvasView(store: Store): HTMLElement {
 	let pendingSave: (() => void) | null = null;
 	let panelCollapsed = readPreference(PANEL_COLLAPSED_KEY) === "true";
 
-	const view = el("div", { className: panelCollapsed ? "canvas-view panel-collapsed" : "canvas-view" });
+	const view = el("div", {
+		className: readOnly ? "canvas-view read-only" : panelCollapsed ? "canvas-view panel-collapsed" : "canvas-view",
+	});
 
 	function setPanelCollapsed(collapsed: boolean): void {
 		panelCollapsed = collapsed;
@@ -100,6 +106,7 @@ export function canvasView(store: Store): HTMLElement {
 
 	/** Panning and zooming fire many events; save once they settle. */
 	function saveViewportSoon(): void {
+		if (readOnly) return; // the viewer never saves pan or zoom
 		clearTimeout(saveTimer);
 		const id = boardId;
 		const next = viewport;
@@ -136,6 +143,7 @@ export function canvasView(store: Store): HTMLElement {
 			{ ariaLabel: text.board, onchange: () => switchBoard(select.value) },
 			...boards.map((b) => el("option", { value: b.id, selected: b.id === boardId }, b.name)),
 		);
+		if (readOnly) return boardControls.replaceChildren(select); // the viewer only switches boards
 		boardControls.replaceChildren(
 			select,
 			el(
@@ -195,6 +203,7 @@ export function canvasView(store: Store): HTMLElement {
 	}
 
 	function renderPanel(): void {
+		if (readOnly) return; // no side panel in the viewer
 		const cardCounts = new Map<string, number>();
 		for (const card of currentBoard().cards) cardCounts.set(card.entityId, (cardCounts.get(card.entityId) ?? 0) + 1);
 		const groups = store.data.types
@@ -453,30 +462,39 @@ export function canvasView(store: Store): HTMLElement {
 		entityNames: ReadonlyMap<string, string>,
 		isLinked: (entityId: string) => boolean,
 	): HTMLElement {
-		const removeButton = el(
-			"button",
-			{
-				type: "button",
-				className: "card-remove",
-				ariaLabel: text.removeNamedFromCanvas(entity.name),
-				title: text.removeFromCanvas,
-				onclick: () => {
-					store.removeCard(card.id);
-					renderCards();
-					renderPanel();
-				},
-			},
-			"×",
-		);
-		const { header, body } = cardParts(entity, type, entityNames, isLinked, { removeButton, previews: true });
-		const resize = el("div", { className: "card-resize", title: text.resize });
-		const node = el("article", { className: "canvas-card" }, header, body, resize);
+		const removeButton = readOnly
+			? undefined
+			: el(
+					"button",
+					{
+						type: "button",
+						className: "card-remove",
+						ariaLabel: text.removeNamedFromCanvas(entity.name),
+						title: text.removeFromCanvas,
+						onclick: () => {
+							store.removeCard(card.id);
+							renderCards();
+							renderPanel();
+						},
+					},
+					"×",
+				);
+		const { header, body } = cardParts(entity, type, entityNames, isLinked, {
+			...(removeButton ? { removeButton } : {}),
+			previews: true,
+		});
+		const node = el("article", { className: "canvas-card" }, header, body);
 		Object.assign(node.style, {
 			left: `${card.x}px`,
 			top: `${card.y}px`,
 			width: `${card.width}px`,
 			height: `${card.height}px`,
 		});
+		// The viewer only looks: no moving or resizing.
+		if (readOnly) return node;
+
+		const resize = el("div", { className: "card-resize", title: text.resize });
+		node.append(resize);
 
 		header.addEventListener("pointerdown", (e) => {
 			if (e.button !== 0 || (e.target as Element).closest("button")) return;
@@ -570,23 +588,25 @@ export function canvasView(store: Store): HTMLElement {
 		{ passive: false },
 	);
 
-	// Drop entities from the side panel.
-	surface.addEventListener("dragover", (e) => {
-		if (!e.dataTransfer?.types.includes(ENTITY_MIME)) return;
-		e.preventDefault();
-		e.dataTransfer.dropEffect = "copy";
-	});
-	surface.addEventListener("drop", (e) => {
-		const entityId = e.dataTransfer?.getData(ENTITY_MIME);
-		if (!entityId) return;
-		e.preventDefault();
-		const rect = surface.getBoundingClientRect();
-		const world = screenToWorld(viewport, e.clientX - rect.left, e.clientY - rect.top);
-		// Drop so the pointer ends up on the card's header.
-		store.addCard(boardId, entityId, world.x - DEFAULT_CARD_SIZE.width / 2, world.y - 16);
-		renderCards();
-		renderPanel();
-	});
+	// Drop entities from the side panel (editor only).
+	if (!readOnly) {
+		surface.addEventListener("dragover", (e) => {
+			if (!e.dataTransfer?.types.includes(ENTITY_MIME)) return;
+			e.preventDefault();
+			e.dataTransfer.dropEffect = "copy";
+		});
+		surface.addEventListener("drop", (e) => {
+			const entityId = e.dataTransfer?.getData(ENTITY_MIME);
+			if (!entityId) return;
+			e.preventDefault();
+			const rect = surface.getBoundingClientRect();
+			const world = screenToWorld(viewport, e.clientX - rect.left, e.clientY - rect.top);
+			// Drop so the pointer ends up on the card's header.
+			store.addCard(boardId, entityId, world.x - DEFAULT_CARD_SIZE.width / 2, world.y - 16);
+			renderCards();
+			renderPanel();
+		});
+	}
 
 	// Two groups that each stay on one line; on a narrow canvas the zoom group moves below.
 	const toolbar = el(
@@ -599,7 +619,12 @@ export function canvasView(store: Store): HTMLElement {
 			el("button", { type: "button", ariaLabel: text.zoomOut, title: text.zoomOut, onclick: () => zoomBy(1 / 1.2) }, "−"),
 			zoomLabel,
 			el("button", { type: "button", ariaLabel: text.zoomIn, title: text.zoomIn, onclick: () => zoomBy(1.2) }, "+"),
-			el("button", { type: "button", onclick: () => setViewport(defaultViewport()) }, text.resetView),
+			// The viewer resets to the board's saved view; the editor to the default.
+			el(
+				"button",
+				{ type: "button", onclick: () => setViewport(readOnly ? { ...currentBoard().viewport } : defaultViewport()) },
+				text.resetView,
+			),
 		),
 	);
 
@@ -607,7 +632,7 @@ export function canvasView(store: Store): HTMLElement {
 	renderBoardControls();
 	renderPanel();
 	renderCards();
-	canvasMain.append(surface, openPanelButton, toolbar, preview);
-	view.append(panel, canvasMain);
+	canvasMain.append(surface, ...(readOnly ? [] : [openPanelButton]), toolbar, preview);
+	view.append(...(readOnly ? [] : [panel]), canvasMain);
 	return view;
 }
