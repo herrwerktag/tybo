@@ -476,3 +476,23 @@ test("references get arrow, line label and inverse label defaults; labels are tr
 		inverseLabel: "author of",
 	});
 });
+
+test("description: saved on add, kept when an update leaves it out, defaults to empty for older data", () => {
+	const storage = memoryStorage();
+	const store = createStore(storage);
+	const type = store.addType("Note", [], "");
+	const note = store.addEntity(type.id, "A", "short", {}, "Long\n\ndetails");
+	assert.equal(createStore(storage).data.entities[0]?.description, "Long\n\ndetails");
+
+	store.updateEntity(note.id, "A", "short", {});
+	assert.equal(store.data.entities[0]?.description, "Long\n\ndetails");
+	store.updateEntity(note.id, "A", "short", {}, "");
+	assert.equal(store.data.entities[0]?.description, "");
+	assert.equal(store.addEntity(type.id, "B", "", {}).description, "");
+
+	const old = {
+		types: [{ id: "n", name: "Note", properties: [] }],
+		entities: [{ id: "01ARYZ6S41TSV4RRFFQ69G5FAV", typeId: "n", name: "Old", content: "", values: {} }],
+	};
+	assert.equal(createStore(memoryStorage({ "entities-app": JSON.stringify(old) })).data.entities[0]?.description, "");
+});

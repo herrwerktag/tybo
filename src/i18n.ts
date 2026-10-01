@@ -56,7 +56,8 @@ const en = {
 	properties: "Properties",
 	builtinId: " · ULID, automatic",
 	builtinName: " · text, required",
-	builtinContent: " · multiline",
+	builtinContent: " · multiline, on cards",
+	builtinDescription: " · long text, in the details panel",
 	contentTemplate: "Default text (template)",
 	addProperty: "Add property",
 	createType: "Create type",
@@ -120,6 +121,11 @@ const en = {
 	id: "ID",
 	name: "Name",
 	content: "Content",
+	description: "Description",
+	details: "Details",
+	noDescription: "No description",
+	closeDetails: "Close details",
+	editInData: "Edit in the Data view",
 	confirmDeleteEntity: (name: string, references: number) =>
 		`Delete "${name}"?` +
 		(references > 0 ? ` It's referenced ${references} times; those references will be removed.` : ""),
@@ -201,7 +207,8 @@ const de: Messages = {
 	properties: "Eigenschaften",
 	builtinId: " · ULID, automatisch",
 	builtinName: " · Text, Pflichtfeld",
-	builtinContent: " · mehrzeilig",
+	builtinContent: " · mehrzeilig, auf Karten",
+	builtinDescription: " · langer Text, im Detailbereich",
 	contentTemplate: "Standardtext (Vorlage)",
 	addProperty: "Eigenschaft hinzufügen",
 	createType: "Typ erstellen",
@@ -264,6 +271,11 @@ const de: Messages = {
 	id: "ID",
 	name: "Name",
 	content: "Inhalt",
+	description: "Beschreibung",
+	details: "Details",
+	noDescription: "Keine Beschreibung",
+	closeDetails: "Details schließen",
+	editInData: "In der Datenansicht bearbeiten",
 	confirmDeleteEntity: (name, references) =>
 		`„${name}“ löschen?` +
 		(references > 0 ? ` Es wird ${references}-mal referenziert; diese Verweise werden entfernt.` : ""),

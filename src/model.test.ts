@@ -3,11 +3,18 @@ import { test } from "node:test";
 import {
 	TYPE_COLORS,
 	cardRows,
+	detailRows,
 	filterEntities,
 	inverseCardRows,
 	inverseReferences,
 	inverseRelations,
-	migrateValues, moveItem, nextTypeColor, parseValue, validateType, type PropertyDef } from "./model.js";
+	migrateValues,
+	moveItem,
+	nextTypeColor,
+	parseValue,
+	validateType,
+	type PropertyDef,
+} from "./model.js";
 
 const noTypes = new Set<string>();
 const noEntities = new Map<string, string>();
@@ -132,6 +139,7 @@ test("cardRows lists visible properties with a value, in order, with reference n
 		typeId: "book",
 		name: "Dune",
 		content: "",
+		description: "",
 		values: { t: "Dune", h: "secret", s: null, a: "p1", g: ["t1", "gone", "t2"] },
 	};
 	assert.deepEqual(cardRows(type, entity, names), [
@@ -149,7 +157,7 @@ test("cardRows: line references are left out while their card is linked, listed 
 		["t1", "Sci-fi"],
 		["t2", "Classic"],
 	]);
-	const entity = { id: "e", typeId: "book", name: "Dune", content: "", values: { g: ["t1", "t2"] } };
+	const entity = { id: "e", typeId: "book", name: "Dune", content: "", description: "", values: { g: ["t1", "t2"] } };
 	assert.deepEqual(cardRows(type, entity, names, (id) => id === "t1"), [
 		{ label: "tags", kind: "reference", values: ["Classic"], entityIds: ["t2"], targetTypeId: "tag" },
 	]);
@@ -202,10 +210,10 @@ test("inverse references: who points at an entity, only for properties with an i
 		{ id: "activity", name: "Activity", properties: [responsible, reviewer], contentTemplate: "", color: "#c8ebbf" },
 	];
 	const entities = [
-		{ id: "r1", typeId: "role", name: "Dev", content: "", values: {} },
-		{ id: "a1", typeId: "activity", name: "Build", content: "", values: { resp: "r1", rev: "r1" } },
-		{ id: "a2", typeId: "activity", name: "Ship", content: "", values: { resp: "r1" } },
-		{ id: "a3", typeId: "activity", name: "Plan", content: "", values: { resp: null } },
+		{ id: "r1", typeId: "role", name: "Dev", content: "", description: "", values: {} },
+		{ id: "a1", typeId: "activity", name: "Build", content: "", description: "", values: { resp: "r1", rev: "r1" } },
+		{ id: "a2", typeId: "activity", name: "Ship", content: "", description: "", values: { resp: "r1" } },
+		{ id: "a3", typeId: "activity", name: "Plan", content: "", description: "", values: { resp: null } },
 	];
 	const role = entities[0]!;
 	const data = { types, entities };
@@ -230,4 +238,28 @@ test("inverse references: who points at an entity, only for properties with an i
 	};
 	assert.deepEqual(inverseCardRows(asLine, role, names, (id) => id === "a1")[0]?.values, ["Ship"]);
 	assert.deepEqual(inverseCardRows(asLine, role, names, () => true), []);
+});
+
+test("detailRows lists every property in order, empty ones too, then reverse references", () => {
+	const hidden: PropertyDef = { ...title, id: "h", name: "internal", cardDisplay: "hidden" };
+	const asLine: PropertyDef = { ...author, cardDisplay: "line" };
+	const book = { id: "book", name: "Book", properties: [title, hidden, status, asLine], contentTemplate: "", color: "#dcdcdc" };
+	const types = [book, { id: "person", name: "Person", properties: [], contentTemplate: "", color: "#c4dafa" }];
+	const dune = { id: "e", typeId: "book", name: "Dune", content: "", description: "", values: { t: "Dune", h: "secret", a: "p1" } };
+	const names = new Map([
+		["e", "Dune"],
+		["p1", "Frank"],
+	]);
+	assert.deepEqual(detailRows({ types, entities: [dune] }, dune, names), [
+		{ label: "title", kind: "text", values: ["Dune"], entityIds: [], targetTypeId: null },
+		{ label: "internal", kind: "text", values: ["secret"], entityIds: [], targetTypeId: null },
+		{ label: "status", kind: "options", values: [], entityIds: [], targetTypeId: null },
+		{ label: "author", kind: "reference", values: ["Frank"], entityIds: ["p1"], targetTypeId: "person" },
+	]);
+});
+
+test("description is a reserved property name", () => {
+	assert.deepEqual(validateType("Book", [{ ...title, name: "Description" }], noTypes), [
+		{ code: "reservedName", label: "Description" },
+	]);
 });

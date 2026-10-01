@@ -125,7 +125,8 @@ function normalize(data: AppData): AppData {
 					? entity.name
 					: (propIds.map((id) => values[id]).find((v) => typeof v === "string") ?? "Untitled");
 			const content = typeof entity.content === "string" ? entity.content : "";
-			return { ...entity, id: isUlid(entity.id) ? entity.id : ulid(), name, content, values };
+			const description = typeof entity.description === "string" ? entity.description : "";
+			return { ...entity, id: isUlid(entity.id) ? entity.id : ulid(), name, content, description, values };
 		}),
 	};
 }
@@ -232,17 +233,32 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 			save();
 		},
 
-		addEntity(typeId: string, name: string, content: string, values: Record<string, PropertyValue>): Entity {
-			const entity: Entity = { id: ulid(), typeId, name: name.trim(), content, values };
+		addEntity(
+			typeId: string,
+			name: string,
+			content: string,
+			values: Record<string, PropertyValue>,
+			description = "",
+		): Entity {
+			const entity: Entity = { id: ulid(), typeId, name: name.trim(), content, description, values };
 			data = { ...data, entities: [...data.entities, entity] };
 			save();
 			return entity;
 		},
 
-		updateEntity(entityId: string, name: string, content: string, values: Record<string, PropertyValue>): void {
+		/** Without a description, the entity keeps its current one. */
+		updateEntity(
+			entityId: string,
+			name: string,
+			content: string,
+			values: Record<string, PropertyValue>,
+			description?: string,
+		): void {
 			data = {
 				...data,
-				entities: data.entities.map((e) => (e.id === entityId ? { ...e, name: name.trim(), content, values } : e)),
+				entities: data.entities.map((e) =>
+					e.id === entityId ? { ...e, name: name.trim(), content, description: description ?? e.description, values } : e,
+				),
 			};
 			save();
 		},

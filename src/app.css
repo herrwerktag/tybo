@@ -446,16 +446,10 @@ th {
 
 /* Canvas view */
 
+/* Side panel | canvas | details panel. Flex, so each side can come and go (collapsed, viewer, nothing selected). */
 .canvas-view {
-	display: grid;
-	grid-template-columns: 16rem minmax(0, 1fr);
+	display: flex;
 	min-height: 0;
-}
-
-/* Viewer: no side panel, so the canvas is the only column (also on narrow screens). */
-.canvas-view.read-only {
-	grid-template-columns: minmax(0, 1fr);
-	grid-template-rows: minmax(0, 1fr);
 }
 
 /* Cards can't be dragged in the viewer. */
@@ -464,11 +458,6 @@ th {
 }
 
 /* Collapsed: the panel is gone entirely; a floating button over the canvas brings it back. */
-.canvas-view.panel-collapsed {
-	grid-template-columns: minmax(0, 1fr);
-	grid-template-rows: minmax(0, 1fr);
-}
-
 .panel-collapsed .canvas-panel {
 	display: none;
 }
@@ -501,18 +490,28 @@ th {
 	line-height: 1.4;
 }
 
+/* Narrow screens: side panel above, canvas, details below. */
 @media (max-width: 40rem) {
 	.canvas-view {
-		grid-template-columns: 1fr;
-		grid-template-rows: auto minmax(0, 1fr);
+		flex-direction: column;
 	}
 
 	.canvas-panel {
+		flex-basis: auto;
 		max-height: 30dvh;
+		border-right: none;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.details-panel {
+		flex-basis: 45dvh;
+		border-left: none;
+		border-top: 1px solid var(--border);
 	}
 }
 
 .canvas-panel {
+	flex: 0 0 16rem;
 	display: grid;
 	align-content: start;
 	gap: 0.75rem;
@@ -580,9 +579,102 @@ td.inverse {
 }
 
 .canvas-main {
+	flex: 1 1 0;
 	position: relative;
+	min-width: 0;
 	min-height: 0;
 	overflow: hidden;
+}
+
+/* Details of the selected card: description first, then every property, content and the ID. */
+.details-panel {
+	flex: 0 0 22rem;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	background: var(--surface);
+	border-left: 1px solid var(--border);
+}
+
+.details-panel[hidden] {
+	display: none;
+}
+
+.details-header {
+	border-bottom: 1px solid var(--border);
+}
+
+.details-title {
+	padding: 0.6rem 1rem 0.25rem;
+	font-size: 1.15rem;
+	font-weight: 600;
+	line-height: 1.3;
+	overflow-wrap: anywhere;
+}
+
+.details-actions {
+	padding: 0.25rem 1rem 0.75rem;
+}
+
+.details-body {
+	overflow-y: auto;
+	display: grid;
+	align-content: start;
+	gap: 1.25rem;
+	padding: 1rem;
+}
+
+.details-section {
+	display: grid;
+	gap: 0.4rem;
+}
+
+.details-section h3 {
+	font-size: 0.75rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--muted);
+}
+
+.details-text {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	line-height: 1.55;
+}
+
+/* Label above value: easy to scan in a narrow column. */
+.details-props {
+	display: grid;
+	gap: 0.75rem;
+}
+
+.details-props dt {
+	font-size: 0.8125rem;
+	color: var(--muted);
+}
+
+.details-props dd {
+	overflow-wrap: anywhere;
+}
+
+.details-props .prop-chips {
+	margin-top: 0.15rem;
+}
+
+button.ref-tag {
+	border: none;
+	cursor: pointer;
+}
+
+.details-id {
+	font-size: 0.8125rem;
+	color: var(--muted);
+}
+
+.canvas-card.selected {
+	outline: 2px solid var(--focus);
+	outline-offset: 2px;
 }
 
 .canvas-surface {

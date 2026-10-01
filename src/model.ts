@@ -90,7 +90,7 @@ export function nextTypeColor(usedColors: readonly string[]): string {
 export type PropertyValue = string | string[] | null;
 
 /** Property names reserved for the built-in entity fields. */
-export const RESERVED_PROPERTY_NAMES: readonly string[] = ["id", "name", "content"];
+export const RESERVED_PROPERTY_NAMES: readonly string[] = ["id", "name", "content", "description"];
 
 export interface Entity {
 	/** ULID, assigned when the entity is created. */
@@ -98,8 +98,10 @@ export interface Entity {
 	typeId: string;
 	/** Display name. */
 	name: string;
-	/** Free multiline text. */
+	/** Free multiline text, shown on the entity's cards. */
 	content: string;
+	/** Longer text with detailed information, shown in the canvas details panel (not on cards). */
+	description: string;
 	/** Keyed by PropertyDef.id. */
 	values: Record<string, PropertyValue>;
 }
@@ -239,6 +241,31 @@ export function inverseCardRows(
 			},
 		];
 	});
+}
+
+/**
+ * Every property of `entity` for the details panel, in property order and including empty ones (`values` is
+ * then empty), followed by the reverse side of references to it. Unlike cardRows, card display settings don't apply.
+ */
+export function detailRows(
+	data: Pick<AppData, "types" | "entities">,
+	entity: Entity,
+	entityNames: ReadonlyMap<string, string>,
+): CardRow[] {
+	const type = data.types.find((t) => t.id === entity.typeId);
+	const own = (type?.properties ?? []).map((prop): CardRow => {
+		const value = entity.values[prop.id];
+		const raw = value === null || value === undefined ? [] : typeof value === "string" ? [value] : value;
+		const entityIds = prop.kind === "reference" ? raw.filter((id) => entityNames.has(id)) : [];
+		return {
+			label: prop.name,
+			kind: prop.kind,
+			values: prop.kind === "reference" ? entityIds.map((id) => entityNames.get(id)!) : raw,
+			entityIds,
+			targetTypeId: prop.reference?.typeId ?? null,
+		};
+	});
+	return [...own, ...inverseCardRows(data, entity, entityNames)];
 }
 
 /** Lower case without accents, so "uber" matches "Über". */

@@ -123,7 +123,18 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 			navBar(route),
 			route === "data"
 				? el("div", { className: "data-view" }, typesSection(), entitiesSection())
-				: canvasView(store, { readOnly: route === "viewer" }),
+				: canvasView(store, {
+						readOnly: route === "viewer",
+						// The details panel's Edit button: open the entity in the Data view's form.
+						onEditEntity: (entityId) => {
+							const entity = store.data.entities.find((e) => e.id === entityId);
+							if (!entity) return;
+							state.selectedTypeId = entity.typeId;
+							state.editingEntityId = entityId;
+							state.focusForm = "entity";
+							location.hash = "#data";
+						},
+					}),
 		);
 		if (state.focusHandle !== null) {
 			root.querySelectorAll<HTMLElement>(".drag-handle")[state.focusHandle]?.focus();
@@ -612,6 +623,8 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 				{ className: "builtin" },
 				el("p", {}, el("strong", {}, "id"), text.builtinId),
 				el("p", {}, el("strong", {}, "name"), text.builtinName),
+				el("p", {}, el("strong", {}, "description"), text.builtinDescription),
+				// The template below belongs to content, so content comes last.
 				el("p", {}, el("strong", {}, "content"), text.builtinContent),
 				el(
 					"label",
@@ -771,6 +784,7 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 	function entityForm(type: EntityType, editing: Entity | undefined): HTMLFormElement {
 		const nameInput = el("input", { required: true, pattern: ".*\\S.*", value: editing?.name ?? "" });
 		const contentInput = el("textarea", { rows: 6, value: editing ? editing.content : type.contentTemplate });
+		const descriptionInput = el("textarea", { rows: 10, value: editing?.description ?? "" });
 		const fields = type.properties.map((prop) => propertyField(prop, editing?.values[prop.id] ?? null));
 
 		return el(
@@ -787,9 +801,9 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 						values[prop.id] = parseValue(prop, read(), entityTypes);
 					}
 					if (editing) {
-						store.updateEntity(editing.id, name, contentInput.value, values);
+						store.updateEntity(editing.id, name, contentInput.value, values, descriptionInput.value);
 					} else {
-						store.addEntity(type.id, name, contentInput.value, values);
+						store.addEntity(type.id, name, contentInput.value, values, descriptionInput.value);
 					}
 					state.editingEntityId = null;
 					rerender();
@@ -803,6 +817,7 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 			...fields.map((f) => f.element),
 			...(editing ? inverseFields(editing) : []),
 			el("label", { className: "field wide" }, el("span", {}, text.content), contentInput),
+			el("label", { className: "field wide" }, el("span", {}, text.description), descriptionInput),
 			el(
 				"div",
 				{ className: "row" },

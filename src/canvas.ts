@@ -6,6 +6,7 @@ import {
 	MIN_CARD_SIZE,
 	cardRows,
 	effectiveCardDisplay,
+	detailRows,
 	filterEntities,
 	inverseCardRows,
 	referencedIds,
@@ -58,7 +59,10 @@ function trackPointer(
  * The board canvas. With `readOnly` (the Viewer) it only displays: no side panel, no board editing,
  * no moving, resizing, removing or dropping cards, and pan/zoom are never saved.
  */
-export function canvasView(store: Store, { readOnly }: { readOnly: boolean }): HTMLElement {
+export function canvasView(
+	store: Store,
+	{ readOnly, onEditEntity }: { readOnly: boolean; onEditEntity?: (entityId: string) => void },
+): HTMLElement {
 	let boardId = readPreference(ACTIVE_BOARD_KEY) ?? "";
 	const currentBoard = (): Board => store.data.boards.find((b) => b.id === boardId) ?? store.data.boards[0]!;
 	boardId = currentBoard().id;
@@ -349,6 +353,111 @@ export function canvasView(store: Store, { readOnly }: { readOnly: boolean }): H
 		preview.hidden = true;
 	}
 
+	/** The entity shown in the details panel, and the card that was selected for it (if it's on this board). */
+	let selected: { entityId: string; cardId: string | null } | null = null;
+	const details = el("aside", { className: "details-panel", ariaLabel: text.details });
+	details.hidden = true;
+
+	function select(entityId: string | null, cardId: string | null = null): void {
+		selected = entityId ? { entityId, cardId } : null;
+		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card")) {
+			node.classList.toggle("selected", cardId !== null && node.dataset.cardId === cardId);
+		}
+		renderDetails();
+	}
+
+	/** Shows another entity's details, selecting its card if it's on this board. */
+	function selectEntity(entityId: string): void {
+		select(entityId, currentBoard().cards.find((c) => c.entityId === entityId)?.id ?? null);
+	}
+
+	/** Easy-to-read details of the selected entity: description, all properties, content and ID. */
+	function renderDetails(): void {
+		const entity = selected && store.data.entities.find((e) => e.id === selected!.entityId);
+		details.hidden = !entity;
+		if (!entity) {
+			selected = null;
+			details.replaceChildren();
+			return;
+		}
+		const types = new Map(store.data.types.map((t) => [t.id, t]));
+		const type = types.get(entity.typeId);
+		const entityNames = new Map(store.data.entities.map((e) => [e.id, e.name]));
+
+		const bar = el(
+			"div",
+			{ className: "card-bar" },
+			el("span", { className: "card-type" }, type?.name ?? ""),
+			el(
+				"button",
+				{ type: "button", className: "card-remove", title: text.closeDetails, ariaLabel: text.closeDetails, onclick: () => select(null) },
+				"×",
+			),
+		);
+		if (type) bar.style.background = type.color;
+		const header = el(
+			"header",
+			{ className: "details-header" },
+			bar,
+			el("h2", { className: "details-title" }, entity.name),
+			...(!readOnly && onEditEntity
+				? [
+						el(
+							"div",
+							{ className: "details-actions" },
+							el("button", { type: "button", title: text.editInData, onclick: () => onEditEntity(entity.id) }, text.edit),
+						),
+					]
+				: []),
+		);
+
+		const section = (title: string, ...content: Node[]) =>
+			el("section", { className: "details-section" }, el("h3", {}, title), ...content);
+		const rows = detailRows(store.data, entity, entityNames);
+		const value = (row: CardRow): HTMLElement => {
+			if (row.values.length === 0) return el("dd", { className: "muted" }, "—");
+			if (row.kind === "text") return el("dd", { className: "details-text" }, ...row.values);
+			if (row.kind === "options") return el("dd", { className: "prop-chips" }, ...row.values.map((v) => el("span", { className: "chip" }, v)));
+			// References: tags in the target type's color; clicking one shows that entity's details.
+			const color = types.get(row.targetTypeId ?? "")?.color;
+			return el(
+				"dd",
+				{ className: "prop-chips" },
+				...row.values.map((name, i) => {
+					const tag = el("button", { type: "button", className: "ref-tag", onclick: () => selectEntity(row.entityIds[i]!) }, name);
+					if (color) tag.style.background = color;
+					return tag;
+				}),
+			);
+		};
+
+		details.replaceChildren(
+			header,
+			el(
+				"div",
+				{ className: "details-body" },
+				section(
+					text.description,
+					entity.description.trim()
+						? el("p", { className: "details-text" }, entity.description)
+						: el("p", { className: "muted" }, text.noDescription),
+				),
+				...(rows.length > 0
+					? [section(text.properties, el("dl", { className: "details-props" }, ...rows.flatMap((row) => [el("dt", {}, row.label), value(row)])))]
+					: []),
+				...(entity.content.trim() ? [section(text.content, el("p", { className: "details-text" }, entity.content))] : []),
+				el("p", { className: "details-id" }, `${text.id}: `, el("span", { className: "mono" }, entity.id)),
+			),
+		);
+	}
+
+	// Escape closes the details panel (the listener removes itself once this view is gone).
+	function onKeyDown(e: KeyboardEvent): void {
+		if (!view.isConnected) return document.removeEventListener("keydown", onKeyDown);
+		if (e.key === "Escape" && selected && !(e.target as Element).closest("input, select, textarea")) select(null);
+	}
+	document.addEventListener("keydown", onKeyDown);
+
 	/** Lines from `line` reference properties, under the cards. */
 	const connectorLayer = svgEl("svg", { class: "connectors", "aria-hidden": "true" });
 	/** Property-name labels at the lines' midpoints: above the lines, below the cards. */
@@ -395,6 +504,8 @@ export function canvasView(store: Store, { readOnly }: { readOnly: boolean }): H
 		});
 		layer.replaceChildren(connectorLayer, connectorLabels, ...cardNodes);
 		drawConnectors();
+		if (selected?.cardId && !board.cards.some((c) => c.id === selected!.cardId)) selected = { ...selected, cardId: null };
+		renderDetails(); // the entity may have changed or been removed
 	}
 
 	function drawConnectors(): void {
@@ -526,7 +637,12 @@ export function canvasView(store: Store, { readOnly }: { readOnly: boolean }): H
 			...(removeButton ? { removeButton } : {}),
 			previews: true,
 		});
-		const node = el("article", { className: "canvas-card" }, header, body);
+		const node = el("article", { className: selected?.cardId === card.id ? "canvas-card selected" : "canvas-card" }, header, body);
+		node.dataset.cardId = card.id;
+		// Clicking a card shows its details (in the editor, finishing a drag does too; see below).
+		node.addEventListener("click", (e) => {
+			if (!(e.target as Element).closest("button, .ref-tag")) select(entity.id, card.id);
+		});
 		Object.assign(node.style, {
 			left: `${card.x}px`,
 			top: `${card.y}px`,
@@ -556,6 +672,7 @@ export function canvasView(store: Store, { readOnly }: { readOnly: boolean }): H
 				},
 				(dx, dy) => {
 					store.moveCard(card.id, card.x + dx / zoom, card.y + dy / zoom);
+					selected = { entityId: entity.id, cardId: card.id };
 					renderCards();
 				},
 			);
@@ -605,9 +722,11 @@ export function canvasView(store: Store, { readOnly }: { readOnly: boolean }): H
 				viewport = { ...start, x: start.x + dx, y: start.y + dy };
 				applyViewport();
 			},
-			() => {
+			(dx, dy) => {
 				surface.classList.remove("panning");
 				saveViewportSoon();
+				// A click on the empty canvas (no real pan) closes the details.
+				if (Math.hypot(dx, dy) < 3) select(null);
 			},
 		);
 	});
@@ -677,6 +796,6 @@ export function canvasView(store: Store, { readOnly }: { readOnly: boolean }): H
 	renderPanel();
 	renderCards();
 	canvasMain.append(surface, ...(readOnly ? [] : [openPanelButton]), toolbar, preview);
-	view.append(...(readOnly ? [] : [panel]), canvasMain);
+	view.append(...(readOnly ? [] : [panel]), canvasMain, details);
 	return view;
 }
