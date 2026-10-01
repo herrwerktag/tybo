@@ -37,27 +37,36 @@ main:has(.canvas-view) {
 	border-bottom: 1px solid var(--border);
 }
 
-/* Settings: ⚙ button at the right end of the top bar, with a small menu below it. */
-.settings {
-	position: relative;
+/* Top-bar menus (workspace, settings) at the right end, each a button with a panel below it. */
+.nav-menus {
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
 	margin-left: auto;
+	min-width: 0;
 }
 
-.settings-button {
+.menu {
+	position: relative;
+	min-width: 0;
+}
+
+.menu-button {
 	display: inline-flex;
 	align-items: center;
 	gap: 0.4rem;
+	max-width: 100%;
 	border: none;
 	background: transparent;
 	padding: 0.35rem 0.75rem;
 }
 
-.settings-menu {
+.menu-panel {
 	position: absolute;
 	right: 0;
 	top: calc(100% + 0.5rem);
 	z-index: 20;
-	min-width: 14rem;
+	min-width: 16rem;
 	display: grid;
 	gap: 0.75rem;
 	padding: 1rem;
@@ -67,12 +76,55 @@ main:has(.canvas-view) {
 	box-shadow: 0 6px 20px rgb(0 0 0 / 0.12);
 }
 
-.settings-menu[hidden] {
+.menu-panel[hidden] {
 	display: none;
 }
 
-.settings-menu h2 {
+.menu-panel h2 {
 	font-size: 1rem;
+}
+
+.menu-panel h3 {
+	font-size: 0.9rem;
+}
+
+/* Workspace menu: long names are cut in the top bar (full name in the list). */
+.workspace-name {
+	max-width: 14rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.workspace-list {
+	display: grid;
+	gap: 0.15rem;
+}
+
+.workspace-option {
+	width: 100%;
+	text-align: left;
+	border: none;
+	background: transparent;
+	padding: 0.35rem 0.5rem;
+	overflow-wrap: anywhere;
+}
+
+.workspace-option[aria-current="true"] {
+	background: var(--highlight);
+	font-weight: 600;
+}
+
+.workspace-new {
+	display: grid;
+	gap: 0.5rem;
+	padding-top: 0.75rem;
+	border-top: 1px solid var(--border);
+	justify-items: stretch;
+}
+
+.workspace-new button {
+	justify-self: start;
 }
 
 .tab {

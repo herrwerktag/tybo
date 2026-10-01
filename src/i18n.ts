@@ -16,6 +16,16 @@ const en = {
 	tabViewer: "Viewer",
 	settings: "Settings",
 	language: "Language",
+	workspaces: "Workspaces",
+	workspaceMenuLabel: (name: string) => `Workspace: ${name}`,
+	defaultWorkspaceName: (n: number) => `Workspace ${n}`,
+	newWorkspace: "New workspace",
+	copyTypesFrom: (name: string) => `Copy entity types from ${name}`,
+	renameWorkspace: "Rename workspace",
+	deleteWorkspace: "Delete workspace",
+	lastWorkspace: "The last workspace can't be deleted",
+	confirmDeleteWorkspace: (name: string, types: number, entities: number, boards: number) =>
+		`Delete workspace "${name}" with ${types} entity types, ${entities} entities and ${boards} boards? This can't be undone.`,
 
 	// Common actions
 	save: "Save",
@@ -149,6 +159,16 @@ const de: Messages = {
 	tabViewer: "Betrachter",
 	settings: "Einstellungen",
 	language: "Sprache",
+	workspaces: "Arbeitsbereiche",
+	workspaceMenuLabel: (name) => `Arbeitsbereich: ${name}`,
+	defaultWorkspaceName: (n) => `Arbeitsbereich ${n}`,
+	newWorkspace: "Neuer Arbeitsbereich",
+	copyTypesFrom: (name) => `Entitätstypen aus ${name} übernehmen`,
+	renameWorkspace: "Arbeitsbereich umbenennen",
+	deleteWorkspace: "Arbeitsbereich löschen",
+	lastWorkspace: "Der letzte Arbeitsbereich kann nicht gelöscht werden",
+	confirmDeleteWorkspace: (name, types, entities, boards) =>
+		`Arbeitsbereich „${name}“ mit ${types} Entitätstypen, ${entities} Entitäten und ${boards} Boards löschen? Das kann nicht rückgängig gemacht werden.`,
 
 	save: "Speichern",
 	cancel: "Abbrechen",

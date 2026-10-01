@@ -23,6 +23,7 @@ import { canvasView } from "./canvas.js";
 import { el, typeDot } from "./dom.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
 import type { Store } from "./store.js";
+import type { Workspaces } from "./workspaces.js";
 
 interface UiState {
 	editingTypeId: string | null;
@@ -37,9 +38,11 @@ interface UiState {
 	focusForm: "type" | "entity" | null;
 	/** Drag handle to focus after the next render, so keyboard reordering keeps focus on the moved property. */
 	focusHandle: number | null;
-	/** Whether the settings menu is open (kept across the re-render a language change causes). */
-	settingsOpen: boolean;
+	/** The open top-bar menu, if any (kept across re-renders, e.g. a language change). */
+	openMenu: MenuName | null;
 }
+
+type MenuName = "settings" | "workspace";
 
 const PROPERTY_MIME = "application/x-property-index";
 
@@ -82,7 +85,9 @@ function newDraftProperty(): DraftProperty {
 	return { name: "", kind: "text", options: [], reference: null, cardDisplay: "list" };
 }
 
-export function render(root: HTMLElement, store: Store): void {
+export function render(root: HTMLElement, workspaces: Workspaces): void {
+	/** The active workspace's data; replaced when switching workspaces. */
+	let store: Store = workspaces.openStore(workspaces.active.id);
 	const state: UiState = {
 		editingTypeId: null,
 		draftName: "",
@@ -94,7 +99,7 @@ export function render(root: HTMLElement, store: Store): void {
 		editingEntityId: null,
 		focusForm: null,
 		focusHandle: null,
-		settingsOpen: false,
+		openMenu: null,
 	};
 
 	function resetTypeForm(): void {
@@ -139,41 +144,24 @@ export function render(root: HTMLElement, store: Store): void {
 			tab("data", text.tabData),
 			tab("canvas", text.tabCanvas),
 			tab("viewer", text.tabViewer),
-			settingsMenu(),
+			el("div", { className: "nav-menus" }, workspaceMenu(), settingsMenu()),
 		);
 		nav.querySelector(".current")?.setAttribute("aria-current", "page");
 		return nav;
 	}
 
-	/** ⚙ button at the right of the top bar, opening a small menu; closes on outside click or Escape. */
-	function settingsMenu(): HTMLElement {
-		const languageSelect = el(
-			"select",
-			{
-				onchange: () => {
-					setLanguage(languageSelect.value as Language);
-					state.settingsOpen = true; // keep the menu open in the new language
-					rerender();
-					root.querySelector<HTMLElement>(".settings-menu select")?.focus();
-				},
-			},
-			...LANGUAGES.map(({ code, name }) => el("option", { value: code, lang: code, selected: code === language }, name)),
-		);
-		const menu = el(
-			"div",
-			{ className: "settings-menu", id: "settings-menu", role: "dialog", ariaLabel: text.settings },
-			el("h2", {}, text.settings),
-			el("label", { className: "field" }, el("span", {}, text.language), languageSelect),
-		);
-		const button = el(
-			"button",
-			{ type: "button", className: "settings-button", onclick: () => setOpen(!state.settingsOpen) },
-			el("span", { ariaHidden: "true" }, "⚙"),
-			text.settings,
-		);
-		button.setAttribute("aria-controls", menu.id);
+	/**
+	 * A top-bar button with a panel below it; closes on outside click or Escape. Which menu is open lives in
+	 * `state.openMenu`, so only one is open at a time and it survives a re-render (e.g. after a language change).
+	 */
+	function popover(name: MenuName, button: HTMLButtonElement, panelLabel: string, ...content: Node[]): HTMLElement {
+		const panel = el("div", { className: "menu-panel", id: `${name}-menu`, role: "dialog", ariaLabel: panelLabel }, ...content);
+		button.type = "button";
+		button.classList.add("menu-button");
+		button.setAttribute("aria-controls", panel.id);
 		button.setAttribute("aria-haspopup", "dialog");
-		const wrapper = el("div", { className: "settings" }, button, menu);
+		button.addEventListener("click", () => setOpen(state.openMenu !== name));
+		const wrapper = el("div", { className: "menu" }, button, panel);
 
 		const stopListening = () => {
 			document.removeEventListener("pointerdown", onPointerDown);
@@ -191,8 +179,9 @@ export function render(root: HTMLElement, store: Store): void {
 			}
 		}
 		function setOpen(open: boolean): void {
-			state.settingsOpen = open;
-			menu.hidden = !open;
+			if (open) state.openMenu = name;
+			else if (state.openMenu === name) state.openMenu = null;
+			panel.hidden = !open;
 			button.ariaExpanded = String(open);
 			stopListening();
 			if (open) {
@@ -200,8 +189,130 @@ export function render(root: HTMLElement, store: Store): void {
 				document.addEventListener("keydown", onKeyDown);
 			}
 		}
-		setOpen(state.settingsOpen);
+		setOpen(state.openMenu === name);
 		return wrapper;
+	}
+
+	/** ⚙ Settings: the UI language. */
+	function settingsMenu(): HTMLElement {
+		const languageSelect = el(
+			"select",
+			{
+				onchange: () => {
+					setLanguage(languageSelect.value as Language);
+					rerender(); // the menu stays open, now in the new language
+					root.querySelector<HTMLElement>("#settings-menu select")?.focus();
+				},
+			},
+			...LANGUAGES.map(({ code, name }) => el("option", { value: code, lang: code, selected: code === language }, name)),
+		);
+		return popover(
+			"settings",
+			el("button", {}, el("span", { ariaHidden: "true" }, "⚙"), text.settings),
+			text.settings,
+			el("h2", {}, text.settings),
+			el("label", { className: "field" }, el("span", {}, text.language), languageSelect),
+		);
+	}
+
+	/** The current workspace's name; opens the list of workspaces, rename/delete, and the form for a new one. */
+	function workspaceMenu(): HTMLElement {
+		const current = workspaces.active;
+		const isLast = workspaces.list.length <= 1;
+
+		const list = el(
+			"ul",
+			{ className: "workspace-list" },
+			...workspaces.list.map((w) => {
+				const option = el(
+					"button",
+					{ type: "button", className: "workspace-option", onclick: () => switchWorkspace(w.id) },
+					w.name,
+				);
+				if (w.id === current.id) option.setAttribute("aria-current", "true");
+				return el("li", {}, option);
+			}),
+		);
+
+		const nameInput = el("input", {
+			ariaLabel: text.name,
+			value: text.defaultWorkspaceName(workspaces.list.length + 1),
+		});
+		const copyTypes = el("input", { type: "checkbox", disabled: store.data.types.length === 0 });
+		const newForm = el(
+			"form",
+			{
+				className: "workspace-new",
+				onsubmit: (e) => {
+					e.preventDefault();
+					const added = workspaces.add(nameInput.value, copyTypes.checked ? store.data.types : []);
+					switchWorkspace(added.id);
+				},
+			},
+			el("h3", {}, text.newWorkspace),
+			nameInput,
+			el("label", { className: "checkbox-setting" }, copyTypes, ` ${text.copyTypesFrom(current.name)}`),
+			el("button", { type: "submit", className: "primary" }, text.create),
+		);
+
+		const button = el(
+			"button",
+			{ title: text.workspaces, ariaLabel: text.workspaceMenuLabel(current.name) },
+			el("span", { ariaHidden: "true" }, "▤"),
+			el("span", { className: "workspace-name" }, current.name),
+		);
+		return popover(
+			"workspace",
+			button,
+			text.workspaces,
+			el("h2", {}, text.workspaces),
+			list,
+			el(
+				"div",
+				{ className: "row" },
+				el(
+					"button",
+					{
+						type: "button",
+						title: text.renameWorkspace,
+						onclick: () => {
+							const name = prompt(text.renameWorkspace, current.name);
+							if (name === null) return;
+							workspaces.rename(current.id, name);
+							rerender();
+						},
+					},
+					text.renameButton,
+				),
+				el(
+					"button",
+					{
+						type: "button",
+						disabled: isLast,
+						title: isLast ? text.lastWorkspace : text.deleteWorkspace,
+						onclick: () => {
+							const { types, entities, boards } = store.data;
+							if (!confirm(text.confirmDeleteWorkspace(current.name, types.length, entities.length, boards.length))) return;
+							workspaces.remove(current.id);
+							switchWorkspace(workspaces.active.id);
+						},
+					},
+					text.delete,
+				),
+			),
+			newForm,
+		);
+	}
+
+	/** Opens another workspace: its own types, entities and boards, in the same tab. */
+	function switchWorkspace(id: string): void {
+		workspaces.setActive(id);
+		store = workspaces.openStore(workspaces.active.id);
+		resetTypeForm();
+		state.selectedTypeId = store.data.types[0]?.id ?? null;
+		state.editingEntityId = null;
+		state.openMenu = null;
+		rerender();
 	}
 
 	function propertyRow(prop: DraftProperty, i: number): HTMLElement {
