@@ -261,6 +261,61 @@ export function canvasView(store: Store): HTMLElement {
 		);
 	}
 
+	const canvasMain = el("div", { className: "canvas-main" });
+	/** Read-only card shown while hovering or focusing a reference tag; in screen space, so zoom doesn't shrink it. */
+	const preview = el("article", { className: "canvas-card card-preview", role: "tooltip", id: "card-preview" });
+	preview.hidden = true;
+	let previewTimer: ReturnType<typeof setTimeout> | undefined;
+
+	function attachPreview(tag: HTMLElement, entityId: string): void {
+		tag.tabIndex = 0;
+		tag.setAttribute("aria-describedby", preview.id);
+		tag.addEventListener("pointerenter", () => {
+			clearTimeout(previewTimer);
+			// A short delay, so moving across a card doesn't flash previews.
+			previewTimer = setTimeout(() => showPreview(tag, entityId), 250);
+		});
+		tag.addEventListener("pointerleave", hidePreview);
+		tag.addEventListener("focus", () => showPreview(tag, entityId));
+		tag.addEventListener("blur", hidePreview);
+	}
+
+	function showPreview(anchor: HTMLElement, entityId: string): void {
+		const entity = store.data.entities.find((e) => e.id === entityId);
+		if (!entity || !anchor.isConnected) return;
+		const type = store.data.types.find((t) => t.id === entity.typeId);
+		const entityNames = new Map(store.data.entities.map((e) => [e.id, e.name]));
+		const { header, body } = cardParts(entity, type, entityNames, () => false, { previews: false });
+		preview.replaceChildren(header, body);
+		preview.hidden = false;
+
+		// The whole card, as tall as the canvas allows.
+		const gap = 6;
+		const margin = 8;
+		const area = canvasMain.getBoundingClientRect();
+		const tag = anchor.getBoundingClientRect();
+		preview.style.maxHeight = `${area.height - 2 * margin}px`;
+		const { offsetWidth: width, offsetHeight: height } = preview;
+		// Fade the bottom only if even the full canvas height isn't enough.
+		preview.classList.toggle("clipped", body.scrollHeight > body.clientHeight);
+
+		// Below the tag if it fits, else above; otherwise as low as fits inside the canvas (it may cover the tag,
+		// which is fine because the preview never catches the pointer).
+		const tagTop = tag.top - area.top;
+		const tagBottom = tag.bottom - area.top;
+		let top: number;
+		if (tagBottom + gap + height <= area.height - margin) top = tagBottom + gap;
+		else if (tagTop - gap - height >= margin) top = tagTop - gap - height;
+		else top = Math.max(margin, area.height - margin - height);
+		const left = Math.min(Math.max(margin, tag.left - area.left), area.width - width - margin);
+		Object.assign(preview.style, { left: `${left}px`, top: `${top}px` });
+	}
+
+	function hidePreview(): void {
+		clearTimeout(previewTimer);
+		preview.hidden = true;
+	}
+
 	/** Lines from `line` reference properties, under the cards. */
 	const connectorLayer = svgEl("svg", { class: "connectors", "aria-hidden": "true" });
 	/** Property-name labels at the lines' midpoints: above the lines, below the cards. */
@@ -271,6 +326,7 @@ export function canvasView(store: Store): HTMLElement {
 	let links: { fromCardId: string; targetCardIds: string[]; label: string; color: string; arrow: LineArrow }[] = [];
 
 	function renderCards(): void {
+		hidePreview(); // its tag is about to be replaced
 		const board = currentBoard();
 		const entities = new Map(store.data.entities.map((e) => [e.id, e]));
 		const entityNames = new Map(store.data.entities.map((e) => [e.id, e.name]));
@@ -336,8 +392,11 @@ export function canvasView(store: Store): HTMLElement {
 		connectorLabels.replaceChildren(...labels);
 	}
 
-	/** Label/value rows: text as plain text, options as a grey chip, references as tags in the target type's color. */
-	function propertyList(rows: CardRow[]): HTMLElement {
+	/**
+	 * Label/value rows: text as plain text, options as a grey chip, references as tags in the target type's color.
+	 * With `previews`, hovering or focusing a reference tag shows that entity's card.
+	 */
+	function propertyList(rows: CardRow[], previews: boolean): HTMLElement {
 		return el(
 			"dl",
 			{ className: "card-props" },
@@ -349,11 +408,13 @@ export function canvasView(store: Store): HTMLElement {
 						: el(
 								"dd",
 								{ className: "prop-chips" },
-								...row.values.map((v) => {
+								...row.values.map((v, i) => {
 									if (row.kind !== "reference") return el("span", { className: "chip" }, v);
 									// Same color as the top bar of the card it points to.
 									const tag = el("span", { className: "ref-tag" }, v);
 									if (color) tag.style.background = color;
+									const entityId = row.entityIds[i];
+									if (previews && entityId) attachPreview(tag, entityId);
 									return tag;
 								}),
 							);
@@ -362,33 +423,20 @@ export function canvasView(store: Store): HTMLElement {
 		);
 	}
 
-	function cardElement(
-		card: CanvasCard,
+	/** Header (colored bar, name) and scrolling body (properties, content) shared by cards and previews. */
+	function cardParts(
 		entity: Entity,
 		type: EntityType | undefined,
 		entityNames: ReadonlyMap<string, string>,
 		isLinked: (entityId: string) => boolean,
-	): HTMLElement {
-		// Top bar in the type's color: type label and ×.
+		options: { removeButton?: HTMLElement; previews: boolean },
+	): { header: HTMLElement; body: HTMLElement } {
+		// Top bar in the type's color: type label (and × on real cards).
 		const bar = el(
 			"div",
 			{ className: "card-bar" },
 			el("span", { className: "card-type" }, type?.name ?? ""),
-			el(
-				"button",
-				{
-					type: "button",
-					className: "card-remove",
-					ariaLabel: `Remove ${entity.name} from canvas`,
-					title: "Remove from canvas",
-					onclick: () => {
-						store.removeCard(card.id);
-						renderCards();
-						renderPanel();
-					},
-				},
-				"×",
-			),
+			...(options.removeButton ? [options.removeButton] : []),
 		);
 		if (type) bar.style.background = type.color;
 		const header = el(
@@ -403,13 +451,39 @@ export function canvasView(store: Store): HTMLElement {
 		const body = el(
 			"div",
 			{ className: "card-body" },
-			...(rows.length > 0 ? [propertyList(rows)] : []),
+			...(rows.length > 0 ? [propertyList(rows, options.previews)] : []),
 			...(entity.content.trim()
 				? [el("div", { className: "card-content" }, entity.content)]
 				: rows.length === 0
 					? [el("div", { className: "card-content muted" }, "No content")]
 					: []),
 		);
+		return { header, body };
+	}
+
+	function cardElement(
+		card: CanvasCard,
+		entity: Entity,
+		type: EntityType | undefined,
+		entityNames: ReadonlyMap<string, string>,
+		isLinked: (entityId: string) => boolean,
+	): HTMLElement {
+		const removeButton = el(
+			"button",
+			{
+				type: "button",
+				className: "card-remove",
+				ariaLabel: `Remove ${entity.name} from canvas`,
+				title: "Remove from canvas",
+				onclick: () => {
+					store.removeCard(card.id);
+					renderCards();
+					renderPanel();
+				},
+			},
+			"×",
+		);
+		const { header, body } = cardParts(entity, type, entityNames, isLinked, { removeButton, previews: true });
 		const resize = el("div", { className: "card-resize", title: "Resize" });
 		const node = el("article", { className: "canvas-card" }, header, body, resize);
 		Object.assign(node.style, {
@@ -469,6 +543,10 @@ export function canvasView(store: Store): HTMLElement {
 
 		return node;
 	}
+
+	// Any drag, pan or zoom on the canvas closes the preview.
+	surface.addEventListener("pointerdown", hidePreview, { capture: true });
+	surface.addEventListener("wheel", hidePreview, { capture: true, passive: true });
 
 	// Pan by dragging the empty background.
 	surface.addEventListener("pointerdown", (e) => {
@@ -544,6 +622,7 @@ export function canvasView(store: Store): HTMLElement {
 	renderBoardControls();
 	renderPanel();
 	renderCards();
-	view.append(panel, el("div", { className: "canvas-main" }, surface, openPanelButton, toolbar));
+	canvasMain.append(surface, openPanelButton, toolbar, preview);
+	view.append(panel, canvasMain);
 	return view;
 }

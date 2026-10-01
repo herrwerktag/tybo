@@ -128,9 +128,9 @@ test("cardRows lists visible properties with a value, in order, with reference n
 		values: { t: "Dune", h: "secret", s: null, a: "p1", g: ["t1", "gone", "t2"] },
 	};
 	assert.deepEqual(cardRows(type, entity, names), [
-		{ label: "title", kind: "text", values: ["Dune"], targetTypeId: null },
-		{ label: "author", kind: "reference", values: ["Frank"], targetTypeId: "person" },
-		{ label: "tags", kind: "reference", values: ["Sci-fi", "Classic"], targetTypeId: "tag" },
+		{ label: "title", kind: "text", values: ["Dune"], entityIds: [], targetTypeId: null },
+		{ label: "author", kind: "reference", values: ["Frank"], entityIds: ["p1"], targetTypeId: "person" },
+		{ label: "tags", kind: "reference", values: ["Sci-fi", "Classic"], entityIds: ["t1", "t2"], targetTypeId: "tag" },
 	]);
 	assert.deepEqual(cardRows(type, { ...entity, values: { a: "gone" } }, names), []);
 });
@@ -144,7 +144,7 @@ test("cardRows: line references are left out while their card is linked, listed 
 	]);
 	const entity = { id: "e", typeId: "book", name: "Dune", content: "", values: { g: ["t1", "t2"] } };
 	assert.deepEqual(cardRows(type, entity, names, (id) => id === "t1"), [
-		{ label: "tags", kind: "reference", values: ["Classic"], targetTypeId: "tag" },
+		{ label: "tags", kind: "reference", values: ["Classic"], entityIds: ["t2"], targetTypeId: "tag" },
 	]);
 	assert.deepEqual(cardRows(type, entity, names, () => true), []);
 	// Without board information nothing is linked, so everything is listed.

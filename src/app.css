@@ -458,6 +458,35 @@ th {
 	transform-origin: 0 0;
 }
 
+/* Read-only card preview for hovered references: its natural height (capped to the canvas in JS), above everything. */
+.card-preview {
+	display: flex;
+	flex-direction: column;
+	width: 280px;
+	z-index: 10;
+	pointer-events: none;
+	box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+}
+
+.card-preview[hidden] {
+	display: none;
+}
+
+.card-preview .card-body {
+	min-height: 0;
+	overflow: hidden;
+}
+
+/* Taller than the canvas: fade out the bottom instead of cutting a line in half. */
+.card-preview.clipped .card-body {
+	mask-image: linear-gradient(to bottom, #000 calc(100% - 2.5rem), transparent);
+}
+
+.ref-tag[tabindex]:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 1px;
+}
+
 /* Connector lines live in world coordinates at the layer's origin and never catch the pointer. */
 .connectors {
 	position: absolute;

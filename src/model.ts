@@ -134,6 +134,8 @@ export interface CardRow {
 	kind: PropertyKind;
 	/** Text, the chosen option, or the names of the referenced entities. */
 	values: string[];
+	/** For references: the entity ids, in the same order as `values`; empty for other kinds. */
+	entityIds: string[];
 	/** For references: the type the entities belong to (for its color). */
 	targetTypeId: string | null;
 }
@@ -160,10 +162,10 @@ export function cardRows(
 		if (display === "hidden" || value === null || value === undefined) return [];
 		let raw = typeof value === "string" ? [value] : value;
 		if (display === "line") raw = raw.filter((id) => !isLinked(id));
-		const values =
-			prop.kind === "reference" ? raw.flatMap((id) => entityNames.get(id) ?? []) : raw;
+		const entityIds = prop.kind === "reference" ? raw.filter((id) => entityNames.has(id)) : [];
+		const values = prop.kind === "reference" ? entityIds.map((id) => entityNames.get(id)!) : raw;
 		if (values.length === 0) return [];
-		return [{ label: prop.name, kind: prop.kind, values, targetTypeId: prop.reference?.typeId ?? null }];
+		return [{ label: prop.name, kind: prop.kind, values, entityIds, targetTypeId: prop.reference?.typeId ?? null }];
 	});
 }
 
