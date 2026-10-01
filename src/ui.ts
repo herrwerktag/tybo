@@ -60,7 +60,9 @@ function describeProperty(p: PropertyDef, types: EntityType[]): string {
 	if (p.kind === "options") return `${p.name}: ${p.options.join(" / ")}`;
 	if (p.kind === "reference") {
 		const target = types.find((t) => t.id === p.reference?.typeId)?.name ?? "?";
-		return `${p.name} → ${target}${p.reference?.multiple ? text.multipleSuffix : ""}`;
+		// No-break spaces keep "→ Target (multiple)" together; a long line wraps after the property name.
+		const suffix = p.reference?.multiple ? `\u00a0${text.multipleSuffix}` : "";
+		return `${p.name} →\u00a0${target}${suffix}`;
 	}
 	return `${p.name}: ${text.kinds.text}`;
 }
@@ -536,16 +538,15 @@ export function render(root: HTMLElement, store: Store): void {
 				el(
 					"li",
 					{ className: type.id === state.editingTypeId ? "type-item current" : "type-item" },
-					el(
-						"div",
-						{},
-						el("strong", {}, typeDot(type.color), type.name),
-						el(
-							"p",
-							{ className: "muted" },
-							type.properties.map((p) => describeProperty(p, store.data.types)).join(", ") || text.noProperties,
-						),
-					),
+					// Name and buttons on top; the properties below, one per line, across the full width.
+					el("strong", { className: "type-name" }, typeDot(type.color), type.name),
+					type.properties.length > 0
+						? el(
+								"ul",
+								{ className: "type-summary muted" },
+								...type.properties.map((p) => el("li", {}, describeProperty(p, store.data.types))),
+							)
+						: el("p", { className: "type-summary muted" }, text.noProperties),
 					el(
 						"div",
 						{ className: "actions" },

@@ -51,7 +51,7 @@ const en = {
 	createType: "Create type",
 	noProperties: "no properties",
 	kinds: { text: "text", options: "options", reference: "reference" } satisfies Record<PropertyKind, string>,
-	multipleSuffix: " (multiple)",
+	multipleSuffix: "(multiple)",
 	confirmChangedValues: (count: number) => `This changes or clears ${count} existing values. Continue?`,
 	cannotDeleteType: (name: string, usedBy: string) =>
 		`Can't delete ${name}: used by ${usedBy}. Remove or change those properties first.`,
@@ -177,7 +177,7 @@ const de: Messages = {
 	createType: "Typ erstellen",
 	noProperties: "keine Eigenschaften",
 	kinds: { text: "Text", options: "Auswahl", reference: "Referenz" },
-	multipleSuffix: " (mehrfach)",
+	multipleSuffix: "(mehrfach)",
 	confirmChangedValues: (count) => `Dadurch werden ${count} vorhandene Werte geändert oder geleert. Fortfahren?`,
 	cannotDeleteType: (name, usedBy) =>
 		`${name} kann nicht gelöscht werden: wird verwendet von ${usedBy}. Entferne oder ändere zuerst diese Eigenschaften.`,

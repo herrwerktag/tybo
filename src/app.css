@@ -317,8 +317,11 @@ button:disabled {
 .type-item {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) auto;
-	align-items: start;
-	gap: 0.5rem;
+	grid-template-areas:
+		"name actions"
+		"summary summary";
+	align-items: center;
+	gap: 0.35rem 0.5rem;
 	padding: 0.5rem 0.75rem;
 	border: 1px solid var(--border);
 	border-radius: 6px;
@@ -329,8 +332,21 @@ button:disabled {
 	border-color: var(--focus);
 }
 
-.type-item .muted {
+.type-name {
+	grid-area: name;
+	overflow-wrap: anywhere;
+}
+
+.type-item .actions {
+	grid-area: actions;
+}
+
+.type-summary {
+	grid-area: summary;
+	display: grid;
+	gap: 0.1rem;
 	font-size: 0.9em;
+	overflow-wrap: anywhere;
 }
 
 .checklist {
