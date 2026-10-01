@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { TYPE_COLORS, cardRows, migrateValues, moveItem, nextTypeColor, parseValue, validateType, type PropertyDef } from "./model.js";
+import { TYPE_COLORS, cardRows, filterEntities, migrateValues, moveItem, nextTypeColor, parseValue, validateType, type PropertyDef } from "./model.js";
 
 const noTypes = new Set<string>();
 const noEntities = new Map<string, string>();
@@ -161,4 +161,20 @@ test("validateType reports problems as codes with the property label", () => {
 		{ code: "optionsRequired", label: "status" },
 		{ code: "referenceTypeRequired", label: "author" },
 	]);
+});
+
+test("filterEntities matches names ignoring case and accents, optionally by type", () => {
+	const entities = [
+		{ name: "Überprüfung", typeId: "activity" },
+		{ name: "Incident gemeldet", typeId: "event" },
+		{ name: "Deployment-Paket erstellen", typeId: "activity" },
+	];
+	const names = (query: string, typeId: string | null = null) =>
+		filterEntities(entities, { query, typeId }).map((e) => e.name);
+
+	assert.deepEqual(names(""), entities.map((e) => e.name));
+	assert.deepEqual(names("uber"), ["Überprüfung"]);
+	assert.deepEqual(names("  GEMELDET "), ["Incident gemeldet"]);
+	assert.deepEqual(names("", "activity"), ["Überprüfung", "Deployment-Paket erstellen"]);
+	assert.deepEqual(names("paket", "event"), []);
 });

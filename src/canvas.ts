@@ -6,6 +6,7 @@ import {
 	MIN_CARD_SIZE,
 	cardRows,
 	effectiveCardDisplay,
+	filterEntities,
 	referencedIds,
 	type Board,
 	type CanvasCard,
@@ -202,14 +203,14 @@ export function canvasView(store: Store, { readOnly }: { readOnly: boolean }): H
 		setViewport(zoomAt(viewport, viewport.zoom * factor, sx, sy));
 	}
 
-	function renderPanel(): void {
-		if (readOnly) return; // no side panel in the viewer
-		const cardCounts = new Map<string, number>();
-		for (const card of currentBoard().cards) cardCounts.set(card.entityId, (cardCounts.get(card.entityId) ?? 0) + 1);
-		const groups = store.data.types
-			.map((type) => ({ type, entities: store.data.entities.filter((e) => e.typeId === type.id) }))
-			.filter((g) => g.entities.length > 0);
+	// Search and type filter for the side panel; kept for this visit only.
+	let panelQuery = "";
+	let panelTypeId: string | null = null;
+	/** The entity list below the panel's controls; re-rendered on its own, so typing in the search keeps focus. */
+	const panelList = el("div", { className: "panel-list" });
 
+	/** Builds the panel once (header, hint, search, type filter); the list itself is drawn by renderPanel. */
+	function buildPanel(): void {
 		const toggle = el(
 			"button",
 			{
@@ -221,11 +222,47 @@ export function canvasView(store: Store, { readOnly }: { readOnly: boolean }): H
 			},
 			"«",
 		);
-
+		const search = el("input", {
+			type: "search",
+			placeholder: text.searchEntities,
+			ariaLabel: text.searchEntities,
+			oninput: () => {
+				panelQuery = search.value;
+				renderPanel();
+			},
+		});
+		const typeFilter = el(
+			"select",
+			{
+				ariaLabel: text.filterByType,
+				onchange: () => {
+					panelTypeId = typeFilter.value || null;
+					renderPanel();
+				},
+			},
+			el("option", { value: "" }, text.allTypes),
+			...store.data.types.map((t) => el("option", { value: t.id }, t.name)),
+		);
 		panel.replaceChildren(
 			el("div", { className: "panel-header" }, el("h2", {}, text.entities), toggle),
 			el("p", { className: "muted" }, text.dragOntoCanvas),
-			...(groups.length === 0 ? [el("p", { className: "muted" }, text.noEntitiesYet)] : []),
+			el("div", { className: "panel-filters" }, search, typeFilter),
+			panelList,
+		);
+	}
+
+	function renderPanel(): void {
+		if (readOnly) return; // no side panel in the viewer
+		const cardCounts = new Map<string, number>();
+		for (const card of currentBoard().cards) cardCounts.set(card.entityId, (cardCounts.get(card.entityId) ?? 0) + 1);
+		const matches = filterEntities(store.data.entities, { query: panelQuery, typeId: panelTypeId });
+		const groups = store.data.types
+			.map((type) => ({ type, entities: matches.filter((e) => e.typeId === type.id) }))
+			.filter((g) => g.entities.length > 0);
+
+		const empty = store.data.entities.length === 0 ? text.noEntitiesYet : text.noMatches;
+		panelList.replaceChildren(
+			...(groups.length === 0 ? [el("p", { className: "muted" }, empty)] : []),
 			...groups.map(({ type, entities }) =>
 				el(
 					"div",
@@ -239,8 +276,9 @@ export function canvasView(store: Store, { readOnly }: { readOnly: boolean }): H
 							const item = el(
 								"li",
 								{ className: count > 0 ? "panel-item placed" : "panel-item", draggable: true },
-								entity.name,
-								...(count > 0 ? [el("span", { className: "muted" }, text.onCanvas(count))] : []),
+								el("span", {}, entity.name),
+								// Always on its own line below the name.
+								...(count > 0 ? [el("span", { className: "panel-item-note muted" }, text.onCanvas(count))] : []),
 							);
 							item.addEventListener("dragstart", (e) => {
 								if (!e.dataTransfer) return;
@@ -630,6 +668,7 @@ export function canvasView(store: Store, { readOnly }: { readOnly: boolean }): H
 
 	applyViewport();
 	renderBoardControls();
+	if (!readOnly) buildPanel();
 	renderPanel();
 	renderCards();
 	canvasMain.append(surface, ...(readOnly ? [] : [openPanelButton]), toolbar, preview);

@@ -169,6 +169,20 @@ export function cardRows(
 	});
 }
 
+/** Lower case without accents, so "uber" matches "Über". */
+function searchKey(value: string): string {
+	return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase();
+}
+
+/** Entities whose name contains `query` (ignoring case and accents), optionally only of one type. */
+export function filterEntities<T extends Pick<Entity, "name" | "typeId">>(
+	entities: readonly T[],
+	{ query, typeId }: { query: string; typeId: string | null },
+): T[] {
+	const key = searchKey(query.trim());
+	return entities.filter((e) => (typeId === null || e.typeId === typeId) && searchKey(e.name).includes(key));
+}
+
 /** Returns a copy of the list with the item at `from` moved to index `to`. */
 export function moveItem<T>(items: readonly T[], from: number, to: number): T[] {
 	const result = [...items];
