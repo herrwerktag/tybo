@@ -32,6 +32,37 @@ export type Store = ReturnType<typeof createStore>;
 /** How many changes can be undone. */
 const HISTORY_LIMIT = 100;
 
+/** The format of the saved data. When it changes, raise this and add the step from the old version to MIGRATIONS. */
+export const DATA_VERSION = 1;
+
+type SavedData = Record<string, unknown>;
+
+/**
+ * For each version, the step that turns data saved in it into the next version, run before the data is checked.
+ * Version 0 is data saved before versions existed: normalize() still reads all of its older shapes, so its step
+ * has nothing to do.
+ */
+export const MIGRATIONS: Readonly<Record<number, (data: SavedData) => SavedData>> = {
+	0: (data) => data,
+};
+
+/** The version saved data says it's in; data without a (valid) version is from before versions existed. */
+function savedVersion(data: SavedData): number {
+	return Number.isInteger(data.version) && (data.version as number) >= 0 ? (data.version as number) : 0;
+}
+
+/** Brings saved data up to `target`, one step per version from the version it was saved in. */
+export function migrate(data: SavedData, steps = MIGRATIONS, target = DATA_VERSION): SavedData {
+	let migrated = data;
+	for (let version = savedVersion(data); version < target; version++) migrated = steps[version]!(migrated);
+	return migrated;
+}
+
+/** The data as it's saved and exported: marked with the format version. */
+export function toSaved(data: AppData): SavedData {
+	return { version: DATA_VERSION, ...data };
+}
+
 function newBoard(name: string): Board {
 	return { id: ulid(), name, cards: [], viewport: defaultViewport(), drawings: [] };
 }
@@ -160,7 +191,9 @@ export type LoadProblem =
 	/** Nothing (`unreadable`) or not everything could be read; the saved text was copied to `backupKey` first. */
 	| { code: "unreadable" | "partlyUnreadable"; backupKey: string }
 	/** Not everything could be read, and the saved text couldn't be copied aside: saving is paused to keep it. */
-	| { code: "notBackedUp" };
+	| { code: "notBackedUp" }
+	/** Saved by a newer version of the app: read as far as understood, and saving is paused so it isn't overwritten. */
+	| { code: "newerVersion" };
 
 function normalize(data: AppData): AppData {
 	// Types saved before colors existed get the next free palette colors, in order.
@@ -234,7 +267,7 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 	let redoStack: AppData[] = [];
 	const historyListeners: (() => void)[] = [];
 	/** The data as last saved, to tell changes that change nothing. */
-	let savedJson = JSON.stringify(data);
+	let savedJson = JSON.stringify(toSaved(data));
 
 	function load(): { data: AppData; problem: LoadProblem | null } {
 		let raw: string | null;
@@ -248,9 +281,15 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 		try {
 			const parsed: unknown = JSON.parse(raw);
 			if (looksLikeAppData(parsed)) {
-				const kept = keepWellFormed(parsed as unknown as AppData);
+				if (savedVersion(parsed) > DATA_VERSION) {
+					// The original stays untouched (saving is paused), so it needs no backup.
+					const understood = reconcile(normalize(keepWellFormed(parsed as unknown as AppData)));
+					return { data: understood, problem: { code: "newerVersion" } };
+				}
+				const migrated = migrate(parsed) as unknown as AppData;
+				const kept = keepWellFormed(migrated);
 				const loaded = reconcile(normalize(kept));
-				const complete = itemCount(kept) === itemCount(parsed as unknown as AppData);
+				const complete = itemCount(kept) === itemCount(migrated);
 				return { data: loaded, problem: complete ? null : backUp(raw, "partlyUnreadable") };
 			}
 		} catch {
@@ -271,8 +310,9 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 	}
 
 	function save(): void {
-		savedJson = JSON.stringify(data);
-		if (loadProblem?.code === "notBackedUp") return; // keep the saved original until it's backed up
+		savedJson = JSON.stringify(toSaved(data));
+		// Keep the saved original: it isn't backed up, or a newer version saved it.
+		if (loadProblem?.code === "notBackedUp" || loadProblem?.code === "newerVersion") return;
 		let failed = false;
 		try {
 			storage.setItem(key, savedJson);
@@ -288,7 +328,7 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 
 	/** Makes `next` the data and saves it; the data before goes onto the undo history. Changes that change nothing are skipped. */
 	function change(next: AppData): void {
-		if (JSON.stringify(next) === savedJson) return;
+		if (JSON.stringify(toSaved(next)) === savedJson) return;
 		undoStack = [...undoStack.slice(1 - HISTORY_LIMIT), data];
 		redoStack = [];
 		data = next;
@@ -350,7 +390,7 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 		/** Reads the saved data again, e.g. after another tab saved it, so the next save here doesn't overwrite that. */
 		reload(): void {
 			({ data, problem: loadProblem } = load());
-			savedJson = JSON.stringify(data);
+			savedJson = JSON.stringify(toSaved(data));
 			// The history is from before the other tab's changes; undoing it would undo those too.
 			undoStack = [];
 			redoStack = [];

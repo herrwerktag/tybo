@@ -181,7 +181,9 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 			messages.push(el("p", {}, text.unexpectedError(state.unexpectedError), " ", reloadButton()));
 		}
 		if (saveFailed) messages.push(el("p", {}, text.saveFailed));
-		if (load?.code === "notBackedUp") {
+		if (load?.code === "newerVersion") {
+			messages.push(el("p", {}, text.loadNewerVersion, " ", reloadButton()));
+		} else if (load?.code === "notBackedUp") {
 			messages.push(el("p", {}, text.loadNotBackedUp, ...download));
 		} else if (load && !state.loadProblemDismissed) {
 			const message = load.code === "unreadable" ? text.loadUnreadable(load.backupKey) : text.loadPartlyUnreadable(load.backupKey);

@@ -1,5 +1,5 @@
 import type { AppData, EntityType } from "./model.js";
-import { createStore, looksLikeAppData, type Store } from "./store.js";
+import { DATA_VERSION, createStore, looksLikeAppData, toSaved, type Store } from "./store.js";
 import { ulid } from "./ulid.js";
 
 /** A workspace: its own entity types, entities and boards, stored under its own key. */
@@ -27,9 +27,10 @@ export function dataKey(workspaceId: string): string {
 /** Marks an exported workspace file. */
 const EXPORT_FORMAT = "entities-app-workspace";
 
-/** A workspace as a JSON file: its name and data, marked with the format and its version. */
+/** A workspace as a JSON file: its name and data, marked with the file format and its version (the data has its own). */
 export function exportWorkspace(name: string, data: AppData): string {
-	return JSON.stringify({ format: EXPORT_FORMAT, version: 1, name, exportedAt: new Date().toISOString(), data }, null, 2);
+	const file = { format: EXPORT_FORMAT, version: 1, name, exportedAt: new Date().toISOString(), data: toSaved(data) };
+	return JSON.stringify(file, null, 2);
 }
 
 /**
@@ -122,7 +123,7 @@ export function createWorkspaces(storage: WorkspaceStorage, defaultName: (n: num
 			const workspace = newWorkspace(name);
 			try {
 				// The store fills in the rest (a default board, defaults for any missing fields) when it loads this.
-				storage.setItem(dataKey(workspace.id), JSON.stringify({ types: copyTypesFrom, entities: [], boards: [] }));
+				storage.setItem(dataKey(workspace.id), JSON.stringify({ version: DATA_VERSION, types: copyTypesFrom, entities: [], boards: [] }));
 			} catch {
 				// Storage blocked: the workspace starts empty.
 			}

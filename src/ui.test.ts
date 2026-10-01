@@ -248,3 +248,12 @@ test("canvas changes can be undone too: the Undo button follows them without the
 	undo!.click();
 	assert.ok(root.querySelector('.canvas-board .canvas-card[data-card-id="c"]'));
 });
+
+test("a workspace saved by a newer version warns that changes aren't saved, and offers a reload", () => {
+	const root = startApp({ "entities-app": JSON.stringify({ version: 999, types: [], entities: [] }) });
+	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
+	assert.equal(banner.hidden, false);
+	assert.match(banner.textContent ?? "", new RegExp(text.loadNewerVersion.slice(0, 20)));
+	assert.ok(byText(banner, "button", text.reload));
+	assert.equal(banner.querySelector(`button`)?.textContent, text.reload); // nothing to dismiss
+});

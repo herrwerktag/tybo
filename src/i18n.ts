@@ -41,6 +41,8 @@ const en = {
 		`Some saved data couldn't be read and was left out. The original is kept in the browser storage under "${backupKey}".`,
 	loadNotBackedUp:
 		"Some saved data couldn't be read, and there's no room to back it up. Changes aren't saved, so the original stays untouched. Free up browser storage, then reload.",
+	loadNewerVersion:
+		"This workspace was saved by a newer version of the app. Changes here aren't saved, so nothing of it gets lost. Reload the page to get the newer version.",
 	saveFailed: "Changes can't be saved: the browser storage is full or blocked. They're kept only until this tab is closed.",
 	downloadOriginal: "Download original",
 	dismiss: "Dismiss",
@@ -236,6 +238,8 @@ const de: Messages = {
 		`Ein Teil der gespeicherten Daten konnte nicht gelesen werden und fehlt. Das Original liegt im Browserspeicher unter „${backupKey}“.`,
 	loadNotBackedUp:
 		"Ein Teil der gespeicherten Daten konnte nicht gelesen werden, und für eine Sicherung ist kein Platz. Änderungen werden nicht gespeichert, damit das Original erhalten bleibt. Gib Browserspeicher frei und lade die Seite neu.",
+	loadNewerVersion:
+		"Dieser Arbeitsbereich wurde mit einer neueren Version der App gespeichert. Änderungen hier werden nicht gespeichert, damit davon nichts verloren geht. Lade die Seite neu, um die neuere Version zu bekommen.",
 	saveFailed: "Änderungen können nicht gespeichert werden: Der Browserspeicher ist voll oder blockiert. Sie bleiben nur erhalten, bis dieser Tab geschlossen wird.",
 	downloadOriginal: "Original herunterladen",
 	dismiss: "Schließen",

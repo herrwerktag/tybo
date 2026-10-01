@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TYPE_COLORS, type AppData, type DraftProperty } from "./model.js";
-import { createStore, type Store } from "./store.js";
+import { DATA_VERSION, MIGRATIONS, createStore, migrate, type Store } from "./store.js";
 import { isUlid } from "./ulid.js";
 
 function memoryStorage(initial: Record<string, string> = {}) {
@@ -727,4 +727,43 @@ test("history is limited, cleared on reload, and changes to it are reported", ()
 	store.redo();
 	store.reload(); // e.g. another tab saved: its changes mustn't be undone from here
 	assert.deepEqual(store.history, { canUndo: false, canRedo: false });
+});
+
+test("saved data carries the format version; data saved before versions existed loads and gets it on the next save", () => {
+	const storage = memoryStorage({ "entities-app": JSON.stringify({ types: [{ id: "b", name: "Book", properties: [] }], entities: [] }) });
+	const store = createStore(storage);
+	assert.equal(store.problems.load, null);
+	store.addBoard("Second");
+	const saved = JSON.parse(storage.getItem("entities-app")!);
+	assert.equal(saved.version, DATA_VERSION);
+	assert.deepEqual(saved.types.map((t: { name: string }) => t.name), ["Book"]);
+	assert.equal(createStore(storage).problems.load, null);
+	assert.equal("version" in store.data, false);
+});
+
+test("migrate runs one step per version, in order, from the saved version up", () => {
+	const steps = {
+		0: (d: Record<string, unknown>) => ({ ...d, log: [...(d.log as string[]), "0→1"] }),
+		1: (d: Record<string, unknown>) => ({ ...d, log: [...(d.log as string[]), "1→2"] }),
+	};
+	assert.deepEqual(migrate({ log: [] }, steps, 2), { log: ["0→1", "1→2"] });
+	assert.deepEqual(migrate({ version: 1, log: [] }, steps, 2), { version: 1, log: ["1→2"] });
+	assert.deepEqual(migrate({ version: 2, log: [] }, steps, 2), { version: 2, log: [] });
+	assert.deepEqual(migrate({ version: "x", log: [] }, steps, 2), { version: "x", log: ["0→1", "1→2"] });
+
+	// Every version before the current one has its step.
+	for (let v = 0; v < DATA_VERSION; v++) assert.equal(typeof MIGRATIONS[v], "function", `no step from version ${v}`);
+});
+
+test("data from a newer version is shown as far as it's understood, but never saved over", () => {
+	const newer = JSON.stringify({ version: DATA_VERSION + 1, types: [{ id: "b", name: "Book", properties: [], icon: "📕" }], entities: [], future: true });
+	const storage = memoryStorage({ "entities-app": newer });
+	const store = createStore(storage);
+	assert.deepEqual(store.problems.load, { code: "newerVersion" });
+	assert.deepEqual(store.data.types.map((t) => t.name), ["Book"]);
+
+	store.addType("Film", [titleDraft], "");
+	assert.equal(store.data.types.length, 2);
+	assert.equal(storage.getItem("entities-app"), newer);
+	assert.deepEqual([...storage.map.keys()], ["entities-app"]); // no backup needed: the original stays
 });

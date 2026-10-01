@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createStore } from "./store.js";
+import { DATA_VERSION, createStore } from "./store.js";
 import { createWorkspaces, dataKey, exportWorkspace, readWorkspaceFile } from "./workspaces.js";
 
 function memoryStorage(initial: Record<string, string> = {}) {
@@ -100,6 +100,7 @@ test("a new workspace can start with copies of entity types, keeping their ids",
 	assert.equal(copy.data.types[1]?.properties[0]?.reference?.typeId, person.id);
 	assert.deepEqual(copy.data.entities, []);
 	assert.equal(copy.data.boards.length, 1);
+	assert.equal(JSON.parse(storage.map.get(dataKey(workspaces.list[1]!.id))!).version, DATA_VERSION);
 	assert.deepEqual(copy.data.boards[0]?.cards, []);
 });
 
@@ -138,6 +139,7 @@ test("an exported workspace imports as a new one with the same data; the others 
 	const store = workspaces.openStore(imported!.id);
 	assert.deepEqual(store.data, source.data);
 	assert.equal(store.problems.load, null);
+	assert.equal(file!.data && (file!.data as { version?: unknown }).version, DATA_VERSION);
 });
 
 test("workspace files: plain saved data is accepted too; anything else is rejected", () => {
