@@ -677,6 +677,11 @@ button.ref-tag {
 	border-bottom: none;
 }
 
+/* The card being dragged stays above the others (see the card drag in canvas.ts). */
+.canvas-card.dragging {
+	z-index: 1;
+}
+
 .canvas-card.selected {
 	outline: 2px solid var(--focus);
 	outline-offset: 2px;

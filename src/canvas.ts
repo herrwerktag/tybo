@@ -700,7 +700,9 @@ export function canvasView(
 				(dx, dy) => {
 					// Small jitter during a click doesn't move the card.
 					if (!dragging && Math.hypot(dx, dy) < CLICK_TOLERANCE) return;
-					if (!dragging) layer.append(node); // on top while dragging
+					// On top while dragging. Not by moving the element to the end of the layer: moving it would
+					// release the pointer capture, and fast mouse movements would then leave the card behind.
+					if (!dragging) node.classList.add("dragging");
 					dragging = true;
 					const x = card.x + dx / zoom;
 					const y = card.y + dy / zoom;
