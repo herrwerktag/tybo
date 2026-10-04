@@ -103,6 +103,9 @@ jobs:
       - name: Pruefung (typecheck + tests + build)
         id: verify
         continue-on-error: true
+        env:
+          # Postgres fuer die Datenbank-Tests des API-Pakets; ohne das Secret werden sie uebersprungen.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -o pipefail
           {
