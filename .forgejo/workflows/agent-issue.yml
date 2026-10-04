@@ -44,7 +44,7 @@ jobs:
       - name: OpenCode installieren
         run: npm install -g opencode-ai@latest
 
-      - name: OpenCode konfigurieren (GLM-5.3 braucht reasoning)
+      - name: OpenCode konfigurieren
         env:
           SYNTHETIC_API_KEY: ${{ secrets.SYNTHETIC_API_KEY }}
         run: |
@@ -73,7 +73,7 @@ jobs:
                 }
               }
             },
-            "model": "synthetic/hf:zai-org/GLM-5.3"
+            "model": "synthetic/hf:moonshotai/Kimi-K3"
           }
           JSON
           cat "$HOME/.config/opencode/opencode.json"
@@ -133,7 +133,7 @@ jobs:
           B: ${{ steps.push.outputs.branch }}
           G: ${{ github.ref_name }}
           T: "Agent: ${{ github.event.issue.title }}"
-          D: "Bearbeitet durch OpenCode (GLM-5.3). Schliesst #${{ github.event.issue.number }}"
+          D: "Bearbeitet durch OpenCode (Kimi-K3). Schliesst #${{ github.event.issue.number }}"
         run: |
           python3 -c "import json,os;print(json.dumps({'head':os.environ['B'],'base':os.environ['G'],'title':os.environ['T'],'body':os.environ['D']}))" > /tmp/pr.json
           cat /tmp/pr.json
