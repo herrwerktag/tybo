@@ -1,4 +1,4 @@
-import { freshDom } from "./test-dom.js";
+import { freshDom, localStoragePort } from "./test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { canvasView } from "./canvas.js";
@@ -6,9 +6,9 @@ import { CLICK_TOLERANCE } from "./dom.js";
 import { createStore, type Store } from "@bekbon/core";
 
 /** A board with one card for Dune (with content, so it can be resized) and one for Herbert. */
-function setup({ readOnly = false } = {}) {
+async function setup({ readOnly = false } = {}) {
 	freshDom();
-	const store = createStore(localStorage);
+	const store = await createStore(localStoragePort());
 	const book = store.addType("Book", [], "");
 	const dune = store.addEntity(book.id, "Dune", "A desert planet.", {});
 	const herbert = store.addEntity(book.id, "Herbert", "", {});
@@ -34,8 +34,8 @@ function dragBy(target: HTMLElement, dx: number, dy: number): void {
 	target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 }
 
-test("dragging a card's header moves it and saves the position; it doesn't open the details", () => {
-	const { store, view, card } = setup();
+test("dragging a card's header moves it and saves the position; it doesn't open the details", async () => {
+	const { store, view, card } = await setup();
 	dragBy(cardNode(view, card.id).querySelector("header")!, 50, 30);
 
 	assert.deepEqual([savedCard(store, card.id)?.x, savedCard(store, card.id)?.y], [150, 130]);
@@ -43,8 +43,8 @@ test("dragging a card's header moves it and saves the position; it doesn't open 
 	assert.equal(details(view).hidden, true);
 });
 
-test("a click with a little jitter selects the card and shows its details without moving it", () => {
-	const { store, view, card } = setup();
+test("a click with a little jitter selects the card and shows its details without moving it", async () => {
+	const { store, view, card } = await setup();
 	dragBy(cardNode(view, card.id).querySelector("header")!, CLICK_TOLERANCE - 1, 1);
 
 	assert.deepEqual([savedCard(store, card.id)?.x, savedCard(store, card.id)?.y], [100, 100]);
@@ -57,8 +57,8 @@ test("a click with a little jitter selects the card and shows its details withou
 	assert.equal(details(view).hidden, true);
 });
 
-test("resizing saves the new size, but never below the minimum", () => {
-	const { store, view, card } = setup();
+test("resizing saves the new size, but never below the minimum", async () => {
+	const { store, view, card } = await setup();
 	dragBy(cardNode(view, card.id).querySelector(".card-resize")!, 60, 40);
 	assert.deepEqual([savedCard(store, card.id)?.width, savedCard(store, card.id)?.height], [300, 200]);
 
@@ -66,8 +66,8 @@ test("resizing saves the new size, but never below the minimum", () => {
 	assert.deepEqual([savedCard(store, card.id)?.width, savedCard(store, card.id)?.height], [160, 80]);
 });
 
-test("× takes the card off the board; the entity stays", () => {
-	const { store, view, card, dune } = setup();
+test("× takes the card off the board; the entity stays", async () => {
+	const { store, view, card, dune } = await setup();
 	cardNode(view, card.id).querySelector<HTMLButtonElement>(".card-remove")!.click();
 
 	assert.equal(savedCard(store, card.id), undefined);
@@ -75,8 +75,8 @@ test("× takes the card off the board; the entity stays", () => {
 	assert.ok(store.data.entities.some((e) => e.id === dune.id));
 });
 
-test("the viewer only looks: no remove buttons, and dragging doesn't move cards", () => {
-	const { store, view, card } = setup({ readOnly: true });
+test("the viewer only looks: no remove buttons, and dragging doesn't move cards", async () => {
+	const { store, view, card } = await setup({ readOnly: true });
 	assert.equal(view.querySelector(".canvas-board .card-remove"), null);
 	assert.equal(view.querySelector(".canvas-panel"), null);
 

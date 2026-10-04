@@ -1,5 +1,6 @@
 import { isUlid, ulid } from "./ulid.js";
 import type { Point } from "./connectors.js";
+import type { StoragePort } from "./ports.js";
 import { clampZoom, defaultViewport, type Viewport } from "./viewport.js";
 import {
 	DEFAULT_CARD_SIZE,
@@ -27,7 +28,7 @@ import {
 	type PropertyValue,
 } from "./model.js";
 
-export type Store = ReturnType<typeof createStore>;
+export type Store = Awaited<ReturnType<typeof createStore>>;
 
 /** How many changes can be undone. */
 const HISTORY_LIMIT = 100;
@@ -258,8 +259,8 @@ function toPropertyDefs(properties: DraftProperty[]): PropertyDef[] {
 	}));
 }
 
-export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key = "entities-app") {
-	let { data, problem: loadProblem } = load();
+export async function createStore(port: StoragePort, key = "entities-app") {
+	let { data, problem: loadProblem, text: unreadText } = await load();
 	let saveFailed = false;
 	const problemListeners: (() => void)[] = [];
 	/** Earlier versions of the data for undo (newest last), and undone ones for redo. */
@@ -269,40 +270,41 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 	/** The data as last saved, to tell changes that change nothing. */
 	let savedJson = JSON.stringify(toSaved(data));
 
-	function load(): { data: AppData; problem: LoadProblem | null } {
+	async function load(): Promise<{ data: AppData; problem: LoadProblem | null; text: string | null }> {
 		let raw: string | null;
 		try {
-			raw = storage.getItem(key);
+			raw = await port.getItem(key);
 		} catch {
 			// Storage blocked: nothing to protect; failed saves are reported.
-			return { data: emptyData(), problem: null };
+			return { data: emptyData(), problem: null, text: null };
 		}
-		if (raw === null) return { data: emptyData(), problem: null };
+		if (raw === null) return { data: emptyData(), problem: null, text: null };
 		try {
 			const parsed: unknown = JSON.parse(raw);
 			if (looksLikeAppData(parsed)) {
 				if (savedVersion(parsed) > DATA_VERSION) {
 					// The original stays untouched (saving is paused), so it needs no backup.
 					const understood = reconcile(normalize(keepWellFormed(parsed as unknown as AppData)));
-					return { data: understood, problem: { code: "newerVersion" } };
+					return { data: understood, problem: { code: "newerVersion" }, text: raw };
 				}
 				const migrated = migrate(parsed) as unknown as AppData;
 				const kept = keepWellFormed(migrated);
 				const loaded = reconcile(normalize(kept));
 				const complete = itemCount(kept) === itemCount(migrated);
-				return { data: loaded, problem: complete ? null : backUp(raw, "partlyUnreadable") };
+				if (complete) return { data: loaded, problem: null, text: null };
+				return { data: loaded, problem: await backUp(raw, "partlyUnreadable"), text: raw };
 			}
 		} catch {
 			// Not JSON, or too broken to load at all: start fresh.
 		}
-		return { data: emptyData(), problem: backUp(raw, "unreadable") };
+		return { data: emptyData(), problem: await backUp(raw, "unreadable"), text: raw };
 	}
 
 	/** Copies the saved text aside before a save can overwrite it. */
-	function backUp(raw: string, code: "unreadable" | "partlyUnreadable"): LoadProblem {
+	async function backUp(raw: string, code: "unreadable" | "partlyUnreadable"): Promise<LoadProblem> {
 		const backupKey = `${key}:backup:${new Date().toISOString()}`;
 		try {
-			storage.setItem(backupKey, raw);
+			await port.setItem(backupKey, raw);
 			return { code, backupKey };
 		} catch {
 			return { code: "notBackedUp" };
@@ -313,9 +315,14 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 		savedJson = JSON.stringify(toSaved(data));
 		// Keep the saved original: it isn't backed up, or a newer version saved it.
 		if (loadProblem?.code === "notBackedUp" || loadProblem?.code === "newerVersion") return;
+		void persist(savedJson);
+	}
+
+	/** Writes the data; a failed write flips `problems.saveFailed`, and the data stays in memory. */
+	async function persist(text: string): Promise<void> {
 		let failed = false;
 		try {
-			storage.setItem(key, savedJson);
+			await port.setItem(key, text);
 		} catch {
 			// Storage full or blocked: keep working in memory, and say so.
 			failed = true;
@@ -377,19 +384,14 @@ export function createStore(storage: Pick<Storage, "getItem" | "setItem">, key =
 			return { load: loadProblem, saveFailed };
 		},
 
-		/** The saved text that couldn't be read in full (from its backup, or still under the store's own key); else null. */
+		/** The saved text that couldn't be read in full, as it was read (it's backed up, or still under the key while saving is paused); else null. */
 		originalText(): string | null {
-			if (!loadProblem) return null;
-			try {
-				return storage.getItem("backupKey" in loadProblem ? loadProblem.backupKey : key);
-			} catch {
-				return null;
-			}
+			return loadProblem ? unreadText : null;
 		},
 
 		/** Reads the saved data again, e.g. after another tab saved it, so the next save here doesn't overwrite that. */
-		reload(): void {
-			({ data, problem: loadProblem } = load());
+		async reload(): Promise<void> {
+			({ data, problem: loadProblem, text: unreadText } = await load());
 			savedJson = JSON.stringify(toSaved(data));
 			// The history is from before the other tab's changes; undoing it would undo those too.
 			undoStack = [];

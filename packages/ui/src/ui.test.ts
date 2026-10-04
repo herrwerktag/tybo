@@ -1,4 +1,4 @@
-import { freshDom } from "./test-dom.js";
+import { freshDom, localStoragePort } from "./test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { text } from "./i18n.js";
@@ -8,14 +8,18 @@ import { createStore } from "@bekbon/core";
 import { createWorkspaces, dataKey } from "@bekbon/core";
 
 /** Renders the app on a fresh page (at `hash`, e.g. "#canvas"), with `saved` already in the browser storage. */
-function startApp(saved: Record<string, string> = {}, hash = ""): HTMLElement {
+async function startApp(saved: Record<string, string> = {}, hash = ""): Promise<HTMLElement> {
 	freshDom();
 	location.hash = hash;
 	for (const [key, value] of Object.entries(saved)) localStorage.setItem(key, value);
 	const root = document.querySelector<HTMLElement>("#app")!;
-	render(root, createWorkspaces(localStorage, text.defaultWorkspaceName));
+	const workspaces = await createWorkspaces(localStoragePort(), text.defaultWorkspaceName);
+	await render(root, workspaces);
 	return root;
 }
+
+/** Lets work started by a click or an event finish first (the stores open through the async storage port). */
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve));
 
 /** The element matching `selector` whose text is `label`. */
 function byText<T extends HTMLElement = HTMLElement>(root: ParentNode, selector: string, label: string): T {
@@ -43,8 +47,8 @@ const library = JSON.stringify({
 	boards: [],
 });
 
-test("a type with a property, then an entity of it, can be created through the forms and are saved", () => {
-	const root = startApp();
+test("a type with a property, then an entity of it, can be created through the forms and are saved", async () => {
+	const root = await startApp();
 	const typeForm = root.querySelector<HTMLFormElement>("#type-form")!;
 	typeInto(typeForm.querySelector(`input[placeholder="${text.typeNamePlaceholder}"]`)!, "Book");
 	byText(typeForm, "button", text.addProperty).click();
@@ -71,15 +75,15 @@ test("a type with a property, then an entity of it, can be created through the f
 	assert.equal(dune?.values[book!.properties[0]!.id], "Herbert");
 });
 
-test("an invalid type shows its problems and isn't saved", () => {
-	const root = startApp();
+test("an invalid type shows its problems and isn't saved", async () => {
+	const root = await startApp();
 	byText(root.querySelector("#type-form")!, "button", text.createType).click();
 	assert.equal(root.querySelector("#type-form .error")?.textContent, text.validation({ code: "typeNameRequired" }));
 	assert.equal(localStorage.getItem("entities-app"), null);
 });
 
-test("deleting an entity asks first; cancelling keeps it", () => {
-	const root = startApp({ "entities-app": library });
+test("deleting an entity asks first; cancelling keeps it", async () => {
+	const root = await startApp({ "entities-app": library });
 	const questions: string[] = [];
 	let answer = false;
 	stub({
@@ -100,10 +104,10 @@ test("deleting an entity asks first; cancelling keeps it", () => {
 	assert.ok(byText(root, "p", text.noEntitiesOfType("Book")));
 });
 
-test("a type other types refer to can't be deleted", () => {
+test("a type other types refer to can't be deleted", async () => {
 	const data = JSON.parse(library);
 	data.types.push({ id: "review", name: "Review", properties: [{ id: "of", name: "of", kind: "reference", options: [], reference: { typeId: "book", multiple: false }, cardDisplay: "list" }] });
-	const root = startApp({ "entities-app": JSON.stringify(data) });
+	const root = await startApp({ "entities-app": JSON.stringify(data) });
 	const alerts: string[] = [];
 	stub({ alert: (message: string) => void alerts.push(message), confirm: () => assert.fail("shouldn't ask to confirm") });
 
@@ -113,22 +117,24 @@ test("a type other types refer to can't be deleted", () => {
 	assert.equal(savedData().types.length, 2);
 });
 
-test("a new workspace from the menu starts empty and becomes active; switching back shows the first one again", () => {
-	const root = startApp({ "entities-app": library });
+test("a new workspace from the menu starts empty and becomes active; switching back shows the first one again", async () => {
+	const root = await startApp({ "entities-app": library });
 	const newForm = root.querySelector<HTMLFormElement>(".workspace-new")!;
 	newForm.querySelector<HTMLInputElement>("input:not([type])")!.value = "Second";
 	byText(newForm, "button", text.create).click();
+	await settle();
 
 	assert.equal(root.querySelector(".workspace-name")?.textContent, "Second");
 	assert.ok(byText(root, "p", text.noTypesYet));
 
 	byText(root, ".workspace-option", text.defaultWorkspaceName(1)).click();
+	await settle();
 	assert.equal(root.querySelector(".workspace-name")?.textContent, text.defaultWorkspaceName(1));
 	assert.ok(byText(root, ".type-name", "Book"));
 });
 
-test("the banner warns about unreadable saved data until dismissed", () => {
-	const root = startApp({ "entities-app": "{not json" });
+test("the banner warns about unreadable saved data until dismissed", async () => {
+	const root = await startApp({ "entities-app": "{not json" });
 	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
 	assert.equal(banner.hidden, false);
 	assert.match(banner.textContent ?? "", /entities-app:backup:/);
@@ -138,9 +144,9 @@ test("the banner warns about unreadable saved data until dismissed", () => {
 	assert.equal(banner.hidden, true);
 });
 
-test("a page that can't be drawn shows the error screen, which can still export", (t) => {
+test("a page that can't be drawn shows the error screen, which can still export", async (t) => {
 	const logged = t.mock.method(console, "error", () => {});
-	const root = startApp({ "entities-app": library });
+	const root = await startApp({ "entities-app": library });
 	const createElement = document.createElement.bind(document);
 	document.createElement = ((tag: string) => {
 		if (tag === "table") throw new Error("table failed");
@@ -157,8 +163,8 @@ test("a page that can't be drawn shows the error screen, which can still export"
 	assert.equal(logged.mock.callCount(), 1);
 });
 
-test("errors thrown outside rendering show in the banner", () => {
-	const root = startApp();
+test("errors thrown outside rendering show in the banner", async () => {
+	const root = await startApp();
 	window.dispatchEvent(new ErrorEvent("error", { error: new Error("handler failed") }));
 	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
 	assert.equal(banner.hidden, false);
@@ -169,10 +175,11 @@ test("errors thrown outside rendering show in the banner", () => {
 const otherTabSaved = (key: string) =>
 	window.dispatchEvent(new StorageEvent("storage", { key, newValue: localStorage.getItem(key), storageArea: localStorage }));
 
-test("changes saved in another tab show up here, and saving here keeps them", () => {
-	const root = startApp({ "entities-app": library });
-	createStore(localStorage).addType("Film", [], ""); // in the other tab
+test("changes saved in another tab show up here, and saving here keeps them", async () => {
+	const root = await startApp({ "entities-app": library });
+	(await createStore(localStoragePort())).addType("Film", [], ""); // in the other tab
 	otherTabSaved("entities-app");
+	await settle();
 	assert.ok(byText(root, ".type-name", "Film"));
 
 	// Saving here (deleting Dune) mustn't drop the other tab's type.
@@ -182,17 +189,19 @@ test("changes saved in another tab show up here, and saving here keeps them", ()
 	assert.equal(savedData().entities.length, 0);
 });
 
-test("when another tab deletes the workspace open here, this tab switches to one that's left", () => {
-	const root = startApp();
+test("when another tab deletes the workspace open here, this tab switches to one that's left", async () => {
+	const root = await startApp();
 	const newForm = root.querySelector<HTMLFormElement>(".workspace-new")!;
 	newForm.querySelector<HTMLInputElement>("input:not([type])")!.value = "Second";
 	byText(newForm, "button", text.create).click();
-	const secondId = createWorkspaces(localStorage, text.defaultWorkspaceName).active.id;
+	await settle();
+	const secondId = (await createWorkspaces(localStoragePort(), text.defaultWorkspaceName)).active.id;
 
-	const otherTab = createWorkspaces(localStorage, text.defaultWorkspaceName);
+	const otherTab = await createWorkspaces(localStoragePort(), text.defaultWorkspaceName);
 	otherTab.remove(secondId);
 	otherTabSaved(dataKey(secondId));
 	otherTabSaved("workspaces");
+	await settle();
 
 	assert.equal(root.querySelector(".workspace-name")?.textContent, text.defaultWorkspaceName(1));
 	assert.equal(localStorage.getItem(dataKey(secondId)), null); // not written back
@@ -201,8 +210,8 @@ test("when another tab deletes the workspace open here, this tab switches to one
 const press = (target: Element, key: string, modifiers: KeyboardEventInit = {}) =>
 	target.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, bubbles: true, cancelable: true, ...modifiers }));
 
-test("a deleted entity comes back with the Undo button, and goes again with Ctrl+Y", () => {
-	const root = startApp({ "entities-app": library });
+test("a deleted entity comes back with the Undo button, and goes again with Ctrl+Y", async () => {
+	const root = await startApp({ "entities-app": library });
 	const [undo, redo] = root.querySelectorAll<HTMLButtonElement>(".history-button") as unknown as [HTMLButtonElement, HTMLButtonElement];
 	assert.equal(undo.disabled, true);
 
@@ -220,8 +229,8 @@ test("a deleted entity comes back with the Undo button, and goes again with Ctrl
 	assert.equal(root.querySelector("td"), null);
 });
 
-test("Ctrl+Z undoes outside text fields; inside one it's left to the browser's text undo", () => {
-	const root = startApp({ "entities-app": library });
+test("Ctrl+Z undoes outside text fields; inside one it's left to the browser's text undo", async () => {
+	const root = await startApp({ "entities-app": library });
 	stub({ confirm: () => true });
 	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.delete).click();
 
@@ -235,10 +244,10 @@ test("Ctrl+Z undoes outside text fields; inside one it's left to the browser's t
 	assert.equal(savedData().entities.length, 0);
 });
 
-test("canvas changes can be undone too: the Undo button follows them without the page being drawn again", () => {
+test("canvas changes can be undone too: the Undo button follows them without the page being drawn again", async () => {
 	const data = JSON.parse(library);
 	data.boards = [{ id: "b", name: "Board 1", cards: [{ id: "c", entityId: "01J00000000000000000000000", x: 0, y: 0, width: 240, height: 160 }], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] }];
-	const root = startApp({ "entities-app": JSON.stringify(data) }, "#canvas");
+	const root = await startApp({ "entities-app": JSON.stringify(data) }, "#canvas");
 	const [undo] = root.querySelectorAll<HTMLButtonElement>(".history-button");
 
 	root.querySelector<HTMLButtonElement>(".canvas-board .card-remove")!.click();
@@ -249,8 +258,8 @@ test("canvas changes can be undone too: the Undo button follows them without the
 	assert.ok(root.querySelector('.canvas-board .canvas-card[data-card-id="c"]'));
 });
 
-test("a workspace saved by a newer version warns that changes aren't saved, and offers a reload", () => {
-	const root = startApp({ "entities-app": JSON.stringify({ version: 999, types: [], entities: [] }) });
+test("a workspace saved by a newer version warns that changes aren't saved, and offers a reload", async () => {
+	const root = await startApp({ "entities-app": JSON.stringify({ version: 999, types: [], entities: [] }) });
 	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
 	assert.equal(banner.hidden, false);
 	assert.match(banner.textContent ?? "", new RegExp(text.loadNewerVersion.slice(0, 20)));

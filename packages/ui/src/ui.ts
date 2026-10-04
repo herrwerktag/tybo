@@ -96,7 +96,7 @@ function newDraftProperty(): DraftProperty {
 	return { name: "", kind: "text", options: [], reference: null, cardDisplay: "list" };
 }
 
-export function render(root: HTMLElement, workspaces: Workspaces): void {
+export async function render(root: HTMLElement, workspaces: Workspaces): Promise<void> {
 	/** Warnings about the saved data, below the top bar; updated on its own, since failed saves can happen on the canvas. */
 	const banner = el("div", { className: "problem-banner", role: "alert" });
 
@@ -122,8 +122,8 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 	}
 
 	/** Opens a workspace's store, keeping the banner and undo buttons up to date while it's the active one. */
-	function openStore(id: string): Store {
-		const opened = workspaces.openStore(id);
+	async function openStore(id: string): Promise<Store> {
+		const opened = await workspaces.openStore(id);
 		opened.onProblemsChange(() => {
 			if (opened === store) renderBanner();
 		});
@@ -134,7 +134,7 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 	}
 
 	/** The active workspace's data; replaced when switching workspaces. */
-	let store: Store = openStore(workspaces.active.id);
+	let store: Store = await openStore(workspaces.active.id);
 	const state: UiState = {
 		editingTypeId: null,
 		draftName: "",
@@ -388,10 +388,10 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 			"form",
 			{
 				className: "workspace-new",
-				onsubmit: (e) => {
+				onsubmit: async (e) => {
 					e.preventDefault();
-					const added = workspaces.add(nameInput.value, copyTypes.checked ? store.data.types : []);
-					switchWorkspace(added.id);
+					const added = await workspaces.add(nameInput.value, copyTypes.checked ? store.data.types : []);
+					await switchWorkspace(added.id);
 				},
 			},
 			el("h3", {}, text.newWorkspace),
@@ -411,9 +411,9 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 				if (!file) return;
 				const read = readWorkspaceFile(await file.text().catch(() => ""));
 				if (!read) return alert(text.importInvalid);
-				const added = workspaces.addImported(read.name ?? file.name.replace(/\.json$/i, ""), read.data);
+				const added = await workspaces.addImported(read.name ?? file.name.replace(/\.json$/i, ""), read.data);
 				if (!added) return alert(text.importNoSpace);
-				switchWorkspace(added.id);
+				await switchWorkspace(added.id);
 			},
 		});
 		const transfer = el(
@@ -483,9 +483,9 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 	}
 
 	/** Opens another workspace: its own types, entities and boards, in the same tab. */
-	function switchWorkspace(id: string): void {
+	async function switchWorkspace(id: string): Promise<void> {
 		workspaces.setActive(id);
-		store = openStore(workspaces.active.id);
+		store = await openStore(workspaces.active.id);
 		state.loadProblemDismissed = false;
 		resetTypeForm();
 		state.selectedTypeId = store.data.types[0]?.id ?? null;
@@ -1172,16 +1172,24 @@ export function render(root: HTMLElement, workspaces: Workspaces): void {
 	// Another tab saved (browsers tell every other tab): take over its changes, so saving here doesn't overwrite them.
 	window.addEventListener("storage", (e) => {
 		if (e.storageArea !== localStorage) return;
-		const cleared = e.key === null;
-		const { id } = workspaces.active;
-		if (cleared || e.key === INDEX_KEY) {
-			workspaces.reload();
-			if (workspaces.active.id !== id) return switchWorkspace(workspaces.active.id); // deleted in the other tab
-		}
-		if (cleared || e.key === dataKey(id)) store.reload();
-		else if (e.key !== INDEX_KEY) return; // another workspace's data, or a preference
-		rerender();
+		void takeOverOtherTabsChanges(e.key);
 	});
+
+	/** Reloads the workspace list and the open store (async, like every step through the storage port). */
+	async function takeOverOtherTabsChanges(key: string | null): Promise<void> {
+		const cleared = key === null;
+		const { id } = workspaces.active;
+		if (cleared || key === INDEX_KEY) {
+			await workspaces.reload();
+			if (workspaces.active.id !== id) {
+				switchWorkspace(workspaces.active.id); // deleted in the other tab
+				return;
+			}
+		}
+		if (cleared || key === dataKey(id)) await store.reload();
+		else if (key !== INDEX_KEY) return; // another workspace's data, or a preference
+		rerender();
+	}
 
 	// Ctrl/⌘+Z undoes, Ctrl/⌘+Shift+Z or Ctrl+Y redoes; in text fields they stay the browser's own text undo.
 	document.addEventListener("keydown", (e) => {
