@@ -1,0 +1,115 @@
+# Anforderung als Forgejo-Issue mit Label "agent" -> OpenCode arbeitet sie ab -> PR.
+name: Agent Issue
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  implement:
+    # nur wenn das Label "agent" gesetzt wurde
+    if: github.event.label.name == 'agent'
+    runs-on: ubuntu-latest
+    # Obergrenze: bei Haenger (Modell gestresst/Reasoning-Schleife) nicht stundenlang laufen
+    timeout-minutes: 30
+    steps:
+      - name: Repo auschecken
+        uses: https://data.forgejo.org/actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Aufgabe aus dem Issue ableiten
+        id: task
+        run: |
+          {
+            echo "## Aufgabe"
+            echo "${{ github.event.issue.title }}"
+            echo
+            echo "## Beschreibung"
+            echo "${{ github.event.issue.body }}"
+            echo
+            echo "## Hinweise zum Repo"
+            echo "- Branch: ${{ github.ref_name }}"
+            echo "- Bearbeite nur, was die Aufgabe verlangt."
+          } > /tmp/task.md
+          echo "Aufgabe:"; cat /tmp/task.md
+
+      - name: Node bereitstellen
+        uses: https://data.forgejo.org/actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: OpenCode installieren
+        run: npm install -g opencode-ai@latest
+
+      - name: OpenCode konfigurieren (GLM-5.3 braucht reasoning)
+        env:
+          SYNTHETIC_API_KEY: ${{ secrets.SYNTHETIC_API_KEY }}
+        run: |
+          mkdir -p "$HOME/.config/opencode"
+          cat > "$HOME/.config/opencode/opencode.json" <<'JSON'
+          {
+            "$schema": "https://opencode.ai/config.json",
+            "provider": {
+              "synthetic": {
+                "npm": "@ai-sdk/openai-compatible",
+                "name": "synthetic.new",
+                "options": {
+                  "baseURL": "https://api.synthetic.new/openai/v1",
+                  "apiKey": "{env:SYNTHETIC_API_KEY}",
+                  "headerTimeout": 600000,
+                  "chunkTimeout": 600000,
+                  "timeout": 900000
+                },
+                "models": {
+                  "hf:zai-org/GLM-5.3": {
+                    "name": "GLM-5.3",
+                    "reasoning": true,
+                    "interleaved": "reasoning_content"
+                  },
+                  "hf:moonshotai/Kimi-K3": { "name": "Kimi-K3" }
+                }
+              }
+            },
+            "model": "synthetic/hf:zai-org/GLM-5.3"
+          }
+          JSON
+          cat "$HOME/.config/opencode/opencode.json"
+
+      - name: OpenCode arbeiten lassen
+        env:
+          SYNTHETIC_API_KEY: ${{ secrets.SYNTHETIC_API_KEY }}
+        run: |
+          git config user.name  "agent-bot"
+          git config user.email "agent-bot@werkbank.local"
+          opencode run "$(cat /tmp/task.md)"
+
+      - name: Ergebnis pushen
+        id: push
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "Keine Aenderungen erzeugt."
+            exit 0
+          fi
+          BR="agent/issue-${{ github.event.issue.number }}"
+          git checkout -b "$BR"
+          git add -A
+          git commit -m "Agent: Issue #${{ github.event.issue.number }} bearbeitet"
+          git push origin "$BR"
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "branch=$BR" >> $GITHUB_OUTPUT
+
+      - name: Pull Request oeffnen
+        if: steps.push.outputs.changed == 'true'
+        env:
+          AGENT_TOKEN: ${{ secrets.AGENT_TOKEN }}
+          B: ${{ steps.push.outputs.branch }}
+          G: ${{ github.ref_name }}
+          T: "Agent: ${{ github.event.issue.title }}"
+          D: "Bearbeitet durch OpenCode (GLM-5.3). Schliesst #${{ github.event.issue.number }}"
+        run: |
+          python3 -c "import json,os;print(json.dumps({'head':os.environ['B'],'base':os.environ['G'],'title':os.environ['T'],'body':os.environ['D']}))" > /tmp/pr.json
+          cat /tmp/pr.json
+          curl -sS -X POST -H "Authorization: token $AGENT_TOKEN" -H "Content-Type: application/json" \
+            --data @/tmp/pr.json "http://forgejo:3000/api/v1/repos/${{ github.repository }}/pulls"
+          echo
