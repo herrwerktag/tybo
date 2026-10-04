@@ -79,12 +79,25 @@ jobs:
           cat "$HOME/.config/opencode/opencode.json"
 
       - name: OpenCode arbeiten lassen
+        id: agent
+        continue-on-error: true
         env:
           SYNTHETIC_API_KEY: ${{ secrets.SYNTHETIC_API_KEY }}
         run: |
           git config user.name  "agent-bot"
           git config user.email "agent-bot@werkbank.local"
-          opencode run "$(cat /tmp/task.md)"
+          {
+            echo "### Ausgabe von OpenCode"
+            echo
+            echo '```'
+            opencode run "$(cat /tmp/task.md)"
+            echo '```'
+          } > /tmp/agent.md 2>&1
+          RC=$?
+          echo "OpenCode exit=$RC"
+          tail -30 /tmp/agent.md
+          echo "rc=$RC" >> $GITHUB_OUTPUT
+          exit 0
 
       # Pruef-Gate: ohne gruene Pruefung entsteht KEIN PR fuer den Nutzer.
       - name: Pruefung (typecheck + tests + build)
@@ -150,6 +163,7 @@ jobs:
           ISSUE: ${{ github.event.issue.number }}
           PASSED: ${{ steps.verify.outputs.passed }}
           CHANGED: ${{ steps.push.outputs.changed }}
+          AGENT_RC: ${{ steps.agent.outputs.rc }}
           BRANCH: ${{ steps.push.outputs.branch }}
         run: |
           {
@@ -167,6 +181,20 @@ jobs:
               fi
             elif [ "$CHANGED" != "true" ]; then
               echo "**Pruefung gruen**, aber es wurden keine Aenderungen erzeugt — kein Pull Request."
+              echo
+              echo "OpenCode Exit-Code: \`$AGENT_RC\`"
+              echo
+              if [ -s /tmp/agent.md ]; then
+                echo "<details><summary>Ausgabe von OpenCode</summary>"
+                echo
+                echo '```'
+                tail -60 /tmp/agent.md
+                echo '```'
+                echo
+                echo "</details>"
+              else
+                echo "_OpenCode hat keine Ausgabe erzeugt._"
+              fi
             else
               NUM=$(python3 -c "import json;print(json.load(open('/tmp/prresp.json')).get('number',''))" 2>/dev/null || echo "")
               if [ -n "$NUM" ]; then
