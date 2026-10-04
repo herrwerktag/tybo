@@ -9,9 +9,9 @@
 		// See also https://aka.ms/tsconfig/module
 		"module": "nodenext",
 		"target": "esnext",
-		//"types": [],
-		// For nodejs:
-		// "lib": ["esnext"],
+		// No browser type library here: the core must stay usable outside the browser (e.g. against a database);
+		// the few platform globals it uses are typed in src/globals.d.ts.
+		"lib": ["esnext"],
 		"types": ["node"],
 		// and npm install -D @types/node
 

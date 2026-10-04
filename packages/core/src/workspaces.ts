@@ -1,5 +1,6 @@
 import type { AppData, EntityType } from "./model.js";
 import { DATA_VERSION, createStore, looksLikeAppData, toSaved, type Store } from "./store.js";
+import type { StoragePort } from "./ports.js";
 import { ulid } from "./ulid.js";
 
 /** A workspace: its own entity types, entities and boards, stored under its own key. */
@@ -12,8 +13,6 @@ interface WorkspaceIndex {
 	workspaces: WorkspaceInfo[];
 	active: string;
 }
-
-type WorkspaceStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export const INDEX_KEY = "workspaces";
 /** The first workspace keeps the key used before workspaces existed, so its data needs no migration. */
@@ -51,15 +50,21 @@ export function readWorkspaceFile(text: string): { name: string | null; data: un
 	return looksLikeAppData(parsed) ? { name: null, data: parsed } : null;
 }
 
-export type Workspaces = ReturnType<typeof createWorkspaces>;
+export type Workspaces = Awaited<ReturnType<typeof createWorkspaces>>;
 
 /** The list of workspaces and which one is active; `defaultName(n)` names the n-th workspace when no name is given. */
-export function createWorkspaces(storage: WorkspaceStorage, defaultName: (n: number) => string) {
-	let index = load();
+export async function createWorkspaces(port: StoragePort, defaultName: (n: number) => string) {
+	let index = await load();
 
-	function load(): WorkspaceIndex {
+	async function load(): Promise<WorkspaceIndex> {
+		let raw: string | null = null;
 		try {
-			const parsed: unknown = JSON.parse(storage.getItem(INDEX_KEY) ?? "null");
+			raw = await port.getItem(INDEX_KEY);
+		} catch {
+			// Unreadable list: start over with the default workspace, whose data is still under its old key.
+		}
+		try {
+			const parsed: unknown = JSON.parse(raw ?? "null");
 			const list = (parsed as Partial<WorkspaceIndex> | null)?.workspaces;
 			if (Array.isArray(list)) {
 				const workspaces = list.filter(
@@ -77,8 +82,13 @@ export function createWorkspaces(storage: WorkspaceStorage, defaultName: (n: num
 	}
 
 	function save(): void {
+		void persistIndex();
+	}
+
+	/** Writes the workspace list; the in-memory list simply keeps working if that fails. */
+	async function persistIndex(): Promise<void> {
 		try {
-			storage.setItem(INDEX_KEY, JSON.stringify(index));
+			await port.setItem(INDEX_KEY, JSON.stringify(index));
 		} catch {
 			// Storage full or blocked: keep working in memory.
 		}
@@ -96,6 +106,15 @@ export function createWorkspaces(storage: WorkspaceStorage, defaultName: (n: num
 		return workspace;
 	}
 
+	/** Takes the workspace's data off the port; if that fails, the data stays behind, unreachable. */
+	async function clearData(id: string): Promise<void> {
+		try {
+			await port.removeItem(dataKey(id));
+		} catch {
+			// Storage blocked: the data stays behind, unreachable.
+		}
+	}
+
 	return {
 		get list(): readonly WorkspaceInfo[] {
 			return index.workspaces;
@@ -106,9 +125,9 @@ export function createWorkspaces(storage: WorkspaceStorage, defaultName: (n: num
 		},
 
 		/** Reads the list again after another tab changed it. This tab keeps its workspace unless it was deleted there. */
-		reload(): void {
+		async reload(): Promise<void> {
 			const { active } = index;
-			index = load();
+			index = await load();
 			if (index.workspaces.some((w) => w.id === active)) index = { ...index, active };
 		},
 
@@ -119,11 +138,11 @@ export function createWorkspaces(storage: WorkspaceStorage, defaultName: (n: num
 		},
 
 		/** Adds a workspace, empty or starting with copies of the given entity types (no entities or boards). */
-		add(name: string, copyTypesFrom: readonly EntityType[] = []): WorkspaceInfo {
+		async add(name: string, copyTypesFrom: readonly EntityType[] = []): Promise<WorkspaceInfo> {
 			const workspace = newWorkspace(name);
 			try {
 				// The store fills in the rest (a default board, defaults for any missing fields) when it loads this.
-				storage.setItem(dataKey(workspace.id), JSON.stringify({ version: DATA_VERSION, types: copyTypesFrom, entities: [], boards: [] }));
+				await port.setItem(dataKey(workspace.id), JSON.stringify({ version: DATA_VERSION, types: copyTypesFrom, entities: [], boards: [] }));
 			} catch {
 				// Storage blocked: the workspace starts empty.
 			}
@@ -131,10 +150,10 @@ export function createWorkspaces(storage: WorkspaceStorage, defaultName: (n: num
 		},
 
 		/** Adds a workspace holding imported data. Null if it couldn't be stored (then nothing is added). */
-		addImported(name: string, data: unknown): WorkspaceInfo | null {
+		async addImported(name: string, data: unknown): Promise<WorkspaceInfo | null> {
 			const workspace = newWorkspace(name);
 			try {
-				storage.setItem(dataKey(workspace.id), JSON.stringify(data));
+				await port.setItem(dataKey(workspace.id), JSON.stringify(data));
 			} catch {
 				return null; // storage full or blocked
 			}
@@ -152,16 +171,12 @@ export function createWorkspaces(storage: WorkspaceStorage, defaultName: (n: num
 			if (index.workspaces.length <= 1 || !index.workspaces.some((w) => w.id === id)) return;
 			const workspaces = index.workspaces.filter((w) => w.id !== id);
 			index = { workspaces, active: index.active === id ? workspaces[0]!.id : index.active };
-			try {
-				storage.removeItem(dataKey(id));
-			} catch {
-				// Storage blocked: the data stays behind, unreachable.
-			}
+			void clearData(id);
 			save();
 		},
 
-		openStore(id: string): Store {
-			return createStore(storage, dataKey(id));
+		openStore(id: string): Promise<Store> {
+			return createStore(port, dataKey(id));
 		},
 	};
 }

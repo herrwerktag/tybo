@@ -8,10 +8,14 @@ function memoryStorage(initial: Record<string, string> = {}) {
 	const map = new Map(Object.entries(initial));
 	return {
 		map,
-		getItem: (key: string) => map.get(key) ?? null,
-		setItem: (key: string, value: string) => void map.set(key, value),
+		getItem: async (key: string) => map.get(key) ?? null,
+		setItem: async (key: string, value: string) => void map.set(key, value),
+		removeItem: async (key: string) => void map.delete(key),
 	};
 }
+
+/** Lets background saves finish and report how they went (a failed save flips `problems.saveFailed` only then). */
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve));
 
 /** Checks for fresh data: no types or entities, and one empty default board. */
 function assertEmpty(data: AppData) {
@@ -26,21 +30,21 @@ const firstBoard = (store: Store) => store.data.boards[0]!;
 
 const titleDraft: DraftProperty = { name: "title", kind: "text", options: [], reference: null, cardDisplay: "list" };
 
-test("data persists across store instances", () => {
+test("data persists across store instances", async () => {
 	const storage = memoryStorage();
-	const store = createStore(storage);
+	const store = await createStore(storage);
 	const type = store.addType(" Book ", [titleDraft], "");
 	const prop = type.properties[0]!;
 	store.addEntity(type.id, "Dune", "", { [prop.id]: "Dune" });
 
-	const reloaded = createStore(storage);
+	const reloaded = await createStore(storage);
 	assert.equal(reloaded.data.types[0]?.name, "Book");
 	assert.equal(reloaded.data.entities[0]?.name, "Dune");
 	assert.equal(reloaded.data.entities[0]?.values[prop.id], "Dune");
 });
 
-test("addEntity assigns a ULID; updateEntity keeps it", () => {
-	const store = createStore(memoryStorage());
+test("addEntity assigns a ULID; updateEntity keeps it", async () => {
+	const store = await createStore(memoryStorage());
 	const type = store.addType("Book", [titleDraft], "");
 	const prop = type.properties[0]!;
 	const a = store.addEntity(type.id, " A ", "", { [prop.id]: "A" });
@@ -60,8 +64,8 @@ test("addEntity assigns a ULID; updateEntity keeps it", () => {
 	);
 });
 
-test("updateType keeps property ids and migrates only that type's entities", () => {
-	const store = createStore(memoryStorage());
+test("updateType keeps property ids and migrates only that type's entities", async () => {
+	const store = await createStore(memoryStorage());
 	const book = store.addType("Book", [titleDraft, { name: "status", kind: "options", options: ["Draft", "Published"], reference: null, cardDisplay: "list" }], "");
 	const film = store.addType("Film", [titleDraft], "");
 	const title = book.properties[0]!;
@@ -92,8 +96,8 @@ test("updateType keeps property ids and migrates only that type's entities", () 
 	assert.deepEqual(values(movie.id), movie.values);
 });
 
-test("deleteType removes its entities only", () => {
-	const store = createStore(memoryStorage());
+test("deleteType removes its entities only", async () => {
+	const store = await createStore(memoryStorage());
 	const book = store.addType("Book", [titleDraft], "");
 	const film = store.addType("Film", [titleDraft], "");
 	store.addEntity(book.id, "Dune", "", {});
@@ -110,12 +114,12 @@ test("deleteType removes its entities only", () => {
 	);
 });
 
-test("loads data saved with the old number/boolean/date kinds as text", () => {
+test("loads data saved with the old number/boolean/date kinds as text", async () => {
 	const old = {
 		types: [{ id: "b", name: "Book", properties: [{ id: "p", name: "pages", kind: "number" }] }],
 		entities: [{ id: "e", typeId: "b", values: { p: 42 } }],
 	};
-	const store = createStore(memoryStorage({ "entities-app": JSON.stringify(old) }));
+	const store = await createStore(memoryStorage({ "entities-app": JSON.stringify(old) }));
 	assert.deepEqual(store.data.types[0]?.properties[0], {
 		id: "p",
 		name: "pages",
@@ -127,7 +131,7 @@ test("loads data saved with the old number/boolean/date kinds as text", () => {
 	assert.equal(store.data.entities[0]?.values.p, "42");
 });
 
-test("gives old entities a ULID and a name from their first property", () => {
+test("gives old entities a ULID and a name from their first property", async () => {
 	const old = {
 		types: [
 			{
@@ -144,15 +148,15 @@ test("gives old entities a ULID and a name from their first property", () => {
 			{ id: "x", typeId: "b", values: { t: null } },
 		],
 	};
-	const [dune, empty] = createStore(memoryStorage({ "entities-app": JSON.stringify(old) })).data.entities;
+	const [dune, empty] = (await createStore(memoryStorage({ "entities-app": JSON.stringify(old) }))).data.entities;
 	assert.ok(isUlid(dune?.id));
 	assert.equal(dune?.name, "Dune");
 	assert.equal(empty?.name, "Untitled");
 });
 
-test("falls back to empty data on corrupt or throwing storage", () => {
-	assertEmpty(createStore(memoryStorage({ "entities-app": "{not json" })).data);
-	assertEmpty(createStore(memoryStorage({ "entities-app": '{"types":1}' })).data);
+test("falls back to empty data on corrupt or throwing storage", async () => {
+	assertEmpty((await createStore(memoryStorage({ "entities-app": "{not json" }))).data);
+	assertEmpty((await createStore(memoryStorage({ "entities-app": '{"types":1}' }))).data);
 
 	const throwing = {
 		getItem: () => {
@@ -161,14 +165,17 @@ test("falls back to empty data on corrupt or throwing storage", () => {
 		setItem: () => {
 			throw new Error("blocked");
 		},
+		removeItem: () => {
+			throw new Error("blocked");
+		},
 	};
-	const store = createStore(throwing);
+	const store = await createStore(throwing);
 	assertEmpty(store.data);
 	store.addType("Book", [titleDraft], "");
 	assert.equal(store.data.types.length, 1);
 });
 
-test("one malformed type or entity is dropped on its own; the original is backed up first", () => {
+test("one malformed type or entity is dropped on its own; the original is backed up first", async () => {
 	const saved = JSON.stringify({
 		types: [
 			{ id: "broken", name: "Broken" }, // no properties: loads with none
@@ -183,7 +190,7 @@ test("one malformed type or entity is dropped on its own; the original is backed
 		boards: [],
 	});
 	const storage = memoryStorage({ "entities-app": saved });
-	const store = createStore(storage);
+	const store = await createStore(storage);
 	assert.deepEqual(
 		store.data.types.map((t) => [t.id, t.properties.map((p) => p.id)]),
 		[["broken", []], ["b", ["t"]]],
@@ -196,41 +203,42 @@ test("one malformed type or entity is dropped on its own; the original is backed
 	const problem = store.problems.load;
 	assert.equal(problem?.code, "partlyUnreadable");
 	assert.ok(problem && "backupKey" in problem && problem.backupKey.startsWith("entities-app:backup:"));
-	assert.equal(storage.getItem(problem.backupKey), saved);
+	assert.equal(await storage.getItem(problem.backupKey), saved);
 
 	// Saving overwrites the original, but the backup stays.
 	store.addBoard("New");
-	assert.notEqual(storage.getItem("entities-app"), saved);
-	assert.equal(storage.getItem(problem.backupKey), saved);
+	assert.notEqual(await storage.getItem("entities-app"), saved);
+	assert.equal(await storage.getItem(problem.backupKey), saved);
 });
 
-test("unreadable data is backed up before starting fresh; data that loads fine isn't", () => {
+test("unreadable data is backed up before starting fresh; data that loads fine isn't", async () => {
 	const storage = memoryStorage({ "entities-app": "{not json" });
-	const store = createStore(storage);
+	const store = await createStore(storage);
 	assertEmpty(store.data);
 	const problem = store.problems.load;
 	assert.equal(problem?.code, "unreadable");
 	assert.ok(problem && "backupKey" in problem);
-	assert.equal(storage.getItem(problem.backupKey), "{not json");
+	assert.equal(await storage.getItem(problem.backupKey), "{not json");
 	assert.equal(store.originalText(), "{not json");
 
 	store.addType("Book", [titleDraft], "");
-	const reloaded = createStore(storage);
+	const reloaded = await createStore(storage);
 	assert.equal(reloaded.problems.load, null);
-	assert.equal(createStore(memoryStorage()).problems.load, null);
+	assert.equal((await createStore(memoryStorage())).problems.load, null);
 	assert.equal([...storage.map.keys()].filter((k) => k.includes(":backup:")).length, 1);
 });
 
-test("when the backup can't be written, saving stays paused so the original isn't overwritten", () => {
+test("when the backup can't be written, saving stays paused so the original isn't overwritten", async () => {
 	const map = new Map([["entities-app", "{not json"]]);
 	const storage = {
-		getItem: (key: string) => map.get(key) ?? null,
-		setItem: (key: string, value: string) => {
+		getItem: async (key: string) => map.get(key) ?? null,
+		setItem: async (key: string, value: string) => {
 			if (key.includes(":backup:")) throw new Error("quota");
 			map.set(key, value);
 		},
+		removeItem: async (key: string) => void map.delete(key),
 	};
-	const store = createStore(storage);
+	const store = await createStore(storage);
 	assert.deepEqual(store.problems.load, { code: "notBackedUp" });
 	store.addType("Book", [titleDraft], "");
 	assert.equal(store.data.types.length, 1);
@@ -238,17 +246,18 @@ test("when the backup can't be written, saving stays paused so the original isn'
 	assert.equal(store.originalText(), "{not json");
 });
 
-test("failed saves are reported until a save succeeds again", () => {
+test("failed saves are reported until a save succeeds again", async () => {
 	let full = false;
 	const map = new Map<string, string>();
 	const storage = {
-		getItem: (key: string) => map.get(key) ?? null,
-		setItem: (key: string, value: string) => {
+		getItem: async (key: string) => map.get(key) ?? null,
+		setItem: async (key: string, value: string) => {
 			if (full) throw new Error("quota");
 			map.set(key, value);
 		},
+		removeItem: async (key: string) => void map.delete(key),
 	};
-	const store = createStore(storage);
+	const store = await createStore(storage);
 	let notified = 0;
 	store.onProblemsChange(() => notified++);
 
@@ -257,17 +266,19 @@ test("failed saves are reported until a save succeeds again", () => {
 	full = true;
 	store.addBoard("B");
 	store.addBoard("C");
+	await settle();
 	assert.equal(store.problems.saveFailed, true);
 	assert.equal(notified, 1);
 	full = false;
 	store.addBoard("D");
+	await settle();
 	assert.equal(store.problems.saveFailed, false);
 	assert.equal(notified, 2);
 	assert.equal(JSON.parse(map.get("entities-app")!).boards.length, 5);
 });
 
-function referenceSetup() {
-	const store = createStore(memoryStorage());
+async function referenceSetup() {
+	const store = await createStore(memoryStorage());
 	const person = store.addType("Person", [], "");
 	const tag = store.addType("Tag", [], "");
 	const book = store.addType("Book", [
@@ -282,8 +293,8 @@ function referenceSetup() {
 	return { store, person, tag, book, author, tags, frank, scifi, classic, dune };
 }
 
-test("deleting an entity removes it from single and multiple references", () => {
-	const { store, author, tags, frank, scifi, classic, dune } = referenceSetup();
+test("deleting an entity removes it from single and multiple references", async () => {
+	const { store, author, tags, frank, scifi, classic, dune } = await referenceSetup();
 	assert.equal(store.referencesTo(scifi.id), 1);
 	assert.equal(store.referencesTo(dune.id), 0);
 
@@ -296,8 +307,8 @@ test("deleting an entity removes it from single and multiple references", () => 
 	assert.equal(store.data.entities.find((e) => e.id === dune.id)?.values[tags.id], null);
 });
 
-test("typeReferrers lists other types' reference properties, not self-references", () => {
-	const { store, person, tag, book } = referenceSetup();
+test("typeReferrers lists other types' reference properties, not self-references", async () => {
+	const { store, person, tag, book } = await referenceSetup();
 	store.updateType(person.id, "Person", [
 		{ name: "friend", kind: "reference", options: [], reference: { typeId: person.id, multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" },
 	], "");
@@ -306,15 +317,15 @@ test("typeReferrers lists other types' reference properties, not self-references
 	assert.deepEqual(store.typeReferrers(book.id), []);
 });
 
-test("updateType: changing a reference's target type clears its values", () => {
-	const { store, tag, book, author, tags, dune } = referenceSetup();
+test("updateType: changing a reference's target type clears its values", async () => {
+	const { store, tag, book, author, tags, dune } = await referenceSetup();
 	store.updateType(book.id, "Book", [{ ...author, reference: { typeId: tag.id, multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" } }, tags], "");
 	assert.equal(store.data.entities.find((e) => e.id === dune.id)?.values[author.id], null);
 });
 
-test("reference values persist across store instances", () => {
+test("reference values persist across store instances", async () => {
 	const storage = memoryStorage();
-	const store = createStore(storage);
+	const store = await createStore(storage);
 	const tag = store.addType("Tag", [], "");
 	const book = store.addType("Book", [
 		{ name: "tags", kind: "reference", options: [], reference: { typeId: tag.id, multiple: true, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" },
@@ -322,12 +333,12 @@ test("reference values persist across store instances", () => {
 	const scifi = store.addEntity(tag.id, "Sci-fi", "", {});
 	const dune = store.addEntity(book.id, "Dune", "", { [book.properties[0]!.id]: [scifi.id] });
 
-	const reloaded = createStore(storage);
+	const reloaded = await createStore(storage);
 	assert.deepEqual(reloaded.data.entities.find((e) => e.id === dune.id)?.values, { [book.properties[0]!.id]: [scifi.id] });
 });
 
-test("content and the type's template keep their line breaks; template changes leave entities alone", () => {
-	const store = createStore(memoryStorage());
+test("content and the type's template keep their line breaks; template changes leave entities alone", async () => {
+	const store = await createStore(memoryStorage());
 	const note = store.addType("Note", [], "# Title\n\n- ");
 	assert.equal(note.contentTemplate, "# Title\n\n- ");
 
@@ -342,18 +353,18 @@ test("content and the type's template keep their line breaks; template changes l
 	assert.equal(store.data.entities[0]?.content, "  edited\n  text");
 });
 
-test("old data without content fields loads with empty strings", () => {
+test("old data without content fields loads with empty strings", async () => {
 	const old = {
 		types: [{ id: "b", name: "Book", properties: [] }],
 		entities: [{ id: "01ARYZ6S41TSV4RRFFQ69G5FAV", typeId: "b", name: "Dune", values: {} }],
 	};
-	const store = createStore(memoryStorage({ "entities-app": JSON.stringify(old) }));
+	const store = await createStore(memoryStorage({ "entities-app": JSON.stringify(old) }));
 	assert.equal(store.data.types[0]?.contentTemplate, "");
 	assert.equal(store.data.entities[0]?.content, "");
 });
 
-test("an entity can have several cards; moveCard brings a card to the front", () => {
-	const store = createStore(memoryStorage());
+test("an entity can have several cards; moveCard brings a card to the front", async () => {
+	const store = await createStore(memoryStorage());
 	const note = store.addType("Note", [], "");
 	const a = store.addEntity(note.id, "A", "", {});
 	const b = store.addEntity(note.id, "B", "", {});
@@ -373,8 +384,8 @@ test("an entity can have several cards; moveCard brings a card to the front", ()
 	]);
 });
 
-test("resizeCard enforces the minimum size; removeCard removes one card and keeps the entity", () => {
-	const store = createStore(memoryStorage());
+test("resizeCard enforces the minimum size; removeCard removes one card and keeps the entity", async () => {
+	const store = await createStore(memoryStorage());
 	const note = store.addType("Note", [], "");
 	const a = store.addEntity(note.id, "A", "", {});
 	const first = store.addCard(firstBoard(store).id, a.id, 0, 0);
@@ -391,8 +402,8 @@ test("resizeCard enforces the minimum size; removeCard removes one card and keep
 	assert.equal(store.data.entities.length, 1);
 });
 
-test("deleting an entity or its type removes its card", () => {
-	const store = createStore(memoryStorage());
+test("deleting an entity or its type removes its card", async () => {
+	const store = await createStore(memoryStorage());
 	const note = store.addType("Note", [], "");
 	const other = store.addType("Other", [], "");
 	const a = store.addEntity(note.id, "A", "", {});
@@ -408,23 +419,23 @@ test("deleting an entity or its type removes its card", () => {
 	assert.deepEqual(firstBoard(store).cards, []);
 });
 
-test("cards and viewport persist; bad canvas data falls back to empty", () => {
+test("cards and viewport persist; bad canvas data falls back to empty", async () => {
 	const storage = memoryStorage();
-	const store = createStore(storage);
+	const store = await createStore(storage);
 	const note = store.addType("Note", [], "");
 	const a = store.addEntity(note.id, "A", "", {});
 	store.addCard(firstBoard(store).id, a.id, 5, 6);
 	store.setViewport(firstBoard(store).id, { x: 100, y: -50, zoom: 9 });
 
-	const reloaded = createStore(storage);
+	const reloaded = await createStore(storage);
 	assert.equal(firstBoard(reloaded).cards[0]?.x, 5);
 	assert.deepEqual(firstBoard(reloaded).viewport, { x: 100, y: -50, zoom: 2 });
 
 	const bad = { types: [], entities: [], boards: [{ cards: [{ entityId: "x", x: "1" }], viewport: null }] };
-	assertEmpty(createStore(memoryStorage({ "entities-app": JSON.stringify(bad) })).data);
+	assertEmpty((await createStore(memoryStorage({ "entities-app": JSON.stringify(bad) }))).data);
 });
 
-test("the single canvas saved before boards existed becomes Board 1; its cards get ids", () => {
+test("the single canvas saved before boards existed becomes Board 1; its cards get ids", async () => {
 	const old = {
 		types: [{ id: "n", name: "Note", properties: [], contentTemplate: "" }],
 		entities: [{ id: "01ARYZ6S41TSV4RRFFQ69G5FAV", typeId: "n", name: "A", content: "", values: {} }],
@@ -433,7 +444,7 @@ test("the single canvas saved before boards existed becomes Board 1; its cards g
 			viewport: { x: 0, y: 0, zoom: 1 },
 		},
 	};
-	const { boards } = createStore(memoryStorage({ "entities-app": JSON.stringify(old) })).data;
+	const { boards } = (await createStore(memoryStorage({ "entities-app": JSON.stringify(old) }))).data;
 	assert.equal(boards.length, 1);
 	assert.equal(boards[0]?.name, "Board 1");
 	const [card] = boards[0]!.cards;
@@ -441,8 +452,8 @@ test("the single canvas saved before boards existed becomes Board 1; its cards g
 	assert.equal(card?.x, 1);
 });
 
-test("boards can be added, renamed and deleted, but never the last one", () => {
-	const store = createStore(memoryStorage());
+test("boards can be added, renamed and deleted, but never the last one", async () => {
+	const store = await createStore(memoryStorage());
 	const first = firstBoard(store);
 	const second = store.addBoard(" Planning ");
 	assert.equal(second.name, "Planning");
@@ -462,8 +473,8 @@ test("boards can be added, renamed and deleted, but never the last one", () => {
 	assert.equal(store.data.boards.length, 1);
 });
 
-test("each board has its own cards and viewport; card changes stay on their board", () => {
-	const store = createStore(memoryStorage());
+test("each board has its own cards and viewport; card changes stay on their board", async () => {
+	const store = await createStore(memoryStorage());
 	const note = store.addType("Note", [], "");
 	const a = store.addEntity(note.id, "A", "", {});
 	const one = firstBoard(store);
@@ -493,9 +504,9 @@ test("each board has its own cards and viewport; card changes stay on their boar
 	);
 });
 
-test("types get distinct palette colors; a chosen color is kept and can be changed", () => {
+test("types get distinct palette colors; a chosen color is kept and can be changed", async () => {
 	const palette = TYPE_COLORS.map((c) => c.value);
-	const store = createStore(memoryStorage());
+	const store = await createStore(memoryStorage());
 	const a = store.addType("A", [], "");
 	const b = store.addType("B", [], "", palette[3]);
 	const c = store.addType("C", [], "");
@@ -507,7 +518,7 @@ test("types get distinct palette colors; a chosen color is kept and can be chang
 	assert.equal(store.data.types[0]?.color, palette[5]);
 });
 
-test("types saved without a color get the next free ones in order", () => {
+test("types saved without a color get the next free ones in order", async () => {
 	const palette = TYPE_COLORS.map((c) => c.value);
 	const old = {
 		types: [
@@ -517,35 +528,35 @@ test("types saved without a color get the next free ones in order", () => {
 		],
 		entities: [],
 	};
-	const { types } = createStore(memoryStorage({ "entities-app": JSON.stringify(old) })).data;
+	const { types } = (await createStore(memoryStorage({ "entities-app": JSON.stringify(old) }))).data;
 	assert.deepEqual(
 		types.map((t) => t.color),
 		[palette[1], palette[0], palette[2]],
 	);
 });
 
-test("cardDisplay is saved per property; line falls back to list for non-references", () => {
+test("cardDisplay is saved per property; line falls back to list for non-references", async () => {
 	const storage = memoryStorage();
-	const store = createStore(storage);
+	const store = await createStore(storage);
 	const type = store.addType("Book", [{ ...titleDraft, cardDisplay: "hidden" }], "");
-	assert.equal(createStore(storage).data.types[0]?.properties[0]?.cardDisplay, "hidden");
+	assert.equal((await createStore(storage)).data.types[0]?.properties[0]?.cardDisplay, "hidden");
 
 	store.updateType(type.id, "Book", [{ ...type.properties[0]!, cardDisplay: "line" }], "");
 	assert.equal(store.data.types[0]?.properties[0]?.cardDisplay, "list");
 });
 
-test("the old showOnCard checkbox converts to cardDisplay", () => {
+test("the old showOnCard checkbox converts to cardDisplay", async () => {
 	const prop = (id: string, extra: object) => ({ id, name: id, kind: "text", options: [], reference: null, ...extra });
 	const old = {
 		types: [{ id: "b", name: "Book", properties: [prop("shown", { showOnCard: true }), prop("off", { showOnCard: false }), prop("older", {})] }],
 		entities: [],
 	};
-	const [shown, off, older] = createStore(memoryStorage({ "entities-app": JSON.stringify(old) })).data.types[0]!.properties;
+	const [shown, off, older] = (await createStore(memoryStorage({ "entities-app": JSON.stringify(old) }))).data.types[0]!.properties;
 	assert.deepEqual([shown?.cardDisplay, off?.cardDisplay, older?.cardDisplay], ["list", "hidden", "list"]);
 	assert.ok(!("showOnCard" in shown!));
 });
 
-test("references get arrow, line label and inverse label defaults; labels are trimmed", () => {
+test("references get arrow, line label and inverse label defaults; labels are trimmed", async () => {
 	const old = {
 		types: [
 			{ id: "p", name: "Person", properties: [] },
@@ -557,7 +568,7 @@ test("references get arrow, line label and inverse label defaults; labels are tr
 		],
 		entities: [],
 	};
-	const store = createStore(memoryStorage({ "entities-app": JSON.stringify(old) }));
+	const store = await createStore(memoryStorage({ "entities-app": JSON.stringify(old) }));
 	const author = store.data.types[1]!.properties[0]!;
 	assert.deepEqual(author.reference, { typeId: "p", multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" });
 
@@ -576,12 +587,12 @@ test("references get arrow, line label and inverse label defaults; labels are tr
 	});
 });
 
-test("description: saved on add, kept when an update leaves it out, defaults to empty for older data", () => {
+test("description: saved on add, kept when an update leaves it out, defaults to empty for older data", async () => {
 	const storage = memoryStorage();
-	const store = createStore(storage);
+	const store = await createStore(storage);
 	const type = store.addType("Note", [], "");
 	const note = store.addEntity(type.id, "A", "short", {}, "Long\n\ndetails");
-	assert.equal(createStore(storage).data.entities[0]?.description, "Long\n\ndetails");
+	assert.equal((await createStore(storage)).data.entities[0]?.description, "Long\n\ndetails");
 
 	store.updateEntity(note.id, "A", "short", {});
 	assert.equal(store.data.entities[0]?.description, "Long\n\ndetails");
@@ -593,12 +604,12 @@ test("description: saved on add, kept when an update leaves it out, defaults to 
 		types: [{ id: "n", name: "Note", properties: [] }],
 		entities: [{ id: "01ARYZ6S41TSV4RRFFQ69G5FAV", typeId: "n", name: "Old", content: "", values: {} }],
 	};
-	assert.equal(createStore(memoryStorage({ "entities-app": JSON.stringify(old) })).data.entities[0]?.description, "");
+	assert.equal((await createStore(memoryStorage({ "entities-app": JSON.stringify(old) }))).data.entities[0]?.description, "");
 });
 
-test("drawings: added, replaced and removed on their own board", () => {
+test("drawings: added, replaced and removed on their own board", async () => {
 	const storage = memoryStorage();
-	const store = createStore(storage);
+	const store = await createStore(storage);
 	const one = firstBoard(store);
 	const two = store.addBoard("Two");
 	const rect = store.addDrawing(one.id, {
@@ -615,7 +626,7 @@ test("drawings: added, replaced and removed on their own board", () => {
 
 	store.replaceDrawing({ ...rect, text: "Phase A" } as typeof rect);
 	assert.deepEqual(
-		createStore(storage).data.boards.map((b) => b.drawings),
+		(await createStore(storage)).data.boards.map((b) => b.drawings),
 		[[{ ...rect, text: "Phase A" }], [arrow]],
 	);
 
@@ -624,7 +635,7 @@ test("drawings: added, replaced and removed on their own board", () => {
 	assert.equal(store.data.boards[0]?.drawings.length, 1);
 });
 
-test("older boards load without drawings; malformed drawings are dropped", () => {
+test("older boards load without drawings; malformed drawings are dropped", async () => {
 	const saved = {
 		types: [],
 		entities: [],
@@ -646,7 +657,7 @@ test("older boards load without drawings; malformed drawings are dropped", () =>
 			},
 		],
 	};
-	const [old, mixed] = createStore(memoryStorage({ "entities-app": JSON.stringify(saved) })).data.boards;
+	const [old, mixed] = (await createStore(memoryStorage({ "entities-app": JSON.stringify(saved) }))).data.boards;
 	assert.deepEqual(old?.drawings, []);
 	assert.deepEqual(
 		mixed?.drawings.map((d) => d.id),
@@ -656,23 +667,23 @@ test("older boards load without drawings; malformed drawings are dropped", () =>
 	assert.deepEqual(mixed?.drawings[0], { id: "ok", kind: "ellipse", x: 1, y: 2, width: 3, height: 4, color: "#c4dafa", text: "", textSize: "m" });
 });
 
-test("reload takes over what another tab saved, so saving here keeps it", () => {
+test("reload takes over what another tab saved, so saving here keeps it", async () => {
 	const storage = memoryStorage();
-	const here = createStore(storage);
-	const otherTab = createStore(storage);
+	const here = await createStore(storage);
+	const otherTab = await createStore(storage);
 	const book = otherTab.addType("Book", [titleDraft], "");
 
-	here.reload();
+	await here.reload();
 	assert.deepEqual(here.data.types.map((t) => t.name), ["Book"]);
 	here.addEntity(book.id, "Dune", "", {});
-	const saved = createStore(storage).data;
-	assert.deepEqual(saved.types.map((t) => t.name), ["Book"]);
-	assert.deepEqual(saved.entities.map((e) => e.name), ["Dune"]);
+	const saved = await createStore(storage);
+	assert.deepEqual(saved.data.types.map((t) => t.name), ["Book"]);
+	assert.deepEqual(saved.data.entities.map((e) => e.name), ["Dune"]);
 });
 
-test("undo and redo step through changes, and are saved", () => {
+test("undo and redo step through changes, and are saved", async () => {
 	const storage = memoryStorage();
-	const store = createStore(storage);
+	const store = await createStore(storage);
 	assert.deepEqual(store.history, { canUndo: false, canRedo: false });
 	const book = store.addType("Book", [titleDraft], "");
 	const dune = store.addEntity(book.id, "Dune", "", {});
@@ -680,7 +691,7 @@ test("undo and redo step through changes, and are saved", () => {
 
 	assert.equal(store.undo(), true);
 	assert.deepEqual(store.data.entities.map((e) => e.name), ["Dune"]);
-	assert.deepEqual(createStore(storage).data.entities.map((e) => e.name), ["Dune"]);
+	assert.deepEqual((await createStore(storage)).data.entities.map((e) => e.name), ["Dune"]);
 	assert.deepEqual(store.history, { canUndo: true, canRedo: true });
 
 	store.undo();
@@ -698,8 +709,8 @@ test("undo and redo step through changes, and are saved", () => {
 	assert.equal(store.redo(), false);
 });
 
-test("pan and zoom aren't undone, and undo keeps the current view; changes that change nothing aren't recorded", () => {
-	const store = createStore(memoryStorage());
+test("pan and zoom aren't undone, and undo keeps the current view; changes that change nothing aren't recorded", async () => {
+	const store = await createStore(memoryStorage());
 	const board = firstBoard(store);
 	const card = store.addCard(board.id, "missing", 0, 0); // entity check happens on load only
 	store.setViewport(board.id, { x: 10, y: 20, zoom: 2 });
@@ -713,9 +724,9 @@ test("pan and zoom aren't undone, and undo keeps the current view; changes that 
 	assert.equal(store.history.canUndo, false);
 });
 
-test("history is limited, cleared on reload, and changes to it are reported", () => {
+test("history is limited, cleared on reload, and changes to it are reported", async () => {
 	const storage = memoryStorage();
-	const store = createStore(storage);
+	const store = await createStore(storage);
 	let reported = 0;
 	store.onHistoryChange(() => reported++);
 	for (let i = 0; i < 120; i++) store.addBoard(`B${i}`);
@@ -725,19 +736,19 @@ test("history is limited, cleared on reload, and changes to it are reported", ()
 	assert.ok(reported > 0);
 
 	store.redo();
-	store.reload(); // e.g. another tab saved: its changes mustn't be undone from here
+	await store.reload(); // e.g. another tab saved: its changes mustn't be undone from here
 	assert.deepEqual(store.history, { canUndo: false, canRedo: false });
 });
 
-test("saved data carries the format version; data saved before versions existed loads and gets it on the next save", () => {
+test("saved data carries the format version; data saved before versions existed loads and gets it on the next save", async () => {
 	const storage = memoryStorage({ "entities-app": JSON.stringify({ types: [{ id: "b", name: "Book", properties: [] }], entities: [] }) });
-	const store = createStore(storage);
+	const store = await createStore(storage);
 	assert.equal(store.problems.load, null);
 	store.addBoard("Second");
-	const saved = JSON.parse(storage.getItem("entities-app")!);
+	const saved = JSON.parse((await storage.getItem("entities-app"))!);
 	assert.equal(saved.version, DATA_VERSION);
 	assert.deepEqual(saved.types.map((t: { name: string }) => t.name), ["Book"]);
-	assert.equal(createStore(storage).problems.load, null);
+	assert.equal((await createStore(storage)).problems.load, null);
 	assert.equal("version" in store.data, false);
 });
 
@@ -755,15 +766,15 @@ test("migrate runs one step per version, in order, from the saved version up", (
 	for (let v = 0; v < DATA_VERSION; v++) assert.equal(typeof MIGRATIONS[v], "function", `no step from version ${v}`);
 });
 
-test("data from a newer version is shown as far as it's understood, but never saved over", () => {
+test("data from a newer version is shown as far as it's understood, but never saved over", async () => {
 	const newer = JSON.stringify({ version: DATA_VERSION + 1, types: [{ id: "b", name: "Book", properties: [], icon: "📕" }], entities: [], future: true });
 	const storage = memoryStorage({ "entities-app": newer });
-	const store = createStore(storage);
+	const store = await createStore(storage);
 	assert.deepEqual(store.problems.load, { code: "newerVersion" });
 	assert.deepEqual(store.data.types.map((t) => t.name), ["Book"]);
 
 	store.addType("Film", [titleDraft], "");
 	assert.equal(store.data.types.length, 2);
-	assert.equal(storage.getItem("entities-app"), newer);
+	assert.equal(await storage.getItem("entities-app"), newer);
 	assert.deepEqual([...storage.map.keys()], ["entities-app"]); // no backup needed: the original stays
 });

@@ -1,9 +1,11 @@
 {
-	// The package runs in the browser: checked without Node's types, so Node-only APIs can't slip in.
+	// The core must reach its data through a port, so it can't lean on any environment's types: checked
+	// without Node's types and without the browser's type library (both would let the wrong ones slip in).
 	// tsconfig.json (with Node's types) covers the tests and is the one editors use.
 	"extends": "./tsconfig.json",
 	"compilerOptions": {
-		"types": []
+		"types": [],
+		"lib": ["esnext"]
 	},
 	"include": ["src"],
 	"exclude": ["src/**/*.test.ts"]
