@@ -1,0 +1,25 @@
+{
+	"name": "@bekbon/ui",
+	"version": "1.0.0",
+	"description": "User interface of bekbon",
+	"license": "ISC",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.app.json",
+		"test": "tsx --test src/*.test.ts",
+		"build": "tsc --noEmit -p tsconfig.app.json"
+	},
+	"dependencies": {
+		"@bekbon/core": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^26.6.3",
+		"happy-dom": "^20.14.5",
+		"tsx": "^4.23.15",
+		"typescript": "^7.0.2"
+	}
+}

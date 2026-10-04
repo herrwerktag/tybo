@@ -164,7 +164,41 @@ settings:
 
 importers:
 
-  .:
+  .: {}
+
+  apps/demo:
+    dependencies:
+      '@bekbon/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@bekbon/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vite:
+        specifier: ^8.3.1
+        version: 8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(tsx@4.23.15)
+
+  packages/core:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.3
+        version: 26.6.3
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/ui:
+    dependencies:
+      '@bekbon/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@types/node':
         specifier: ^26.6.3
@@ -178,9 +212,6 @@ importers:
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
-      vite:
-        specifier: ^8.3.1
-        version: 8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(tsx@4.23.15)
 
 packages:
 

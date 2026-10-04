@@ -1,0 +1,21 @@
+{
+	"name": "@bekbon/core",
+	"version": "1.0.0",
+	"description": "Dynamic types and data storage for bekbon",
+	"license": "ISC",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.app.json",
+		"test": "tsx --test src/*.test.ts",
+		"build": "tsc --noEmit -p tsconfig.app.json"
+	},
+	"devDependencies": {
+		"@types/node": "^26.6.3",
+		"tsx": "^4.23.15",
+		"typescript": "^7.0.2"
+	}
+}

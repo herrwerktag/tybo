@@ -1,4 +1,4 @@
-import type { Point } from "./connectors.js";
+import type { Point } from "@bekbon/core";
 import { CLICK_TOLERANCE, el, svgEl, trackPointer } from "./dom.js";
 import {
 	MIN_BOX_SIZE,
@@ -14,8 +14,8 @@ import {
 	type Tool,
 } from "./drawings.js";
 import { text } from "./i18n.js";
-import { DRAWING_COLORS, TEXT_SIZES, isBox, type BoxDrawing, type Drawing, type NewDrawing } from "./model.js";
-import type { Store } from "./store.js";
+import { DRAWING_COLORS, TEXT_SIZES, isBox, type BoxDrawing, type Drawing, type NewDrawing } from "@bekbon/core";
+import type { Store } from "@bekbon/core";
 
 const TOOLS: readonly { tool: Tool; icon: string; key: string }[] = [
 	{ tool: "select", icon: "↖", key: "v" },

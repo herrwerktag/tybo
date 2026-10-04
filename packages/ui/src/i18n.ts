@@ -1,5 +1,5 @@
 import type { Tool } from "./drawings.js";
-import type { CardDisplay, LineArrow, PropertyKind, TextSize, ValidationError } from "./model.js";
+import type { CardDisplay, LineArrow, PropertyKind, TextSize, ValidationError } from "@bekbon/core";
 import { readPreference, writePreference } from "./preferences.js";
 
 export type Language = "en" | "de";

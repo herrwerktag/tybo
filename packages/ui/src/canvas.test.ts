@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { canvasView } from "./canvas.js";
 import { CLICK_TOLERANCE } from "./dom.js";
-import { createStore, type Store } from "./store.js";
+import { createStore, type Store } from "@bekbon/core";
 
 /** A board with one card for Dune (with content, so it can be resized) and one for Herbert. */
 function setup({ readOnly = false } = {}) {

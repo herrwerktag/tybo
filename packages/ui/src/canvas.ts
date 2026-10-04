@@ -1,4 +1,4 @@
-import { connector, nearest, type Rect } from "./connectors.js";
+import { connector, nearest, type Rect } from "@bekbon/core";
 import { createDrawingLayer } from "./drawing-layer.js";
 import { CLICK_TOLERANCE, el, svgEl, trackPointer, typeDot } from "./dom.js";
 import { text } from "./i18n.js";
@@ -17,10 +17,10 @@ import {
 	type Entity,
 	type EntityType,
 	type LineArrow,
-} from "./model.js";
+} from "@bekbon/core";
 import { readPreference, writePreference } from "./preferences.js";
-import type { Store } from "./store.js";
-import { defaultViewport, screenToWorld, zoomAt, type Viewport } from "./viewport.js";
+import type { Store } from "@bekbon/core";
+import { defaultViewport, screenToWorld, zoomAt, type Viewport } from "@bekbon/core";
 
 const ENTITY_MIME = "application/x-entity-id";
 const PANEL_COLLAPSED_KEY = "canvas-panel-collapsed";
