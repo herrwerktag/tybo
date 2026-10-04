@@ -1,4 +1,4 @@
-# Anforderung als Forgejo-Issue mit Label "agent" -> OpenCode arbeitet sie ab -> PR.
+# Anforderung als Forgejo-Issue mit Label "agent" -> OpenCode arbeitet sie ab -> Pruefung -> PR.
 name: Agent Issue
 on:
   issues:
@@ -37,6 +37,9 @@ jobs:
         uses: https://data.forgejo.org/actions/setup-node@v4
         with:
           node-version: "22"
+
+      - name: pnpm bereitstellen
+        run: npm install -g pnpm@12.8.1
 
       - name: OpenCode installieren
         run: npm install -g opencode-ai@latest
@@ -83,8 +86,32 @@ jobs:
           git config user.email "agent-bot@werkbank.local"
           opencode run "$(cat /tmp/task.md)"
 
+      # Pruef-Gate: ohne gruene Pruefung entsteht KEIN PR fuer den Nutzer.
+      - name: Pruefung (typecheck + tests + build)
+        id: verify
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          {
+            echo "### Pruefung: \`pnpm check\`"
+            echo
+            echo '```'
+            pnpm install --frozen-lockfile && pnpm check
+            echo '```'
+          } > /tmp/verify.md 2>&1
+          RC=$?
+          echo "exit=$RC"
+          tail -25 /tmp/verify.md
+          if [ "$RC" -eq 0 ]; then
+            echo "passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "passed=false" >> $GITHUB_OUTPUT
+          fi
+          exit 0
+
       - name: Ergebnis pushen
         id: push
+        if: steps.verify.outputs.passed == 'true'
         run: |
           if [ -z "$(git status --porcelain)" ]; then
             echo "changed=false" >> $GITHUB_OUTPUT
@@ -112,4 +139,17 @@ jobs:
           cat /tmp/pr.json
           curl -sS -X POST -H "Authorization: token $AGENT_TOKEN" -H "Content-Type: application/json" \
             --data @/tmp/pr.json "http://forgejo:3000/api/v1/repos/${{ github.repository }}/pulls"
+          echo
+
+      # Kein PR, wenn die Pruefung rot ist: Kommentar ans Issue statt stillem Fehlschlag.
+      - name: Meldung ans Issue, wenn die Pruefung fehlschlug
+        if: steps.verify.outputs.passed != 'true'
+        env:
+          AGENT_TOKEN: ${{ secrets.AGENT_TOKEN }}
+          BODY_FILE: /tmp/verify.md
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          python3 -c "import json,os;b=open(os.environ['BODY_FILE']).read();print(json.dumps({'body':(b[:60000] if b.strip() else 'Pruefung fehlgeschlagen, aber keine Ausgabe erfasst.')}))" > /tmp/note.json
+          curl -sS -X POST -H "Authorization: token $AGENT_TOKEN" -H "Content-Type: application/json" \
+            --data @/tmp/note.json "http://forgejo:3000/api/v1/repos/${{ github.repository }}/issues/$ISSUE/comments"
           echo
