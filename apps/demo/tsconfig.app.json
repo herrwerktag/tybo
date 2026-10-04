@@ -1,0 +1,10 @@
+{
+	// The app runs in the browser: checked without Node's types, so Node-only APIs can't slip in.
+	// tsconfig.json (with Node's types) covers the tests and is the one editors use.
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"types": []
+	},
+	"include": ["src"],
+	"exclude": ["src/**/*.test.ts"]
+}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEFAULT_PORT, portFromEnv, type Api } from "./http.js";
+import { DEFAULT_CORS_ORIGIN, corsOriginFromEnv, DEFAULT_PORT, portFromEnv, type Api } from "./http.js";
 import { call, startApp } from "./test-server.js";
 
 /** The API on whatever texts the map holds — like localStorage would, without needing any. */
@@ -137,4 +137,68 @@ test("the port comes from PORT, with its fallback", () => {
 	assert.equal(portFromEnv(undefined), DEFAULT_PORT);
 	assert.equal(portFromEnv("not a port"), DEFAULT_PORT);
 	assert.equal(portFromEnv("0"), DEFAULT_PORT);
+});
+
+/** The origin the tests name as allowed, the way CORS_ORIGIN would in a running server. */
+const demoOrigin = "http://the-demo.example:5173";
+
+/** Whether an answer says what the browser needs to see it from another origin: whose, which ways, sending what. */
+function assertCrossOriginAllowed(response: Awaited<ReturnType<typeof call>>, origin: string): void {
+	assert.equal(response.header("access-control-allow-origin"), origin);
+	assert.equal(response.header("access-control-allow-methods"), "GET, PUT, DELETE");
+	assert.equal(response.header("access-control-allow-headers"), "Content-Type");
+}
+
+test("the browser's preflight (OPTIONS before PUT and DELETE) is answered 204 with what it asks for", async () => {
+	const api = await startApp(memoryApi(), demoOrigin);
+	try {
+		const preflight = await call(api.url, "texts/entities-app", {
+			method: "OPTIONS",
+			headers: {
+				// What the browser asks before sending the request it actually wants to send:
+				"access-control-request-method": "PUT",
+				"access-control-request-headers": "content-type",
+			},
+		});
+		assert.equal(preflight.status, 204);
+		assertCrossOriginAllowed(preflight, demoOrigin);
+	} finally {
+		await api.close();
+	}
+});
+
+test("the answers of GET, PUT and DELETE carry the same allowance, so the browser accepts them", async () => {
+	const api = await startApp(memoryApi(), demoOrigin);
+	try {
+		const put = await call(api.url, "texts/entities-app", { method: "PUT", body: "the saved data" });
+		assert.equal(put.status, 204);
+		assertCrossOriginAllowed(put, demoOrigin);
+
+		const get = await call(api.url, "texts/entities-app");
+		assert.equal(get.status, 200);
+		assertCrossOriginAllowed(get, demoOrigin);
+
+		const remove = await call(api.url, "texts/entities-app", { method: "DELETE" });
+		assert.equal(remove.status, 204);
+		assertCrossOriginAllowed(remove, demoOrigin);
+	} finally {
+		await api.close();
+	}
+});
+
+test("even a 404 says whose origin it may be read from — the browser would otherwise hide the answer", async () => {
+	const api = await startApp(memoryApi(), demoOrigin);
+	try {
+		const nothingStored = await call(api.url, "texts/entities-app");
+		assert.equal(nothingStored.status, 404);
+		assertCrossOriginAllowed(nothingStored, demoOrigin);
+	} finally {
+		await api.close();
+	}
+});
+
+test("the allowed origin comes from CORS_ORIGIN, with its fallback", () => {
+	assert.equal(corsOriginFromEnv("https://demo.example"), "https://demo.example");
+	assert.equal(corsOriginFromEnv(undefined), DEFAULT_CORS_ORIGIN);
+	assert.equal(corsOriginFromEnv(""), DEFAULT_CORS_ORIGIN);
 });

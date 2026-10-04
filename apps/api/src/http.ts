@@ -11,6 +11,17 @@ export function portFromEnv(value: string | undefined): number {
 	return Number.isInteger(port) && port > 0 && port <= 65535 ? port : DEFAULT_PORT;
 }
 
+/** The origin the API tells the browser it may be called from, so the demo can save through it from
+ * its own origin. CORS_ORIGIN says otherwise; the default fits the development setup, where the demo
+ * runs on its usual Vite port. */
+export const DEFAULT_CORS_ORIGIN = "http://localhost:5173";
+
+/** Reads the origin allowed across the browser's cross-origin rules from a CORS_ORIGIN-style environment
+ * value, falling back to the default. */
+export function corsOriginFromEnv(value: string | undefined): string {
+	return value ? value : DEFAULT_CORS_ORIGIN;
+}
+
 /** What createApp needs besides the routing: the stored texts, and whether their storage answers. */
 export interface Api extends StoragePort {
 	/** Resolves once it's known whether the database answers; /health says ok only then. */
@@ -23,11 +34,26 @@ export interface Api extends StoragePort {
  * /texts/{key} saves the request body under the key, overwriting what was there, answering 204.
  * DELETE /texts/{key} removes the text (if any) and answers 204 either way. GET /health answers
  * 200 while the database answers, 503 when it doesn't.
+ *
+ * The demo calls the API from another origin, so the browser checks first: it asks before PUT and
+ * DELETE (a "preflight" OPTIONS request) and looks at the answer's cross-origin headers. Every
+ * answer, the preflight included, says them — without that, the browser keeps the answers from the
+ * demo, and it can't even see a 404 or a 503, let alone act on it.
  */
-export function createApp(api: Api): Server {
+export function createApp(api: Api, allowedOrigin: string = corsOriginFromEnv(process.env.CORS_ORIGIN)): Server {
 	return createServer((req, res) => {
+		allowCrossOrigin(res, allowedOrigin);
+		// The preflight is answered where it's asked, before any route: 204, saying nothing yet.
+		if (req.method === "OPTIONS") return sendEmpty(res, 204);
 		void reply(req, res, api);
 	});
+}
+
+/** The headers the browser's cross-origin rules ask for: whose origin may call (which ways, sending what). */
+function allowCrossOrigin(res: ServerResponse, origin: string): void {
+	res.setHeader("access-control-allow-origin", origin);
+	res.setHeader("access-control-allow-methods", "GET, PUT, DELETE");
+	res.setHeader("access-control-allow-headers", "Content-Type");
 }
 
 async function reply(req: IncomingMessage, res: ServerResponse, api: Api): Promise<void> {
