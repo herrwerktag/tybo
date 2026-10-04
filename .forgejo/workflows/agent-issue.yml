@@ -10,7 +10,7 @@ jobs:
     if: github.event.label.name == 'agent'
     runs-on: ubuntu-latest
     # Obergrenze: bei Haenger (Modell gestresst/Reasoning-Schleife) nicht stundenlang laufen
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - name: Repo auschecken
         uses: https://data.forgejo.org/actions/checkout@v4
@@ -137,19 +137,49 @@ jobs:
         run: |
           python3 -c "import json,os;print(json.dumps({'head':os.environ['B'],'base':os.environ['G'],'title':os.environ['T'],'body':os.environ['D']}))" > /tmp/pr.json
           cat /tmp/pr.json
-          curl -sS -X POST -H "Authorization: token $AGENT_TOKEN" -H "Content-Type: application/json" \
+          curl -sS -o /tmp/prresp.json -X POST -H "Authorization: token $AGENT_TOKEN" -H "Content-Type: application/json" \
             --data @/tmp/pr.json "http://forgejo:3000/api/v1/repos/${{ github.repository }}/pulls"
           echo
 
-      # Kein PR, wenn die Pruefung rot ist: Kommentar ans Issue statt stillem Fehlschlag.
-      - name: Meldung ans Issue, wenn die Pruefung fehlschlug
-        if: steps.verify.outputs.passed != 'true'
+      # Genau EINE Meldung pro Lauf: PR-Link, "keine Aenderungen" oder Fehlertext.
+      # Folge: Ein Lauf OHNE Kommentar ist abgebrochen (z.B. Timeout) und muss nachgesehen werden.
+      - name: Ergebnis melden
+        if: always()
         env:
           AGENT_TOKEN: ${{ secrets.AGENT_TOKEN }}
-          BODY_FILE: /tmp/verify.md
           ISSUE: ${{ github.event.issue.number }}
+          PASSED: ${{ steps.verify.outputs.passed }}
+          CHANGED: ${{ steps.push.outputs.changed }}
+          BRANCH: ${{ steps.push.outputs.branch }}
         run: |
-          python3 -c "import json,os;b=open(os.environ['BODY_FILE']).read();print(json.dumps({'body':(b[:60000] if b.strip() else 'Pruefung fehlgeschlagen, aber keine Ausgabe erfasst.')}))" > /tmp/note.json
-          curl -sS -X POST -H "Authorization: token $AGENT_TOKEN" -H "Content-Type: application/json" \
-            --data @/tmp/note.json "http://forgejo:3000/api/v1/repos/${{ github.repository }}/issues/$ISSUE/comments"
-          echo
+          {
+            echo "### Ergebnis des Agent-Laufs"
+            echo
+            if [ "$PASSED" != "true" ]; then
+              echo "**Pruefung fehlgeschlagen** — kein Pull Request erzeugt."
+              echo
+              if [ -s /tmp/verify.md ]; then
+                echo '```'
+                cat /tmp/verify.md
+                echo '```'
+              else
+                echo "_Keine Ausgabe erfasst (Lauf moeglicherweise abgebrochen)._"
+              fi
+            elif [ "$CHANGED" != "true" ]; then
+              echo "**Pruefung gruen**, aber es wurden keine Aenderungen erzeugt — kein Pull Request."
+            else
+              NUM=$(python3 -c "import json;print(json.load(open('/tmp/prresp.json')).get('number',''))" 2>/dev/null || echo "")
+              if [ -n "$NUM" ]; then
+                echo "**Pruefung gruen — Pull Request eroeffnet:** #$NUM (Branch \`$BRANCH\`)"
+              else
+                echo "**Pruefung gruen**, Branch \`$BRANCH\` gepusht, aber die PR-Nummer war nicht lesbar:"
+                echo '```'
+                cat /tmp/prresp.json 2>/dev/null || echo "(keine Antwort)"
+                echo '```'
+              fi
+            fi
+          } > /tmp/report.md
+          cat /tmp/report.md
+          python3 -c "import json;b=open('/tmp/report.md').read();print(json.dumps({'body':b[:60000]}))" > /tmp/report.json
+          curl -sS -o /dev/null -w "Meldung: HTTP %{http_code}\n" -X POST -H "Authorization: token $AGENT_TOKEN" -H "Content-Type: application/json" \
+            --data @/tmp/report.json "http://forgejo:3000/api/v1/repos/${{ github.repository }}/issues/$ISSUE/comments"
