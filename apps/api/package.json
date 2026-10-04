@@ -1,0 +1,23 @@
+{
+	"name": "@bekbon/api",
+	"version": "1.0.0",
+	"description": "HTTP interface over the stored texts, kept in Postgres",
+	"license": "ISC",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"start": "tsx src/index.ts",
+		"typecheck": "tsc --noEmit",
+		"test": "tsx --test src/*.test.ts",
+		"build": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@bekbon/core": "workspace:*",
+		"postgres": "^3.4.5"
+	},
+	"devDependencies": {
+		"@types/node": "^26.6.3",
+		"tsx": "^4.23.15",
+		"typescript": "^7.0.2"
+	}
+}

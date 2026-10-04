@@ -4,9 +4,9 @@
   "description": "",
   "scripts": {
     "dev": "pnpm --filter @bekbon/demo run dev",
-    "build": "pnpm --filter @bekbon/core --filter @bekbon/ui --filter @bekbon/demo run build",
-    "typecheck": "pnpm --filter @bekbon/core --filter @bekbon/ui --filter @bekbon/demo run typecheck",
-    "test": "pnpm --filter @bekbon/core --filter @bekbon/ui run test",
+    "build": "pnpm --filter @bekbon/core --filter @bekbon/ui --filter @bekbon/api --filter @bekbon/demo run build",
+    "typecheck": "pnpm --filter @bekbon/core --filter @bekbon/ui --filter @bekbon/api --filter @bekbon/demo run typecheck",
+    "test": "pnpm --filter @bekbon/core --filter @bekbon/ui --filter @bekbon/api run test",
     "check": "pnpm typecheck && pnpm test && pnpm build"
   },
   "keywords": [],

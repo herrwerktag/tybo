@@ -1,0 +1,39 @@
+{
+	// The API is a Node server: checked with Node's types and without any browser type library, so
+	// no DOM can find its way in here. The few files in src together are the whole app.
+	"compilerOptions": {
+		// Environment Settings
+		// See also https://aka.ms/tsconfig/module
+		"module": "nodenext",
+		"target": "esnext",
+		// No browser type library: the server must stay out of the DOM.
+		"lib": ["esnext"],
+		"types": ["node"],
+
+		// Other Outputs
+		"sourceMap": true,
+		"declaration": true,
+
+		// Stricter Typechecking Options
+		"noUncheckedIndexedAccess": true,
+		"exactOptionalPropertyTypes": true,
+
+		// Style Options
+		"noImplicitReturns": true,
+		"noImplicitOverride": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noFallthroughCasesInSwitch": true,
+
+		// Recommended Options
+		"strict": true,
+		"verbatimModuleSyntax": true,
+		"isolatedModules": true,
+		"noUncheckedSideEffectImports": true,
+		"moduleDetection": "force",
+		"skipLibCheck": true,
+
+		"noEmit": true,
+	},
+	"include": ["src"],
+}
