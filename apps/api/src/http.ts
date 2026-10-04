@@ -1,8 +1,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { StoragePort } from "@bekbon/core";
 
-/** The port the server listens on when the PORT environment variable doesn't say otherwise. */
-export const DEFAULT_PORT = 3000;
+/** The port the server listens on when the PORT environment variable doesn't say otherwise.
+ * Not 3000: that one is taken by Forgejo on this host. */
+export const DEFAULT_PORT = 3001;
 
 /** Reads the port to listen on from a PORT-style environment value, falling back to the default. */
 export function portFromEnv(value: string | undefined): number {
