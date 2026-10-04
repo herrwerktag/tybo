@@ -134,6 +134,18 @@ jobs:
             echo "Keine Aenderungen erzeugt."
             exit 0
           fi
+          # Schranke: der Agent darf die Pipeline, die ihn steuert, NICHT veraendern.
+          # Aenderungen unter .forgejo/ werden vor dem Commit zurueckgesetzt und gemeldet.
+          if ! git diff --quiet -- .forgejo 2>/dev/null || [ -n "$(git status --porcelain -- .forgejo)" ]; then
+            echo "HINWEIS: Der Agent hat .forgejo/ veraendert. Die Aenderung wird NICHT uebernommen."
+            git checkout -- .forgejo 2>/dev/null || true
+            git clean -fdq .forgejo 2>/dev/null || true
+          fi
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "Nach dem Zuruecksetzen von .forgejo gab es keine Aenderungen."
+            exit 0
+          fi
           BR="agent/issue-${{ github.event.issue.number }}"
           git checkout -b "$BR"
           git add -A
