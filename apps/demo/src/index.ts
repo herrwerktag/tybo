@@ -1,6 +1,5 @@
-import { text } from "./i18n.js";
-import { render } from "./ui.js";
-import { createWorkspaces } from "./workspaces.js";
+import { createWorkspaces } from "@bekbon/core";
+import { render, text } from "@bekbon/ui";
 
 const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("#app element not found");

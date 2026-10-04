@@ -2,10 +2,10 @@ import { freshDom } from "./test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { text } from "./i18n.js";
-import type { AppData } from "./model.js";
+import type { AppData } from "@bekbon/core";
 import { render } from "./ui.js";
-import { createStore } from "./store.js";
-import { createWorkspaces, dataKey } from "./workspaces.js";
+import { createStore } from "@bekbon/core";
+import { createWorkspaces, dataKey } from "@bekbon/core";
 
 /** Renders the app on a fresh page (at `hash`, e.g. "#canvas"), with `saved` already in the browser storage. */
 function startApp(saved: Record<string, string> = {}, hash = ""): HTMLElement {

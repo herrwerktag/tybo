@@ -20,12 +20,12 @@ import {
 	type PropertyKind,
 	type PropertyValue,
 	type ValidationError,
-} from "./model.js";
+} from "@bekbon/core";
 import { canvasView } from "./canvas.js";
 import { downloadFile, el, safeFileName, typeDot } from "./dom.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
-import type { Store } from "./store.js";
-import { INDEX_KEY, dataKey, exportWorkspace, readWorkspaceFile, type Workspaces } from "./workspaces.js";
+import type { Store } from "@bekbon/core";
+import { INDEX_KEY, dataKey, exportWorkspace, readWorkspaceFile, type Workspaces } from "@bekbon/core";
 
 interface UiState {
 	editingTypeId: string | null;

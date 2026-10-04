@@ -1,0 +1,21 @@
+{
+	"name": "@bekbon/demo",
+	"version": "1.0.0",
+	"description": "The bekbon application",
+	"license": "ISC",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build",
+		"typecheck": "tsc --noEmit -p tsconfig.json"
+	},
+	"dependencies": {
+		"@bekbon/core": "workspace:*",
+		"@bekbon/ui": "workspace:*"
+	},
+	"devDependencies": {
+		"typescript": "^7.0.2",
+		"vite": "^8.3.1"
+	}
+}

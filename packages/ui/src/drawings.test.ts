@@ -11,7 +11,7 @@ import {
 	simplifyStroke,
 	strokePath,
 } from "./drawings.js";
-import type { BoxDrawing, PathDrawing } from "./model.js";
+import type { BoxDrawing, PathDrawing } from "@bekbon/core";
 
 const box: BoxDrawing = { id: "b", kind: "rect", x: 100, y: 100, width: 200, height: 100, color: "#dcdcdc", text: "", textSize: "m" };
 const line: PathDrawing = { id: "l", kind: "line", points: [{ x: 0, y: 0 }, { x: 100, y: 50 }], color: "#4a4a4a" };

@@ -1,7 +1,7 @@
 /** Geometry for drawings on the canvas (shapes, lines, text, pen), in world coordinates. */
 
-import type { Point, Rect } from "./connectors.js";
-import { isBox, type BoxDrawing, type Drawing, type PathDrawing } from "./model.js";
+import type { Point, Rect } from "@bekbon/core";
+import { isBox, type BoxDrawing, type Drawing, type PathDrawing } from "@bekbon/core";
 
 /** The canvas tools: select (and move, resize, edit) or draw one kind of drawing. */
 export type Tool = "select" | "rect" | "ellipse" | "line" | "arrow" | "text" | "pen";
