@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { StoragePort } from "@bekbon/core";
+import { APP_KEY } from "./mirror.js";
 
 /** The port the server listens on when the PORT environment variable doesn't say otherwise.
  * Not 3000: that one is taken by Forgejo on this host. */
@@ -26,6 +27,9 @@ export function corsOriginFromEnv(value: string | undefined): string {
 export interface Api extends StoragePort {
 	/** Resolves once it's known whether the database answers; /health says ok only then. */
 	healthy(): Promise<boolean>;
+	/** Optional, the Postgres side: handed the text after a successful save, so its tables can mirror the app
+	 * data. Without it (an API not on Postgres, for instance), saving stands alone. */
+	syncFromText?(text: string): Promise<void>;
 }
 
 /** The HTTP interface of the storage port.
@@ -72,7 +76,17 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api): Promi
 				return text === null ? sendEmpty(res, 404) : sendText(res, 200, text);
 			}
 			case "PUT": {
-				await api.setItem(key, await body(req));
+				const text = await body(req);
+				await api.setItem(key, text);
+				// Saving the app's key keeps the Postgres mirror in step. The text is stored already, so a mirror
+				// that can't be updated never fails the save — and one the text doesn't fit stays as it was.
+				if (key === APP_KEY && api.syncFromText) {
+					try {
+						await api.syncFromText(text);
+					} catch {
+						// The mirror is display only; the saved text is safe.
+					}
+				}
 				return sendEmpty(res, 204);
 			}
 			case "DELETE": {
