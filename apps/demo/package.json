@@ -8,14 +8,17 @@
 	"scripts": {
 		"dev": "vite",
 		"build": "vite build",
-		"typecheck": "tsc --noEmit -p tsconfig.json"
+		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.app.json",
+		"test": "tsx --test src/*.test.ts"
 	},
 	"dependencies": {
 		"@bekbon/core": "workspace:*",
 		"@bekbon/ui": "workspace:*"
 	},
 	"devDependencies": {
+		"@types/node": "^26.6.3",
 		"typescript": "^7.0.2",
+		"tsx": "^4.23.15",
 		"vite": "^8.3.1"
 	}
 }
