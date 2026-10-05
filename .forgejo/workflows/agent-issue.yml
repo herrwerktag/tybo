@@ -19,19 +19,34 @@ jobs:
 
       - name: Aufgabe aus dem Issue ableiten
         id: task
+        # WICHTIG: Der Issue-Text darf NICHT per ${{ ... }} in das Shell-Skript
+        # eingesetzt werden. Backticks im Text werden sonst als Befehl ausgefuehrt
+        # (Dateinamen verschwinden, Codebloecke zerreissen die Aufgabendatei).
+        # Deshalb ueber env: -> die Werte kommen als Umgebungsvariablen an.
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          {
-            echo "## Aufgabe"
-            echo "${{ github.event.issue.title }}"
-            echo
-            echo "## Beschreibung"
-            echo "${{ github.event.issue.body }}"
-            echo
-            echo "## Hinweise zum Repo"
-            echo "- Branch: ${{ github.ref_name }}"
-            echo "- Bearbeite nur, was die Aufgabe verlangt."
-          } > /tmp/task.md
-          echo "Aufgabe:"; cat /tmp/task.md
+          python3 - <<'PY'
+          import os, pathlib
+          body = os.environ.get("ISSUE_BODY", "")
+          text = "\n".join([
+              "## Aufgabe",
+              os.environ.get("ISSUE_TITLE", ""),
+              "",
+              "## Beschreibung",
+              body,
+              "",
+              "## Hinweise zum Repo",
+              f"- Branch: {os.environ.get('REF_NAME', '')}",
+              "- Bearbeite nur, was die Aufgabe verlangt.",
+          ])
+          p = pathlib.Path("/tmp/task.md")
+          p.write_text(text if text.endswith("\n") else text + "\n")
+          print("Aufgabe (" + str(len(text)) + " Zeichen):")
+          print(p.read_text())
+          PY
 
       - name: Node bereitstellen
         uses: https://data.forgejo.org/actions/setup-node@v4
