@@ -41,6 +41,7 @@ jobs:
               "## Hinweise zum Repo",
               f"- Branch: {os.environ.get('REF_NAME', '')}",
               "- Bearbeite nur, was die Aufgabe verlangt.",
+              "- Committe deine Aenderungen moeglichst nicht selbst; der Workflow erzeugt Commit und Pull Request.",
           ])
           p = pathlib.Path("/tmp/task.md")
           p.write_text(text if text.endswith("\n") else text + "\n")
@@ -150,7 +151,12 @@ jobs:
         id: push
         if: steps.verify.outputs.passed == 'true'
         run: |
-          if [ -z "$(git status --porcelain)" ]; then
+          # Pi committet seine Arbeit selbst (und legt dabei eigene Branches an).
+          # Ein reiner Arbeitsbaum-Check hat das frueher als "keine Aenderungen"
+          # verworfen und die Arbeit verworfen. Verglichen wird daher der
+          # Commit-Stand gegen den Ausgangsstand, zusaetzlich zum Arbeitsbaum.
+          BASE=$(git rev-parse HEAD)
+          if [ -z "$(git status --porcelain)" ] && git diff --quiet "$BASE" HEAD; then
             echo "changed=false" >> $GITHUB_OUTPUT
             echo "Keine Aenderungen erzeugt."
             exit 0
@@ -162,7 +168,7 @@ jobs:
             git checkout -- .forgejo 2>/dev/null || true
             git clean -fdq .forgejo 2>/dev/null || true
           fi
-          if [ -z "$(git status --porcelain)" ]; then
+          if [ -z "$(git status --porcelain)" ] && git diff --quiet "$BASE" HEAD; then
             echo "changed=false" >> $GITHUB_OUTPUT
             echo "Nach dem Zuruecksetzen von .forgejo gab es keine Aenderungen."
             exit 0
