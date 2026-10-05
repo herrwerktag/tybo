@@ -327,19 +327,31 @@ test("saving through the API mirrors the app's key — other keys and unreadable
 
 		const api = await startApp(storage);
 		try {
-			// Text that doesn't read as app data is stored, but the mirror keeps showing the last app data.
-			const stored = await call(api.url, `texts/${encodeURIComponent(APP_KEY)}`, { method: "PUT", body: "keine App-Daten" });
+			// Saving now names the stand it read; this test reads the current version before each PUT. Text that
+			// doesn't read as app data is stored, but the mirror keeps showing the last app data.
+			const current = async () => (await call(api.url, `texts/${encodeURIComponent(APP_KEY)}`)).header("etag")!;
+			const stored = await call(api.url, `texts/${encodeURIComponent(APP_KEY)}`, {
+				method: "PUT",
+				body: "keine App-Daten",
+				headers: { "if-match": await current() },
+			});
 			assert.equal(stored.status, 204);
 			assert.equal(await storage.getItem(APP_KEY), "keine App-Daten");
 			assert.deepEqual(await mirrorCounts(sql), sampleCounts);
 
-			// App data under another key is stored like any text, mirrored never.
+			// App data under another key is stored like any text, mirrored never. Last run's row (if any) goes
+			// first: over stored data, a save has to name a stand.
+			await storage.removeItem("mirror-test:other");
 			const other = await call(api.url, "texts/mirror-test:other", { method: "PUT", body: sampleText });
 			assert.equal(other.status, 204);
 			assert.deepEqual(await mirrorCounts(sql), sampleCounts);
 
 			// Saving the app's data through the API puts it into the mirror, exactly as saved.
-			const saved = await call(api.url, `texts/${encodeURIComponent(APP_KEY)}`, { method: "PUT", body: sampleText });
+			const saved = await call(api.url, `texts/${encodeURIComponent(APP_KEY)}`, {
+				method: "PUT",
+				body: sampleText,
+				headers: { "if-match": await current() },
+			});
 			assert.equal(saved.status, 204);
 			assert.equal(await storage.getItem(APP_KEY), sampleText);
 			assert.deepEqual(await mirrorCounts(sql), sampleCounts);

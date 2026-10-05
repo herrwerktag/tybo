@@ -1,9 +1,15 @@
-import type { StoragePort } from "@bekbon/core";
+import { SaveConflict, type StoragePort } from "@bekbon/core";
 
 /**
  * The browser app's port into the storage API (apps/api), which keeps the texts under their keys — in
  * Postgres, of all places. The port is asynchronous, and so is HTTP: one call is one request, no
  * detour. Answers other than the API's own reject, the way the core expects a failing storage to.
+ *
+ * The API answers each text's version (the `etag` header), and this port keeps track of it per key:
+ * the version a GET answered comes back with the next PUT under the key (`if-match`), so a save can
+ * only build on the stand it read. When someone else saved in between, the API refuses with 409 and
+ * nothing is written; this port passes that on as what it is — a SaveConflict — so the caller can tell
+ * it from a broken storage.
  */
 export function httpStorage(apiUrl: string): StoragePort {
 	// One call after the other, in the order they came in. The browser's storage does its work at
@@ -22,20 +28,41 @@ export function httpStorage(apiUrl: string): StoragePort {
 		return turn;
 	}
 
+	/** The version the API last named per key: remembered from a GET, taken over from a PUT's answer. */
+	const versions = new Map<string, string>();
+
 	return {
 		/** GET answers the text stored under the key — the API's 404 says none is (null, as the port promises). */
 		async getItem(key) {
 			return inOrder(async () => {
 				const response = await fetch(textUrl(apiUrl, key));
-				if (response.status === 404) return null;
-				return storedText(response);
+				if (response.status === 404) {
+					// Nothing stored under the key, so the next save under it is a first write.
+					versions.delete(key);
+					return null;
+				}
+				const text = await storedText(response);
+				remember(key, response);
+				return text;
 			});
 		},
 
-		/** PUT stores the value under the key; the promise settles when the API has taken it. */
+		/** PUT stores the value under the key, naming the stand it read; the promise settles when the API has
+		 * taken it — or refused it as outdated, which rejects as a SaveConflict. */
 		async setItem(key, value) {
 			await inOrder(async () => {
-				takeOrReject(await fetch(textUrl(apiUrl, key), { method: "PUT", body: value }));
+				const seen = versions.get(key);
+				const response = await fetch(textUrl(apiUrl, key), {
+					method: "PUT",
+					body: value,
+					headers: seen ? { "if-match": seen } : {},
+				});
+				if (response.status === 409) {
+					// Someone else saved the key in between: this stand is outdated, not the storage broken.
+					throw new SaveConflict(key);
+				}
+				takeOrReject(response);
+				remember(key, response);
 			});
 		},
 
@@ -43,9 +70,17 @@ export function httpStorage(apiUrl: string): StoragePort {
 		async removeItem(key) {
 			await inOrder(async () => {
 				takeOrReject(await fetch(textUrl(apiUrl, key), { method: "DELETE" }));
+				// The text is gone: a next save under this key starts over, as a first write.
+				versions.delete(key);
 			});
 		},
 	};
+
+	/** Takes the version the answer carries, so the next save under the key names this new stand. */
+	function remember(key: string, response: Response): void {
+		const version = response.headers.get("etag");
+		if (version !== null) versions.set(key, version);
+	}
 }
 
 /** The API's address of the text under `key`: escaped, so any key winds into one path. */

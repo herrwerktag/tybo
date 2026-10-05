@@ -97,7 +97,8 @@ function newDraftProperty(): DraftProperty {
 }
 
 export async function render(root: HTMLElement, workspaces: Workspaces): Promise<void> {
-	/** Warnings about the saved data, below the top bar; updated on its own, since failed saves can happen on the canvas. */
+	/** Warnings about the saved data and its saving, below the top bar; updated on its own, since failed or
+	 refused saves can happen on the canvas. */
 	const banner = el("div", { className: "problem-banner", role: "alert" });
 
 	/** Undo and redo in the top bar; updated on their own, since most canvas changes don't draw the page again. */
@@ -160,7 +161,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 	}
 
 	function renderBanner(): void {
-		const { load, saveFailed } = store.problems;
+		const { load, saveFailed, saveConflict } = store.problems;
 		const original = store.originalText();
 		// The saved text that couldn't be read, to fix by hand and import again.
 		const download = original
@@ -180,6 +181,8 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 		if (state.unexpectedError !== null) {
 			messages.push(el("p", {}, text.unexpectedError(state.unexpectedError), " ", reloadButton()));
 		}
+		// Someone else saved in between, so this stand was refused: say what happened, and offer the newer data.
+		if (saveConflict) messages.push(el("p", {}, text.saveConflict, " ", reloadButton()));
 		if (saveFailed) messages.push(el("p", {}, text.saveFailed));
 		if (load?.code === "newerVersion") {
 			messages.push(el("p", {}, text.loadNewerVersion, " ", reloadButton()));
