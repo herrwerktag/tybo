@@ -14,8 +14,9 @@ const DIRECTION = {
 	text: "texts[entities-app] (der Blob) ist die Quelle der Wahrheit. Diese Tabellen sind eine abgeleitete, nur lesbare Sicht: Was hier geschrieben wird, ueberschreibt der naechste Abgleich mit dem Blob wieder.",
 };
 
-/** The mirror's own tables — all of it derived from the blob, including `mirror_meta` with the markers. */
-const MIRROR_TABLES = [
+/** The seven tables that carry the app's data, filled from the blob — everything but `mirror_meta`,
+ * which holds the markers instead. The migration and its tests read these names from here too. */
+export const DERIVED_TABLES = [
 	"entity_types",
 	"properties",
 	"entities",
@@ -23,8 +24,27 @@ const MIRROR_TABLES = [
 	"boards",
 	"cards",
 	"drawings",
-	"mirror_meta",
 ] as const;
+
+/** One of the seven data tables the blob is spread over. */
+export type DerivedTable = (typeof DERIVED_TABLES)[number];
+
+/** How many rows each of the seven tables holds — the shape of every Soll/Ist-Zahl. */
+export type TableCounts = Record<DerivedTable, number>;
+
+/** No rows anywhere; the honest answer for no blob or one that isn't app data. */
+export const EMPTY_TABLE_COUNTS: TableCounts = {
+	entity_types: 0,
+	properties: 0,
+	entities: 0,
+	entity_values: 0,
+	boards: 0,
+	cards: 0,
+	drawings: 0,
+};
+
+/** The mirror's own tables — all of it derived from the blob, including `mirror_meta` with the markers. */
+const MIRROR_TABLES = [...DERIVED_TABLES, "mirror_meta"] as const;
 
 /** The driver's query function, so the mirror can share the storage's connection. */
 export type Sql = postgres.Sql<{}>;
@@ -200,7 +220,7 @@ interface MirrorRows {
 	boards: (AppData["boards"][number] & { position: number })[];
 	cards: { id: string; boardId: string; entityId: string; position: number; x: number; y: number; width: number; height: number }[];
 	drawings: { id: string; boardId: string; position: number; kind: string; body: unknown }[];
-	counts: Record<string, number>;
+	counts: TableCounts;
 }
 
 /** Turns app data into the mirror's rows. Rows whose parent is missing from the data are dropped (the app
@@ -216,7 +236,7 @@ function mirrorRows(data: AppData): MirrorRows {
 		boards: [],
 		cards: [],
 		drawings: [],
-		counts: {},
+		counts: { ...EMPTY_TABLE_COUNTS },
 	};
 
 	const typeIds = new Set<string>();
@@ -295,4 +315,10 @@ function mirrorRows(data: AppData): MirrorRows {
 		drawings: rows.drawings.length,
 	};
 	return rows;
+}
+
+/** The Soll-Zahlen of app data: how many rows each derived table gets from it. Rows without a parent never
+ * become rows, so they count in nowhere — the migration's completeness check builds on exactly this. */
+export function expectedMirrorCounts(data: AppData): TableCounts {
+	return isAppData(data) ? mirrorRows(data).counts : EMPTY_TABLE_COUNTS;
 }

@@ -1,5 +1,6 @@
 import postgres from "postgres";
 import type { StoragePort } from "@bekbon/core";
+import { migrateBlob as runMigration, type MigrationResult } from "./migrate.js";
 import { APP_KEY, createMirror, type PostgresMirror } from "./mirror.js";
 
 /** How long to try connecting before giving up — the test run's database is nearby, not worth waiting longer. */
@@ -17,6 +18,9 @@ export interface PostgresStorage extends StoragePort {
 	syncFromText(text: string): Promise<void>;
 	/** The mirror itself: the derived, read-only tables queries look at. */
 	mirror: PostgresMirror;
+	/** Moves the blob's data into the addressable tables once, on this storage's connection, and answers
+	 * the completeness result — for the start-up run and its log. The blob stays the source of truth. */
+	migrateBlob(blobText: string | null): Promise<MigrationResult>;
 	/** Closes the connections; the texts stay. */
 	close(): Promise<void>;
 }
@@ -80,5 +84,9 @@ export function postgresStorage(url: string): PostgresStorage {
 		},
 
 		mirror,
+
+		migrateBlob(blobText) {
+			return runMigration(blobText, sql);
+		},
 	};
 }
