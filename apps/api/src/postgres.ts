@@ -1,15 +1,22 @@
 import postgres from "postgres";
 import type { StoragePort } from "@bekbon/core";
+import { APP_KEY, createMirror, type PostgresMirror } from "./mirror.js";
 
 /** How long to try connecting before giving up — the test run's database is nearby, not worth waiting longer. */
 const CONNECT_TIMEOUT_SECONDS = 5;
 
 /** The storage port, plus what running the server against its database takes. */
 export interface PostgresStorage extends StoragePort {
-	/** Creates the table if it doesn't exist yet; calling it again changes nothing. */
+	/** Creates the texts table and the mirror tables if they don't exist yet; calling it again changes nothing.
+	 * The mirror is filled once from the blob under the app's key — empty when there is none. */
 	init(): Promise<void>;
 	/** True once the database answers. */
 	healthy(): Promise<boolean>;
+	/** Keeps the Postgres mirror in step with a saved text: one that reads as app data is mirrored, one that
+	 * doesn't leaves the mirror alone. Derived from the blob only — there is no way back into the app. */
+	syncFromText(text: string): Promise<void>;
+	/** The mirror itself: the derived, read-only tables queries look at. */
+	mirror: PostgresMirror;
 	/** Closes the connections; the texts stay. */
 	close(): Promise<void>;
 }
@@ -22,6 +29,7 @@ export interface PostgresStorage extends StoragePort {
  */
 export function postgresStorage(url: string): PostgresStorage {
 	const sql = postgres(url, { connect_timeout: CONNECT_TIMEOUT_SECONDS });
+	const mirror = createMirror(sql);
 
 	return {
 		async init() {
@@ -30,6 +38,12 @@ export function postgresStorage(url: string): PostgresStorage {
 				value text not null,
 				updated_at timestamptz not null default now()
 			)`;
+			await mirror.init();
+			// The start-up fill: whatever blob is already there becomes visible in the mirror, right away.
+			// No blob means an empty mirror — that's a valid state, not a failure.
+			const rows = await sql`select value from texts where key = ${APP_KEY}`;
+			const blob = (rows[0] as { value: string } | undefined)?.value ?? null;
+			if (blob !== null) await mirror.syncFromText(blob);
 		},
 
 		async getItem(key) {
@@ -48,6 +62,10 @@ export function postgresStorage(url: string): PostgresStorage {
 			await sql`delete from texts where key = ${key}`;
 		},
 
+		syncFromText(text) {
+			return mirror.syncFromText(text);
+		},
+
 		async healthy() {
 			try {
 				await sql`select 1`;
@@ -60,5 +78,7 @@ export function postgresStorage(url: string): PostgresStorage {
 		async close() {
 			await sql.end({ timeout: CONNECT_TIMEOUT_SECONDS });
 		},
+
+		mirror,
 	};
 }
