@@ -122,8 +122,11 @@ jobs:
         id: verify
         continue-on-error: true
         env:
-          # Postgres fuer die Datenbank-Tests des API-Pakets; ohne das Secret werden sie uebersprungen.
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Postgres fuer die Datenbank-Tests des API-Pakets. Bewusst das Secret der TEST-Datenbank:
+          # die Tests schreiben und loeschen unter dem Schluessel "entities-app". Gegen die
+          # Produktionsdatenbank wuerde jeder Agent-Lauf den echten App-Blob mit Testdaten
+          # ueberschreiben. Die CI-Rolle hat auf der Produktionsdatenbank kein Verbindungsrecht.
+          DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
         run: |
           set -o pipefail
           {
