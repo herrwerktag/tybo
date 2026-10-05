@@ -1,4 +1,4 @@
-# Anforderung als Forgejo-Issue mit Label "agent" -> OpenCode arbeitet sie ab -> Pruefung -> PR.
+# Anforderung als Forgejo-Issue mit Label "agent" -> Pi Coding Agent arbeitet sie ab -> Pruefung -> PR.
 name: Agent Issue
 on:
   issues:
@@ -36,49 +36,51 @@ jobs:
       - name: Node bereitstellen
         uses: https://data.forgejo.org/actions/setup-node@v4
         with:
-          node-version: "22"
+          # Pi verlangt Node >= 22.19
+          node-version: "22.19"
 
       - name: pnpm bereitstellen
         run: npm install -g pnpm@12.8.1
 
-      - name: OpenCode installieren
-        run: npm install -g opencode-ai@latest
+      - name: Pi installieren
+        run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.0.3
 
-      - name: OpenCode konfigurieren (GLM-5.3 braucht reasoning)
+      - name: Pi konfigurieren (synthetic-Endpunkt, GLM-5.3 mit Reasoning)
         env:
           SYNTHETIC_API_KEY: ${{ secrets.SYNTHETIC_API_KEY }}
         run: |
-          mkdir -p "$HOME/.config/opencode"
-          cat > "$HOME/.config/opencode/opencode.json" <<'JSON'
-          {
-            "$schema": "https://opencode.ai/config.json",
-            "provider": {
-              "synthetic": {
-                "npm": "@ai-sdk/openai-compatible",
-                "name": "synthetic.new",
-                "options": {
-                  "baseURL": "https://api.synthetic.new/openai/v1",
-                  "apiKey": "{env:SYNTHETIC_API_KEY}",
-                  "headerTimeout": 600000,
-                  "chunkTimeout": 600000,
-                  "timeout": 900000
-                },
-                "models": {
-                  "hf:zai-org/GLM-5.3": {
-                    "name": "GLM-5.3",
-                    "reasoning": true,
-                    "interleaved": "reasoning_content"
-                  },
-                  "hf:moonshotai/Kimi-K3": { "name": "Kimi-K3" }
-                }
+          mkdir -p "$HOME/.pi/agent"
+          # Bewusst per Python statt Heredoc: die Heredoc-Einrueckung im YAML hat
+          # frueher schon ungueltiges JSON erzeugt. Der Schluessel wird ueber
+          # $SYNTHETIC_API_KEY eingefuegt und erst zur Anfragezeit aufgeloest.
+          python3 - <<'PY'
+          import json, os, pathlib
+          cfg = {
+              "providers": {
+                  "synthetic": {
+                      "baseUrl": "https://api.synthetic.new/openai/v1",
+                      "api": "openai-completions",
+                      "apiKey": "$SYNTHETIC_API_KEY",
+                      "models": [
+                          {
+                              "id": "hf:zai-org/GLM-5.3",
+                              "name": "GLM-5.3",
+                              "reasoning": True,
+                              "contextWindow": 524288,
+                              "maxTokens": 65536,
+                          }
+                      ],
+                  }
               }
-            },
-            "model": "synthetic/hf:zai-org/GLM-5.3"
           }
-          JSON
-          cat "$HOME/.config/opencode/opencode.json"
+          p = pathlib.Path(os.environ["HOME"]) / ".pi" / "agent" / "models.json"
+          p.write_text(json.dumps(cfg, indent=2) + "\n")
+          json.loads(p.read_text())
+          print("models.json ok:", p)
+          PY
+          cat "$HOME/.pi/agent/models.json"
 
-      - name: OpenCode arbeiten lassen
+      - name: Pi arbeiten lassen
         id: agent
         continue-on-error: true
         env:
@@ -87,14 +89,15 @@ jobs:
           git config user.name  "agent-bot"
           git config user.email "agent-bot@werkbank.local"
           {
-            echo "### Ausgabe von OpenCode"
+            echo "### Ausgabe von Pi"
             echo
             echo '```'
-            opencode run "$(cat /tmp/task.md)"
+            # -na: projektlokale Konfiguration ignorieren (der Agent darf sich nicht selbst steuern)
+            pi -na --provider synthetic --model hf:zai-org/GLM-5.3 --print "$(cat /tmp/task.md)"
             echo '```'
           } > /tmp/agent.md 2>&1
           RC=$?
-          echo "OpenCode exit=$RC"
+          echo "Pi exit=$RC"
           tail -30 /tmp/agent.md
           echo "rc=$RC" >> $GITHUB_OUTPUT
           exit 0
@@ -161,7 +164,7 @@ jobs:
           B: ${{ steps.push.outputs.branch }}
           G: ${{ github.ref_name }}
           T: "Agent: ${{ github.event.issue.title }}"
-          D: "Bearbeitet durch OpenCode (GLM-5.3). Schliesst #${{ github.event.issue.number }}"
+          D: "Bearbeitet durch Pi Coding Agent (GLM-5.3). Schliesst #${{ github.event.issue.number }}"
         run: |
           python3 -c "import json,os;print(json.dumps({'head':os.environ['B'],'base':os.environ['G'],'title':os.environ['T'],'body':os.environ['D']}))" > /tmp/pr.json
           cat /tmp/pr.json
@@ -197,10 +200,10 @@ jobs:
             elif [ "$CHANGED" != "true" ]; then
               echo "**Pruefung gruen**, aber es wurden keine Aenderungen erzeugt — kein Pull Request."
               echo
-              echo "OpenCode Exit-Code: \`$AGENT_RC\`"
+              echo "Pi Exit-Code: \`$AGENT_RC\`"
               echo
               if [ -s /tmp/agent.md ]; then
-                echo "<details><summary>Ausgabe von OpenCode</summary>"
+                echo "<details><summary>Ausgabe von Pi</summary>"
                 echo
                 echo '```'
                 tail -60 /tmp/agent.md
@@ -208,7 +211,7 @@ jobs:
                 echo
                 echo "</details>"
               else
-                echo "_OpenCode hat keine Ausgabe erzeugt._"
+                echo "_Pi hat keine Ausgabe erzeugt._"
               fi
             else
               NUM=$(python3 -c "import json;print(json.load(open('/tmp/prresp.json')).get('number',''))" 2>/dev/null || echo "")
