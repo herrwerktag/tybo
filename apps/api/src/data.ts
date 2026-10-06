@@ -63,7 +63,7 @@ export async function readAppData(queries: Queries, workspaceId: string): Promis
 		queries`select id, type_id, name, kind, options, reference, card_display from properties where workspace_id = ${workspaceId} order by type_id, position, id`,
 		queries`select id, type_id, name, content, description from entities where workspace_id = ${workspaceId} order by position, id`,
 		queries`select entity_id, property_id, value from entity_values where workspace_id = ${workspaceId} order by entity_id, position, property_id`,
-		queries`select id, name, kind, viewport, pages from boards where workspace_id = ${workspaceId} order by position, id`,
+		queries`select id, name, viewport, story, pages from boards where workspace_id = ${workspaceId} order by position, id`,
 		queries`select id, board_id, entity_id, x, y, width, height from cards where workspace_id = ${workspaceId} order by board_id, position, id`,
 		queries`select board_id, body from drawings where workspace_id = ${workspaceId} order by board_id, position, id`,
 	]);
@@ -101,13 +101,13 @@ export async function readAppData(queries: Queries, workspaceId: string): Promis
 			description,
 			values: valuesOf.get(id) ?? {},
 		})),
-		boards: boards.map(({ id, name, kind, viewport, pages }) => ({
+		boards: boards.map(({ id, name, viewport, story, pages }) => ({
 			id,
 			name,
-			kind,
 			cards: cardsOf.get(id) ?? [],
 			viewport,
 			drawings: drawingsOf.get(id) ?? [],
+			story,
 			pages,
 		})),
 	} as AppData;

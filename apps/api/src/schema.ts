@@ -124,6 +124,16 @@ export const MIGRATIONS: readonly Migration[] = [
 			await tx`alter table boards add column kind text, add column pages jsonb`;
 		},
 	},
+	{
+		version: 3,
+		name: "story mode instead of board kinds",
+		async up(tx) {
+			// Storyboards become boards in story mode; null (rows from before) reads as off.
+			await tx`alter table boards add column story boolean`;
+			await tx`update boards set story = (kind = 'storyboard')`;
+			await tx`alter table boards drop column kind`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */

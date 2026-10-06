@@ -1040,7 +1040,7 @@ button.ref-tag {
 	bottom: 0.75rem;
 }
 
-/* Storyboard pages: bottom center. The drawing style bar moves up above it. */
+/* Story mode pages: bottom center. The drawing style bar moves up above it. */
 .page-bar {
 	position: absolute;
 	left: 50%;
@@ -1051,7 +1051,7 @@ button.ref-tag {
 	justify-content: center;
 }
 
-.storyboard .drawing-style {
+.story-mode .drawing-style {
 	bottom: 3.75rem;
 }
 
@@ -1080,16 +1080,16 @@ button.ref-tag {
 
 /* Too narrow for page bar and zoom side by side: zoom goes above. */
 @media (max-width: 60rem) {
-	.storyboard .canvas-zoom {
+	.story-mode .canvas-zoom {
 		bottom: 3.75rem;
 	}
 }
 
-/* The step description, on the canvas like a card (see placeDescription), above the cards. Editor and viewer
- * give it the same width and padding, so its text sits in the same place in both. */
+/* The step description, on the canvas like a card (see placeDescription), above the cards. Its size is saved
+ * with the page (sizeDescription), so it's the same box in the editor and the viewer; the viewer scrolls longer text. */
 .page-description {
 	position: absolute;
-	width: 24rem;
+	overflow: auto;
 	padding: 0.5rem 0.75rem;
 	background: var(--surface);
 	border: 1px solid var(--border);
@@ -1101,17 +1101,21 @@ button.ref-tag {
 	display: none;
 }
 
-/* In the editor: the text to edit, filling the box like the viewer's text, and a handle left of it to move it. */
+/* In the editor: the text to edit, filling the box like the viewer's text; the handle to move it sits left of it. */
+.page-description:has(textarea) {
+	overflow: visible;
+}
+
 .page-description textarea {
 	display: block;
 	width: 100%;
-	min-height: 4.5rem;
+	height: 100%;
 	padding: 0;
 	border: none;
 	background: transparent;
 	font: inherit;
 	line-height: 1.55; /* as the viewer's Markdown */
-	resize: vertical;
+	resize: none;
 }
 
 .page-description textarea:focus-visible {
@@ -1137,7 +1141,7 @@ button.ref-tag {
 	user-select: none;
 }
 
-/* Other pages' cards and drawings, shown faded in the storyboard editor so they can be shown here too. */
+/* Other pages' cards and drawings, shown faded in the story mode editor so they can be shown here too. */
 .canvas-card.ghost {
 	opacity: 0.35;
 	border-style: dashed;
@@ -1151,7 +1155,30 @@ button.ref-tag {
 	opacity: 0.3;
 }
 
-/* Cards coming onto a storyboard page fade in. */
+/* Cards a step shows out of focus: faded in the viewer, half so in the editor (still to be worked on there). The
+ * lines touching them fade along. */
+.canvas-card.dimmed,
+.connector.dimmed,
+.connector-label.dimmed {
+	opacity: 0.55;
+}
+
+.read-only .canvas-card.dimmed,
+.read-only .connector.dimmed,
+.read-only .connector-label.dimmed {
+	opacity: 0.2;
+}
+
+/* The dim toggle sits right, next to ×. */
+.card-dim {
+	margin-left: auto;
+}
+
+.card-dim[aria-pressed="true"] {
+	color: var(--focus);
+}
+
+/* Cards coming onto a story mode page fade in. */
 .canvas-card.appear {
 	animation: card-appear 350ms ease-out;
 }
@@ -1277,14 +1304,16 @@ button.ref-tag {
 	overflow: hidden;
 }
 
-.card-remove {
+.card-remove,
+.card-dim {
 	border: none;
 	background: transparent;
 	padding: 0 0.35rem;
 	line-height: 1.2;
 }
 
-.card-remove:hover:not(:disabled) {
+.card-remove:hover:not(:disabled),
+.card-dim:hover:not(:disabled) {
 	background: rgb(0 0 0 / 0.08);
 }
 

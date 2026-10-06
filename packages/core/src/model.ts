@@ -1,5 +1,5 @@
 import type { Point } from "./connectors.js";
-import type { Viewport } from "./viewport.js";
+import { screenToWorld, type Viewport } from "./viewport.js";
 
 export type PropertyKind = "text" | "options" | "reference";
 
@@ -123,13 +123,8 @@ export interface CanvasCard {
 	height: number;
 }
 
-/** `whiteboard`: the whole board at once. `storyboard`: shown page by page, each page a step. */
-export type BoardKind = "whiteboard" | "storyboard";
-
-export const BOARD_KINDS: readonly BoardKind[] = ["whiteboard", "storyboard"];
-
 /**
- * One step of a storyboard: which of the board's cards and drawings it shows (they keep one position on all
+ * One step of a board in story mode: which of the board's cards and drawings it shows (they keep one position on all
  * pages), with its own pan/zoom and a description placed over the canvas.
  */
 export interface StoryPage {
@@ -140,26 +135,40 @@ export interface StoryPage {
 	description: string;
 	/** The description's top left corner in world coordinates: it sits on the canvas like a card. */
 	descriptionPosition: Point;
+	/** The description box's size in world units, the same in the editor and the viewer. */
+	descriptionSize: { width: number; height: number };
 	viewport: Viewport;
 	cardIds: string[];
 	drawingIds: string[];
+	/** Cards the page shows faded, out of focus: some of its `cardIds`. */
+	dimmedCardIds: string[];
 }
 
-/** Where a page's description goes unless it was moved: at the default viewport, top left, clear of the drawing tools. */
-export const DEFAULT_DESCRIPTION_POSITION: Point = { x: 72, y: 16 };
+/** Where a page's description goes unless it was moved: this far (screen px) from the top left of the page's
+ * view, clear of the drawing tools. */
+export const DESCRIPTION_OFFSET: Point = { x: 72, y: 16 };
 
-/** A named canvas with its own cards and pan/zoom. */
+export const DEFAULT_DESCRIPTION_SIZE = { width: 384, height: 112 } as const;
+export const MIN_DESCRIPTION_SIZE = { width: 160, height: 48 } as const;
+
+/** The world position that puts a description at DESCRIPTION_OFFSET in `viewport`: in view, top left. */
+export function descriptionInView(viewport: Viewport): Point {
+	return screenToWorld(viewport, DESCRIPTION_OFFSET.x, DESCRIPTION_OFFSET.y);
+}
+
+/** A named canvas with its own cards and pan/zoom. In story mode, it is shown step by step, like a presentation. */
 export interface Board {
 	id: string;
 	name: string;
-	kind: BoardKind;
 	/** Later cards are drawn on top. */
 	cards: CanvasCard[];
-	/** The pan/zoom of a whiteboard; a storyboard's pages have their own. */
+	/** The pan/zoom of the board; in story mode, its pages have their own. */
 	viewport: Viewport;
 	/** Shapes, lines, text and pen strokes, drawn behind the cards; later ones on top. */
 	drawings: Drawing[];
-	/** A storyboard's steps, in order (never empty); a whiteboard has none. */
+	/** Whether the board is shown step by step (its pages); off, it shows everything at once. */
+	story: boolean;
+	/** The steps of story mode, in order: never empty while it's on, and kept while it's off. */
 	pages: StoryPage[];
 }
 
