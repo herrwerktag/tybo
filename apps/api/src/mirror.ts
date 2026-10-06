@@ -1,8 +1,11 @@
 import postgres from "postgres";
-import type { AppData } from "@bekbon/core";
+import type { AppData, Drawing } from "@bekbon/core";
 
-/** The key the app saves its data under, as one JSON blob in `texts`. The blob stays the source of truth;
- * everything this module writes is a read-only display copy ("the mirror") of exactly that blob. */
+/** The key the app saves its data under, as one JSON blob in `texts`. Writing keeps flowing from that blob:
+ * every save stores it and the mirror is rebuilt from it. Reading, on the other hand, comes out of the
+ * addressable tables now — `readAppDataFromTables` below assembles the app's data from them, and the blob
+ * steps in only as the fallback for the states where the tables can't answer: nothing ever filled them
+ * (a database before the first sync), or reading them failed. */
 export const APP_KEY = "entities-app";
 
 /** What every mirror table tells whoever queries it: this copy is filled only from the blob. */
@@ -77,6 +80,110 @@ export function readAppData(text: string): AppData | null {
 	}
 }
 
+/** Assembles the app's data out of the addressable tables — the reverse of what `syncMirror` writes, in
+ * one snapshot of the database, so a mirror being rebuilt alongside can't tear the picture in half.
+ *
+ * The `position` columns hold every array's order; floats come back bit for bit, the way Postgres stores
+ * and answers them. Rows without a parent (a property whose type is missing, a card without its board)
+ * never became rows on the way in, so a stray row on the way out — which only hand-writing could have put
+ * there — must not fail the read either: it's skipped, like the mirror itself would.
+ *
+ * Answers null when no data table holds any row at all — a database before its first sync, or one whose
+ * mirror was emptied — telling the caller to fall back to the blob for the app's key. */
+export async function readAppDataFromTables(sql: Sql): Promise<AppData | null> {
+	return sql.begin("isolation level repeatable read", async (tx) => {
+		const [types, properties, entities, values, boards, cards, drawings, extras] = await Promise.all([
+			tx`select id, position, name, content_template, color from entity_types order by position, id`,
+			tx`select id, type_id, position, name, kind, options, reference, card_display from properties order by type_id, position, id`,
+			tx`select id, type_id, position, name, content, description from entities order by position, id`,
+			tx`select entity_id, property_id, position, value from entity_values order by entity_id, position, property_id`,
+			tx`select id, position, name, viewport from boards order by position, id`,
+			tx`select id, board_id, position, entity_id, x, y, width, height from cards order by board_id, position, id`,
+			tx`select board_id, position, body from drawings order by board_id, position, id`,
+			tx`select value from mirror_meta where key = 'extras'`,
+		]);
+		// No rows anywhere: nothing was ever mirrored, or the mirror was emptied for an empty source. The
+		// tables owe no answer — the caller falls back to the blob rather than serving an empty app.
+		if ([types, properties, entities, values, boards, cards, drawings].every((rows) => rows.length === 0)) return null;
+
+		const typeIds = new Set(types.map(({ id }) => id));
+		const propertyIds = new Set(properties.map(({ id }) => id));
+		const entityIds = new Set(entities.map(({ id }) => id));
+		const boardIds = new Set(boards.map(({ id }) => id));
+
+		const propertiesOf = new Map<string, unknown[]>();
+		for (const property of properties) {
+			if (!typeIds.has(property.type_id)) continue; // a stray row, one the mirror would never write
+			const list = propertiesOf.get(property.type_id) ?? [];
+			list.push({
+				id: property.id,
+				name: property.name,
+				kind: property.kind,
+				options: property.options ?? [],
+				reference: property.reference ?? null,
+				cardDisplay: property.card_display,
+			});
+			propertiesOf.set(property.type_id, list);
+		}
+
+		const valuesOf = new Map<string, Record<string, unknown>>();
+		for (const { entity_id, property_id, value } of values) {
+			if (!entityIds.has(entity_id) || !propertyIds.has(property_id)) continue;
+			const record = valuesOf.get(entity_id) ?? {};
+			record[property_id] = value;
+			valuesOf.set(entity_id, record);
+		}
+
+		const cardsOf = new Map<string, unknown[]>();
+		for (const { id, board_id, entity_id, x, y, width, height } of cards) {
+			if (!boardIds.has(board_id) || !entityIds.has(entity_id)) continue;
+			const list = cardsOf.get(board_id) ?? [];
+			list.push({ id, entityId: entity_id, x, y, width, height });
+			cardsOf.set(board_id, list);
+		}
+
+		const drawingsOf = new Map<string, Drawing[]>();
+		for (const { board_id, body } of drawings) {
+			if (!boardIds.has(board_id)) continue;
+			const list = drawingsOf.get(board_id) ?? [];
+			list.push(body as Drawing);
+			drawingsOf.set(board_id, list);
+		}
+
+		const extrasRow = extras[0] as { value: unknown } | undefined;
+		const extrasValue =
+			extrasRow && typeof extrasRow.value === "object" && extrasRow.value !== null
+				? (extrasRow.value as Record<string, unknown>)
+				: {};
+
+		return {
+			...extrasValue,
+			types: types.map(({ id, name, content_template, color }) => ({
+				id,
+				name,
+				properties: propertiesOf.get(id) ?? [],
+				contentTemplate: content_template,
+				color,
+			})),
+			entities: entities.map(({ id, type_id, name, content, description }) => ({
+				id,
+				typeId: type_id,
+				name,
+				content,
+				description,
+				values: valuesOf.get(id) ?? {},
+			})),
+			boards: boards.map(({ id, name, viewport }) => ({
+				id,
+				name,
+				cards: cardsOf.get(id) ?? [],
+				viewport,
+				drawings: drawingsOf.get(id) ?? [],
+			})),
+		} as AppData;
+	});
+}
+
 export function createMirror(sql: Sql): PostgresMirror {
 	const json = (value: unknown) => jsonb(sql, value);
 	const mirror: PostgresMirror = {
@@ -102,11 +209,15 @@ export function createMirror(sql: Sql): PostgresMirror {
 			await sql`create table if not exists entities (
 				id text primary key,
 				type_id text not null references entity_types(id) on delete cascade,
+				position int not null default 0,
 				name text,
 				content text,
 				description text,
 				updated_at timestamptz not null default now()
 			)`;
+			// Databases from before `position` came to the entities table keep their rows (position 0, in
+			// their id order); the next sync fills the column in with each blob's own entity order.
+			await sql`alter table entities add column if not exists position int not null default 0`;
 			await sql`create table if not exists entity_values (
 				entity_id text not null references entities(id) on delete cascade,
 				property_id text not null references properties(id) on delete cascade,
@@ -166,9 +277,9 @@ export function createMirror(sql: Sql): PostgresMirror {
 					await tx`insert into properties (id, type_id, position, name, kind, options, reference, card_display)
 						values (${id}, ${typeId}, ${position}, ${name}, ${kind}, ${json(options)}, ${json(reference)}, ${cardDisplay})`;
 				}
-				for (const { id, typeId, name, content, description } of rows.entities) {
-					await tx`insert into entities (id, type_id, name, content, description)
-						values (${id}, ${typeId}, ${name}, ${content}, ${description})`;
+				for (const { id, typeId, position, name, content, description } of rows.entities) {
+					await tx`insert into entities (id, type_id, position, name, content, description)
+						values (${id}, ${typeId}, ${position}, ${name}, ${content}, ${description})`;
 				}
 				for (const { entityId, propertyId, position, value } of rows.entityValues) {
 					await tx`insert into entity_values (entity_id, property_id, position, value)
@@ -188,7 +299,8 @@ export function createMirror(sql: Sql): PostgresMirror {
 				}
 				await tx`insert into mirror_meta (key, value) values
 					('sync', ${json({ source_key: APP_KEY, synced_at: new Date().toISOString(), counts: rows.counts })}),
-					('direction', ${json(DIRECTION)})`;
+					('direction', ${json(DIRECTION)}),
+					('extras', ${json(rows.extras)})`;
 			});
 		},
 
@@ -211,15 +323,30 @@ function isAppData(value: unknown): value is AppData {
 	);
 }
 
+/** The saved text's top-level keys besides the data itself — `toSaved`'s `version` marker, for instance,
+ * or whatever else a saved text carries around its three arrays. They travel along in `mirror_meta`, so
+ * reading back out of the tables answers the whole text and not just the parts with tables of their own. */
+function blobExtras(data: AppData): Record<string, unknown> {
+	const extras: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(data)) {
+		if (key !== "types" && key !== "entities" && key !== "boards") extras[key] = value;
+	}
+	return extras;
+}
+
 /** The rows of the mirror, collected before anything is written, in the order they're inserted. */
 interface MirrorRows {
 	entityTypes: (AppData["types"][number] & { position: number })[];
 	properties: { id: string; typeId: string; position: number; name: string; kind: string; options: unknown; reference: unknown; cardDisplay: string }[];
-	entities: { id: string; typeId: string; name: string; content: string; description: string }[];
+	entities: { id: string; typeId: string; position: number; name: string; content: string; description: string }[];
 	entityValues: { entityId: string; propertyId: string; position: number; value: unknown }[];
 	boards: (AppData["boards"][number] & { position: number })[];
 	cards: { id: string; boardId: string; entityId: string; position: number; x: number; y: number; width: number; height: number }[];
 	drawings: { id: string; boardId: string; position: number; kind: string; body: unknown }[];
+	/** The saved text's top-level keys besides the data itself (the `version` marker of `toSaved`, for
+	 * instance), carried along in `mirror_meta` so the tables can answer the whole text — not just the
+	 * parts that have tables of their own. */
+	extras: Record<string, unknown>;
 	counts: TableCounts;
 }
 
@@ -236,6 +363,7 @@ function mirrorRows(data: AppData): MirrorRows {
 		boards: [],
 		cards: [],
 		drawings: [],
+		extras: {},
 		counts: { ...EMPTY_TABLE_COUNTS },
 	};
 
@@ -266,12 +394,13 @@ function mirrorRows(data: AppData): MirrorRows {
 		});
 	});
 
-	data.entities.forEach((entity) => {
+	data.entities.forEach((entity, position) => {
 		if (entityIds.has(entity.id) || !typeIds.has(entity.typeId)) return;
 		entityIds.add(entity.id);
 		rows.entities.push({
 			id: entity.id,
 			typeId: entity.typeId,
+			position,
 			name: entity.name,
 			content: entity.content,
 			description: entity.description,
@@ -305,6 +434,7 @@ function mirrorRows(data: AppData): MirrorRows {
 		});
 	});
 
+	rows.extras = blobExtras(data);
 	rows.counts = {
 		entity_types: rows.entityTypes.length,
 		properties: rows.properties.length,
