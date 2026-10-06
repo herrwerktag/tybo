@@ -192,6 +192,7 @@ const en = {
 	zoomOut: "Zoom out",
 	zoomIn: "Zoom in",
 	resetView: "Reset view",
+	exportView: "Download this board as an HTML file that shows it like here, without the server",
 
 	// Drawing tools
 	drawingTools: "Drawing tools",
@@ -387,6 +388,7 @@ const de: Messages = {
 	zoomOut: "Verkleinern",
 	zoomIn: "Vergrößern",
 	resetView: "Ansicht zurücksetzen",
+	exportView: "Dieses Board als HTML-Datei herunterladen, die es wie hier zeigt, ohne Server",
 
 	drawingTools: "Zeichenwerkzeuge",
 	drawingStyle: "Zeichenstil",

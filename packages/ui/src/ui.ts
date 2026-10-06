@@ -26,6 +26,7 @@ import {
 import { canvasView } from "./canvas.js";
 import { downloadFile, el, safeFileName, typeDot } from "./dom.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
+import { standaloneViewHtml } from "./standalone.js";
 import type { Store } from "@bekbon/core";
 import { exportWorkspace, readWorkspaceFile, type Workspaces } from "@bekbon/core";
 
@@ -127,7 +128,11 @@ export function renderServerUnreachable(root: HTMLElement): void {
 	);
 }
 
-export async function render(root: HTMLElement, workspaces: Workspaces): Promise<void> {
+/**
+ * Draws the app in `root`. With `viewScript` — the built standalone viewer (see apps/demo) — the View tab can export
+ * a board as an HTML file that shows it without the server.
+ */
+export async function render(root: HTMLElement, workspaces: Workspaces, { viewScript }: { viewScript?: string } = {}): Promise<void> {
 	/** Warnings about the saved data and its saving, below the top bar; updated on its own, since failed or
 	 refused saves can happen on the canvas. */
 	const banner = el("div", { className: "problem-banner", role: "alert" });
@@ -191,6 +196,11 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 		const { name } = workspaces.active;
 		const date = new Date().toISOString().slice(0, 10);
 		downloadFile(`${safeFileName(name)} ${date}.json`, exportWorkspace(name, store.data));
+	}
+
+	function exportView(viewScript: string, boardId: string): void {
+		const name = store.data.boards.find((b) => b.id === boardId)?.name ?? "";
+		downloadFile(`${safeFileName(name)}.html`, standaloneViewHtml(viewScript, store.data, boardId, language), "text/html");
 	}
 
 	function renderBanner(): void {
@@ -286,6 +296,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 				? el("div", { className: "data-view" }, route === "types" ? typesSection() : entitiesSection())
 				: canvasView(store, {
 						readOnly: route === "view",
+						...(viewScript ? { onExportView: (boardId: string) => exportView(viewScript, boardId) } : {}),
 						// The details panel's Edit button: open the entity in the Entities page's form.
 						onEditEntity: (entityId) => {
 							const entity = store.data.entities.find((e) => e.id === entityId);

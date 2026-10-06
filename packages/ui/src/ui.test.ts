@@ -27,13 +27,13 @@ let storage = memoryStorage();
 
 /** Renders the app on a fresh page (at `hash`, e.g. "#boards"), with `saved` already in the storage. A different
  * storage `behind` it shows what the app does with one that answers otherwise (with collisions, for instance). */
-async function startApp(saved?: unknown, hash = "", behind = memoryStorage(saved)): Promise<HTMLElement> {
+async function startApp(saved?: unknown, hash = "", behind = memoryStorage(saved), options: { viewScript?: string } = {}): Promise<HTMLElement> {
 	freshDom();
 	location.hash = hash;
 	storage = behind;
 	const root = document.querySelector<HTMLElement>("#app")!;
 	const workspaces = await createWorkspaces(behind.port, text.defaultWorkspaceName, activeWorkspacePreference);
-	await render(root, workspaces);
+	await render(root, workspaces, options);
 	return root;
 }
 
@@ -293,6 +293,28 @@ test("canvas changes can be undone too: the Undo button follows them without the
 
 	undo!.click();
 	assert.ok(root.querySelector('.canvas-board .canvas-card[data-card-id="c"]'));
+});
+
+test("the View tab exports the current board as an HTML file with the viewer inside", async () => {
+	const data = structuredClone(library) as { boards: unknown[] };
+	data.boards = [{ id: "b", name: "Shelf", cards: [{ id: "c", entityId: "01J00000000000000000000000", x: 0, y: 0, width: 240, height: 160 }], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] }];
+	// Without the viewer's script there's nothing to export with.
+	assert.equal((await startApp(data, "#view")).querySelector(`button[title="${text.exportView}"]`), null);
+
+	const app = await startApp(data, "#view", memoryStorage(data), { viewScript: "viewer();" });
+	const downloads: Blob[] = [];
+	const createObjectURL = URL.createObjectURL;
+	URL.createObjectURL = (blob: Blob) => (downloads.push(blob), "blob:export");
+	try {
+		app.querySelector<HTMLButtonElement>(`button[title="${text.exportView}"]`)!.click();
+	} finally {
+		URL.createObjectURL = createObjectURL;
+	}
+	assert.equal(downloads[0]?.type, "text/html");
+	const html = await downloads[0]!.text();
+	assert.match(html, /<title>Shelf<\/title>/);
+	assert.match(html, /<script>viewer\(\);<\/script>/);
+	assert.match(html, /"name":"Dune"/);
 });
 
 test("a workspace saved by a newer version warns that changes aren't saved, and offers a reload", async () => {

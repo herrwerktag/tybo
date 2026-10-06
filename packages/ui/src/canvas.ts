@@ -30,11 +30,16 @@ const GRID = 24;
 
 /**
  * The board canvas. With `readOnly` (the Viewer) it only displays: no side panel, no board editing,
- * no moving, resizing, removing or dropping cards, and pan/zoom are never saved.
+ * no moving, resizing, removing or dropping cards, and pan/zoom are never saved. With `onExportView`, the
+ * viewer offers to export the current board.
  */
 export function canvasView(
 	store: Store,
-	{ readOnly, onEditEntity }: { readOnly: boolean; onEditEntity?: (entityId: string) => void },
+	{
+		readOnly,
+		onEditEntity,
+		onExportView,
+	}: { readOnly: boolean; onEditEntity?: (entityId: string) => void; onExportView?: (boardId: string) => void },
 ): HTMLElement {
 	let boardId = readPreference(ACTIVE_BOARD_KEY) ?? "";
 	const currentBoard = (): Board => store.data.boards.find((b) => b.id === boardId) ?? store.data.boards[0]!;
@@ -147,7 +152,11 @@ export function canvasView(
 			{ ariaLabel: text.board, onchange: () => switchBoard(select.value) },
 			...boards.map((b) => el("option", { value: b.id, selected: b.id === boardId }, b.name)),
 		);
-		if (readOnly) return boardControls.replaceChildren(select); // the viewer only switches boards
+		// The viewer only switches boards, and maybe exports the current one.
+		if (readOnly) {
+			const exportButton = el("button", { type: "button", title: text.exportView, onclick: () => onExportView?.(boardId) }, text.exportButton);
+			return boardControls.replaceChildren(select, ...(onExportView ? [exportButton] : []));
+		}
 		boardControls.replaceChildren(
 			select,
 			el(

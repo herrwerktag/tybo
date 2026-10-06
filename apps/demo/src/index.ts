@@ -1,5 +1,6 @@
 import { createWorkspaces } from "@bekbon/core";
 import { httpData } from "./http-data.js";
+import viewScript from "virtual:standalone-view";
 import { activeWorkspacePreference, render, renderServerUnreachable, text } from "@bekbon/ui";
 
 const root = document.querySelector<HTMLElement>("#app");
@@ -14,7 +15,7 @@ if (!apiUrl) {
 } else {
 	try {
 		const workspaces = await createWorkspaces(httpData(apiUrl), (n) => text.defaultWorkspaceName(n), activeWorkspacePreference);
-		await render(root, workspaces);
+		await render(root, workspaces, { viewScript });
 	} catch (error) {
 		console.error(error);
 		renderServerUnreachable(root);
