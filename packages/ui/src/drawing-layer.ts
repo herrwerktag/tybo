@@ -14,7 +14,7 @@ import {
 	type Tool,
 } from "./drawings.js";
 import { text } from "./i18n.js";
-import { DRAWING_COLORS, TEXT_SIZES, isBox, type BoxDrawing, type Drawing, type NewDrawing } from "@bekbon/core";
+import { DRAWING_COLORS, TEXT_SIZES, isBox, type BoxDrawing, type Drawing, type NewDrawing, type StoryPage } from "@bekbon/core";
 import type { Store } from "@bekbon/core";
 
 const TOOLS: readonly { tool: Tool; icon: string; key: string }[] = [
@@ -61,6 +61,8 @@ export interface DrawingLayer {
 export function createDrawingLayer(options: {
 	store: Store;
 	boardId: () => string;
+	/** The storyboard page shown (only its drawings are, others faded in the editor); null on a whiteboard. */
+	page: () => StoryPage | null;
 	zoom: () => number;
 	/** World coordinates of a point on the screen. */
 	toWorld: (clientX: number, clientY: number) => Point;
@@ -92,8 +94,14 @@ export function createDrawingLayer(options: {
 		draw();
 	}
 
+	/** Whether the drawing is on the page shown (always, on a whiteboard). */
+	const onPage = (id: string): boolean => options.page()?.drawingIds.includes(id) ?? true;
+
 	function draw(): void {
-		const shown = drawings().map((d) => (draft?.id === d.id ? draft : d));
+		// The viewer leaves out other pages' drawings; the editor shows them faded (see drawingNode).
+		const shown = drawings()
+			.filter((d) => !readOnly || onPage(d.id))
+			.map((d) => (draft?.id === d.id ? draft : d));
 		if (draft && !shown.some((d) => d.id === draft!.id)) shown.push(draft);
 		svg.replaceChildren(...shown.map(drawingNode), ...selectionOverlay(), ...(editingId ? [editor(editingId)] : []));
 		renderToolbars();
@@ -110,7 +118,7 @@ export function createDrawingLayer(options: {
 	}
 
 	function drawingNode(d: Drawing): SVGGElement {
-		const group = svgEl("g", { class: "drawing", "data-id": d.id });
+		const group = svgEl("g", { class: onPage(d.id) || d.id === "draft" ? "drawing" : "drawing ghost", "data-id": d.id });
 		const stroke = strokeFor(d.color);
 		if (isBox(d)) {
 			const shape =
@@ -318,15 +326,19 @@ export function createDrawingLayer(options: {
 		const start = options.toWorld(e.clientX, e.clientY);
 
 		if (kind === "text") {
-			const added = store.addDrawing(options.boardId(), {
-				kind: "text",
-				x: start.x,
-				y: start.y - DEFAULT_SIZE.text.height / 2,
-				...DEFAULT_SIZE.text,
-				color,
-				text: "",
-				textSize: "m",
-			});
+			const added = store.addDrawing(
+				options.boardId(),
+				{
+					kind: "text",
+					x: start.x,
+					y: start.y - DEFAULT_SIZE.text.height / 2,
+					...DEFAULT_SIZE.text,
+					color,
+					text: "",
+					textSize: "m",
+				},
+				options.page()?.id,
+			);
 			setTool("select");
 			startEditing(added.id);
 			return true;
@@ -369,7 +381,7 @@ export function createDrawingLayer(options: {
 				} else {
 					created = { kind, points: [start, dragged ? at(dx, dy) : { x: start.x + DEFAULT_LINE_LENGTH, y: start.y }], color };
 				}
-				const added = created && store.addDrawing(options.boardId(), created);
+				const added = created && store.addDrawing(options.boardId(), created, options.page()?.id);
 				if (kind === "pen") {
 					draw(); // the pen stays active for the next stroke
 				} else {
@@ -383,9 +395,10 @@ export function createDrawingLayer(options: {
 		return true;
 	}
 
-	function removeSelected(): void {
+	/** Deletes the selected drawing — with `pageId`, only takes it off that page. */
+	function removeSelected(pageId?: string): void {
 		if (!selectedId) return;
-		store.removeDrawing(selectedId);
+		store.removeDrawing(selectedId, pageId);
 		selectedId = null;
 		draw();
 		options.onSelect(null);
@@ -420,6 +433,7 @@ export function createDrawingLayer(options: {
 		// The color applies to the selected drawing, or else to the next one drawn. The bar is only shown
 		// while drawing or with a drawing selected, so it isn't in the way while arranging cards.
 		const selected = selectedId ? find(selectedId) : undefined;
+		const page = options.page();
 		const current = selected?.color ?? color;
 		styleBar.hidden = tool === "select" && !selected;
 		styleBar.replaceChildren(
@@ -453,8 +467,15 @@ export function createDrawingLayer(options: {
 						),
 					)
 				: []),
+			// On a storyboard: show another page's drawing here too, or take one off this page only.
+			...(selected && page && !onPage(selected.id)
+				? [el("button", { type: "button", onclick: () => (store.showOnPage(options.boardId(), page.id, selected.id), draw()) }, text.showOnPage)]
+				: []),
+			...(selected && page && onPage(selected.id)
+				? [el("button", { type: "button", onclick: () => removeSelected(page.id) }, text.removeFromPage)]
+				: []),
 			...(selected
-				? [el("button", { type: "button", title: text.deleteDrawing, onclick: removeSelected }, text.delete)]
+				? [el("button", { type: "button", title: text.deleteDrawing, onclick: () => removeSelected() }, text.delete)]
 				: []),
 		);
 	}
@@ -466,7 +487,7 @@ export function createDrawingLayer(options: {
 		if ((e.target as Element).closest?.("input, select, textarea, [contenteditable]")) return;
 		if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
 			e.preventDefault();
-			removeSelected();
+			removeSelected(options.page()?.id); // on a storyboard, like a card's ×: off this page
 		} else if (e.key === "Escape") {
 			if (tool !== "select") setTool("select");
 			else if (selectedId) select(null);

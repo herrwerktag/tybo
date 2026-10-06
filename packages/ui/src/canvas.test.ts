@@ -87,3 +87,100 @@ test("the viewer only looks: no remove buttons, and dragging doesn't move cards"
 	dragBy(cardNode(view, card.id).querySelector("header")!, 50, 30);
 	assert.deepEqual([savedCard(store, card.id)?.x, savedCard(store, card.id)?.y], [100, 100]);
 });
+
+/** A storyboard with Dune on page 1 and Herbert added on page 2 (copied from page 1), shown on page 1. */
+async function storyboard({ readOnly = false } = {}) {
+	freshDom();
+	const store = await createStore(memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } }).port, "ws");
+	const book = store.addType("Book", [], "");
+	const dune = store.addEntity(book.id, "Dune", "", {});
+	const herbert = store.addEntity(book.id, "Herbert", "", {});
+	const story = store.addBoard("Flow", "storyboard", "Start");
+	const one = story.pages[0]!;
+	store.updatePage(story.id, one.id, { description: "Only **Dune**" });
+	const duneCard = store.addCard(story.id, dune.id, 0, 0, one.id);
+	const two = store.addPage(story.id, one.id, "Then", true)!;
+	const herbertCard = store.addCard(story.id, herbert.id, 300, 0, two.id);
+	localStorage.setItem("canvas-active-board", story.id);
+	const view = canvasView(store, { readOnly });
+	document.body.append(view);
+	return { store, view, story, one, two, duneCard, herbertCard };
+}
+
+const shownCards = (view: HTMLElement) =>
+	[...view.querySelectorAll<HTMLElement>(".canvas-board .canvas-card:not(.ghost)")].map((c) => c.querySelector(".card-title")?.textContent);
+const pageButton = (view: HTMLElement, label: string) => view.querySelector<HTMLButtonElement>(`.page-bar button[title="${label}"]`)!;
+
+test("a storyboard shows one page at a time; the page bar and arrow keys step through it", async () => {
+	const { view } = await storyboard();
+	assert.deepEqual(shownCards(view), ["Dune"]);
+	// Herbert is on another page: faded, with + to show him here too.
+	assert.equal(view.querySelector(".canvas-card.ghost .card-title")?.textContent, "Herbert");
+	assert.equal(pageButton(view, "Previous step").disabled, true);
+	assert.equal(view.querySelector<HTMLInputElement>(".page-bar input.page-name")?.value, "Start");
+
+	pageButton(view, "Next step").click();
+	assert.deepEqual(shownCards(view), ["Dune", "Herbert"]);
+	assert.ok(view.querySelector(".canvas-card.appear")); // Herbert fades in
+	assert.equal(view.querySelector(".page-counter")?.textContent, "2 / 2");
+
+	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+	assert.deepEqual(shownCards(view), ["Dune"]);
+});
+
+test("in the storyboard editor, × hides a card on this page, + shows it again, and pages are added and named", async () => {
+	const { store, view, story, two, herbertCard } = await storyboard();
+	const board = () => store.data.boards.find((b) => b.id === story.id)!;
+
+	cardNode(view, herbertCard.id).querySelector<HTMLButtonElement>(".card-remove")!.click(); // + on the ghost
+	assert.deepEqual(shownCards(view), ["Dune", "Herbert"]);
+	cardNode(view, herbertCard.id).querySelector<HTMLButtonElement>(".card-remove")!.click(); // × again
+	assert.deepEqual(shownCards(view), ["Dune"]);
+	assert.ok(board().pages[1]!.cardIds.includes(herbertCard.id), "still on page 2");
+
+	const name = view.querySelector<HTMLInputElement>(".page-bar input.page-name")!;
+	name.value = "Begin";
+	name.dispatchEvent(new Event("change"));
+	const description = view.querySelector<HTMLTextAreaElement>(".page-description textarea")!;
+	description.value = "New text";
+	description.dispatchEvent(new Event("change"));
+	assert.deepEqual([board().pages[0]!.name, board().pages[0]!.description], ["Begin", "New text"]);
+
+	// Without "Copy", the new page starts empty; it's added after the current one and shown.
+	view.querySelector<HTMLInputElement>(".page-copy input")!.checked = false;
+	[...view.querySelectorAll<HTMLButtonElement>(".page-bar button")].find((b) => b.textContent === "+ Page")!.click();
+	assert.deepEqual(board().pages.map((p) => p.name), ["Begin", "Step 3", two.name]);
+	assert.deepEqual(shownCards(view), []);
+	assert.equal(view.querySelector(".page-counter")?.textContent, "2 / 3");
+});
+
+test("the storyboard viewer shows only prev/next, the step name and the description as Markdown", async () => {
+	const { view } = await storyboard({ readOnly: true });
+	assert.deepEqual(shownCards(view), ["Dune"]);
+	assert.equal(view.querySelector(".canvas-card.ghost"), null);
+	assert.equal(view.querySelector(".page-bar input"), null);
+	assert.equal(view.querySelectorAll(".page-bar button").length, 2);
+	assert.equal(view.querySelector(".page-bar .page-name")?.textContent, "Start");
+	assert.equal(view.querySelector(".page-description strong")?.textContent, "Dune");
+
+	pageButton(view, "Next step").click();
+	assert.equal(view.querySelector(".page-bar .page-name")?.textContent, "Then");
+	assert.equal(view.querySelector<HTMLElement>(".page-description")!.hidden, true); // no description on this page
+});
+
+test("a step description sits on the canvas like a card: dragging its handle moves it in world coordinates", async () => {
+	const { store, view, story, one } = await storyboard();
+	const box = view.querySelector<HTMLElement>(".canvas-board .page-description")!;
+	assert.ok(box, "inside the panned and zoomed layer");
+	const before = one.descriptionPosition;
+
+	dragBy(box.querySelector<HTMLElement>(".page-description-handle")!, 50, 30);
+	const after = store.data.boards.find((b) => b.id === story.id)!.pages[0]!.descriptionPosition;
+	assert.deepEqual(after, { x: before.x + 50, y: before.y + 30 });
+	assert.deepEqual([box.style.left, box.style.top], [`${after.x}px`, `${after.y}px`]);
+
+	// Grabbed again, it moves on from where it is now.
+	dragBy(box.querySelector<HTMLElement>(".page-description-handle")!, 10, -20);
+	const again = store.data.boards.find((b) => b.id === story.id)!.pages[0]!.descriptionPosition;
+	assert.deepEqual(again, { x: after.x + 10, y: after.y - 20 });
+});

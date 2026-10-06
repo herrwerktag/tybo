@@ -123,15 +123,44 @@ export interface CanvasCard {
 	height: number;
 }
 
+/** `whiteboard`: the whole board at once. `storyboard`: shown page by page, each page a step. */
+export type BoardKind = "whiteboard" | "storyboard";
+
+export const BOARD_KINDS: readonly BoardKind[] = ["whiteboard", "storyboard"];
+
+/**
+ * One step of a storyboard: which of the board's cards and drawings it shows (they keep one position on all
+ * pages), with its own pan/zoom and a description placed over the canvas.
+ */
+export interface StoryPage {
+	id: string;
+	/** The step name. */
+	name: string;
+	/** Markdown; empty means none is shown. */
+	description: string;
+	/** The description's top left corner in world coordinates: it sits on the canvas like a card. */
+	descriptionPosition: Point;
+	viewport: Viewport;
+	cardIds: string[];
+	drawingIds: string[];
+}
+
+/** Where a page's description goes unless it was moved: at the default viewport, top left, clear of the drawing tools. */
+export const DEFAULT_DESCRIPTION_POSITION: Point = { x: 72, y: 16 };
+
 /** A named canvas with its own cards and pan/zoom. */
 export interface Board {
 	id: string;
 	name: string;
+	kind: BoardKind;
 	/** Later cards are drawn on top. */
 	cards: CanvasCard[];
+	/** The pan/zoom of a whiteboard; a storyboard's pages have their own. */
 	viewport: Viewport;
 	/** Shapes, lines, text and pen strokes, drawn behind the cards; later ones on top. */
 	drawings: Drawing[];
+	/** A storyboard's steps, in order (never empty); a whiteboard has none. */
+	pages: StoryPage[];
 }
 
 export type TextSize = "s" | "m" | "l";
