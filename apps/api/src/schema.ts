@@ -132,6 +132,14 @@ export const MIGRATIONS: readonly Migration[] = [
 			)`;
 		},
 	},
+	{
+		version: 3,
+		name: "drop the archived text storage",
+		async up(tx) {
+			// The texts set aside in step 1 were never read again; with the tables in use, they go for good.
+			if (await exists(tx, "texts_archive")) await tx`drop table texts_archive`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */

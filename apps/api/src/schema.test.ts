@@ -36,7 +36,7 @@ test("an empty database gets the whole schema, and a second run has nothing left
 	}
 });
 
-test("the text storage of before is set aside untouched, and its derived copy goes", { skip: !url }, async () => {
+test("the text storage of before is set aside untouched, its derived copy goes — and then the archive too", { skip: !url }, async () => {
 	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
 	try {
 		await wipe(sql);
@@ -47,7 +47,8 @@ test("the text storage of before is set aside untouched, and its derived copy go
 		await sql`create table entity_types (id text primary key, position int not null)`;
 		await sql`create table properties (id text primary key, type_id text not null references entity_types(id))`;
 
-		await migrateSchema(sql);
+		// The steps before the archive's end: the texts are aside, untouched.
+		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 3));
 
 		assert.deepEqual([...(await sql`select key, value, revision::int from texts_archive`)], [{ key: "entities-app", value: '{"types":[]}', revision: 3 }]);
 		const tablesNow = await tables(sql);
@@ -56,6 +57,10 @@ test("the text storage of before is set aside untouched, and its derived copy go
 		// The data tables are the new ones now, with their workspace.
 		const [column] = await sql`select 1 as there from information_schema.columns where table_name = 'entity_types' and column_name = 'workspace_id'`;
 		assert.ok(column);
+
+		// The next step drops the archive for good.
+		assert.deepEqual(await migrateSchema(sql), [3]);
+		assert.equal((await tables(sql)).includes("texts_archive"), false);
 	} finally {
 		await sql.end({ timeout: 5 });
 	}
