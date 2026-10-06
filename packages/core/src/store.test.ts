@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TYPE_COLORS, type AppData, type DraftProperty } from "./model.js";
+import { SaveConflict } from "./ports.js";
 import { DATA_VERSION, MIGRATIONS, createStore, migrate, type Store } from "./store.js";
 import { isUlid } from "./ulid.js";
 
@@ -275,6 +276,54 @@ test("failed saves are reported until a save succeeds again", async () => {
 	assert.equal(store.problems.saveFailed, false);
 	assert.equal(notified, 2);
 	assert.equal(JSON.parse(map.get("entities-app")!).boards.length, 5);
+});
+
+test("a save the storage refuses as outdated is its own problem, and saving stops until it's read anew", async () => {
+	const map = new Map<string, string>();
+	let outdated = false;
+	const storage = {
+		getItem: async (key: string) => map.get(key) ?? null,
+		setItem: async (key: string, value: string) => {
+			if (outdated) throw new SaveConflict(key); // someone else saved in between
+			map.set(key, value);
+		},
+		removeItem: async (key: string) => void map.delete(key),
+	};
+	const store = await createStore(storage);
+	let notified = 0;
+	store.onProblemsChange(() => notified++);
+
+	store.addBoard("A");
+	await settle();
+	assert.equal(store.problems.saveConflict, false);
+
+	outdated = true;
+	store.addBoard("B");
+	await settle();
+	// Not a failed save (no storage problem) — a conflict, honestly named.
+	assert.deepEqual(store.problems, { load: null, saveFailed: false, saveConflict: true });
+	assert.equal(notified, 1);
+
+	// The refused one and further changes stay in memory; nothing more is saved over the others' work.
+	store.addBoard("C");
+	await settle();
+	assert.equal(notified, 1);
+	// The refused change (B) and the further one (C) stay in memory; nothing more is written over theirs.
+	assert.deepEqual(
+		JSON.parse(map.get("entities-app")!).boards.map((b: { name: string }) => b.name),
+		["Board 1", "A"], // what had been saved before the conflict stands, no B or C
+	);
+
+	// Reading anew makes this stand current again: the next change goes through.
+	outdated = false;
+	await store.reload();
+	assert.equal(store.problems.saveConflict, false);
+	store.addBoard("D");
+	await settle();
+	assert.deepEqual(
+		JSON.parse(map.get("entities-app")!).boards.map((b: { name: string }) => b.name),
+		["Board 1", "A", "D"],
+	);
 });
 
 async function referenceSetup() {

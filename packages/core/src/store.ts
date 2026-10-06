@@ -1,6 +1,6 @@
 import { isUlid, ulid } from "./ulid.js";
 import type { Point } from "./connectors.js";
-import type { StoragePort } from "./ports.js";
+import { SaveConflict, type StoragePort } from "./ports.js";
 import { clampZoom, defaultViewport, type Viewport } from "./viewport.js";
 import {
 	DEFAULT_CARD_SIZE,
@@ -262,6 +262,7 @@ function toPropertyDefs(properties: DraftProperty[]): PropertyDef[] {
 export async function createStore(port: StoragePort, key = "entities-app") {
 	let { data, problem: loadProblem, text: unreadText } = await load();
 	let saveFailed = false;
+	let saveConflict = false;
 	const problemListeners: (() => void)[] = [];
 	/** Earlier versions of the data for undo (newest last), and undone ones for redo. */
 	let undoStack: AppData[] = [];
@@ -313,22 +314,29 @@ export async function createStore(port: StoragePort, key = "entities-app") {
 
 	function save(): void {
 		savedJson = JSON.stringify(toSaved(data));
-		// Keep the saved original: it isn't backed up, or a newer version saved it.
-		if (loadProblem?.code === "notBackedUp" || loadProblem?.code === "newerVersion") return;
+		// Keep the saved original: it isn't backed up, or a newer version saved it. And after a save was refused
+		// as outdated, keep this stand in memory until the data is read anew (reload) — not save over the others.
+		if (loadProblem?.code === "notBackedUp" || loadProblem?.code === "newerVersion" || saveConflict) return;
 		void persist(savedJson);
 	}
 
-	/** Writes the data; a failed write flips `problems.saveFailed`, and the data stays in memory. */
+	/** Writes the data. A write that merely fails flips `problems.saveFailed`; one the storage refuses
+	 * because someone else saved in between flips `problems.saveConflict`. Either way the data stays in
+	 * memory, and the problem says which of the two it was. */
 	async function persist(text: string): Promise<void> {
 		let failed = false;
+		let conflict = false;
 		try {
 			await port.setItem(key, text);
-		} catch {
-			// Storage full or blocked: keep working in memory, and say so.
-			failed = true;
+		} catch (error) {
+			// Storage full or blocked, or saved over by someone else: keep working in memory, and say which.
+			if (error instanceof SaveConflict) conflict = true;
+			else failed = true;
 		}
-		if (failed !== saveFailed) {
-			saveFailed = failed;
+		const changed = failed !== saveFailed || conflict !== saveConflict;
+		saveFailed = failed;
+		saveConflict = conflict;
+		if (changed) {
 			for (const listener of problemListeners) listener();
 		}
 	}
@@ -379,9 +387,11 @@ export async function createStore(port: StoragePort, key = "entities-app") {
 			return data;
 		},
 
-		/** Problems reading the saved data, and whether the last save failed (changes are then only in memory). */
-		get problems(): { load: LoadProblem | null; saveFailed: boolean } {
-			return { load: loadProblem, saveFailed };
+		/** Problems reading the saved data, whether the last save failed (changes are then only in memory),
+		 * and whether one was refused as outdated because someone else saved in between (then too the
+		 * changes are only in memory, and saving stops until the data is read anew). */
+		get problems(): { load: LoadProblem | null; saveFailed: boolean; saveConflict: boolean } {
+			return { load: loadProblem, saveFailed, saveConflict };
 		},
 
 		/** The saved text that couldn't be read in full, as it was read (it's backed up, or still under the key while saving is paused); else null. */
@@ -389,17 +399,19 @@ export async function createStore(port: StoragePort, key = "entities-app") {
 			return loadProblem ? unreadText : null;
 		},
 
-		/** Reads the saved data again, e.g. after another tab saved it, so the next save here doesn't overwrite that. */
+		/** Reads the saved data again, e.g. after another tab saved it, so the next save here doesn't overwrite that.
+		 * Hereby this stand is current again too: saving, refused after a conflict, is tried once more. */
 		async reload(): Promise<void> {
 			({ data, problem: loadProblem, text: unreadText } = await load());
 			savedJson = JSON.stringify(toSaved(data));
+			saveConflict = false;
 			// The history is from before the other tab's changes; undoing it would undo those too.
 			undoStack = [];
 			redoStack = [];
 			for (const listener of historyListeners) listener();
 		},
 
-		/** Calls `listener` whenever `problems.saveFailed` changes. */
+		/** Calls `listener` whenever `problems.saveFailed` or `problems.saveConflict` changes. */
 		onProblemsChange(listener: () => void): void {
 			problemListeners.push(listener);
 		},

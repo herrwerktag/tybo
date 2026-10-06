@@ -13,6 +13,13 @@ export interface PostgresStorage extends StoragePort {
 	init(): Promise<void>;
 	/** True once the database answers. */
 	healthy(): Promise<boolean>;
+	/** The stored text under `key` together with its version, in one look (so the two can't disagree), or
+	 * null if none is stored. The version is the row's `revision` — the answer to the next save's question
+	 * “is this still the stand the reader saw?”. */
+	read(key: string): Promise<{ text: string; version: string } | null>;
+	/** Saves the text only for the version the reader saw (null: only under a key nothing is stored yet).
+	 * Answers the row's new version, or null when the save was refused — then nothing was written at all. */
+	write(key: string, value: string, version: string | null): Promise<string | null>;
 	/** Keeps the Postgres mirror in step with a saved text: one that reads as app data is mirrored, one that
 	 * doesn't leaves the mirror alone. Derived from the blob only — there is no way back into the app. */
 	syncFromText(text: string): Promise<void>;
@@ -37,11 +44,19 @@ export function postgresStorage(url: string): PostgresStorage {
 
 	return {
 		async init() {
+			// The revision column carries each text's version: a per-row number that grows by one on every
+			// write, so no two writes to a row ever share a version. updated_at alone can't do that — now()
+			// is the moment a transaction started, and two writes can land on the same microsecond, so an
+			// update in between could go by unnoticed. Noticing exactly that is this column's only job.
 			await sql`create table if not exists texts (
 				key text primary key,
 				value text not null,
+				revision bigint not null default 0,
 				updated_at timestamptz not null default now()
 			)`;
+			// Tables created before versions existed have no revision column yet; their rows keep their data
+			// and read and write under version 0 like any other — no data has to move.
+			await sql`alter table texts add column if not exists revision bigint not null default 0`;
 			await mirror.init();
 			// The start-up fill: whatever blob is already there becomes visible in the mirror, right away.
 			// No blob means an empty mirror — that's a valid state, not a failure.
@@ -57,13 +72,40 @@ export function postgresStorage(url: string): PostgresStorage {
 		},
 
 		async setItem(key, value) {
-			await sql`insert into texts (key, value)
-				values (${key}, ${value})
-				on conflict (key) do update set value = excluded.value, updated_at = now()`;
+			// The unconditional write of the port's contract: every write of it grows the revision too, so the
+			// version stays honest (a save never ran over a write it didn't see).
+			await sql`insert into texts (key, value, revision)
+				values (${key}, ${value}, 1)
+				on conflict (key) do update set value = excluded.value, updated_at = now(), revision = texts.revision + 1`;
 		},
 
 		async removeItem(key) {
 			await sql`delete from texts where key = ${key}`;
+		},
+
+		async read(key) {
+			const rows = await sql`select value, revision::text as version from texts where key = ${key}`;
+			const row = rows[0] as { value: string; version: string } | undefined;
+			return row ? { text: row.value, version: row.version } : null;
+		},
+
+		async write(key, value, version) {
+			// The first write goes in without a stand to name; anything already stored under the key refuses it.
+			if (version === null) {
+				const inserted = await sql`insert into texts (key, value, revision)
+					values (${key}, ${value}, 1)
+					on conflict (key) do nothing
+					returning revision::text`;
+				return (inserted[0] as { revision?: string } | undefined)?.revision ?? null;
+			}
+			if (!/^\d+$/.test(version)) return null; // never a version this storage answered
+			// One statement, so a refused save never leaves part of the text written; it answers the new revision
+			// or nothing, and whatever is stored stays exactly as it was.
+			const updated = await sql`update texts
+				set value = ${value}, updated_at = now(), revision = revision + 1
+				where key = ${key} and revision = ${version}::bigint
+				returning revision::text`;
+			return (updated[0] as { revision?: string } | undefined)?.revision ?? null;
 		},
 
 		syncFromText(text) {

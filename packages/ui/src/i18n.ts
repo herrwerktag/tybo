@@ -44,6 +44,8 @@ const en = {
 	loadNewerVersion:
 		"This workspace was saved by a newer version of the app. Changes here aren't saved, so nothing of it gets lost. Reload the page to get the newer version.",
 	saveFailed: "Changes can't be saved: the browser storage is full or blocked. They're kept only until this tab is closed.",
+	saveConflict:
+		"This workspace was saved somewhere else in the meantime, so this change wasn't saved either — keeping theirs from being overwritten. It's kept only until this tab is closed. Reload the page to get the newer data.",
 	downloadOriginal: "Download original",
 	dismiss: "Dismiss",
 
@@ -241,6 +243,8 @@ const de: Messages = {
 	loadNewerVersion:
 		"Dieser Arbeitsbereich wurde mit einer neueren Version der App gespeichert. Änderungen hier werden nicht gespeichert, damit davon nichts verloren geht. Lade die Seite neu, um die neuere Version zu bekommen.",
 	saveFailed: "Änderungen können nicht gespeichert werden: Der Browserspeicher ist voll oder blockiert. Sie bleiben nur erhalten, bis dieser Tab geschlossen wird.",
+	saveConflict:
+		"Dieser Arbeitsbereich wurde zwischenzeitlich woanders gespeichert, daher wurde diese Änderung hier auch nicht gespeichert, damit die der anderen nicht überschrieben wird. Sie bleibt nur bis zum Schließen dieses Tabs erhalten. Lade die Seite neu, um die neueren Daten zu bekommen.",
 	downloadOriginal: "Original herunterladen",
 	dismiss: "Schließen",
 

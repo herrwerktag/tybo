@@ -23,10 +23,18 @@ export function corsOriginFromEnv(value: string | undefined): string {
 	return value ? value : DEFAULT_CORS_ORIGIN;
 }
 
-/** What createApp needs besides the routing: the stored texts, and whether their storage answers. */
+/** What createApp needs besides the routing: the stored texts, whether their storage answers, and the
+ * version each stored text is at (the HTTP layer hands it to and from the requests). */
 export interface Api extends StoragePort {
 	/** Resolves once it's known whether the database answers; /health says ok only then. */
 	healthy(): Promise<boolean>;
+	/** The stored text under `key` together with its version, in one look (so the two can't disagree), or null
+	 * if none is stored. */
+	read(key: string): Promise<{ text: string; version: string } | null>;
+	/** Saves the text only for the version the reader saw — `version` is what a read answered, or null for a
+	 * first write. Answers the row's new version, or null when the save was refused: the stored text was
+	 * changed by someone else in the meantime, or one already exists where the saver named no stand. */
+	write(key: string, value: string, version: string | null): Promise<string | null>;
 	/** Optional, the Postgres side: handed the text after a successful save, so its tables can mirror the app
 	 * data. Without it (an API not on Postgres, for instance), saving stands alone. */
 	syncFromText?(text: string): Promise<void>;
@@ -34,15 +42,20 @@ export interface Api extends StoragePort {
 
 /** The HTTP interface of the storage port.
  *
- * GET /texts/{key} answers the saved text as plain text, or 404 if none is saved under the key. PUT
- * /texts/{key} saves the request body under the key, overwriting what was there, answering 204.
+ * GET /texts/{key} answers the saved text as plain text, or 404 if none is saved under the key — with
+ * the text's version in the `etag` header, so a saver can name the stand it read on its next save. PUT
+ * /texts/{key} saves the request body under the key, but only for such a stand: its `if-match` header
+ * must name the version a read answered. Over what someone else saved in between it answers 409 and
+ * writes nothing at all — the others' data stays instead of being silently run over. Without `if-match`,
+ * a save passes only under a key nothing is stored under yet (the first write); over already stored
+ * data it answers 409 as well. A successful save answers 204 with the new version in `etag`.
  * DELETE /texts/{key} removes the text (if any) and answers 204 either way. GET /health answers
  * 200 while the database answers, 503 when it doesn't.
  *
  * The demo calls the API from another origin, so the browser checks first: it asks before PUT and
  * DELETE (a "preflight" OPTIONS request) and looks at the answer's cross-origin headers. Every
  * answer, the preflight included, says them — without that, the browser keeps the answers from the
- * demo, and it can't even see a 404 or a 503, let alone act on it.
+ * demo, and it can't even see a 404, a 409 or a 503, let alone act on it.
  */
 export function createApp(api: Api, allowedOrigin: string = corsOriginFromEnv(process.env.CORS_ORIGIN)): Server {
 	return createServer((req, res) => {
@@ -53,11 +66,15 @@ export function createApp(api: Api, allowedOrigin: string = corsOriginFromEnv(pr
 	});
 }
 
-/** The headers the browser's cross-origin rules ask for: whose origin may call (which ways, sending what). */
+/** The headers the browser's cross-origin rules ask for: whose origin may call (which ways, sending what),
+ * and which answer headers JavaScript may read — a saved text's version travels in them. */
 function allowCrossOrigin(res: ServerResponse, origin: string): void {
 	res.setHeader("access-control-allow-origin", origin);
 	res.setHeader("access-control-allow-methods", "GET, PUT, DELETE");
-	res.setHeader("access-control-allow-headers", "Content-Type");
+	// A save names the stand it builds on with If-Match, so that header has to be allowed through.
+	res.setHeader("access-control-allow-headers", "Content-Type, If-Match");
+	// etag isn't among the headers a cross-origin answer shows JavaScript by default; say it may be seen.
+	res.setHeader("access-control-expose-headers", "ETag");
 }
 
 async function reply(req: IncomingMessage, res: ServerResponse, api: Api): Promise<void> {
@@ -72,12 +89,21 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api): Promi
 		if (!key) return sendEmpty(res, 404);
 		switch (method) {
 			case "GET": {
-				const text = await api.getItem(key);
-				return text === null ? sendEmpty(res, 404) : sendText(res, 200, text);
+				const stored = await api.read(key);
+				if (!stored) return sendEmpty(res, 404);
+				// The version this text is at, so the next save under it can name the stand it read.
+				res.setHeader("etag", stored.version);
+				return sendText(res, 200, stored.text);
 			}
 			case "PUT": {
 				const text = await body(req);
-				await api.setItem(key, text);
+				// The version the save builds on: the stand its reader saw. Naming none passes only as a first
+				// write, under a key nothing is stored under — never over stored data.
+				const version = await api.write(key, text, header(req, "if-match"));
+				if (version === null) {
+					// Outdated, or over something already stored without naming a stand: nothing was written.
+					return sendEmpty(res, 409);
+				}
 				// Saving the app's key keeps the Postgres mirror in step. The text is stored already, so a mirror
 				// that can't be updated never fails the save — and one the text doesn't fit stays as it was.
 				if (key === APP_KEY && api.syncFromText) {
@@ -87,6 +113,7 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api): Promi
 						// The mirror is display only; the saved text is safe.
 					}
 				}
+				res.setHeader("etag", version);
 				return sendEmpty(res, 204);
 			}
 			case "DELETE": {
@@ -118,6 +145,13 @@ async function body(req: IncomingMessage): Promise<string> {
 	const chunks: Buffer[] = [];
 	for await (const chunk of req) chunks.push(Buffer.from(chunk));
 	return Buffer.concat(chunks).toString("utf8");
+}
+
+/** The first value of a `name`d request header, or null when the request doesn't carry it. */
+function header(req: IncomingMessage, name: string): string | null {
+	const value = req.headers[name];
+	if (typeof value === "string") return value;
+	return Array.isArray(value) ? (value[0] ?? null) : null;
 }
 
 function sendEmpty(res: ServerResponse, status: number): void {

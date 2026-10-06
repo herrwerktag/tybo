@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { SaveConflict } from "@bekbon/core";
 import { httpStorage } from "./http-storage.js";
 
 /** One request the port made to the API. */
@@ -7,6 +8,7 @@ interface Sent {
 	method: string;
 	url: string;
 	body: string | null;
+	headers: Record<string, string>;
 }
 
 /** The API the tests answer as (no network, no database): every request is recorded, `respond` says what
@@ -19,6 +21,7 @@ function fakeFetch(respond: (sent: Sent) => Response | Promise<Response>): { sen
 			method: init?.method ?? "GET",
 			url: String(input),
 			body: typeof init?.body === "string" ? init.body : null,
+			headers: (init?.headers as Record<string, string> | undefined) ?? {},
 		};
 		sent.push(request);
 		return Promise.resolve(respond(request));
@@ -26,17 +29,18 @@ function fakeFetch(respond: (sent: Sent) => Response | Promise<Response>): { sen
 	return { sent, restore: () => void (globalThis.fetch = actualFetch) };
 }
 
-/** The API's answer with `status`, carrying `text` — its 204 says nothing, so it carries no body. */
-function answer(status: number, text = ""): Response {
-	return new Response(status === 204 ? null : text, { status });
+/** The API's answer with `status`, carrying `text` — its 204 says nothing, so it carries no body — and,
+ * like the real one, the text's version in etag where a version is asked about. */
+function answer(status: number, text = "", headers: Record<string, string> = {}): Response {
+	return new Response(status === 204 ? null : text, { status, headers });
 }
 
 test("getItem brings the text the API answers to its GET, asking at the key's address", async () => {
-	const api = fakeFetch(() => answer(200, "the saved data"));
+	const api = fakeFetch(() => answer(200, "the saved data", { etag: "7" }));
 	const port = httpStorage("http://api.local/");
 	try {
 		assert.equal(await port.getItem("entities-app"), "the saved data");
-		assert.deepEqual(api.sent, [{ method: "GET", url: "http://api.local/texts/entities-app", body: null }]);
+		assert.deepEqual(api.sent, [{ method: "GET", url: "http://api.local/texts/entities-app", body: null, headers: {} }]);
 	} finally {
 		api.restore();
 	}
@@ -57,7 +61,7 @@ test("setItem PUTs the value under the key, settling on the API's 204", async ()
 	const port = httpStorage("http://api.local/");
 	try {
 		await port.setItem("entities-app", "the new data");
-		assert.deepEqual(api.sent, [{ method: "PUT", url: "http://api.local/texts/entities-app", body: "the new data" }]);
+		assert.deepEqual(api.sent, [{ method: "PUT", url: "http://api.local/texts/entities-app", body: "the new data", headers: {} }]);
 	} finally {
 		api.restore();
 	}
@@ -68,7 +72,68 @@ test("removeItem DELETEs at the key's address, settling on the API's 204", async
 	const port = httpStorage("http://api.local/");
 	try {
 		await port.removeItem("entities-app");
-		assert.deepEqual(api.sent, [{ method: "DELETE", url: "http://api.local/texts/entities-app", body: null }]);
+		assert.deepEqual(api.sent, [{ method: "DELETE", url: "http://api.local/texts/entities-app", body: null, headers: {} }]);
+	} finally {
+		api.restore();
+	}
+});
+
+test("the port remembers the version a GET answered, and names it with the next PUT under the key", async () => {
+	const api = fakeFetch(() => answer(200, "the saved data", { etag: "7" }));
+	const port = httpStorage("http://api.local/");
+	try {
+		assert.equal(await port.getItem("entities-app"), "the saved data");
+		await port.setItem("entities-app", "the new data");
+		assert.deepEqual(api.sent[1], {
+			method: "PUT",
+			url: "http://api.local/texts/entities-app",
+			body: "the new data",
+			headers: { "if-match": "7" }, // the stand it read, so it can't run over what someone else saved
+		});
+	} finally {
+		api.restore();
+	}
+});
+
+test("the port takes over the version a successful save's answer names, for the next save under the key", async () => {
+	const saves = ["first save", "second save"];
+	const api = fakeFetch((sent) => (sent.method === "GET" ? answer(404) : answer(204, "", { etag: `${saves.indexOf(sent.body!) + 1}` })));
+	const port = httpStorage("http://api.local/");
+	try {
+		await port.getItem("entities-app"); // nothing stored: no version to remember
+		await port.setItem("entities-app", "first save");
+		assert.deepEqual(api.sent[1]!.headers, {}); // a first write goes without a stand to name
+		await port.setItem("entities-app", "second save");
+		assert.deepEqual(api.sent[2]!.headers, { "if-match": "1" }); // the version the 204 itself answered
+	} finally {
+		api.restore();
+	}
+});
+
+test("after a DELETE, the next save under the key goes without a stand to name again", async () => {
+	const api = fakeFetch((sent) =>
+		sent.method === "GET" ? answer(200, "the saved data", { etag: "7" }) : answer(204, "", { etag: "9" }),
+	);
+	const port = httpStorage("http://api.local/");
+	try {
+		await port.getItem("entities-app"); // remembers version 7
+		await port.setItem("entities-app", "over it");
+		await port.removeItem("entities-app"); // the text is gone: a next save under the key starts over
+		await port.setItem("entities-app", "written anew");
+		assert.deepEqual(api.sent.map((sent) => sent.headers), [{}, { "if-match": "7" }, {}, {}]);
+	} finally {
+		api.restore();
+	}
+});
+
+test("the API's 409 rejects the save as a conflict, so the caller can tell it from a broken storage", async () => {
+	const api = fakeFetch(() => answer(409));
+	const port = httpStorage("http://api.local/");
+	try {
+		await assert.rejects(
+			port.setItem("entities-app", "the new data"),
+			(error: unknown) => error instanceof SaveConflict,
+		);
 	} finally {
 		api.restore();
 	}

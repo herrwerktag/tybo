@@ -2,18 +2,24 @@ import { freshDom, localStoragePort } from "./test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { text } from "./i18n.js";
-import type { AppData } from "@bekbon/core";
+import type { AppData, StoragePort } from "@bekbon/core";
 import { render } from "./ui.js";
-import { createStore } from "@bekbon/core";
+import { createStore, SaveConflict } from "@bekbon/core";
 import { createWorkspaces, dataKey } from "@bekbon/core";
 
-/** Renders the app on a fresh page (at `hash`, e.g. "#canvas"), with `saved` already in the browser storage. */
-async function startApp(saved: Record<string, string> = {}, hash = ""): Promise<HTMLElement> {
+/** Renders the app on a fresh page (at `hash`, e.g. "#canvas"), with `saved` already in the browser storage.
+ * A different `port` shows what a save through other storage does with the app (one that refuses outdated
+ * saves, for instance). */
+async function startApp(
+	saved: Record<string, string> = {},
+	hash = "",
+	port: StoragePort = localStoragePort(),
+): Promise<HTMLElement> {
 	freshDom();
 	location.hash = hash;
 	for (const [key, value] of Object.entries(saved)) localStorage.setItem(key, value);
 	const root = document.querySelector<HTMLElement>("#app")!;
-	const workspaces = await createWorkspaces(localStoragePort(), text.defaultWorkspaceName);
+	const workspaces = await createWorkspaces(port, text.defaultWorkspaceName);
 	await render(root, workspaces);
 	return root;
 }
@@ -265,4 +271,26 @@ test("a workspace saved by a newer version warns that changes aren't saved, and 
 	assert.match(banner.textContent ?? "", new RegExp(text.loadNewerVersion.slice(0, 20)));
 	assert.ok(byText(banner, "button", text.reload));
 	assert.equal(banner.querySelector(`button`)?.textContent, text.reload); // nothing to dismiss
+});
+
+test("a save refused as outdated warns of the conflict, not of a full storage, and offers a reload", async () => {
+	// A storage that refuses every save as outdated — the way the API's does when someone else saved first.
+	const port: StoragePort = {
+		getItem: async () => null,
+		setItem: async () => {
+			throw new SaveConflict("entities-app");
+		},
+		removeItem: async () => {},
+	};
+	const root = await startApp({}, "", port);
+	const typeForm = root.querySelector<HTMLFormElement>("#type-form")!;
+	typeInto(typeForm.querySelector(`input[placeholder="${text.typeNamePlaceholder}"]`)!, "Book");
+	byText(typeForm, "button", text.createType).click();
+	await settle();
+
+	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
+	assert.equal(banner.hidden, false);
+	assert.ok(banner.textContent!.includes(text.saveConflict));
+	assert.equal(banner.textContent!.includes(text.saveFailed), false); // honestly: not a storage problem
+	assert.ok(byText(banner, "button", text.reload));
 });
