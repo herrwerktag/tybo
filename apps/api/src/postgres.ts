@@ -1,7 +1,7 @@
 import postgres from "postgres";
 import type { StoragePort } from "@bekbon/core";
 import { migrateBlob as runMigration, type MigrationResult } from "./migrate.js";
-import { APP_KEY, createMirror, type PostgresMirror } from "./mirror.js";
+import { APP_KEY, createMirror, readAppDataFromTables, type PostgresMirror } from "./mirror.js";
 
 /** How long to try connecting before giving up — the test run's database is nearby, not worth waiting longer. */
 const CONNECT_TIMEOUT_SECONDS = 5;
@@ -13,9 +13,11 @@ export interface PostgresStorage extends StoragePort {
 	init(): Promise<void>;
 	/** True once the database answers. */
 	healthy(): Promise<boolean>;
-	/** The stored text under `key` together with its version, in one look (so the two can't disagree), or
-	 * null if none is stored. The version is the row's `revision` — the answer to the next save's question
-	 * “is this still the stand the reader saw?”. */
+	/** Reads the text under `key` together with its version, in one look (so the two can't disagree), or
+	 * null if none is stored. Under the app's key the text is assembled from the addressable tables: they
+	 * carry the data completely, rebuilt from the blob on every save. The blob remains the fallback —
+	 * without table rows to read (or when reading them fails) it answers instead, so the read path never
+	 * leaves the app empty or with an error. */
 	read(key: string): Promise<{ text: string; version: string } | null>;
 	/** Saves the text only for the version the reader saw (null: only under a key nothing is stored yet).
 	 * Answers the row's new version, or null when the save was refused — then nothing was written at all. */
@@ -84,6 +86,23 @@ export function postgresStorage(url: string): PostgresStorage {
 		},
 
 		async read(key) {
+			// The app's key is answered from the addressable tables now — they carry the data as completely
+			// as the blob does, because every save rebuilds them from it. The blob stays what the answer
+			// falls back on: no table holds a row yet (a database before its first sync), or reading them
+			// failed — then it answers instead, so the app is never left empty or with an error. Either
+			// way only its version travels: saves keep comparing stands on the row in `texts`.
+			if (key === APP_KEY) {
+				const rows = await sql`select value, revision::text as version from texts where key = ${APP_KEY}`;
+				const row = rows[0] as { value: string; version: string } | undefined;
+				if (!row) return null;
+				try {
+					const fromTables = await readAppDataFromTables(sql);
+					if (fromTables !== null) return { text: JSON.stringify(fromTables), version: row.version };
+				} catch {
+					// The tables couldn't be read (gone, unreadable, mid-upgrade): the blob answers instead.
+				}
+				return { text: row.value, version: row.version };
+			}
 			const rows = await sql`select value, revision::text as version from texts where key = ${key}`;
 			const row = rows[0] as { value: string; version: string } | undefined;
 			return row ? { text: row.value, version: row.version } : null;
