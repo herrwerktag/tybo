@@ -1,5 +1,5 @@
 import type { Change, SavedChanges } from "@bekbon/core";
-import { jsonEqual, unitStands } from "@bekbon/core";
+import { CHANGE_KINDS, unitStands, untouched } from "@bekbon/core";
 import { readAppData } from "./data.js";
 import type { Queries, Sql } from "./schema.js";
 
@@ -19,10 +19,14 @@ import type { Queries, Sql } from "./schema.js";
  * one, so the rows and the version can't disagree afterwards.
  */
 
-/** The change kinds, in the order their rows are written: parents before children. */
-const WRITE_ORDER = ["type", "entity", "board", "card", "drawing"] as const;
-
-type ChangeKind = (typeof WRITE_ORDER)[number];
+/** The table holding each kind of unit, one row per unit. */
+const TABLES: Record<Change["kind"], string> = {
+	type: "entity_types",
+	entity: "entities",
+	board: "boards",
+	card: "cards",
+	drawing: "drawings",
+};
 
 /** Whether `raw` is a change set: an array of units, each with its `kind` (one of the five), a non-empty
  * `id`, at least one of `before`/`after` (a unit can't be neither — and a new one that is already gone
@@ -36,7 +40,7 @@ export function parseChanges(raw: unknown): Change[] | null {
 	for (const entry of raw) {
 		if (typeof entry !== "object" || entry === null) return null;
 		const { kind, id, boardId, before, after } = entry as Record<string, unknown>;
-		if (typeof kind !== "string" || !WRITE_ORDER.includes(kind as ChangeKind)) return null;
+		if (typeof kind !== "string" || !CHANGE_KINDS.includes(kind as Change["kind"])) return null;
 		if (typeof id !== "string" || id === "") return null;
 		const onBoard = kind === "card" || kind === "drawing";
 		if (onBoard && (typeof boardId !== "string" || boardId === "")) return null;
@@ -83,15 +87,13 @@ export async function applyChanges(sql: Sql, workspaceId: string, changes: reado
 		if (!locked) return null;
 
 		const stands = unitStands(await readAppData(tx, workspaceId));
-		const byKind: Record<ChangeKind, Change[]> = { type: [], entity: [], board: [], card: [], drawing: [] };
-		for (const unit of changes) byKind[unit.kind]!.push(unit);
+		// Parents before children; a stable sort keeps each kind's units in the order they came.
+		const ordered = [...changes].sort((a, b) => CHANGE_KINDS.indexOf(a.kind) - CHANGE_KINDS.indexOf(b.kind));
 		const collided: string[] = [];
-		for (const kind of WRITE_ORDER) {
-			for (const unit of byKind[kind]) {
-				// Whatever the tables hold differs from the unit's `before`: someone else was here first.
-				if (!untouched(stands, unit)) collided.push(unit.id);
-				await writeUnit(tx, workspaceId, unit);
-			}
+		for (const unit of ordered) {
+			// Whatever the tables hold differs from the unit's `before`: someone else was here first.
+			if (!untouched(stands, unit)) collided.push(unit.id);
+			await writeUnit(tx, workspaceId, unit);
 		}
 
 		const [stored] = await tx`update workspaces set revision = revision + 1, updated_at = now()
@@ -106,51 +108,14 @@ function jsonbParameter(queries: Queries, value: unknown) {
 	return value === null || value === undefined ? null : queries.json(value as never);
 }
 
-/** The stand the tables hold for the unit right now, by the unit's own kind. */
-function currentStand(stands: ReturnType<typeof unitStands>, unit: Change) {
-	switch (unit.kind) {
-		case "type":
-			return stands.types.get(unit.id) ?? null;
-		case "entity":
-			return stands.entities.get(unit.id) ?? null;
-		case "board":
-			return stands.boards.get(unit.id) ?? null;
-		case "card":
-			return stands.cards.get(unit.id)?.stand ?? null;
-		case "drawing":
-			return stands.drawings.get(unit.id)?.stand ?? null;
-	}
-}
-
-/** Whether nobody else has touched the unit since the change set's reader last saw it, so writing it
- * needs no word: a unit the change says is new passes where nothing is there (its first write); a unit
- * with a `before` passes only where the tables still hold exactly that stand. Anything else — gone,
- * changed, or someone else's new unit under the same id — was written by someone else in between. */
-function untouched(stands: ReturnType<typeof unitStands>, unit: Change): boolean {
-	const now = currentStand(stands, unit);
-	if (unit.before === null) return now === null;
-	// The very comparison the change set was built with (`sameStand`): same place, same content.
-	return now !== null && now.position === unit.before.position && jsonEqual(now.value, unit.before.value);
-}
-
 /** Writes one unit's rows within the transaction — only that unit's own, in its workspace: its delete is a
  * delete of its one row (the tables' references cascade what hung below it), its write an upsert of it. */
 async function writeUnit(tx: Queries, ws: string, unit: Change): Promise<void> {
 	if (unit.after === null) {
 		// Gone: its one row goes, and the tables' references take care of what belonged below it — values
 		// with their property or entity, cards and drawings with their board.
-		switch (unit.kind) {
-			case "type":
-				return void (await tx`delete from entity_types where workspace_id = ${ws} and id = ${unit.id}`);
-			case "entity":
-				return void (await tx`delete from entities where workspace_id = ${ws} and id = ${unit.id}`);
-			case "board":
-				return void (await tx`delete from boards where workspace_id = ${ws} and id = ${unit.id}`);
-			case "card":
-				return void (await tx`delete from cards where workspace_id = ${ws} and id = ${unit.id}`);
-			case "drawing":
-				return void (await tx`delete from drawings where workspace_id = ${ws} and id = ${unit.id}`);
-		}
+		await tx`delete from ${tx(TABLES[unit.kind])} where workspace_id = ${ws} and id = ${unit.id}`;
+		return;
 	}
 	switch (unit.kind) {
 		case "type": {

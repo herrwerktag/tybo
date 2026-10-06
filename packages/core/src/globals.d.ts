@@ -3,7 +3,6 @@
 /** The pieces of the platform's WebCrypto the core uses: secure randomness for ids. */
 interface Crypto {
 	getRandomValues<T extends ArrayBufferView>(array: T): T;
-	randomUUID(): `${string}-${string}-${string}-${string}-${string}`;
 }
 
 declare var crypto: Crypto;

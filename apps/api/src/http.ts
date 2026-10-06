@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { Change, SavedChanges } from "@bekbon/core";
+import type { Change, SavedChanges, WorkspaceInfo } from "@bekbon/core";
 import { parseChanges } from "./changes.js";
-import type { StoredWorkspace, WorkspaceInfo } from "./data.js";
+import type { StoredWorkspace } from "./data.js";
 
 /** The port the server listens on when the PORT environment variable doesn't say otherwise.
  * Not 3000: that one is taken by Forgejo on this host. */
@@ -17,12 +17,6 @@ export function portFromEnv(value: string | undefined): number {
  * its own origin. CORS_ORIGIN says otherwise; the default fits the development setup, where the demo
  * runs on its usual Vite port. */
 export const DEFAULT_CORS_ORIGIN = "http://localhost:5173";
-
-/** Reads the origin allowed across the browser's cross-origin rules from a CORS_ORIGIN-style environment
- * value, falling back to the default. */
-export function corsOriginFromEnv(value: string | undefined): string {
-	return value ? value : DEFAULT_CORS_ORIGIN;
-}
 
 /** What createApp needs besides the routing: the workspaces and their data, and whether their storage answers. */
 export interface Api {
@@ -69,7 +63,7 @@ export interface Api {
  * preflight included, says them — without that, the browser keeps the answers from the demo, and it can't
  * even see a 404 or a 503, let alone act on it.
  */
-export function createApp(api: Api, allowedOrigin: string = corsOriginFromEnv(process.env.CORS_ORIGIN)): Server {
+export function createApp(api: Api, allowedOrigin: string = process.env.CORS_ORIGIN || DEFAULT_CORS_ORIGIN): Server {
 	return createServer((req, res) => {
 		allowCrossOrigin(res, allowedOrigin);
 		// The preflight is answered where it's asked, before any route: 204, saying nothing yet.

@@ -1,4 +1,4 @@
-import type { AppData, Board, CanvasCard, Drawing, Entity, EntityType } from "./model.js";
+import type { AppData, CanvasCard, Drawing, Entity, EntityType } from "./model.js";
 import type { Viewport } from "./viewport.js";
 
 /**
@@ -44,109 +44,53 @@ export type Change =
 	| { kind: "card"; id: string; boardId: string; before: UnitStand<CanvasCard> | null; after: UnitStand<CanvasCard> | null }
 	| { kind: "drawing"; id: string; boardId: string; before: UnitStand<Drawing> | null; after: UnitStand<Drawing> | null };
 
-/** The units of one list, keyed by id: compared by id, never by the position they happen to sit at. */
-function stands<T extends { id: string }>(items: readonly T[]): Map<string, UnitStand<T>> {
-	return new Map(items.map((value, position) => [value.id, { value, position }] as const));
+/** The kinds of unit, parents before the children naming them. */
+export const CHANGE_KINDS: readonly Change["kind"][] = ["type", "entity", "board", "card", "drawing"];
+
+/** One unit of a state: its address (kind, id, and the board a card or drawing stands on) and its stand. */
+interface Unit {
+	kind: Change["kind"];
+	id: string;
+	boardId?: string;
+	stand: UnitStand<unknown>;
 }
 
-/** The boards themselves, as units. */
-function boardStands(boards: readonly Board[]): Map<string, UnitStand<BoardMeta>> {
-	return new Map(
-		boards.map(({ id, name, viewport }, position) => [id, { value: { id, name, viewport }, position }] as const),
-	);
-}
+/** Every unit of a state, keyed by its kind and id — compared by id, never by the position it happens to sit
+ * at. Card and drawing ids are unique across boards; the app never moves one to another board. */
+export type UnitStands = Map<string, Unit>;
 
-/** One unit's stand, and the board it stands on (the tables' rows name their board, so a card or drawing
- * written anew says which). Card ids are unique across boards; the app never sits a card or drawing down
- * on another board, so `board` is taken from whichever of the two stands still has it. */
-export interface Located<T> {
-	board: string;
-	stand: UnitStand<T>;
-}
+const unitKey = (kind: Change["kind"], id: string) => `${kind}:${id}`;
 
-/** The cards or drawings of every board, keyed by their id (their ids are unique across boards). */
-function located<T extends { id: string }>(boards: readonly Board[], items: (board: Board) => readonly T[]): Map<string, Located<T>> {
-	const map = new Map<string, Located<T>>();
-	for (const board of boards) {
-		items(board).forEach((value, position) => {
-			if (!map.has(value.id)) map.set(value.id, { board: board.id, stand: { value, position } });
+/** The units of a state with their places. Boards are units without their cards and drawings, so someone
+ * panning a board and someone moving a card never address the same one. */
+export function unitStands(data: AppData): UnitStands {
+	const units: UnitStands = new Map();
+	const add = (kind: Change["kind"], items: readonly { id: string }[], boardId?: string) =>
+		items.forEach((value, position) => {
+			const key = unitKey(kind, value.id);
+			if (!units.has(key)) units.set(key, { kind, id: value.id, ...(boardId !== undefined && { boardId }), stand: { value, position } });
 		});
-	}
-	return map;
+	add("type", data.types);
+	add("entity", data.entities);
+	add("board", data.boards.map(({ id, name, viewport }): BoardMeta => ({ id, name, viewport })));
+	for (const board of data.boards) add("card", board.cards, board.id);
+	for (const board of data.boards) add("drawing", board.drawings, board.id);
+	return units;
 }
 
 /** Whether both stands tell of the same unit — same place, same content. A unit that isn't there (on either
- * side) is a change, never the same one. This is the one comparison every stand is measured with, here
- * for building a change set and there (`apps/api`) for telling an untouched unit from a collided one, so
- * the two never drift apart.
- */
-export function sameStand<T>(before: UnitStand<T> | null, after: UnitStand<T> | null): boolean {
+ * side) is a change, never the same one. */
+function sameStand(before: UnitStand<unknown> | null, after: UnitStand<unknown> | null): boolean {
 	if (before === null || after === null) return false;
 	return before.position === after.position && jsonEqual(before.value, after.value);
 }
 
-/** Every unit of one state with its place, by its id — for a writer that holds the state its tables read
- * (the answer of a read), to compare per unit with a change's `before`: what it says for the unit now is
- * what nobody else has touched, and what doesn't say so has been changed by someone else. */
-export interface UnitStands {
-	/** The types, by id. */
-	types: Map<string, UnitStand<EntityType>>;
-	/** The entities, by id. */
-	entities: Map<string, UnitStand<Entity>>;
-	/** The boards (name and viewport only), by id. */
-	boards: Map<string, UnitStand<BoardMeta>>;
-	/** The cards, by id, with the board they stand on. */
-	cards: Map<string, Located<CanvasCard>>;
-	/** The drawings, by id, with the board they stand on. */
-	drawings: Map<string, Located<Drawing>>;
-}
-
-/** The units of a state with their places. */
-export function unitStands(data: AppData): UnitStands {
-	return {
-		types: stands(data.types),
-		entities: stands(data.entities),
-		boards: boardStands(data.boards),
-		cards: located(data.boards, (b) => b.cards),
-		drawings: located(data.boards, (b) => b.drawings),
-	};
-}
-
-/** Every id that either list names. */
-function idsOf<T>(...lists: ReadonlyMap<string, T>[]): Set<string> {
-	return new Set(lists.flatMap((list) => [...list.keys()]));
-}
-
-/** The ids whose stands differ between two lists — compared by id, never by the position they happen to sit
- * at, the stand on the last-read side (`before`) and the one on the other (`after`) handed to `make`, with
- * null where the id isn't on that side. */
-function standChanges<T>(
-	before: ReadonlyMap<string, UnitStand<T>>,
-	after: ReadonlyMap<string, UnitStand<T>>,
-	make: (id: string, before: UnitStand<T> | null, after: UnitStand<T> | null) => Change,
-): Change[] {
-	const changes: Change[] = [];
-	for (const id of idsOf(before, after)) {
-		const b = before.get(id) ?? null;
-		const a = after.get(id) ?? null;
-		if (sameStand(b, a)) continue;
-		changes.push(make(id, b, a));
-	}
-	return changes;
-}
-
-/** The located siblings of `standChanges`: the cards and drawings of every board, named by their id and
- * the board they stand on. */
-function locatedChanges<T>(
-	before: ReadonlyMap<string, Located<T>>,
-	after: ReadonlyMap<string, Located<T>>,
-	make: (id: string, boardId: string, before: UnitStand<T> | null, after: UnitStand<T> | null) => Change,
-): Change[] {
-	return standChanges(
-		new Map([...before].map(([id, l]) => [id, l.stand] as const)),
-		new Map([...after].map(([id, l]) => [id, l.stand] as const)),
-		(id, b, a) => make(id, (after.get(id) ?? before.get(id))!.board, b, a),
-	);
+/** Whether nobody else has touched the unit since the change's `before` was read: the stand held now is still
+ * that one — or, for a new unit, nothing is there. The storage (the API's tables, the memory port) asks this
+ * of every unit it is given, with the very comparison the change set was built with. */
+export function untouched(stands: UnitStands, change: Change): boolean {
+	const now = stands.get(unitKey(change.kind, change.id))?.stand ?? null;
+	return change.before === null ? now === null : sameStand(change.before, now);
 }
 
 /**
@@ -154,25 +98,19 @@ function locatedChanges<T>(
  * the change set a save writes per unit, so it never touches a row nobody changed here. Every unit is
  * addressed by its id, never by the position it happens to sit at, and each stand carries its `position`
  * — each list's own order, which SQL doesn't know on its own — so a unit that only moved in its list is
- * heard of too, and what is saved keeps its order without saving everything. The types come first, the
- * entities before the boards' cards and drawings, so parents are written before the children naming them.
+ * heard of too, and what is saved keeps its order without saving everything. The changes come in the order
+ * of CHANGE_KINDS, so parents are written before the children naming them.
  */
 export function changesBetween(before: AppData, after: AppData): Change[] {
 	const was = unitStands(before);
 	const now = unitStands(after);
-	return [
-		...standChanges(was.types, now.types, (id, b, a) => ({ kind: "type", id, before: b, after: a })),
-		...standChanges(was.entities, now.entities, (id, b, a) => ({ kind: "entity", id, before: b, after: a })),
-		...standChanges(was.boards, now.boards, (id, b, a) => ({ kind: "board", id, before: b, after: a })),
-		...locatedChanges(
-			was.cards,
-			now.cards,
-			(id, boardId, b, a) => ({ kind: "card", id, boardId, before: b, after: a }),
-		),
-		...locatedChanges(
-			was.drawings,
-			now.drawings,
-			(id, boardId, b, a) => ({ kind: "drawing", id, boardId, before: b, after: a }),
-		),
-	];
+	const changes: Change[] = [];
+	for (const key of new Set([...was.keys(), ...now.keys()])) {
+		const b = was.get(key) ?? null;
+		const a = now.get(key) ?? null;
+		if (sameStand(b?.stand ?? null, a?.stand ?? null)) continue;
+		const { kind, id, boardId } = (a ?? b)!;
+		changes.push({ kind, id, ...(boardId !== undefined && { boardId }), before: b?.stand ?? null, after: a?.stand ?? null } as Change);
+	}
+	return changes.sort((x, y) => CHANGE_KINDS.indexOf(x.kind) - CHANGE_KINDS.indexOf(y.kind));
 }
