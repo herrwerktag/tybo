@@ -145,7 +145,6 @@ function reconcile(data: AppData): AppData {
 	};
 }
 
-/** Fills in fields that data saved by earlier versions may lack (e.g. number/boolean/date kinds, non-string values, entity names, ULIDs). */
 /** Reads `cardDisplay`, or converts the `showOnCard` checkbox saved by the previous version. */
 function cardDisplayFor(prop: PropertyDef, showOnCard: unknown): PropertyDef["cardDisplay"] {
 	if (CARD_DISPLAYS.includes(prop.cardDisplay)) return effectiveCardDisplay(prop);
@@ -205,6 +204,7 @@ function storedStand(data: AppData): AppData {
 	};
 }
 
+/** Fills in fields that data saved by earlier versions may lack (e.g. number/boolean/date kinds, non-string values, entity names, ULIDs). */
 function normalize(data: AppData): AppData {
 	// Types saved before colors existed get the next free palette colors, in order.
 	const usedColors = data.types.map((t) => t.color).filter(isColor);
@@ -437,22 +437,20 @@ export async function createStore(port: DataPort, workspaceId: string) {
 		 * Only looks: nothing is reloaded, nothing in memory is touched — neither the data, nor the undo history, nor
 		 * the problems. A look the storage can't answer is no event: false, and the next one may be asked again. */
 		async checkForNewer(): Promise<boolean> {
-			if (newerLook) return newerLook; // one look at a time: joins the one on its way
 			if (seenVersion === null) return false; // nothing was read to be newer than
-			const behindSaves = savesSettled; // the saves on their way now; the look waits behind them
-			const answer = (async () => {
-				await behindSaves;
+			// One look at a time: a second ask joins the one on its way. The look waits behind the saves on their
+			// way, so it never takes this store's own save for someone else's.
+			newerLook ??= (async () => {
 				try {
+					await savesSettled;
 					return (await port.version(workspaceId)) !== seenVersion;
 				} catch {
 					return false; // the look failed: no hint, and with it nothing was changed here
+				} finally {
+					newerLook = null; // free for the next look
 				}
 			})();
-			const look = answer.finally(() => {
-				if (newerLook === look) newerLook = null; // free for the next look
-			});
-			newerLook = look;
-			return look;
+			return newerLook;
 		},
 
 		/** Without a color, the type gets the first palette color no other type uses. */

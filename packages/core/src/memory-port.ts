@@ -1,4 +1,4 @@
-import { jsonEqual, unitStands, type Change } from "./changes.js";
+import { unitStands, untouched, type Change } from "./changes.js";
 import type { AppData, Board } from "./model.js";
 import type { DataPort, SavedChanges, WorkspaceInfo } from "./ports.js";
 
@@ -102,22 +102,6 @@ function asAppData(data: Record<string, unknown>): AppData {
 		entities: list(data.entities),
 		boards: list(data.boards).map((board: Partial<Board>) => ({ ...board, cards: list(board.cards), drawings: list(board.drawings) })),
 	} as AppData;
-}
-
-/** Whether the unit's `before` is the stand held (or its absence, for a new one) — the API's very question. */
-function untouched(stands: ReturnType<typeof unitStands>, unit: Change): boolean {
-	const now =
-		unit.kind === "type"
-			? stands.types.get(unit.id)
-			: unit.kind === "entity"
-				? stands.entities.get(unit.id)
-				: unit.kind === "board"
-					? stands.boards.get(unit.id)
-					: unit.kind === "card"
-						? stands.cards.get(unit.id)?.stand
-						: stands.drawings.get(unit.id)?.stand;
-	if (unit.before === null) return now === undefined;
-	return now !== undefined && now.position === unit.before.position && jsonEqual(now.value, unit.before.value);
 }
 
 /** A list's units by id, each with its place — what the tables' `position` columns hold. */

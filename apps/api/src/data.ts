@@ -1,11 +1,5 @@
-import type { AppData, Drawing } from "@bekbon/core";
+import type { AppData, Drawing, WorkspaceInfo } from "@bekbon/core";
 import type { Queries, Sql } from "./schema.js";
-
-/** A workspace as its list names it. */
-export interface WorkspaceInfo {
-	id: string;
-	name: string;
-}
 
 /** A workspace's data as a read answers it: its rows put together the way the app holds them, marked with
  * the format they are in (`version`, as an exported file is), and the revision the workspace is at. */

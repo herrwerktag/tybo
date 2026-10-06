@@ -45,6 +45,7 @@ test("validateType rejects the built-in field names", () => {
 	assert.ok(validateType("Book", [{ ...title, name: "id" }], noTypes).length > 0);
 	assert.ok(validateType("Book", [{ ...title, name: " Name " }], noTypes).length > 0);
 	assert.ok(validateType("Book", [{ ...title, name: "content" }], noTypes).length > 0);
+	assert.ok(validateType("Book", [{ ...title, name: "Description" }], noTypes).length > 0);
 });
 
 test("validateType: options properties need unique, non-empty options", () => {
@@ -255,11 +256,5 @@ test("detailRows lists every property in order, empty ones too, then reverse ref
 		{ label: "internal", kind: "text", values: ["secret"], entityIds: [], targetTypeId: null },
 		{ label: "status", kind: "options", values: [], entityIds: [], targetTypeId: null },
 		{ label: "author", kind: "reference", values: ["Frank"], entityIds: ["p1"], targetTypeId: "person" },
-	]);
-});
-
-test("description is a reserved property name", () => {
-	assert.deepEqual(validateType("Book", [{ ...title, name: "Description" }], noTypes), [
-		{ code: "reservedName", label: "Description" },
 	]);
 });

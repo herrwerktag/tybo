@@ -1,4 +1,6 @@
 import {
+	CARD_DISPLAYS,
+	LINE_ARROWS,
 	PROPERTY_KINDS,
 	TYPE_COLORS,
 	effectiveCardDisplay,
@@ -84,9 +86,6 @@ function describeProperty(p: PropertyDef, types: EntityType[]): string {
 	}
 	return `${p.name}: ${text.kinds.text}`;
 }
-
-const LINE_ARROWS: readonly LineArrow[] = ["to", "from", "none"];
-const CARD_DISPLAY_ORDER: readonly CardDisplay[] = ["list", "line", "hidden"];
 
 /** A small label above a control, for the settings inside a property card. */
 function setting(label: string, control: HTMLElement): HTMLElement {
@@ -585,7 +584,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 					rerender(); // shows or hides the line settings
 				},
 			},
-			...CARD_DISPLAY_ORDER.filter((display) => display !== "line" || prop.kind === "reference").map((display) =>
+			...CARD_DISPLAYS.filter((display) => display !== "line" || prop.kind === "reference").map((display) =>
 				el("option", { value: display, selected: display === prop.cardDisplay }, text.cardDisplays[display]),
 			),
 		);

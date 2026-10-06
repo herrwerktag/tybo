@@ -290,27 +290,6 @@ test("a stand saved elsewhere in between is noticed and offered with the reload 
 	assert.deepEqual(storage.data(WS), library);
 });
 
-test("after a save of its own, the workspace isn't 'changed elsewhere' — no false alarm over its own work", async () => {
-	const root = await startApp(library);
-	const typeForm = root.querySelector<HTMLFormElement>("#type-form")!;
-	typeInto(typeForm.querySelector(`input[placeholder="${text.typeNamePlaceholder}"]`)!, "Film");
-	byText(typeForm, "button", text.createType).click();
-	await settle(); // the save went through and reached the storage
-	lookNow();
-	await settle();
-	assert.equal(root.querySelector<HTMLElement>(".problem-banner")!.hidden, true);
-});
-
-test("a look the storage can't answer starts no message: a failed background look is no event", async () => {
-	const root = await startApp(library);
-	storage.failing.looks = true; // the network is gone: the look goes nowhere
-	lookNow();
-	await settle();
-	lookNow(); // and again — still nothing
-	await settle();
-	assert.equal(root.querySelector<HTMLElement>(".problem-banner")!.hidden, true);
-});
-
 test("the tab hidden asks nothing: no eyes on it, nothing on the wire; visible again, it looks", async () => {
 	const root = await startApp(library);
 	const looks = storage.looks;

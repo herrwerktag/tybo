@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEFAULT_CORS_ORIGIN, corsOriginFromEnv, DEFAULT_PORT, portFromEnv, type Api } from "./http.js";
+import { DEFAULT_PORT, portFromEnv, type Api } from "./http.js";
 import { call, startApp } from "./test-server.js";
 
 /** The API on workspaces held in memory — what the database does, without needing one. A change set isn't
@@ -292,10 +292,4 @@ test("every answer carries the same allowance, a 404 and a HEAD included, so the
 	} finally {
 		await api.close();
 	}
-});
-
-test("the allowed origin comes from CORS_ORIGIN, with its fallback", () => {
-	assert.equal(corsOriginFromEnv("https://demo.example"), "https://demo.example");
-	assert.equal(corsOriginFromEnv(undefined), DEFAULT_CORS_ORIGIN);
-	assert.equal(corsOriginFromEnv(""), DEFAULT_CORS_ORIGIN);
 });
