@@ -28,33 +28,31 @@ const en = {
 	importButton: "Import…",
 	importWorkspace: "Add a workspace from an exported JSON file",
 	importInvalid: "This file isn't an exported workspace.",
-	importNoSpace: "The browser storage is full, so the workspace couldn't be imported.",
+	importFailed: "The workspace couldn't be imported: the file is from a newer version of the app, or the server didn't answer.",
+	createFailed: "The workspace couldn't be created: the server didn't answer.",
 	deleteWorkspace: "Delete workspace",
 	lastWorkspace: "The last workspace can't be deleted",
 	confirmDeleteWorkspace: (name: string, types: number, entities: number, boards: number) =>
 		`Delete workspace "${name}" with ${types} entity types, ${entities} entities and ${boards} boards? This can't be undone.`,
 
 	// Problems with the saved data
-	loadUnreadable: (backupKey: string) =>
-		`The saved data couldn't be read, so this workspace started empty. The original is kept in the browser storage under "${backupKey}".`,
-	loadPartlyUnreadable: (backupKey: string) =>
-		`Some saved data couldn't be read and was left out. The original is kept in the browser storage under "${backupKey}".`,
-	loadNotBackedUp:
-		"Some saved data couldn't be read, and there's no room to back it up. Changes aren't saved, so the original stays untouched. Free up browser storage, then reload.",
+	loadUnavailable:
+		"This workspace's data couldn't be loaded — the server didn't answer, or the workspace was deleted elsewhere. Changes here aren't saved. Reload the page to try again.",
 	loadNewerVersion:
 		"This workspace was saved by a newer version of the app. Changes here aren't saved, so nothing of it gets lost. Reload the page to get the newer version.",
-	saveFailed: "Changes can't be saved: the browser storage is full or blocked. They're kept only until this tab is closed.",
+	saveFailed: "Changes can't be saved: the server doesn't answer. They're kept only until this tab is closed; the next change that gets through saves them too.",
 	saveConflict:
-		"This workspace was saved somewhere else in the meantime, so this change wasn't saved either — keeping theirs from being overwritten. It's kept only until this tab is closed. Reload the page to get the newer data.",
+		"This workspace was changed somewhere else in the meantime, at the same places as here. Your change was saved over it; further changes here aren't saved until you reload the page to get the newer data.",
 	changedElsewhere:
 		"This workspace was changed somewhere else in the meantime (another tab, another device). Reload the page to see the newer data.",
-	downloadOriginal: "Download original",
-	dismiss: "Dismiss",
 
 	// Unexpected errors
 	unexpectedError: (message: string) =>
 		`Something went wrong: ${message}. Changes saved so far are kept; reloading the page may help.`,
 	reload: "Reload",
+	serverUnreachableTitle: "The server can't be reached",
+	serverUnreachableHint:
+		"The data is kept on the server, and it doesn't answer right now — so nothing can be shown or saved. Check that the API is running, then reload the page.",
 	errorScreenTitle: "Something went wrong",
 	errorScreenHint:
 		"This page couldn't be shown. Changes saved so far are kept. Reload the page, or first export this workspace to keep a copy.",
@@ -230,31 +228,29 @@ const de: Messages = {
 	importButton: "Importieren…",
 	importWorkspace: "Einen Arbeitsbereich aus einer exportierten JSON-Datei hinzufügen",
 	importInvalid: "Diese Datei ist kein exportierter Arbeitsbereich.",
-	importNoSpace: "Der Browserspeicher ist voll, daher konnte der Arbeitsbereich nicht importiert werden.",
+	importFailed: "Der Arbeitsbereich konnte nicht importiert werden: Die Datei stammt aus einer neueren Version der App, oder der Server hat nicht geantwortet.",
+	createFailed: "Der Arbeitsbereich konnte nicht angelegt werden: Der Server hat nicht geantwortet.",
 	deleteWorkspace: "Arbeitsbereich löschen",
 	lastWorkspace: "Der letzte Arbeitsbereich kann nicht gelöscht werden",
 	confirmDeleteWorkspace: (name, types, entities, boards) =>
 		`Arbeitsbereich „${name}“ mit ${types} Entitätstypen, ${entities} Entitäten und ${boards} Boards löschen? Das kann nicht rückgängig gemacht werden.`,
 
-	loadUnreadable: (backupKey) =>
-		`Die gespeicherten Daten konnten nicht gelesen werden, daher beginnt dieser Arbeitsbereich leer. Das Original liegt im Browserspeicher unter „${backupKey}“.`,
-	loadPartlyUnreadable: (backupKey) =>
-		`Ein Teil der gespeicherten Daten konnte nicht gelesen werden und fehlt. Das Original liegt im Browserspeicher unter „${backupKey}“.`,
-	loadNotBackedUp:
-		"Ein Teil der gespeicherten Daten konnte nicht gelesen werden, und für eine Sicherung ist kein Platz. Änderungen werden nicht gespeichert, damit das Original erhalten bleibt. Gib Browserspeicher frei und lade die Seite neu.",
+	loadUnavailable:
+		"Die Daten dieses Arbeitsbereichs konnten nicht geladen werden – der Server hat nicht geantwortet, oder der Arbeitsbereich wurde woanders gelöscht. Änderungen hier werden nicht gespeichert. Lade die Seite neu, um es noch einmal zu versuchen.",
 	loadNewerVersion:
 		"Dieser Arbeitsbereich wurde mit einer neueren Version der App gespeichert. Änderungen hier werden nicht gespeichert, damit davon nichts verloren geht. Lade die Seite neu, um die neuere Version zu bekommen.",
-	saveFailed: "Änderungen können nicht gespeichert werden: Der Browserspeicher ist voll oder blockiert. Sie bleiben nur erhalten, bis dieser Tab geschlossen wird.",
+	saveFailed: "Änderungen können nicht gespeichert werden: Der Server antwortet nicht. Sie bleiben nur erhalten, bis dieser Tab geschlossen wird; die nächste Änderung, die durchkommt, speichert sie mit.",
 	saveConflict:
-		"Dieser Arbeitsbereich wurde zwischenzeitlich woanders gespeichert, daher wurde diese Änderung hier auch nicht gespeichert, damit die der anderen nicht überschrieben wird. Sie bleibt nur bis zum Schließen dieses Tabs erhalten. Lade die Seite neu, um die neueren Daten zu bekommen.",
+		"Dieser Arbeitsbereich wurde zwischenzeitlich woanders an denselben Stellen geändert. Deine Änderung wurde darüber gespeichert; weitere Änderungen hier werden erst nach einem Neuladen der Seite wieder gespeichert.",
 	changedElsewhere:
 		"Dieser Arbeitsbereich wurde zwischenzeitlich woanders geändert (anderer Tab, anderes Gerät). Lade die Seite neu, um den neueren Stand zu sehen.",
-	downloadOriginal: "Original herunterladen",
-	dismiss: "Schließen",
 
 	unexpectedError: (message) =>
 		`Etwas ist schiefgelaufen: ${message}. Bisher gespeicherte Änderungen bleiben erhalten; ein Neuladen der Seite kann helfen.`,
 	reload: "Neu laden",
+	serverUnreachableTitle: "Der Server ist nicht erreichbar",
+	serverUnreachableHint:
+		"Die Daten liegen auf dem Server, und der antwortet gerade nicht – daher kann nichts angezeigt oder gespeichert werden. Prüfe, ob die API läuft, und lade die Seite dann neu.",
 	errorScreenTitle: "Etwas ist schiefgelaufen",
 	errorScreenHint:
 		"Diese Seite konnte nicht angezeigt werden. Bisher gespeicherte Änderungen bleiben erhalten. Lade die Seite neu oder exportiere vorher diesen Arbeitsbereich, um eine Kopie zu behalten.",

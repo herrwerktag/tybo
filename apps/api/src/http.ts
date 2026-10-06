@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { Change, SavedChanges, StoragePort } from "@bekbon/core";
+import type { Change, SavedChanges } from "@bekbon/core";
 import { parseChanges } from "./changes.js";
-import { APP_KEY } from "./mirror.js";
+import type { StoredWorkspace, WorkspaceInfo } from "./data.js";
 
 /** The port the server listens on when the PORT environment variable doesn't say otherwise.
  * Not 3000: that one is taken by Forgejo on this host. */
@@ -24,56 +24,50 @@ export function corsOriginFromEnv(value: string | undefined): string {
 	return value ? value : DEFAULT_CORS_ORIGIN;
 }
 
-/** What createApp needs besides the routing: the stored texts, whether their storage answers, and the
- * version each stored text is at (the HTTP layer hands it to and from the requests). */
-export interface Api extends StoragePort {
+/** What createApp needs besides the routing: the workspaces and their data, and whether their storage answers. */
+export interface Api {
 	/** Resolves once it's known whether the database answers; /health says ok only then. */
 	healthy(): Promise<boolean>;
-	/** The stored text under `key` together with its version, in one look (so the two can't disagree), or null
-	 * if none is stored. */
-	read(key: string): Promise<{ text: string; version: string } | null>;
-	/** Saves the text only for the version the reader saw — `version` is what a read answered, or null for a
-	 * first write. Answers the row's new version, or null when the save was refused: the stored text was
-	 * changed by someone else in the meantime, or one already exists where the saver named no stand. */
-	write(key: string, value: string, version: string | null): Promise<string | null>;
-	/** Optional, the Postgres side: handed the text after a successful save, so its tables can mirror the app
-	 * data. Without it (an API not on Postgres, for instance), saving stands alone. */
-	syncFromText?(text: string): Promise<void>;
-	/** Writes a change set — per unit, only the rows of the units it names — for the app's data, whose units
-	 * the addressable tables hold. Optional, because only such a storage can answer it: without this
-	 * method, the route isn't there and the saver falls back onto the whole document, as ever. The version
-	 * the save is asked to build on doesn't refuse it: the units' `before` stands decide, one at a time,
-	 * which of them collided — answered, written anyway (last one wins), never a refusal without writing. */
-	writeChanges?(key: string, changes: Change[]): Promise<SavedChanges>;
+	/** The workspaces, in their order. */
+	listWorkspaces(): Promise<WorkspaceInfo[]>;
+	/** Makes an empty workspace; false when one of that id is there already (nothing written then). */
+	createWorkspace(info: WorkspaceInfo, dataVersion: number): Promise<boolean>;
+	/** Renames a workspace; false when there is none of that id. */
+	renameWorkspace(id: string, name: string): Promise<boolean>;
+	/** Deletes a workspace and all its data; there being none of that id is no error. */
+	deleteWorkspace(id: string): Promise<void>;
+	/** The workspace's data with its revision, read as one — or null when there is none of that id. */
+	readWorkspace(id: string): Promise<StoredWorkspace | null>;
+	/** The revision the workspace is at, or null when there is none of that id. */
+	workspaceRevision(id: string): Promise<string | null>;
+	/** Writes a change set — only the rows of the units it names — into the workspace. The units' `before`
+	 * stands decide, one at a time, which of them collided: answered, written anyway (last one wins).
+	 * Null when there is no workspace of that id. */
+	writeChanges(id: string, changes: Change[]): Promise<SavedChanges | null>;
 }
 
-/** The HTTP interface of the storage port.
+/** The HTTP interface of the app's data.
  *
- * GET /texts/{key} answers the saved text as plain text, or 404 if none is saved under the key — with
- * the text's version in the `etag` header, so a saver can name the stand it read on its next save. HEAD
- * /texts/{key} answers the same, without the text: 200 with the version in `etag`, 404 if nothing is
- * stored — one look on the wire for asking "has someone saved in between?". PUT
- * /texts/{key} saves the request body under the key, but only for such a stand: its `if-match` header
- * must name the version a read answered. Over what someone else saved in between it answers 409 and
- * writes nothing at all — the others' data stays instead of being silently run over. Without `if-match`,
- * a save passes only under a key nothing is stored under yet (the first write); over already stored
- * data it answers 409 as well. A successful save answers 204 with the new version in `etag`.
+ * GET /workspaces answers the workspaces as JSON (`[{ id, name }]`), in their order. POST /workspaces makes
+ * an empty one from the body `{ id, name, dataVersion }` — 201, or 409 when that id is taken. PATCH
+ * /workspaces/{id} renames it (`{ name }`) — 204, or 404 when there is none. DELETE /workspaces/{id}
+ * deletes it with all its data, 204 either way.
  *
- * PUT /texts/{key}/changes saves the app's data per unit — the request body a change set (JSON): only
- * the rows of the units it names are written, whatever stand its `if-match` names, so units decide for
- * themselves which of them collided with someone else's in-between save — the answer says which, and
- * writes them anyway (last one wins): 200 with `{ version, collided }`, the new version in `etag`. The
- * route serves the app's key alone (everything else keeps living as one whole text) and an API without
- * tables to write per unit answers 404 for it, so a saver walks the whole-document way instead; a body
- * that isn't a change set answers 400 and writes nothing.
+ * GET /workspaces/{id}/data answers the workspace's data as JSON — the app's data marked with the format it
+ * is in (`version`) — with its revision in the `etag` header, or 404. HEAD answers the same without the
+ * data: one look on the wire for asking "has someone saved in between?".
  *
- * DELETE /texts/{key} removes the text (if any) and answers 204 either way. GET /health answers
- * 200 while the database answers, 503 when it doesn't.
+ * PUT /workspaces/{id}/changes saves a change set (JSON): only the rows of the units it names are written,
+ * so units decide for themselves which of them collided with someone else's in-between save — the answer
+ * says which, and writes them anyway (last one wins): 200 with `{ version, collided }`, the new revision in
+ * `etag`. A body that isn't a change set answers 400 and writes nothing; no workspace of that id, 404.
  *
- * The demo calls the API from another origin, so the browser checks first: it asks before PUT and
- * DELETE (a "preflight" OPTIONS request) and looks at the answer's cross-origin headers. Every
- * answer, the preflight included, says them — without that, the browser keeps the answers from the
- * demo, and it can't even see a 404, a 409 or a 503, let alone act on it.
+ * GET /health answers 200 while the database answers, 503 when it doesn't.
+ *
+ * The demo calls the API from another origin, so the browser checks first: it asks before most of these
+ * (a "preflight" OPTIONS request) and looks at the answer's cross-origin headers. Every answer, the
+ * preflight included, says them — without that, the browser keeps the answers from the demo, and it can't
+ * even see a 404 or a 503, let alone act on it.
  */
 export function createApp(api: Api, allowedOrigin: string = corsOriginFromEnv(process.env.CORS_ORIGIN)): Server {
 	return createServer((req, res) => {
@@ -85,12 +79,11 @@ export function createApp(api: Api, allowedOrigin: string = corsOriginFromEnv(pr
 }
 
 /** The headers the browser's cross-origin rules ask for: whose origin may call (which ways, sending what),
- * and which answer headers JavaScript may read — a saved text's version travels in them. */
+ * and which answer headers JavaScript may read — a workspace's revision travels in them. */
 function allowCrossOrigin(res: ServerResponse, origin: string): void {
 	res.setHeader("access-control-allow-origin", origin);
-	res.setHeader("access-control-allow-methods", "GET, HEAD, PUT, DELETE");
-	// A save names the stand it builds on with If-Match, so that header has to be allowed through.
-	res.setHeader("access-control-allow-headers", "Content-Type, If-Match");
+	res.setHeader("access-control-allow-methods", "GET, HEAD, POST, PUT, PATCH, DELETE");
+	res.setHeader("access-control-allow-headers", "Content-Type");
 	// etag isn't among the headers a cross-origin answer shows JavaScript by default; say it may be seen.
 	res.setHeader("access-control-expose-headers", "ETag");
 }
@@ -103,81 +96,104 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api): Promi
 			if (method !== "GET") return notAllowed(res, "GET");
 			return (await api.healthy()) ? sendText(res, 200, "ok") : sendEmpty(res, 503);
 		}
-		const key = keyOf(url.pathname);
-		if (!key) return sendEmpty(res, 404);
-		// The change-set route first: its path ({key}/changes) would otherwise read as a key of its own.
-		if (url.pathname.endsWith("/changes")) {
-			const changesOf = key.slice(0, -"/changes".length);
-			// Only the app's data lives in addressable units; every other key keeps its one whole text.
-			if (changesOf !== APP_KEY) return sendEmpty(res, 404);
-			if (method !== "PUT") return notAllowed(res, "PUT");
-			// An API without tables to write per unit keeps its old ways — the saver falls back onto them.
-			if (!api.writeChanges) return sendEmpty(res, 404);
-			const changes = parseChanges(await readJson(req));
-			if (changes === null) return sendEmpty(res, 400);
-			const answer = await api.writeChanges(APP_KEY, changes);
-			res.setHeader("etag", answer.version);
-			return sendText(res, 200, JSON.stringify(answer), "application/json; charset=utf-8");
+		const route = routeOf(url.pathname);
+		if (!route) return sendEmpty(res, 404);
+
+		if (route.id === null) {
+			switch (method) {
+				case "GET":
+					return sendJson(res, 200, await api.listWorkspaces());
+				case "POST": {
+					const created = parseCreate(await readJson(req));
+					if (!created) return sendEmpty(res, 400);
+					const made = await api.createWorkspace({ id: created.id, name: created.name }, created.dataVersion);
+					return sendEmpty(res, made ? 201 : 409);
+				}
+				default:
+					return notAllowed(res, "GET, POST");
+			}
 		}
-		switch (method) {
-			case "GET": {
-				const stored = await api.read(key);
-				if (!stored) return sendEmpty(res, 404);
-				// The version this text is at, so the next save under it can name the stand it read.
-				res.setHeader("etag", stored.version);
-				return sendText(res, 200, stored.text);
-			}
-			case "HEAD": {
-				// GET's answer without the text, so a look for a newer stand needs no body on the wire. The same
-				// cross-origin allowance is already said (every answer says it), so the browser lets the etag be seen.
-				const stored = await api.read(key);
-				if (!stored) return sendEmpty(res, 404);
-				res.setHeader("etag", stored.version);
-				return sendEmpty(res, 200);
-			}
-			case "PUT": {
-				const text = await body(req);
-				// The version the save builds on: the stand its reader saw. Naming none passes only as a first
-				// write, under a key nothing is stored under — never over stored data.
-				const version = await api.write(key, text, header(req, "if-match"));
-				if (version === null) {
-					// Outdated, or over something already stored without naming a stand: nothing was written.
-					return sendEmpty(res, 409);
-				}
-				// Saving the app's key keeps the Postgres mirror in step. The text is stored already, so a mirror
-				// that can't be updated never fails the save — and one the text doesn't fit stays as it was.
-				if (key === APP_KEY && api.syncFromText) {
-					try {
-						await api.syncFromText(text);
-					} catch {
-						// The mirror is display only; the saved text is safe.
+
+		const { id } = route;
+		switch (route.part) {
+			case null:
+				switch (method) {
+					case "PATCH": {
+						const name = parseName(await readJson(req));
+						if (name === null) return sendEmpty(res, 400);
+						return sendEmpty(res, (await api.renameWorkspace(id, name)) ? 204 : 404);
 					}
+					case "DELETE":
+						await api.deleteWorkspace(id);
+						return sendEmpty(res, 204);
+					default:
+						return notAllowed(res, "PATCH, DELETE");
 				}
-				res.setHeader("etag", version);
-				return sendEmpty(res, 204);
+			case "data":
+				switch (method) {
+					case "GET": {
+						const stored = await api.readWorkspace(id);
+						if (!stored) return sendEmpty(res, 404);
+						res.setHeader("etag", stored.revision);
+						return sendJson(res, 200, stored.data);
+					}
+					case "HEAD": {
+						const revision = await api.workspaceRevision(id);
+						if (revision === null) return sendEmpty(res, 404);
+						res.setHeader("etag", revision);
+						return sendEmpty(res, 200);
+					}
+					default:
+						return notAllowed(res, "GET, HEAD");
+				}
+			case "changes": {
+				if (method !== "PUT") return notAllowed(res, "PUT");
+				const changes = parseChanges(await readJson(req));
+				if (changes === null) return sendEmpty(res, 400);
+				const answer = await api.writeChanges(id, changes);
+				if (!answer) return sendEmpty(res, 404);
+				res.setHeader("etag", answer.version);
+				return sendJson(res, 200, answer);
 			}
-			case "DELETE": {
-				await api.removeItem(key);
-				return sendEmpty(res, 204);
-			}
-			default:
-				return notAllowed(res, "GET, HEAD, PUT, DELETE");
 		}
 	} catch {
-		// The storage didn't answer, or its text couldn't even be read. What went wrong stays here:
+		// The storage didn't answer, or refused what it was asked to write. What went wrong stays here:
 		// a driver's error can quote the user it tried to connect as, which is part of the URL.
 		return sendEmpty(res, 503);
 	}
 }
 
-/** The key of a /texts/{key} path, percent-decoded so any key can name its text; "" if there's none to have. */
-function keyOf(pathname: string): string {
-	if (!pathname.startsWith("/texts/")) return "";
+/** Where a path leads: the workspaces (`id` null), one workspace (`part` null), or its data or changes.
+ * Null for a path that leads nowhere. Ids are percent-decoded, so any id can name its workspace. */
+function routeOf(pathname: string): { id: null } | { id: string; part: null | "data" | "changes" } | null {
+	const segments = pathname.split("/").slice(1);
+	if (segments[0] !== "workspaces") return null;
+	if (segments.length === 1) return { id: null };
+	let id: string;
 	try {
-		return decodeURIComponent(pathname.slice("/texts/".length));
+		id = decodeURIComponent(segments[1]!);
 	} catch {
-		return "";
+		return null;
 	}
+	if (id === "") return null;
+	if (segments.length === 2) return { id, part: null };
+	if (segments.length === 3 && (segments[2] === "data" || segments[2] === "changes")) return { id, part: segments[2] };
+	return null;
+}
+
+/** A workspace's name as a request names it: a string with something in it; null otherwise. */
+function parseName(raw: unknown): string | null {
+	const name = (raw as { name?: unknown } | null)?.name;
+	return typeof name === "string" && name.trim() !== "" ? name.trim() : null;
+}
+
+/** What a POST must say to make a workspace; null when the body says something else. */
+function parseCreate(raw: unknown): { id: string; name: string; dataVersion: number } | null {
+	const { id, dataVersion } = (raw ?? {}) as { id?: unknown; dataVersion?: unknown };
+	const name = parseName(raw);
+	if (typeof id !== "string" || id === "" || name === null) return null;
+	if (typeof dataVersion !== "number" || !Number.isInteger(dataVersion) || dataVersion < 0) return null;
+	return { id, name, dataVersion };
 }
 
 /** The request body, as the text it is. */
@@ -196,16 +212,13 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 	}
 }
 
-/** The first value of a `name`d request header, or null when the request doesn't carry it. */
-function header(req: IncomingMessage, name: string): string | null {
-	const value = req.headers[name];
-	if (typeof value === "string") return value;
-	return Array.isArray(value) ? (value[0] ?? null) : null;
-}
-
 function sendEmpty(res: ServerResponse, status: number): void {
 	res.writeHead(status);
 	res.end();
+}
+
+function sendJson(res: ServerResponse, status: number, value: unknown): void {
+	sendText(res, status, JSON.stringify(value), "application/json; charset=utf-8");
 }
 
 function sendText(res: ServerResponse, status: number, text: string, type = "text/plain; charset=utf-8"): void {

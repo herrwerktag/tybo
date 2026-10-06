@@ -1,198 +1,142 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
+import { changesBetween, type AppData } from "@bekbon/core";
 import { postgresStorage } from "./postgres.js";
 import { call, startApp } from "./test-server.js";
 
-/** The database these tests run against; without it they are skipped, not failed. */
-const url = process.env.DATABASE_URL;
+/** The test database these tests run against (never the productive DATABASE_URL); without it they are skipped, not failed. */
+const url = process.env.TEST_DATABASE_URL;
 
-/** A key no other run will have used before, so no test sees another one's text. */
-const freshKey = () => `api-test:${randomUUID()}`;
+/** A workspace id no other run will have used before, so no test sees another one's rows. */
+const freshId = () => `api-test:${randomUUID()}`;
 
-test("the table is there after start, no matter how many times it's started", { skip: !url }, async () => {
-	assert.ok(url);
-	const storage = postgresStorage(url);
+/** One type with a property, an entity with a value, and a board with its card. */
+function sample(): AppData {
+	return {
+		types: [
+			{
+				id: "type-1",
+				name: "Person",
+				properties: [{ id: "prop-1", name: "Notiz", kind: "text", options: [], reference: null, cardDisplay: "list" }],
+				contentTemplate: "",
+				color: "#c4dafa",
+			},
+		],
+		entities: [{ id: "ent-1", typeId: "type-1", name: "Ada", content: "", description: "", values: { "prop-1": "hier" } }],
+		boards: [
+			{
+				id: "board-1",
+				name: "Brett",
+				cards: [{ id: "card-1", entityId: "ent-1", x: 1, y: 2, width: 240, height: 160 }],
+				viewport: { x: 0, y: 0, zoom: 1 },
+				drawings: [],
+			},
+		],
+	};
+}
+
+const empty = (): AppData => ({ types: [], entities: [], boards: [] });
+
+test("starting again and again leaves the schema as it is — nothing runs twice", { skip: !url }, async () => {
+	const storage = postgresStorage(url!);
 	try {
 		await storage.init();
-		await storage.init();
+		assert.deepEqual(await storage.init(), [], "the second start has nothing left to do");
 		assert.equal(await storage.healthy(), true);
 	} finally {
 		await storage.close();
 	}
 });
 
-test("a text stored under its key is answered back, overwritten, and removed — empty counts as stored", { skip: !url }, async () => {
-	assert.ok(url);
-	const storage = postgresStorage(url);
-	const key = freshKey();
+test("a workspace is made empty, renamed, listed, and deleted with every row of its data", { skip: !url }, async () => {
+	const storage = postgresStorage(url!);
+	const id = freshId();
 	try {
 		await storage.init();
-		assert.equal(await storage.getItem(key), null);
+		assert.equal(await storage.createWorkspace({ id, name: "Erst" }, 1), true);
+		assert.equal(await storage.createWorkspace({ id, name: "Noch mal" }, 1), false, "an id is made once");
 
-		await storage.setItem(key, 'saved { "version": 1 }\n');
-		assert.equal(await storage.getItem(key), 'saved { "version": 1 }\n');
+		const made = await storage.readWorkspace(id);
+		assert.deepEqual(made, { data: { version: 1, types: [], entities: [], boards: [] }, revision: "0" });
 
-		await storage.setItem(key, "");
-		assert.equal(await storage.getItem(key), "");
+		assert.equal(await storage.renameWorkspace(id, "Umbenannt"), true);
+		assert.equal(await storage.renameWorkspace(freshId(), "Niemand"), false);
+		const listed = (await storage.listWorkspaces()).find((w) => w.id === id);
+		assert.deepEqual(listed, { id, name: "Umbenannt" });
 
-		await storage.removeItem(key);
-		assert.equal(await storage.getItem(key), null);
-		await storage.removeItem(key);
+		const saved = await storage.writeChanges(id, changesBetween(empty(), sample()));
+		assert.deepEqual(saved, { version: "1", collided: [] });
+		assert.equal(await storage.workspaceRevision(id), "1");
+
+		await storage.deleteWorkspace(id);
+		assert.equal(await storage.readWorkspace(id), null);
+		assert.equal(await storage.workspaceRevision(id), null);
+		assert.equal((await storage.listWorkspaces()).some((w) => w.id === id), false);
+		assert.equal(await storage.writeChanges(id, changesBetween(empty(), sample())), null, "no workspace, nothing written");
 	} finally {
-		await storage.removeItem(key).catch(() => {});
+		await storage.deleteWorkspace(id);
 		await storage.close();
 	}
 });
 
-test("every key keeps the text of its own", { skip: !url }, async () => {
-	assert.ok(url);
-	const storage = postgresStorage(url);
-	const first = freshKey();
-	const second = freshKey();
+test("two workspaces keep their own rows — even under the very same ids", { skip: !url }, async () => {
+	const storage = postgresStorage(url!);
+	const first = freshId();
+	const second = freshId();
 	try {
 		await storage.init();
-		await storage.setItem(first, "the text of the first");
-		await storage.setItem(second, "the text of the second");
+		await storage.createWorkspace({ id: first, name: "Eins" }, 1);
+		await storage.createWorkspace({ id: second, name: "Zwei" }, 1);
+		// The second starts with copies of the first one's types, ids and all — the way "copy the types" makes one.
+		await storage.writeChanges(first, changesBetween(empty(), sample()));
+		await storage.writeChanges(second, changesBetween(empty(), { ...empty(), types: sample().types }));
 
-		assert.equal(await storage.getItem(first), "the text of the first");
-		assert.equal(await storage.getItem(second), "the text of the second");
+		// A change in the one stays out of the other.
+		const renamed = sample();
+		renamed.types[0]!.name = "Mensch";
+		await storage.writeChanges(second, changesBetween({ ...empty(), types: sample().types }, { ...empty(), types: renamed.types }));
 
-		await storage.removeItem(first);
-		assert.equal(await storage.getItem(second), "the text of the second");
+		assert.deepEqual((await storage.readWorkspace(first))?.data, { version: 1, ...sample() });
+		assert.deepEqual((await storage.readWorkspace(second))?.data, { version: 1, ...empty(), types: renamed.types });
+
+		// Deleting the one takes only its own rows.
+		await storage.deleteWorkspace(second);
+		assert.deepEqual((await storage.readWorkspace(first))?.data, { version: 1, ...sample() });
 	} finally {
+		await storage.deleteWorkspace(first);
+		await storage.deleteWorkspace(second);
 		await storage.close();
 	}
 });
 
-test("the served API answers the storage port against Postgres, end to end", { skip: !url }, async () => {
-	assert.ok(url);
-	const storage = postgresStorage(url);
-	const key = freshKey();
+test("the served API answers end to end against Postgres", { skip: !url }, async () => {
+	const storage = postgresStorage(url!);
+	await storage.init();
+	const api = await startApp(storage);
+	const id = freshId();
+	const path = `workspaces/${encodeURIComponent(id)}`;
 	try {
-		await storage.init();
-		const api = await startApp(storage);
-		try {
-			const empty = await call(api.url, `texts/${encodeURIComponent(key)}`);
-			assert.equal(empty.status, 404);
+		assert.equal((await call(api.url, "health")).status, 200);
+		const made = await call(api.url, "workspaces", { method: "POST", body: JSON.stringify({ id, name: "Über HTTP", dataVersion: 1 }) });
+		assert.equal(made.status, 201);
+		assert.ok(JSON.parse((await call(api.url, "workspaces")).text).some((w: { id: string }) => w.id === id));
 
-			const stored = await call(api.url, `texts/${encodeURIComponent(key)}`, {
-				method: "PUT",
-				body: "the text under the key",
-			});
-			assert.equal(stored.status, 204);
+		const saved = await call(api.url, `${path}/changes`, { method: "PUT", body: JSON.stringify(changesBetween(empty(), sample())) });
+		assert.equal(saved.status, 200);
+		assert.equal(saved.header("etag"), "1");
 
-			const read = await call(api.url, `texts/${encodeURIComponent(key)}`);
-			assert.equal(read.status, 200);
-			assert.equal(read.text, "the text under the key");
+		const got = await call(api.url, `${path}/data`);
+		assert.equal(got.status, 200);
+		assert.deepEqual(JSON.parse(got.text), { version: 1, ...sample() });
+		assert.equal(got.header("etag"), "1");
+		assert.equal((await call(api.url, `${path}/data`, { method: "HEAD" })).header("etag"), "1");
 
-			const removed = await call(api.url, `texts/${encodeURIComponent(key)}`, { method: "DELETE" });
-			assert.equal(removed.status, 204);
-
-			const gone = await call(api.url, `texts/${encodeURIComponent(key)}`);
-			assert.equal(gone.status, 404);
-
-			const health = await call(api.url, "health");
-			assert.equal(health.status, 200);
-		} finally {
-			await api.close();
-		}
+		assert.equal((await call(api.url, path, { method: "DELETE" })).status, 204);
+		assert.equal((await call(api.url, `${path}/data`)).status, 404);
 	} finally {
-		await storage.removeItem(key).catch(() => {});
-		await storage.close();
-	}
-});
-
-test("a save builds on the version it was answered: an outdated one is refused and changes nothing", { skip: !url }, async () => {
-	assert.ok(url);
-	const storage = postgresStorage(url);
-	const key = freshKey();
-	try {
-		await storage.init();
-		// The first write passes without a stand to name: nothing is stored under the key yet.
-		assert.equal(await storage.write(key, "the first text\nline for line", null), "1");
-		const read = await storage.read(key);
-		assert.deepEqual(read, { text: "the first text\nline for line", version: "1" });
-
-		// A first-write claim over stored data is refused, too.
-		assert.equal(await storage.write(key, "written over without a stand", null), null);
-
-		// Someone else saves before us, building on the current version.
-		const theirs = await storage.write(key, "someone else's text, two\nlines", read!.version);
-		assert.ok(theirs);
-		assert.notEqual(theirs, read!.version);
-
-		// Our save, still on the stand we read: refused — the stored text stays word for word.
-		assert.equal(await storage.write(key, "our text, on the outdated stand", read!.version), null);
-		const after = await storage.read(key);
-		assert.equal(after!.text, "someone else's text, two\nlines");
-		assert.equal(after!.version, theirs);
-	} finally {
-		await storage.removeItem(key).catch(() => {});
-		await storage.close();
-	}
-});
-
-test("over HTTP, an outdated save is refused with 409 and the stored text stays; a current one goes through", { skip: !url }, async () => {
-	assert.ok(url);
-	const storage = postgresStorage(url);
-	const key = freshKey();
-	try {
-		await storage.init();
-		const api = await startApp(storage);
-		const path = `texts/${encodeURIComponent(key)}`;
-		try {
-			assert.equal((await call(api.url, path)).status, 404);
-
-			// The first write, without a stand to name.
-			const first = await call(api.url, path, { method: "PUT", body: "the text under the key" });
-			assert.equal(first.status, 204);
-			assert.ok(first.header("etag"));
-			const seen = first.header("etag")!;
-
-			// The second writer saves first, building on the current version.
-			const read = await call(api.url, path);
-			const theirs = await call(api.url, path, {
-				method: "PUT",
-				body: "their newer text, saved in between",
-				headers: { "if-match": read.header("etag")! },
-			});
-			assert.equal(theirs.status, 204);
-			assert.ok(theirs.header("etag"));
-			assert.notEqual(theirs.header("etag"), seen);
-
-			// Our save, still on the stand we read: 409, and the stored text unchanged, word for word.
-			const refused = await call(api.url, path, {
-				method: "PUT",
-				body: "the text under the key, ours",
-				headers: { "if-match": seen },
-			});
-			assert.equal(refused.status, 409);
-			assert.equal(refused.text, "");
-			const current = await call(api.url, path);
-			assert.equal(current.text, "their newer text, saved in between");
-			assert.equal(current.header("etag"), theirs.header("etag"));
-
-			// Over stored data, a save naming no stand is refused as well.
-			const unnamed = await call(api.url, path, { method: "PUT", body: "written over without a stand" });
-			assert.equal(unnamed.status, 409);
-			assert.equal((await call(api.url, path)).text, "their newer text, saved in between");
-
-			// Building on the current stand, saving goes through and answers the next version.
-			const ours = await call(api.url, path, {
-				method: "PUT",
-				body: "the text under the key, ours",
-				headers: { "if-match": theirs.header("etag")! },
-			});
-			assert.equal(ours.status, 204);
-			const again = await call(api.url, path);
-			assert.equal(again.text, "the text under the key, ours");
-			assert.equal(again.header("etag"), ours.header("etag"));
-		} finally {
-			await api.close();
-		}
-	} finally {
-		await storage.removeItem(key).catch(() => {});
+		await api.close();
+		await storage.deleteWorkspace(id);
 		await storage.close();
 	}
 });

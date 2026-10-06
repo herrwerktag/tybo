@@ -3,7 +3,6 @@
  * (e.g. i18n): importing installs the browser globals (document, localStorage, …) on Node's global object.
  */
 import { Window } from "happy-dom";
-import type { StoragePort } from "@bekbon/core";
 
 /** Browser globals Node also has in some form, which UI code needs to be the browser's (and all …Event classes). */
 const OVERRIDES = new Set(["window", "document", "location", "navigator", "localStorage", "sessionStorage", "history"]);
@@ -40,21 +39,6 @@ export function freshDom(): Window {
 	current = new Window({ url: "http://localhost/" });
 	current.document.body.innerHTML = '<main id="app"></main>';
 	return current;
-}
-
-/** The page's localStorage as the core's port, the way the demo app provides it in the browser. */
-export function localStoragePort(): StoragePort {
-	return {
-		async getItem(key: string) {
-			return localStorage.getItem(key);
-		},
-		async setItem(key: string, value: string) {
-			localStorage.setItem(key, value);
-		},
-		async removeItem(key: string) {
-			localStorage.removeItem(key);
-		},
-	};
 }
 
 install(freshDom());

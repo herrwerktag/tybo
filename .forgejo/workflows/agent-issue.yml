@@ -127,7 +127,7 @@ jobs:
           # die Tests schreiben und loeschen unter dem Schluessel "entities-app". Gegen die
           # Produktionsdatenbank wuerde jeder Agent-Lauf den echten App-Blob mit Testdaten
           # ueberschreiben. Die CI-Rolle hat auf der Produktionsdatenbank kein Verbindungsrecht.
-          DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
         run: |
           set -o pipefail
           {

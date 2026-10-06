@@ -1,26 +1,13 @@
+import { changesBetween } from "./changes.js";
 import type { AppData, EntityType } from "./model.js";
-import { DATA_VERSION, createStore, looksLikeAppData, toSaved, type Store } from "./store.js";
-import type { StoragePort } from "./ports.js";
+import { DATA_VERSION, createStore, looksLikeAppData, prepareImport, toSaved, type Store } from "./store.js";
+import type { DataPort, WorkspaceInfo } from "./ports.js";
 import { ulid } from "./ulid.js";
 
-/** A workspace: its own entity types, entities and boards, stored under its own key. */
-export interface WorkspaceInfo {
-	id: string;
-	name: string;
-}
-
-interface WorkspaceIndex {
-	workspaces: WorkspaceInfo[];
-	active: string;
-}
-
-export const INDEX_KEY = "workspaces";
-/** The first workspace keeps the key used before workspaces existed, so its data needs no migration. */
-const DEFAULT_ID = "default";
-const LEGACY_DATA_KEY = "entities-app";
-
-export function dataKey(workspaceId: string): string {
-	return workspaceId === DEFAULT_ID ? LEGACY_DATA_KEY : `${LEGACY_DATA_KEY}:${workspaceId}`;
+/** Where the active workspace is remembered — per browser, the way a view is: which one this tab opens. */
+export interface ActiveWorkspacePreference {
+	read(): string | null;
+	write(id: string): void;
 }
 
 /** Marks an exported workspace file. */
@@ -52,131 +39,113 @@ export function readWorkspaceFile(text: string): { name: string | null; data: un
 
 export type Workspaces = Awaited<ReturnType<typeof createWorkspaces>>;
 
-/** The list of workspaces and which one is active; `defaultName(n)` names the n-th workspace when no name is given. */
-export async function createWorkspaces(port: StoragePort, defaultName: (n: number) => string) {
-	let index = await load();
+/** A workspace before its first save: nothing in it, not even a board. */
+const NOTHING: AppData = { types: [], entities: [], boards: [] };
 
-	async function load(): Promise<WorkspaceIndex> {
-		let raw: string | null = null;
-		try {
-			raw = await port.getItem(INDEX_KEY);
-		} catch {
-			// Unreadable list: start over with the default workspace, whose data is still under its old key.
-		}
-		try {
-			const parsed: unknown = JSON.parse(raw ?? "null");
-			const list = (parsed as Partial<WorkspaceIndex> | null)?.workspaces;
-			if (Array.isArray(list)) {
-				const workspaces = list.filter(
-					(w): w is WorkspaceInfo => typeof w?.id === "string" && typeof w?.name === "string",
-				);
-				if (workspaces.length > 0) {
-					const active = (parsed as Partial<WorkspaceIndex>).active;
-					return { workspaces, active: workspaces.some((w) => w.id === active) ? active! : workspaces[0]!.id };
-				}
-			}
-		} catch {
-			// Unreadable list: start over with the default workspace, whose data is still under its old key.
-		}
-		return { workspaces: [{ id: DEFAULT_ID, name: defaultName(1) }], active: DEFAULT_ID };
+/**
+ * The list of workspaces and which one is active; `defaultName(n)` names the n-th workspace when no name is
+ * given. With no workspace there yet, the first one is made. Rejects when the storage can't list them (or
+ * make the first): without its list there is nothing the app could show.
+ */
+export async function createWorkspaces(port: DataPort, defaultName: (n: number) => string, preference: ActiveWorkspacePreference) {
+	let list = await load();
+	let active = pick(preference.read());
+
+	async function load(): Promise<WorkspaceInfo[]> {
+		const listed = await port.listWorkspaces();
+		if (listed.length > 0) return listed;
+		const first = { id: ulid(), name: defaultName(1) };
+		await port.createWorkspace(first, DATA_VERSION);
+		return [first];
 	}
 
-	function save(): void {
-		void persistIndex();
+	/** The workspace of `id` if there is one, else the first. */
+	function pick(id: string | null): string {
+		return list.some((w) => w.id === id) ? id! : list[0]!.id;
 	}
-
-	/** Writes the workspace list; the in-memory list simply keeps working if that fails. */
-	async function persistIndex(): Promise<void> {
-		try {
-			await port.setItem(INDEX_KEY, JSON.stringify(index));
-		} catch {
-			// Storage full or blocked: keep working in memory.
-		}
-	}
-
-	save();
 
 	function newWorkspace(name: string): WorkspaceInfo {
-		return { id: ulid(), name: name.trim() || defaultName(index.workspaces.length + 1) };
+		return { id: ulid(), name: name.trim() || defaultName(list.length + 1) };
 	}
 
-	function append(workspace: WorkspaceInfo): WorkspaceInfo {
-		index = { ...index, workspaces: [...index.workspaces, workspace] };
-		save();
-		return workspace;
-	}
-
-	/** Takes the workspace's data off the port; if that fails, the data stays behind, unreachable. */
-	async function clearData(id: string): Promise<void> {
+	/** Makes the workspace in the storage, with `data` as its first save. Null when the storage refused. */
+	async function make(workspace: WorkspaceInfo, data: AppData): Promise<WorkspaceInfo | null> {
 		try {
-			await port.removeItem(dataKey(id));
+			await port.createWorkspace(workspace, DATA_VERSION);
 		} catch {
-			// Storage blocked: the data stays behind, unreachable.
+			return null;
 		}
+		const changes = changesBetween(NOTHING, data);
+		if (changes.length > 0) {
+			try {
+				await port.saveChanges(workspace.id, changes);
+			} catch {
+				// The workspace is there, but its data didn't make it: it isn't kept half-filled.
+				await port.deleteWorkspace(workspace.id).catch(() => {});
+				return null;
+			}
+		}
+		list = [...list, workspace];
+		return workspace;
 	}
 
 	return {
 		get list(): readonly WorkspaceInfo[] {
-			return index.workspaces;
+			return list;
 		},
 
 		get active(): WorkspaceInfo {
-			return index.workspaces.find((w) => w.id === index.active) ?? index.workspaces[0]!;
+			return list.find((w) => w.id === active) ?? list[0]!;
 		},
 
-		/** Reads the list again after another tab changed it. This tab keeps its workspace unless it was deleted there. */
+		/** Reads the list again after another tab or device changed it. This tab keeps its workspace unless it was
+		 * deleted there. A list that can't be read leaves this one as it is. */
 		async reload(): Promise<void> {
-			const { active } = index;
-			index = await load();
-			if (index.workspaces.some((w) => w.id === active)) index = { ...index, active };
+			try {
+				list = await load();
+			} catch {
+				return;
+			}
+			active = pick(active);
 		},
 
 		setActive(id: string): void {
-			if (!index.workspaces.some((w) => w.id === id)) return;
-			index = { ...index, active: id };
-			save();
+			if (!list.some((w) => w.id === id)) return;
+			active = id;
+			preference.write(id);
 		},
 
-		/** Adds a workspace, empty or starting with copies of the given entity types (no entities or boards). */
-		async add(name: string, copyTypesFrom: readonly EntityType[] = []): Promise<WorkspaceInfo> {
-			const workspace = newWorkspace(name);
-			try {
-				// The store fills in the rest (a default board, defaults for any missing fields) when it loads this.
-				await port.setItem(dataKey(workspace.id), JSON.stringify({ version: DATA_VERSION, types: copyTypesFrom, entities: [], boards: [] }));
-			} catch {
-				// Storage blocked: the workspace starts empty.
-			}
-			return append(workspace);
+		/** Adds a workspace, empty or starting with copies of the given entity types (no entities or boards).
+		 * Null if it couldn't be made (then nothing is added). */
+		add(name: string, copyTypesFrom: readonly EntityType[] = []): Promise<WorkspaceInfo | null> {
+			// The store fills in the rest (a default board) when it loads this.
+			return make(newWorkspace(name), { ...NOTHING, types: [...copyTypesFrom] });
 		},
 
-		/** Adds a workspace holding imported data. Null if it couldn't be stored (then nothing is added). */
+		/** Adds a workspace holding imported data. Null if the data can't be read, or the workspace couldn't be
+		 * made (then nothing is added). */
 		async addImported(name: string, data: unknown): Promise<WorkspaceInfo | null> {
-			const workspace = newWorkspace(name);
-			try {
-				await port.setItem(dataKey(workspace.id), JSON.stringify(data));
-			} catch {
-				return null; // storage full or blocked
-			}
-			return append(workspace);
+			const prepared = prepareImport(data);
+			return prepared ? make(newWorkspace(name), prepared) : null;
 		},
 
+		/** Renames a workspace; a rename the storage doesn't take is undone here at its next reload. */
 		rename(id: string, name: string): void {
 			if (name.trim() === "") return;
-			index = { ...index, workspaces: index.workspaces.map((w) => (w.id === id ? { ...w, name: name.trim() } : w)) };
-			save();
+			list = list.map((w) => (w.id === id ? { ...w, name: name.trim() } : w));
+			void port.renameWorkspace(id, name.trim()).catch(() => {});
 		},
 
 		/** Deletes a workspace and all its data. The last workspace can't be deleted. */
 		remove(id: string): void {
-			if (index.workspaces.length <= 1 || !index.workspaces.some((w) => w.id === id)) return;
-			const workspaces = index.workspaces.filter((w) => w.id !== id);
-			index = { workspaces, active: index.active === id ? workspaces[0]!.id : index.active };
-			void clearData(id);
-			save();
+			if (list.length <= 1 || !list.some((w) => w.id === id)) return;
+			list = list.filter((w) => w.id !== id);
+			if (active === id) active = list[0]!.id;
+			void port.deleteWorkspace(id).catch(() => {});
 		},
 
 		openStore(id: string): Promise<Store> {
-			return createStore(port, dataKey(id));
+			return createStore(port, id);
 		},
 	};
 }
