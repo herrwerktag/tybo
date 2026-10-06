@@ -11,7 +11,7 @@ async function setup({ readOnly = false } = {}) {
 	freshDom();
 	const store = await createStore(memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } }).port, "ws");
 	const book = store.addType("Book", [], "");
-	const dune = store.addEntity(book.id, "Dune", "A desert planet.", {});
+	const dune = store.addEntity(book.id, "Dune", "A desert planet.", {}, "A **desert** planet.");
 	const herbert = store.addEntity(book.id, "Herbert", "", {});
 	const boardId = store.data.boards[0]!.id;
 	const card = store.addCard(boardId, dune.id, 100, 100);
@@ -52,6 +52,9 @@ test("a click with a little jitter selects the card and shows its details withou
 	assert.equal(details(view).hidden, false);
 	assert.equal(details(view).querySelector(".details-title")?.textContent, "Dune");
 	assert.ok(cardNode(view, card.id).classList.contains("selected"));
+
+	// The description is shown as Markdown.
+	assert.equal(details(view).querySelector(".markdown strong")?.textContent, "desert");
 
 	// Escape closes the details again.
 	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
