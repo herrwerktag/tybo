@@ -827,3 +827,105 @@ test("data from a newer version is shown as far as it's understood, but never sa
 	assert.equal(await storage.getItem("entities-app"), newer);
 	assert.deepEqual([...storage.map.keys()], ["entities-app"]); // no backup needed: the original stays
 });
+
+/** A storage that, like the API's, names each stored text's version: own writes move it on, and `bump` moves
+ * it without a write here — the way another tab's or another device's save would. */
+function versionedStorage() {
+	const texts = new Map<string, string>();
+	let revision = 0;
+	return {
+		texts,
+		getItem: async (key: string) => texts.get(key) ?? null,
+		setItem: async (key: string, value: string) => {
+			texts.set(key, value);
+			revision++;
+		},
+		removeItem: async (key: string) => void texts.delete(key),
+		async version() {
+			return String(revision);
+		},
+		/** Someone else saved: the stand moves without anything being written here. */
+		bump() {
+			revision++;
+		},
+	};
+}
+
+test("a newer stand is seen by looking only — nothing in memory changes, nothing is given up", async () => {
+	const storage = versionedStorage();
+	const store = await createStore(storage);
+	const book = store.addType("Book", [titleDraft], "");
+	store.addEntity(book.id, "Dune", "", {});
+	await settle();
+	assert.equal(await store.checkForNewer(), false); // this stand is the one the save reached
+
+	storage.bump(); // someone else saved in between
+	const seen = JSON.stringify(store.data);
+	assert.equal(await store.checkForNewer(), true);
+
+	// The look only looked: the data, the history and the problems stand as they stood.
+	assert.equal(JSON.stringify(store.data), seen);
+	assert.deepEqual(store.history, { canUndo: true, canRedo: false });
+	assert.deepEqual(store.problems, { load: null, saveFailed: false, saveConflict: false });
+
+	// Nothing was reloaded or discarded for it: the history still undoes. The undo's save reaches the storage
+	// here (the fake doesn't refuse it as outdated; against the real API, saving stops on the conflict instead) —
+	// either way the stand of this store is as current as the last word said, no look's doing.
+	assert.equal(store.undo(), true);
+	assert.equal(store.data.entities.some((e) => e.name === "Dune"), false);
+	assert.equal(await store.checkForNewer(), false);
+
+	// Reading anew is nobody's decision but the user's; once read, the newer stand is simply this one.
+	await store.reload();
+	assert.equal(await store.checkForNewer(), false);
+});
+
+test("after a save of its own, this stand is the newer one — no false alarm over its own work", async () => {
+	const storage = versionedStorage();
+	const store = await createStore(storage);
+	assert.equal(await store.checkForNewer(), false); // nothing stored, and this is the one that read it
+
+	store.addBoard("A");
+	// Even while the save is still on its way: versionedStorage has already moved its version, but the look
+	// waits behind the save, so it never reports this stand's own brand-new save as someone else's.
+	assert.equal(await store.checkForNewer(), false);
+	await settle();
+	assert.equal(await store.checkForNewer(), false); // settled: the save's own stand, not a newer one
+
+	store.addBoard("B");
+	await settle();
+	assert.equal(await store.checkForNewer(), false); // and the one after that too
+});
+
+test("without a storage that names versions, a newer stand is never claimed", async () => {
+	const storage = memoryStorage();
+	const store = await createStore(storage);
+	store.addBoard("A");
+	await settle();
+	// localStorage has no versions to answer with: every look says "nothing newer", and nothing changes.
+	assert.equal(await store.checkForNewer(), false);
+	assert.equal(await store.checkForNewer(), false);
+});
+
+test("a look the storage can't answer is no event: false, nothing changed, nothing reported", async () => {
+	const texts = new Map<string, string>();
+	let answered = 0;
+	const unreliable = {
+		getItem: async (key: string) => texts.get(key) ?? null,
+		setItem: async (key: string, value: string) => void texts.set(key, value),
+		removeItem: async (key: string) => void texts.delete(key),
+		async version() {
+			answered++;
+			throw new Error("the storage doesn't answer");
+		},
+	};
+	const store = await createStore(unreliable); // even the look while loading failed
+	store.addBoard("A");
+	await settle();
+	const seen = JSON.stringify(store.data);
+	assert.equal(await store.checkForNewer(), false);
+	assert.ok(answered >= 1);
+	assert.equal(JSON.stringify(store.data), seen);
+	assert.deepEqual(store.history, { canUndo: true, canRedo: false });
+	assert.deepEqual(store.problems, { load: null, saveFailed: false, saveConflict: false });
+});

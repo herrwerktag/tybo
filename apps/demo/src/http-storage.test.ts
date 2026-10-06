@@ -195,3 +195,44 @@ test("the API's 500 answers reject the calls, however readable their body looks"
 		api.restore();
 	}
 });
+
+test("version HEADs the key's address and names the etag — the text itself never travels", async () => {
+	const api = fakeFetch(() => answer(200, "the saved data, worth carrying whole", { etag: "7" }));
+	const port = httpStorage("http://api.local/");
+	try {
+		assert.equal(await port.version!("entities-app"), "7");
+		assert.deepEqual([{ method: "HEAD", url: "http://api.local/texts/entities-app", body: null, headers: {} }], api.sent);
+	} finally {
+		api.restore();
+	}
+});
+
+test("version says null where nothing is stored (the API's 404), and answers other than the API's reject", async () => {
+	let nothingThere = true;
+	const api = fakeFetch(() => (nothingThere ? answer(404) : answer(500, "the database fell over")));
+	const port = httpStorage("http://api.local/");
+	try {
+		assert.equal(await port.version!("entities-app"), null);
+		nothingThere = false;
+		await assert.rejects(port.version!("entities-app"));
+	} finally {
+		api.restore();
+	}
+});
+
+test("a look after version changes nothing: the stand this port's saves build on (if-match) stands", async () => {
+	// GET answered etag 7; the HEAD looks at a newer stand, 9 — someone else saved. The next save here must
+	// still name the stand it READ (7): the API refuses it as outdated instead of quietly overtaking the other's.
+	const api = fakeFetch((sent) =>
+		sent.method === "HEAD" ? answer(200, "", { etag: "9" }) : sent.method === "GET" ? answer(200, "the saved data", { etag: "7" }) : answer(204, "", { etag: "8" }),
+	);
+	const port = httpStorage("http://api.local/");
+	try {
+		await port.getItem("entities-app");
+		assert.equal(await port.version!("entities-app"), "9");
+		await port.setItem("entities-app", "the new data");
+		assert.equal(api.sent[2]!.headers["if-match"], "7"); // what was read here, not what the look saw
+	} finally {
+		api.restore();
+	}
+});

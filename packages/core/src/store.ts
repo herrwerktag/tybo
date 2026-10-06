@@ -260,6 +260,16 @@ function toPropertyDefs(properties: DraftProperty[]): PropertyDef[] {
 }
 
 export async function createStore(port: StoragePort, key = "entities-app") {
+	// Declared before the load below, which already asks after the stand it reads: its look writes here before
+	// any of the lines further down have run, so these belong to the store from its very first moment.
+	/** The version the data under the key was last read or saved at, as the storage named it. Null also when
+	 * the storage keeps no versions at all — but then it is never compared to anything. */
+	let seenVersion: string | null = null;
+	/** The saves on their way, one after the other; a look for a newer stand waits behind them, so it can't
+	 * mistake a stand this store is just about to reach with its own save for someone else's newer one. */
+	let savesSettled: Promise<void> = Promise.resolve();
+	/** The look for a newer stand that's on its way; a second ask joins it rather than running alongside. */
+	let newerLook: Promise<boolean> | null = null;
 	let { data, problem: loadProblem, text: unreadText } = await load();
 	let saveFailed = false;
 	let saveConflict = false;
@@ -279,6 +289,7 @@ export async function createStore(port: StoragePort, key = "entities-app") {
 			// Storage blocked: nothing to protect; failed saves are reported.
 			return { data: emptyData(), problem: null, text: null };
 		}
+		await rememberVersion();
 		if (raw === null) return { data: emptyData(), problem: null, text: null };
 		try {
 			const parsed: unknown = JSON.parse(raw);
@@ -312,12 +323,28 @@ export async function createStore(port: StoragePort, key = "entities-app") {
 		}
 	}
 
+	/** Takes over the stand the storage names right now, as the one this data was read or saved at. A look that
+	 * can't be made or fails leaves the remembered stand untouched (a failed look is no event). */
+	async function rememberVersion(): Promise<void> {
+		const version = port.version;
+		if (!version) return;
+		try {
+			seenVersion = await version.call(port, key);
+		} catch {
+			// The storage didn't answer; what was last seen stands, and the next look may be asked again.
+		}
+	}
+
 	function save(): void {
 		savedJson = JSON.stringify(toSaved(data));
 		// Keep the saved original: it isn't backed up, or a newer version saved it. And after a save was refused
 		// as outdated, keep this stand in memory until the data is read anew (reload) — not save over the others.
 		if (loadProblem?.code === "notBackedUp" || loadProblem?.code === "newerVersion" || saveConflict) return;
-		void persist(savedJson);
+		// The save goes off at once, as ever, and settles on its own; it's kept in the chain of the ones on their
+		// way, which a look for a newer stand waits behind — so it can't mistake the save just made here for
+		// someone else's newer stand.
+		const writing = persist(savedJson);
+		savesSettled = savesSettled.then(() => writing);
 	}
 
 	/** Writes the data. A write that merely fails flips `problems.saveFailed`; one the storage refuses
@@ -339,6 +366,8 @@ export async function createStore(port: StoragePort, key = "entities-app") {
 		if (changed) {
 			for (const listener of problemListeners) listener();
 		}
+		// The save reached the storage: this is the newest stand, so the next look must not cry "newer" at it.
+		if (!failed && !conflict) await rememberVersion();
 	}
 
 	/** Makes `next` the data and saves it; the data before goes onto the undo history. Changes that change nothing are skipped. */
@@ -414,6 +443,29 @@ export async function createStore(port: StoragePort, key = "entities-app") {
 		/** Calls `listener` whenever `problems.saveFailed` or `problems.saveConflict` changes. */
 		onProblemsChange(listener: () => void): void {
 			problemListeners.push(listener);
+		},
+
+		/** Looks whether the storage holds a newer stand of the saved data than this one was last read or saved at.
+		 * Only looks: nothing is reloaded, nothing in memory is touched — neither the data, nor the undo history, nor
+		 * the problems. Without a storage that names versions it's always false, and a look the storage can't answer
+		 * is no event: false, and the next one may be asked again. */
+		async checkForNewer(): Promise<boolean> {
+			if (newerLook) return newerLook; // one look at a time: joins the one on its way
+			if (!port.version) return false;
+			const behindSaves = savesSettled; // the saves on their way now; the look waits behind them
+			const answer = (async () => {
+				await behindSaves;
+				try {
+					return (await port.version!.call(port, key)) !== seenVersion;
+				} catch {
+					return false; // the look failed: no hint, and with it nothing was changed here
+				}
+			})();
+			const look = answer.finally(() => {
+				if (newerLook === look) newerLook = null; // free for the next look
+			});
+			newerLook = look;
+			return look;
 		},
 
 		/** Without a color, the type gets the first palette color no other type uses. */

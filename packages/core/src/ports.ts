@@ -12,6 +12,11 @@ export interface StoragePort {
 	setItem(key: string, value: string): Promise<void>;
 	/** Removes the text under `key` (if any); rejects if it can't be removed. */
 	removeItem(key: string): Promise<void>;
+	/** The version the text under `key` is at right now, or null if none is stored there. Optional, because only a
+	 * storage that keeps versions can answer it: without this method, nothing is worse off — asking newer questions
+	 * simply gets no answer (always "nothing newer"), and every call of the core runs as before. The version tells
+	 * the stand someone would save against from the stand saved meanwhile, without carrying the whole text. */
+	version?(key: string): Promise<string | null>;
 }
 
 /**

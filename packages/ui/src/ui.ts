@@ -44,6 +44,9 @@ interface UiState {
 	openMenu: MenuName | null;
 	/** Whether the warning about this workspace's unreadable saved data was dismissed. */
 	loadProblemDismissed: boolean;
+	/** Whether a background look saw a newer stand of the open workspace than this page holds (someone else
+	 * saved in between). A hint only: nothing is reloaded for it without the user's word. */
+	newerStand: boolean;
 	/** The last error thrown outside rendering (e.g. in a click handler), shown until the page is reloaded. */
 	unexpectedError: string | null;
 }
@@ -54,6 +57,11 @@ const PROPERTY_MIME = "application/x-property-index";
 
 /** The page shown, from the URL hash: data editing, board editing (canvas) or read-only boards (viewer). */
 type Route = "data" | "canvas" | "viewer";
+
+/** How often to look, in the background, for a stand of the open workspace that someone else saved in between:
+ * generously — it's about not being blindsided before the next save, not about seconds (and the tab being looked
+ * at again — getting focus, turning visible — looks right away, not only every interval). */
+const NEWER_STAND_EVERY_MS = 15_000;
 
 /** Counts existing non-empty values of the type's entities that saving these properties would change or clear. */
 function countChangedValues(entities: Entity[], props: DraftProperty[], entityTypes: ReadonlyMap<string, string>): number {
@@ -149,6 +157,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 		focusHandle: null,
 		openMenu: null,
 		loadProblemDismissed: false,
+		newerStand: false,
 		unexpectedError: null,
 	};
 
@@ -184,6 +193,9 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 		// Someone else saved in between, so this stand was refused: say what happened, and offer the newer data.
 		if (saveConflict) messages.push(el("p", {}, text.saveConflict, " ", reloadButton()));
 		if (saveFailed) messages.push(el("p", {}, text.saveFailed));
+		// Someone else saved the workspace anew in between — a look saw it; nothing of it was loaded here. Say so and
+		// offer the newer stand: loading it is the user's word (the button), never this page's own doing.
+		if (state.newerStand) messages.push(el("p", {}, text.changedElsewhere, " ", reloadButton()));
 		if (load?.code === "newerVersion") {
 			messages.push(el("p", {}, text.loadNewerVersion, " ", reloadButton()));
 		} else if (load?.code === "notBackedUp") {
@@ -205,6 +217,26 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 		}
 		banner.replaceChildren(...messages);
 		banner.hidden = messages.length === 0;
+	}
+
+	/** Looks in the background whether the storage holds a newer stand of the open workspace — someone else's
+	 * save, in another tab or on another device. Only looks: nothing is reloaded here, nothing the user is
+	 * working on is touched, nothing is discarded; the hint tells it and offers the reload, which the user
+	 * decides on. A look that fails is no event — the next one may work. */
+	async function lookForNewerStand(): Promise<void> {
+		const lookedAt = store;
+		const newer = await lookedAt.checkForNewer(); // never rejects; a look that fails just isn't newer
+		if (lookedAt !== store) return; // the workspace was switched while the look was here
+		if (newer === state.newerStand) return; // nothing changed either way
+		state.newerStand = newer;
+		renderBanner();
+	}
+
+	/** Looks for a newer stand only while someone can see this tab: nobody looks at a hidden page, so nothing
+	 * is asked there — no needless traffic, no battery spent on a page that has no eyes on it. */
+	function lookWhileVisible(): void {
+		if (document.visibilityState !== "visible") return;
+		void lookForNewerStand();
 	}
 
 	function resetTypeForm(): void {
@@ -490,6 +522,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 		workspaces.setActive(id);
 		store = await openStore(workspaces.active.id);
 		state.loadProblemDismissed = false;
+		state.newerStand = false; // the opened stand is the one to look from now on
 		resetTypeForm();
 		state.selectedTypeId = store.data.types[0]?.id ?? null;
 		state.editingEntityId = null;
@@ -1189,8 +1222,10 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 				return;
 			}
 		}
-		if (cleared || key === dataKey(id)) await store.reload();
-		else if (key !== INDEX_KEY) return; // another workspace's data, or a preference
+		if (cleared || key === dataKey(id)) {
+			await store.reload();
+			state.newerStand = false; // read anew: this stand is current, so no look may claim otherwise
+		} else if (key !== INDEX_KEY) return; // another workspace's data, or a preference
 		rerender();
 	}
 
@@ -1207,5 +1242,18 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 	});
 
 	window.addEventListener("hashchange", rerender);
+
+	// The watch on newer stands runs once, for the page's whole life — not on each of its many re-draws
+	// (rerender()), or every drawing would nest a further interval and the page would ask faster and faster.
+	// The interval looks now and then; focus and the tab turning visible look at once, which is when the user
+	// looks. It never reloads anything by itself: the hint does no more than it says.
+	const watchNewerStand = window.setInterval(lookWhileVisible, NEWER_STAND_EVERY_MS);
+	// The browser's answer is a bare number with no such handle; Node answers with a timer that mustn't hold
+	// its process open (the UI tests), so it steps aside there — the interval itself lives on as before.
+	(watchNewerStand as number & { unref?: () => void }).unref?.();
+	window.addEventListener("focus", lookWhileVisible);
+	document.addEventListener("visibilitychange", lookWhileVisible);
+	lookWhileVisible(); // the stand this page read may lag behind from the first moment on
+
 	rerender();
 }
