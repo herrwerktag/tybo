@@ -12,9 +12,9 @@ export const LANGUAGES: readonly { code: Language; name: string }[] = [
 
 const en = {
 	// Navigation and settings
-	tabData: "Data",
-	tabCanvas: "Canvas",
-	tabViewer: "Viewer",
+	tabEntities: "Entities",
+	tabBoards: "Boards",
+	tabView: "View",
 	settings: "Settings",
 	language: "Language",
 	workspaces: "Workspaces",
@@ -71,6 +71,7 @@ const en = {
 	entityTypes: "Entity types",
 	noTypesYet: "No types yet.",
 	newType: "New type",
+	createNewType: "Create new type",
 	typeName: "Type name",
 	typeNamePlaceholder: "e.g. Book",
 	color: "Color",
@@ -151,6 +152,7 @@ const en = {
 	createTypeFirst: "Create an entity type first.",
 	noEntitiesOfType: (type: string) => `No ${type} entities yet.`,
 	newEntity: (type: string) => `New ${type}`,
+	createNewEntity: "Create new entity",
 	id: "ID",
 	name: "Name",
 	content: "Content",
@@ -212,9 +214,9 @@ export type Messages = typeof en;
 
 /** Typed against the English messages, so a missing or extra key is a type error. */
 const de: Messages = {
-	tabData: "Daten",
-	tabCanvas: "Canvas",
-	tabViewer: "Betrachter",
+	tabEntities: "Entitäten",
+	tabBoards: "Boards",
+	tabView: "Ansicht",
 	settings: "Einstellungen",
 	language: "Sprache",
 	workspaces: "Arbeitsbereiche",
@@ -267,6 +269,7 @@ const de: Messages = {
 	entityTypes: "Entitätstypen",
 	noTypesYet: "Noch keine Typen.",
 	newType: "Neuer Typ",
+	createNewType: "Neuen Typ anlegen",
 	typeName: "Typname",
 	typeNamePlaceholder: "z. B. Buch",
 	color: "Farbe",
@@ -346,6 +349,7 @@ const de: Messages = {
 	createTypeFirst: "Lege zuerst einen Entitätstyp an.",
 	noEntitiesOfType: (type) => `Noch keine Entitäten vom Typ ${type}.`,
 	newEntity: (type) => `Neu: ${type}`,
+	createNewEntity: "Neue Entität anlegen",
 	id: "ID",
 	name: "Name",
 	content: "Inhalt",
