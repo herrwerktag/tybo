@@ -74,6 +74,21 @@ export function httpStorage(apiUrl: string): StoragePort {
 				versions.delete(key);
 			});
 		},
+
+		/** Names the version the text under the key is at right now — or null if none is stored — without carrying
+		 * the text itself (a HEAD, one request). A look of its own: it never touches the stand this port names with
+		 * its saves (`if-match`), which stays what getItem and setItem last saw — so a look can't quietly tune the
+		 * next save to what someone else saved in between. Like the other calls, an answer other than the API's own
+		 * rejects; where nothing is stored the API's 404 says null, as the port promises. */
+		async version(key) {
+			return inOrder(async () => {
+				const response = await fetch(textUrl(apiUrl, key), { method: "HEAD" });
+				if (response.status === 404) return null;
+				const version = takeOrReject(response).headers.get("etag");
+				if (version === null) throw new Error("the API answered without a version"); // a failed look, not an empty storage
+				return version;
+			});
+		},
 	};
 
 	/** Takes the version the answer carries, so the next save under the key names this new stand. */

@@ -43,7 +43,9 @@ export interface Api extends StoragePort {
 /** The HTTP interface of the storage port.
  *
  * GET /texts/{key} answers the saved text as plain text, or 404 if none is saved under the key — with
- * the text's version in the `etag` header, so a saver can name the stand it read on its next save. PUT
+ * the text's version in the `etag` header, so a saver can name the stand it read on its next save. HEAD
+ * /texts/{key} answers the same, without the text: 200 with the version in `etag`, 404 if nothing is
+ * stored — one look on the wire for asking "has someone saved in between?". PUT
  * /texts/{key} saves the request body under the key, but only for such a stand: its `if-match` header
  * must name the version a read answered. Over what someone else saved in between it answers 409 and
  * writes nothing at all — the others' data stays instead of being silently run over. Without `if-match`,
@@ -70,7 +72,7 @@ export function createApp(api: Api, allowedOrigin: string = corsOriginFromEnv(pr
  * and which answer headers JavaScript may read — a saved text's version travels in them. */
 function allowCrossOrigin(res: ServerResponse, origin: string): void {
 	res.setHeader("access-control-allow-origin", origin);
-	res.setHeader("access-control-allow-methods", "GET, PUT, DELETE");
+	res.setHeader("access-control-allow-methods", "GET, HEAD, PUT, DELETE");
 	// A save names the stand it builds on with If-Match, so that header has to be allowed through.
 	res.setHeader("access-control-allow-headers", "Content-Type, If-Match");
 	// etag isn't among the headers a cross-origin answer shows JavaScript by default; say it may be seen.
@@ -94,6 +96,14 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api): Promi
 				// The version this text is at, so the next save under it can name the stand it read.
 				res.setHeader("etag", stored.version);
 				return sendText(res, 200, stored.text);
+			}
+			case "HEAD": {
+				// GET's answer without the text, so a look for a newer stand needs no body on the wire. The same
+				// cross-origin allowance is already said (every answer says it), so the browser lets the etag be seen.
+				const stored = await api.read(key);
+				if (!stored) return sendEmpty(res, 404);
+				res.setHeader("etag", stored.version);
+				return sendEmpty(res, 200);
 			}
 			case "PUT": {
 				const text = await body(req);
@@ -121,7 +131,7 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api): Promi
 				return sendEmpty(res, 204);
 			}
 			default:
-				return notAllowed(res, "GET, PUT, DELETE");
+				return notAllowed(res, "GET, HEAD, PUT, DELETE");
 		}
 	} catch {
 		// The storage didn't answer, or its text couldn't even be read. What went wrong stays here:

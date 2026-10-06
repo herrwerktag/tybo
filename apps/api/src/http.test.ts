@@ -245,7 +245,7 @@ const demoOrigin = "http://the-demo.example:5173";
  * what, and which answer headers JavaScript may read. */
 function assertCrossOriginAllowed(response: Awaited<ReturnType<typeof call>>, origin: string): void {
 	assert.equal(response.header("access-control-allow-origin"), origin);
-	assert.equal(response.header("access-control-allow-methods"), "GET, PUT, DELETE");
+	assert.equal(response.header("access-control-allow-methods"), "GET, HEAD, PUT, DELETE");
 	assert.equal(response.header("access-control-allow-headers"), "Content-Type, If-Match");
 	assert.equal(response.header("access-control-expose-headers"), "ETag");
 }
@@ -288,6 +288,41 @@ test("the answers of GET, PUT, 409 and DELETE carry the same allowance, so the b
 		const remove = await call(api.url, "texts/entities-app", { method: "DELETE" });
 		assert.equal(remove.status, 204);
 		assertCrossOriginAllowed(remove, demoOrigin);
+	} finally {
+		await api.close();
+	}
+});
+
+test("HEAD answers the stored text's version in etag, without a body — and nothing stored answers 404", async () => {
+	const api = await startApp(memoryApi());
+	try {
+		const absent = await call(api.url, "texts/entities-app", { method: "HEAD" });
+		assert.equal(absent.status, 404);
+
+		const put = await call(api.url, "texts/entities-app", { method: "PUT", body: "the saved data" });
+		const head = await call(api.url, "texts/entities-app", { method: "HEAD" });
+		assert.equal(head.status, 200);
+		assert.equal(head.text, ""); // a HEAD carries no body, so no text travelled
+		assert.equal(head.header("etag"), put.header("etag")); // the same version a GET would name
+
+		// Someone else saves in between: the next HEAD answers the newer version, still without a text.
+		await call(api.url, "texts/entities-app", { method: "PUT", body: "someone else's text", headers: { "if-match": put.header("etag")! } });
+		const newer = await call(api.url, "texts/entities-app", { method: "HEAD" });
+		assert.notEqual(newer.header("etag"), put.header("etag"));
+	} finally {
+		await api.close();
+	}
+});
+
+test("HEAD carries what the browser needs to see it from another origin, like GET — the etag included", async () => {
+	const api = await startApp(memoryApi(), demoOrigin);
+	try {
+		await call(api.url, "texts/entities-app", { method: "PUT", body: "the saved data" });
+		const head = await call(api.url, "texts/entities-app", { method: "HEAD" });
+		assert.equal(head.status, 200);
+		assertCrossOriginAllowed(head, demoOrigin);
+		// Without the exposition the browser hides the etag from JavaScript, and there'd be no version to see.
+		assert.ok(head.header("etag"));
 	} finally {
 		await api.close();
 	}

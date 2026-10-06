@@ -1,7 +1,7 @@
 import { freshDom, localStoragePort } from "./test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { text } from "./i18n.js";
+import { setLanguage, text } from "./i18n.js";
 import type { AppData, StoragePort } from "@bekbon/core";
 import { render } from "./ui.js";
 import { createStore, SaveConflict } from "@bekbon/core";
@@ -293,4 +293,130 @@ test("a save refused as outdated warns of the conflict, not of a full storage, a
 	assert.ok(banner.textContent!.includes(text.saveConflict));
 	assert.equal(banner.textContent!.includes(text.saveFailed), false); // honestly: not a storage problem
 	assert.ok(byText(banner, "button", text.reload));
+});
+
+/** A port that names versions, as the HTTP storage does: every write here moves the standing version on, and
+ * `bump` moves it without writing here — the way another tab's or another device's save would. `looks` counts
+ * the version questions the port answered (a look is one). */
+function versionedPort(): { port: StoragePort; bump: () => void; looks: () => number; failLooks: (fail: boolean) => void } {
+	let revision = 0;
+	let asked = 0;
+	let failing = false;
+	return {
+		bump: () => void revision++, // someone else saved: the stand moves, nothing written here
+		looks: () => asked,
+		failLooks: (fail) => void (failing = fail),
+		port: {
+			async getItem(key) {
+				return localStorage.getItem(key);
+			},
+			async setItem(key, value) {
+				localStorage.setItem(key, value);
+				revision++; // this side's own save: the stand it reaches is its
+			},
+			async removeItem(key) {
+				localStorage.removeItem(key);
+			},
+			async version() {
+				asked++;
+				if (failing) throw new Error("the storage doesn't answer");
+				return String(revision);
+			},
+		},
+	};
+}
+
+/** What the page does when the tab takes the front again: it looks for a newer stand at once. */
+const lookNow = () => window.dispatchEvent(new Event("focus"));
+
+test("a stand saved elsewhere in between is noticed and offered with the reload button — nothing loads it on its own", async () => {
+	const { port, bump } = versionedPort();
+	const root = await startApp({ "entities-app": library }, "", port);
+	await settle();
+	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
+	assert.equal(banner.hidden, true); // nobody else changed anything: no hint
+
+	bump(); // another tab saved this workspace in between
+	lookNow();
+	await settle();
+	assert.equal(banner.hidden, false);
+	assert.match(banner.textContent ?? "", new RegExp(text.changedElsewhere.slice(0, 20)));
+	assert.ok(byText(banner, "button", text.reload));
+
+	// The look didn't load anything: the page shows the stand it read, and the saved data wasn't run over.
+	assert.ok(byText(root, "td", "Dune"));
+	assert.equal(localStorage.getItem("entities-app"), library);
+
+	// Reading anew — the user's word, here the other tab's arrival — takes the hint back: no sticking warning.
+	otherTabSaved("entities-app");
+	await settle();
+	assert.equal(banner.hidden, true);
+});
+
+test("after a save of its own, the workspace isn't 'changed elsewhere' — no false alarm over its own work", async () => {
+	const { port } = versionedPort();
+	const root = await startApp({ "entities-app": library }, "", port);
+	const typeForm = root.querySelector<HTMLFormElement>("#type-form")!;
+	typeInto(typeForm.querySelector(`input[placeholder="${text.typeNamePlaceholder}"]`)!, "Film");
+	byText(typeForm, "button", text.createType).click();
+	await settle(); // the save went through and reached the storage
+	lookNow();
+	await settle();
+	assert.equal(root.querySelector<HTMLElement>(".problem-banner")!.hidden, true);
+});
+
+test("a look the storage can't answer starts no message: a failed background look is no event", async () => {
+	const { port, failLooks } = versionedPort();
+	const root = await startApp({ "entities-app": library }, "", port);
+	failLooks(true); // the network is gone: the look goes nowhere
+	lookNow();
+	await settle();
+	lookNow(); // and again — still nothing
+	await settle();
+	assert.equal(root.querySelector<HTMLElement>(".problem-banner")!.hidden, true);
+});
+
+test("the tab hidden asks nothing: no eyes on it, nothing on the wire; visible again, it looks", async () => {
+	const { port, looks } = versionedPort();
+	const root = await startApp({ "entities-app": library }, "", port);
+	await settle();
+	const asked = looks();
+
+	// Nobody can see the tab: focus (whatever brought it there) may come and go, nothing is asked.
+	Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+	try {
+		document.dispatchEvent(new Event("visibilitychange"));
+		window.dispatchEvent(new Event("focus"));
+		await settle();
+		assert.equal(looks(), asked);
+
+		// Back in the front — the moment the user looks — the look goes out at once.
+		Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+		window.dispatchEvent(new Event("focus"));
+		await settle();
+		assert.equal(looks(), asked + 1);
+		assert.equal(root.querySelector<HTMLElement>(".problem-banner")!.hidden, true);
+	} finally {
+		Reflect.deleteProperty(document, "visibilityState");
+	}
+});
+
+test("drawing the page again and again starts no further timers: one watch for the page's whole life", async (t) => {
+	freshDom();
+	const started = t.mock.method(window, "setInterval");
+	localStorage.setItem("entities-app", library);
+	const root = document.querySelector<HTMLElement>("#app")!;
+	await render(root, await createWorkspaces(localStoragePort(), text.defaultWorkspaceName));
+	assert.equal(started.mock.callCount(), 1);
+
+	// Whatever draws the page anew, none of it may start a watch of its own (or the page would ask faster and
+	// faster with every re-draw): a route switch, a form opening, a language change from the menu.
+	window.dispatchEvent(new Event("hashchange"));
+	assert.equal(started.mock.callCount(), 1);
+	byText(root.querySelector(".type-item")!, "button", text.edit).click();
+	assert.equal(started.mock.callCount(), 1);
+	setLanguage("de"); // a language change draws the page again, every label of it
+	window.dispatchEvent(new Event("hashchange"));
+	assert.equal(started.mock.callCount(), 1);
+	setLanguage("en");
 });

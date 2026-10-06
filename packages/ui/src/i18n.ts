@@ -46,6 +46,8 @@ const en = {
 	saveFailed: "Changes can't be saved: the browser storage is full or blocked. They're kept only until this tab is closed.",
 	saveConflict:
 		"This workspace was saved somewhere else in the meantime, so this change wasn't saved either — keeping theirs from being overwritten. It's kept only until this tab is closed. Reload the page to get the newer data.",
+	changedElsewhere:
+		"This workspace was changed somewhere else in the meantime (another tab, another device). Reload the page to see the newer data.",
 	downloadOriginal: "Download original",
 	dismiss: "Dismiss",
 
@@ -245,6 +247,8 @@ const de: Messages = {
 	saveFailed: "Änderungen können nicht gespeichert werden: Der Browserspeicher ist voll oder blockiert. Sie bleiben nur erhalten, bis dieser Tab geschlossen wird.",
 	saveConflict:
 		"Dieser Arbeitsbereich wurde zwischenzeitlich woanders gespeichert, daher wurde diese Änderung hier auch nicht gespeichert, damit die der anderen nicht überschrieben wird. Sie bleibt nur bis zum Schließen dieses Tabs erhalten. Lade die Seite neu, um die neueren Daten zu bekommen.",
+	changedElsewhere:
+		"Dieser Arbeitsbereich wurde zwischenzeitlich woanders geändert (anderer Tab, anderes Gerät). Lade die Seite neu, um den neueren Stand zu sehen.",
 	downloadOriginal: "Original herunterladen",
 	dismiss: "Schließen",
 
