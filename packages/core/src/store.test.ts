@@ -29,7 +29,7 @@ function assertEmpty(data: AppData) {
 	assert.deepEqual(data.types, []);
 	assert.deepEqual(data.entities, []);
 	assert.equal(data.boards.length, 1);
-	assert.deepEqual({ ...data.boards[0], id: "" }, { id: "", name: "Board 1", kind: "whiteboard", cards: [], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [], pages: [] });
+	assert.deepEqual({ ...data.boards[0], id: "" }, { id: "", name: "Board 1", cards: [], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [], story: false, pages: [] });
 }
 
 /** The first board, which a fresh store always has. */
@@ -506,20 +506,50 @@ test("each board has its own cards and viewport; card changes stay on their boar
 	);
 });
 
-test("a storyboard starts with one page; pages are added after the current one, copying it on request", async () => {
+/** A new board in story mode, with its first page named `firstPage`. */
+function storyBoard(store: Store, name: string, firstPage = "Step 1") {
+	const { id } = store.addBoard(name);
+	store.setStoryMode(id, true, firstPage);
+	return store.data.boards.find((b) => b.id === id)!;
+}
+
+test("story mode: the first page starts empty, in view; off, the pages stay for when it's on again", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
+	const note = store.addType("Note", [], "");
+	const a = store.addEntity(note.id, "A", "", {});
+	const board = firstBoard(store);
+	assert.deepEqual([board.story, board.pages], [false, []]);
+	const card = store.addCard(board.id, a.id, 0, 0);
+	const line = store.addDrawing(board.id, { kind: "line", points: [{ x: 0, y: 0 }, { x: 5, y: 5 }], color: "#4a4a4a" });
+	store.setViewport(board.id, { x: 9, y: 9, zoom: 1 });
+
+	store.setStoryMode(board.id, true, "Start");
+	const [first] = firstBoard(store).pages;
+	assert.equal(firstBoard(store).story, true);
+	assert.deepEqual([first?.name, first?.cardIds, first?.drawingIds, first?.viewport], ["Start", [], [], { x: 9, y: 9, zoom: 1 }]);
+	// Its description at the top left of what is seen (72, 16 px in), not somewhere off screen.
+	assert.deepEqual(first?.descriptionPosition, { x: 63, y: 7 });
+	assert.deepEqual([firstBoard(store).cards.map((c) => c.id), firstBoard(store).drawings.map((d) => d.id)], [[card.id], [line.id]]);
+	store.updatePage(board.id, first!.id, { name: "Renamed" });
+
+	store.setStoryMode(board.id, false, "Ignored");
+	assert.equal(firstBoard(store).story, false);
+	store.setStoryMode(board.id, true, "Ignored");
+	assert.deepEqual(firstBoard(store).pages.map((p) => p.name), ["Renamed"]);
+	assert.deepEqual((await open(storage)).data.boards[0], firstBoard(store));
+});
+
+test("story mode pages are added after the current one, copying it on request", async () => {
 	const store = await open(memoryStorage());
 	const note = store.addType("Note", [], "");
 	const a = store.addEntity(note.id, "A", "", {});
-	assert.equal(firstBoard(store).kind, "whiteboard");
-	assert.deepEqual(firstBoard(store).pages, []);
-
-	const story = store.addBoard("Flow", "storyboard", "Start");
-	assert.equal(story.kind, "storyboard");
+	const story = storyBoard(store, "Flow", "Start");
 	const [first] = story.pages;
 	assert.equal(first?.name, "Start");
 
 	const card = store.addCard(story.id, a.id, 0, 0, first!.id);
-	store.updatePage(story.id, first!.id, { description: "**Begin**", descriptionPosition: { x: 300, y: 40 } });
+	store.updatePage(story.id, first!.id, { description: "**Begin**", descriptionPosition: { x: 300, y: 40 }, descriptionSize: { width: 200, height: 90 } });
 	store.setPageViewport(story.id, first!.id, { x: 7, y: 8, zoom: 1.5 });
 
 	const empty = store.addPage(story.id, first!.id, " Empty ", false)!;
@@ -533,16 +563,16 @@ test("a storyboard starts with one page; pages are added after the current one, 
 	assert.deepEqual(copied.cardIds, [card.id]);
 	// Both start where the page before was looked at, with the description in the same place (but no text).
 	assert.deepEqual(empty.viewport, { x: 7, y: 8, zoom: 1.5 });
-	assert.deepEqual(copied.descriptionPosition, { x: 300, y: 40 });
+	assert.deepEqual([copied.descriptionPosition, copied.descriptionSize], [{ x: 300, y: 40 }, { width: 200, height: 90 }]);
 	assert.equal(copied.description, "");
 });
 
-test("storyboard cards and drawings are hidden per page and only go once no page shows them", async () => {
+test("story mode only hides cards and drawings per page; they stay on the board, even with no page showing them", async () => {
 	const storage = memoryStorage();
 	const store = await open(storage);
 	const note = store.addType("Note", [], "");
 	const a = store.addEntity(note.id, "A", "", {});
-	const story = store.addBoard("Flow", "storyboard");
+	const story = storyBoard(store, "Flow");
 	const one = story.pages[0]!;
 	const card = store.addCard(story.id, a.id, 0, 0, one.id);
 	const frame = store.addDrawing(story.id, { kind: "line", points: [{ x: 0, y: 0 }, { x: 5, y: 5 }], color: "#4a4a4a" }, one.id);
@@ -558,15 +588,20 @@ test("storyboard cards and drawings are hidden per page and only go once no page
 	store.showOnPage(story.id, one.id, card.id); // shown once only
 	assert.deepEqual(board().pages[0]!.cardIds, [card.id]);
 
-	// Off every page: off the board.
+	// Off every page: still on the board, to be shown again.
 	store.removeCard(card.id, one.id);
 	store.removeCard(card.id, two.id);
-	assert.deepEqual(board().cards, []);
+	assert.deepEqual(board().cards.map((c) => c.id), [card.id]);
 
-	// Deleting a page takes what only it showed; the last page stays.
+	// Deleting a page keeps what it showed on the board; the last page stays.
 	store.removePage(story.id, one.id);
-	assert.deepEqual(board().drawings, []);
+	assert.deepEqual(board().drawings.map((d) => d.id), [frame.id]);
 	assert.deepEqual(board().pages.map((p) => p.id), [two.id]);
+
+	// Deleting without a page (outside story mode) takes it off the board, and off every page.
+	store.showOnPage(story.id, two.id, card.id);
+	store.removeCard(card.id);
+	assert.deepEqual([board().cards, board().pages[0]!.cardIds], [[], []]);
 	store.removePage(story.id, two.id);
 	assert.equal(board().pages.length, 1);
 
@@ -581,9 +616,34 @@ test("storyboard cards and drawings are hidden per page and only go once no page
 	assert.deepEqual(reloaded.data.boards[1], board());
 });
 
+test("a page can show its cards dimmed; copied pages keep that, and a card going off the page loses it", async () => {
+	const store = await open(memoryStorage());
+	const note = store.addType("Note", [], "");
+	const a = store.addEntity(note.id, "A", "", {});
+	const b = store.addEntity(note.id, "B", "", {});
+	const story = storyBoard(store, "Flow");
+	const one = story.pages[0]!;
+	const cardA = store.addCard(story.id, a.id, 0, 0, one.id);
+	const cardB = store.addCard(story.id, b.id, 0, 0); // on the board, not on the page
+	const page = (i = 0) => store.data.boards[1]!.pages[i]!;
+
+	store.setDimmed(story.id, one.id, cardA.id, true);
+	store.setDimmed(story.id, one.id, cardB.id, true); // not on the page: nothing to dim
+	assert.deepEqual(page().dimmedCardIds, [cardA.id]);
+
+	store.addPage(story.id, one.id, "Two", true);
+	assert.deepEqual(page(1).dimmedCardIds, [cardA.id]);
+
+	store.setDimmed(story.id, one.id, cardA.id, false);
+	assert.deepEqual([page(0).dimmedCardIds, page(1).dimmedCardIds], [[], [cardA.id]]);
+
+	store.removeCard(cardA.id, page(1).id);
+	assert.deepEqual(page(1).dimmedCardIds, []);
+});
+
 test("undo keeps the pages' pan and zoom", async () => {
 	const store = await open(memoryStorage());
-	const story = store.addBoard("Flow", "storyboard");
+	const story = storyBoard(store, "Flow");
 	const page = story.pages[0]!;
 	store.updatePage(story.id, page.id, { name: "Renamed" });
 	store.setPageViewport(story.id, page.id, { x: 3, y: 4, zoom: 1 });
@@ -593,9 +653,9 @@ test("undo keeps the pages' pan and zoom", async () => {
 	assert.deepEqual(restored.viewport, { x: 3, y: 4, zoom: 1 });
 });
 
-test("boards saved without a kind are whiteboards; malformed pages are dropped or completed", async () => {
+test("storyboards saved by version 2 are boards in story mode; malformed pages are dropped or completed", async () => {
 	const saved = {
-		version: 1,
+		version: 2,
 		types: [],
 		entities: [],
 		boards: [
@@ -607,26 +667,39 @@ test("boards saved without a kind are whiteboards; malformed pages are dropped o
 				cards: [],
 				viewport: { x: 0, y: 0, zoom: 1 },
 				drawings: [],
-				pages: [null, { id: "p", cardIds: ["gone", 3], descriptionPosition: { x: "2", y: 0 }, viewport: "x" }],
+				pages: [null, { id: "p", cardIds: ["gone", 3], descriptionPosition: { x: "2", y: 0 }, descriptionSize: { width: 10, height: 500 }, viewport: "x" }],
 			},
-			{ id: "e", name: "Empty", kind: "storyboard", cards: [], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] },
+			{
+				id: "e",
+				name: "Empty",
+				kind: "storyboard",
+				cards: [{ id: "c", entityId: "01ARYZ6S41TSV4RRFFQ69G5FAV", x: 0, y: 0, width: 240, height: 160 }],
+				viewport: { x: 0, y: 0, zoom: 1 },
+				drawings: [],
+			},
 		],
 	};
+	saved.types = [{ id: "n", name: "Note", properties: [] }] as never;
+	saved.entities = [{ id: "01ARYZ6S41TSV4RRFFQ69G5FAV", typeId: "n", name: "A", content: "", values: {} }] as never;
 	const [old, story, empty] = (await open(memoryStorage(saved))).data.boards;
-	assert.equal(old?.kind, "whiteboard");
-	assert.deepEqual(old?.pages, []);
+	assert.deepEqual([old?.story, old?.pages], [false, []]);
+	assert.equal(story?.story, true);
+	assert.equal("kind" in story!, false);
 	assert.deepEqual(story?.pages, [
 		{
 			id: "p",
 			name: "Step 2",
 			description: "",
 			descriptionPosition: { x: 72, y: 16 },
+			descriptionSize: { width: 160, height: 500 }, // never below the minimum
 			viewport: { x: 0, y: 0, zoom: 1 },
 			cardIds: [],
 			drawingIds: [],
+			dimmedCardIds: [],
 		},
 	]);
-	assert.equal(empty?.pages.length, 1);
+	// In story mode without pages: an empty one.
+	assert.deepEqual(empty?.pages.map((p) => p.cardIds), [[]]);
 });
 
 test("types get distinct palette colors; a chosen color is kept and can be changed", async () => {

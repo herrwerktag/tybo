@@ -31,22 +31,24 @@ function state(): AppData {
 			{
 				id: "board-1",
 				name: "Übersicht",
-				kind: "storyboard",
 				cards: [
 					{ id: "card-ada", entityId: "ent-ada", x: 10, y: 20, width: 240, height: 160 },
 					{ id: "card-bob", entityId: "ent-bob", x: 330.5, y: -40, width: 160, height: 80 },
 				],
 				viewport: { x: 0, y: 0, zoom: 1 },
 				drawings: [{ id: "draw-line", kind: "line", points: [{ x: 0, y: 0 }, { x: 5.5, y: 5.25 }], color: "#4a4a4a" }],
+				story: true,
 				pages: [
 					{
 						id: "page-1",
 						name: "Anfang",
 						description: "Nur **Ada**",
 						descriptionPosition: { x: 250.5, y: 120 },
+						descriptionSize: { width: 300, height: 90.5 },
 						viewport: { x: -10, y: 20, zoom: 1.5 },
 						cardIds: ["card-ada"],
 						drawingIds: ["draw-line"],
+						dimmedCardIds: ["card-ada"],
 					},
 				],
 			},

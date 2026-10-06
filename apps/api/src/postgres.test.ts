@@ -28,10 +28,10 @@ function sample(): AppData {
 			{
 				id: "board-1",
 				name: "Brett",
-				kind: "whiteboard",
 				cards: [{ id: "card-1", entityId: "ent-1", x: 1, y: 2, width: 240, height: 160 }],
 				viewport: { x: 0, y: 0, zoom: 1 },
 				drawings: [],
+				story: false,
 				pages: [],
 			},
 		],

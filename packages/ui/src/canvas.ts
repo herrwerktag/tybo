@@ -5,6 +5,8 @@ import { text } from "./i18n.js";
 import {
 	DEFAULT_CARD_SIZE,
 	MIN_CARD_SIZE,
+	MIN_DESCRIPTION_SIZE,
+	descriptionInView,
 	cardRows,
 	effectiveCardDisplay,
 	detailRows,
@@ -27,7 +29,7 @@ import { defaultViewport, screenToWorld, zoomAt, type Viewport } from "@bekbon/c
 const ENTITY_MIME = "application/x-entity-id";
 const PANEL_COLLAPSED_KEY = "canvas-panel-collapsed";
 const ACTIVE_BOARD_KEY = "canvas-active-board";
-/** The storyboard page last shown in the editor, per board. */
+/** The story mode page last shown in the editor, per board. */
 const activePageKey = (boardId: string) => `canvas-active-page:${boardId}`;
 /** How long the pan/zoom takes to move to another page, in ms. */
 const PAGE_ANIMATION = 450;
@@ -39,7 +41,7 @@ const GRID = 24;
  * no moving, resizing, removing or dropping cards, and pan/zoom are never saved. With `onExportView`, the
  * viewer offers to export the current board.
  *
- * A storyboard is shown one page at a time, with a page bar at the bottom and the page's description over the
+ * A board in story mode is shown one page at a time, with a page bar at the bottom and the page's description over the
  * canvas. The editor also shows the cards and drawings of other pages, faded, so they can be shown here too.
  */
 export function canvasView(
@@ -54,15 +56,18 @@ export function canvasView(
 	const currentBoard = (): Board => store.data.boards.find((b) => b.id === boardId) ?? store.data.boards[0]!;
 	boardId = currentBoard().id;
 
-	/** The page shown, on a storyboard; the viewer always starts on the first. */
+	/** The page shown, in story mode; the viewer always starts on the first. */
 	let pageId = readOnly ? "" : (readPreference(activePageKey(boardId)) ?? "");
+	/** In the viewer, whether a board in story mode is shown step by step: it starts as the whole board, and its
+	 * Story mode button switches (not saved). The editor always shows the steps of a board in story mode. */
+	let presenting = false;
 	const currentPage = (): StoryPage | null => {
-		const { kind, pages } = currentBoard();
-		return kind === "storyboard" ? (pages.find((p) => p.id === pageId) ?? pages[0] ?? null) : null;
+		const { story, pages } = currentBoard();
+		return story && (presenting || !readOnly) ? (pages.find((p) => p.id === pageId) ?? pages[0] ?? null) : null;
 	};
-	/** The pan/zoom saved for what's shown: the page's on a storyboard, the board's on a whiteboard. */
+	/** The pan/zoom saved for what's shown: the page's in story mode, else the board's. */
 	const savedViewport = (): Viewport => ({ ...(currentPage()?.viewport ?? currentBoard().viewport) });
-	/** Whether a card or drawing is shown on the current page (everything is, on a whiteboard). */
+	/** Whether a card or drawing is shown on the current page (everything is, outside story mode). */
 	const onPage = (id: string): boolean => {
 		const page = currentPage();
 		return !page || page.cardIds.includes(id) || page.drawingIds.includes(id);
@@ -98,7 +103,7 @@ export function canvasView(
 		"»",
 	);
 
-	view.classList.toggle("storyboard", currentBoard().kind === "storyboard");
+	view.classList.toggle("story-mode", currentPage() !== null);
 
 	const panel = el("aside", { className: "canvas-panel" });
 	const layer = el("div", { className: "canvas-board" });
@@ -162,10 +167,11 @@ export function canvasView(
 	function switchBoard(id: string): void {
 		flushViewport();
 		stopAnimation();
+		if (id !== boardId) presenting = false;
 		boardId = id;
 		writePreference(ACTIVE_BOARD_KEY, id);
 		pageId = readOnly ? "" : (readPreference(activePageKey(id)) ?? "");
-		view.classList.toggle("storyboard", currentBoard().kind === "storyboard");
+		view.classList.toggle("story-mode", currentPage() !== null);
 		viewport = savedViewport();
 		drawing.deselect();
 		applyViewport();
@@ -176,7 +182,7 @@ export function canvasView(
 		renderDescription();
 	}
 
-	/** Shows another page of the storyboard: what it shows fades in, and the pan/zoom moves to the page's. */
+	/** Shows another page in story mode: what it shows fades in, and the pan/zoom moves to the page's. */
 	function goToPage(id: string): void {
 		flushViewport();
 		const before = new Set(currentPage()?.cardIds);
@@ -236,44 +242,48 @@ export function canvasView(
 
 	function renderBoardControls(): void {
 		const boards = store.data.boards;
-		const group = (kind: Board["kind"], label: string) => {
-			const ofKind = boards.filter((b) => b.kind === kind);
-			return ofKind.length === 0
-				? []
-				: [el("optgroup", { label }, ...ofKind.map((b) => el("option", { value: b.id, selected: b.id === boardId }, b.name)))];
-		};
 		const select = el(
 			"select",
 			{ ariaLabel: text.board, onchange: () => switchBoard(select.value) },
-			...group("whiteboard", text.whiteboards),
-			...group("storyboard", text.storyboards),
+			...boards.map((b) => el("option", { value: b.id, selected: b.id === boardId }, b.name)),
 		);
 		// The viewer only switches boards, and maybe exports the current one.
 		if (readOnly) {
 			const exportButton = el("button", { type: "button", title: text.exportView, onclick: () => onExportView?.(boardId) }, text.exportButton);
-			return boardControls.replaceChildren(select, ...(onExportView ? [exportButton] : []));
+			// A board with steps: shown whole, or step by step from its first step.
+			const presentButton = el(
+				"button",
+				{
+					type: "button",
+					className: "tool-button",
+					title: text.presentHint,
+					ariaPressed: String(presenting),
+					onclick: () => {
+						presenting = !presenting;
+						switchBoard(boardId);
+					},
+				},
+				text.storyMode,
+			);
+			return boardControls.replaceChildren(
+				select,
+				...(currentBoard().story ? [presentButton] : []),
+				...(onExportView ? [exportButton] : []),
+			);
 		}
 		boardControls.replaceChildren(
 			select,
-			// A menu of the two kinds: picking one asks for the name, then the menu goes back to its label.
 			el(
-				"select",
+				"button",
 				{
-					className: "new-board",
+					type: "button",
 					title: text.newBoard,
-					ariaLabel: text.newBoard,
-					onchange: (e: Event) => {
-						const menu = e.currentTarget as HTMLSelectElement;
-						const kind = menu.value as Board["kind"];
-						menu.value = "";
-						if (kind !== "whiteboard" && kind !== "storyboard") return;
+					onclick: () => {
 						const name = prompt(text.newBoardPrompt, text.defaultBoardName(boards.length + 1));
-						if (name !== null) switchBoard(store.addBoard(name, kind, text.defaultPageName(1)).id);
+						if (name !== null) switchBoard(store.addBoard(name).id);
 					},
 				},
-				el("option", { value: "", selected: true }, text.newBoardButton),
-				el("option", { value: "whiteboard" }, text.whiteboard),
-				el("option", { value: "storyboard" }, text.storyboard),
+				text.newBoardButton,
 			),
 			el(
 				"button",
@@ -305,6 +315,22 @@ export function canvasView(
 					},
 				},
 				text.delete,
+			),
+			// Shows the board step by step, like a presentation; switched off, its steps stay for next time.
+			el(
+				"button",
+				{
+					type: "button",
+					className: "tool-button",
+					title: text.storyModeHint,
+					ariaPressed: String(currentBoard().story),
+					onclick: () => {
+						flushViewport();
+						store.setStoryMode(boardId, !currentBoard().story, text.defaultPageName(1));
+						switchBoard(boardId);
+					},
+				},
+				text.storyMode,
 			),
 		);
 	}
@@ -564,7 +590,7 @@ export function canvasView(
 		);
 	}
 
-	// Escape closes the details panel, the arrow keys page through a storyboard (the listener removes itself
+	// Escape closes the details panel, the arrow keys page through story mode (the listener removes itself
 	// once this view is gone).
 	function onKeyDown(e: KeyboardEvent): void {
 		if (!view.isConnected) return document.removeEventListener("keydown", onKeyDown);
@@ -665,24 +691,28 @@ export function canvasView(
 	function drawConnectors(): void {
 		const lines: SVGElement[] = [];
 		const labels: HTMLElement[] = [];
+		// A line touching a dimmed card is dimmed with it.
+		const dimmed = new Set(currentPage()?.dimmedCardIds);
 		for (const { fromCardId, targetCardIds, label, color, arrow } of links) {
 			const from = cardRects.get(fromCardId);
 			const to = from && nearest(from, targetCardIds.flatMap((id) => cardRects.get(id) ?? []));
 			if (!from || !to) continue;
+			const toCardId = targetCardIds.find((id) => cardRects.get(id) === to);
+			const faded = dimmed.has(fromCardId) || (toCardId !== undefined && dimmed.has(toCardId));
 			// "from" draws the same curve the other way round, so the arrowhead lands on this card.
 			const shape = arrow === "from" ? connector(to, from) : connector(from, to, arrow === "to");
 			const { path, mid } = shape;
 			lines.push(
 				svgEl(
 					"g",
-					{ class: "connector" },
+					{ class: faded ? "connector dimmed" : "connector" },
 					svgEl("path", { class: "connector-line", d: path }),
 					...(shape.arrow
 						? [svgEl("polygon", { class: "connector-arrow", points: shape.arrow, fill: color || "currentColor" })]
 						: []),
 				),
 			);
-			const tag = el("span", { className: "connector-label" }, label);
+			const tag = el("span", { className: faded ? "connector-label dimmed" : "connector-label" }, label);
 			Object.assign(tag.style, { left: `${mid.x}px`, top: `${mid.y}px` });
 			labels.push(tag);
 		}
@@ -727,14 +757,14 @@ export function canvasView(
 		type: EntityType | undefined,
 		entityNames: ReadonlyMap<string, string>,
 		isLinked: (entityId: string) => boolean,
-		options: { removeButton?: HTMLElement; previews: boolean },
+		options: { buttons?: HTMLElement[]; previews: boolean },
 	): { header: HTMLElement; body: HTMLElement | null } {
 		// Top bar in the type's color: type label (and × on real cards).
 		const bar = el(
 			"div",
 			{ className: "card-bar" },
 			el("span", { className: "card-type" }, type?.name ?? ""),
-			...(options.removeButton ? [options.removeButton] : []),
+			...(options.buttons ?? []),
 		);
 		if (type) bar.style.background = type.color;
 		const header = el(
@@ -773,7 +803,7 @@ export function canvasView(
 		ghost: boolean,
 	): HTMLElement {
 		const page = currentPage();
-		// On a storyboard, × only takes the card off this page, and + shows another page's card here too.
+		// In story mode, × only takes the card off this page, and + shows another page's card here too.
 		const removeButton = readOnly
 			? undefined
 			: ghost
@@ -807,8 +837,30 @@ export function canvasView(
 						},
 						"×",
 					);
+		// In story mode, a card on the page can be dimmed there: shown faded, out of focus.
+		const dimmed = !ghost && !!page?.dimmedCardIds.includes(card.id);
+		const dimButton =
+			readOnly || ghost || !page
+				? []
+				: [
+						el(
+							"button",
+							{
+								type: "button",
+								className: "card-dim",
+								ariaLabel: text.dimNamedOnPage(entity.name),
+								title: text.dimOnPage,
+								ariaPressed: String(dimmed),
+								onclick: () => {
+									store.setDimmed(boardId, page.id, card.id, !dimmed);
+									renderCards();
+								},
+							},
+							"◐",
+						),
+					];
 		const { header, body } = cardParts(entity, type, entityNames, isLinked, {
-			...(removeButton ? { removeButton } : {}),
+			buttons: [...dimButton, ...(removeButton ? [removeButton] : [])],
 			previews: true,
 		});
 		// Without content a card fits what it shows (bar, name, maybe properties); there's nothing to resize.
@@ -818,6 +870,7 @@ export function canvasView(
 		node.classList.toggle("compact", compact);
 		node.classList.toggle("selected", selected?.cardId === card.id);
 		node.classList.toggle("ghost", ghost);
+		node.classList.toggle("dimmed", dimmed);
 		node.classList.toggle("appear", appearing.has(card.id));
 		node.dataset.cardId = card.id;
 		// Only a click shows the card's details; the browser also fires a click after dragging or resizing,
@@ -979,7 +1032,7 @@ export function canvasView(
 		});
 	}
 
-	/** Storyboards only: bottom center. The viewer only steps back and forth; the editor also names, adds and
+	/** Story mode only: bottom center. The viewer only steps back and forth; the editor also names, adds and
 	 * deletes pages. */
 	const pageBar = el("div", { className: "toolbar-group page-bar", role: "navigation", ariaLabel: text.pages });
 
@@ -1028,6 +1081,19 @@ export function canvasView(
 				text.addPageButton,
 			),
 			el("label", { className: "page-copy", title: text.copyPageHint }, copy, text.copyPage),
+			// The description may be far off after panning (or placed before the page was looked at from here).
+			el(
+				"button",
+				{
+					type: "button",
+					title: text.descriptionHereHint,
+					onclick: () => {
+						store.updatePage(boardId, page.id, { descriptionPosition: descriptionInView(viewport) });
+						renderDescription();
+					},
+				},
+				text.descriptionHere,
+			),
 			el(
 				"button",
 				{
@@ -1055,18 +1121,23 @@ export function canvasView(
 		Object.assign(description.style, { left: `${x}px`, top: `${y}px` });
 	}
 
+	/** Width and height in world units, the same in the editor and the viewer (which scrolls longer text). */
+	function sizeDescription({ width, height }: { width: number; height: number }): void {
+		Object.assign(description.style, { width: `${width}px`, height: `${height}px` });
+	}
+
 	function renderDescription(): void {
 		const page = currentPage();
 		description.hidden = !page || (readOnly && page.description.trim() === "");
 		if (!page || description.hidden) return void description.replaceChildren();
 		placeDescription(page.descriptionPosition);
+		sizeDescription(page.descriptionSize);
 		if (readOnly) return void description.replaceChildren(renderMarkdown(page.description));
 
 		const input = el("textarea", {
 			value: page.description,
 			ariaLabel: text.stepDescription,
 			placeholder: text.stepDescription,
-			rows: 3,
 			onchange: () => store.updatePage(boardId, page.id, { description: input.value }),
 		});
 		const handle = el("div", { className: "page-description-handle", title: text.moveDescription }, "⠿");
@@ -1085,7 +1156,24 @@ export function canvasView(
 				},
 			);
 		});
-		description.replaceChildren(handle, input);
+		// Resized at its corner like a card.
+		const resize = el("div", { className: "card-resize", title: text.resize });
+		resize.addEventListener("pointerdown", (e) => {
+			if (e.button !== 0) return;
+			e.preventDefault();
+			const start = currentPage()?.descriptionSize ?? page.descriptionSize;
+			const { zoom } = viewport;
+			const size = (dx: number, dy: number) => ({
+				width: Math.round(Math.max(MIN_DESCRIPTION_SIZE.width, start.width + dx / zoom)),
+				height: Math.round(Math.max(MIN_DESCRIPTION_SIZE.height, start.height + dy / zoom)),
+			});
+			trackPointer(
+				e,
+				(dx, dy) => sizeDescription(size(dx, dy)),
+				(dx, dy) => store.updatePage(boardId, page.id, { descriptionSize: size(dx, dy) }),
+			);
+		});
+		description.replaceChildren(handle, input, resize);
 	}
 
 	// Each control group has its own place: boards top right, drawing tools on the left edge with their style

@@ -37,10 +37,10 @@ function state(): AppData {
 			{
 				id: "board-1",
 				name: "Übersicht",
-				kind: "whiteboard",
 				cards: [card("card-ada", "ent-ada", 10, 20), card("card-bob", "ent-bob", 330, 40)],
 				viewport: { x: 0, y: 0, zoom: 1 },
 				drawings: [drawing],
+				story: false,
 				pages: [],
 			},
 		],
@@ -148,22 +148,24 @@ test("a type is one unit with its properties; a board is one without its cards a
 	assert.deepEqual(outline(changes), ["type:type-person", "board:board-1"]);
 	const [typeChange, boardChange] = changes as [Extract<Change, { kind: "type" }>, Extract<Change, { kind: "board" }>];
 	assert.deepEqual(typeChange.after!.value.properties.map((p) => p.id), ["p-note", "p-status"]);
-	assert.deepEqual(boardChange.after!.value, { id: "board-1", name: "Unbenannt", kind: "whiteboard", viewport: { x: 12, y: 34, zoom: 0.5 }, pages: [] });
-	assert.deepEqual(boardChange.before!.value, { id: "board-1", name: "Übersicht", kind: "whiteboard", viewport: { x: 0, y: 0, zoom: 1 }, pages: [] });
+	assert.deepEqual(boardChange.after!.value, { id: "board-1", name: "Unbenannt", viewport: { x: 12, y: 34, zoom: 0.5 }, story: false, pages: [] });
+	assert.deepEqual(boardChange.before!.value, { id: "board-1", name: "Übersicht", viewport: { x: 0, y: 0, zoom: 1 }, story: false, pages: [] });
 });
 
-test("a storyboard page shown or hidden is a change of the board alone, never of its cards", () => {
+test("a story mode page shown or hidden is a change of the board alone, never of its cards", () => {
 	const before = state();
 	const page = {
 		id: "page-1",
 		name: "Step 1",
 		description: "",
 		descriptionPosition: { x: 72, y: 16 },
+		descriptionSize: { width: 384, height: 112 },
 		viewport: { x: 0, y: 0, zoom: 1 },
 		cardIds: ["card-ada"],
 		drawingIds: [],
+		dimmedCardIds: [],
 	};
-	before.boards[0] = { ...before.boards[0]!, kind: "storyboard", pages: [page] };
+	before.boards[0] = { ...before.boards[0]!, story: true, pages: [page] };
 	const after = structuredClone(before);
 	after.boards[0]!.pages[0]!.cardIds.push("card-bob");
 

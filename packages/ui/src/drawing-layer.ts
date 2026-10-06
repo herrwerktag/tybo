@@ -61,7 +61,7 @@ export interface DrawingLayer {
 export function createDrawingLayer(options: {
 	store: Store;
 	boardId: () => string;
-	/** The storyboard page shown (only its drawings are, others faded in the editor); null on a whiteboard. */
+	/** The story mode page shown (only its drawings are, others faded in the editor); null outside story mode. */
 	page: () => StoryPage | null;
 	zoom: () => number;
 	/** World coordinates of a point on the screen. */
@@ -94,7 +94,7 @@ export function createDrawingLayer(options: {
 		draw();
 	}
 
-	/** Whether the drawing is on the page shown (always, on a whiteboard). */
+	/** Whether the drawing is on the page shown (always, outside story mode). */
 	const onPage = (id: string): boolean => options.page()?.drawingIds.includes(id) ?? true;
 
 	function draw(): void {
@@ -467,14 +467,15 @@ export function createDrawingLayer(options: {
 						),
 					)
 				: []),
-			// On a storyboard: show another page's drawing here too, or take one off this page only.
+			// In story mode: show another page's drawing here too, or take one off this page only.
 			...(selected && page && !onPage(selected.id)
 				? [el("button", { type: "button", onclick: () => (store.showOnPage(options.boardId(), page.id, selected.id), draw()) }, text.showOnPage)]
 				: []),
 			...(selected && page && onPage(selected.id)
 				? [el("button", { type: "button", onclick: () => removeSelected(page.id) }, text.removeFromPage)]
 				: []),
-			...(selected
+			// Deleting from the board only outside story mode, which never deletes.
+			...(selected && !page
 				? [el("button", { type: "button", title: text.deleteDrawing, onclick: () => removeSelected() }, text.delete)]
 				: []),
 		);
@@ -487,7 +488,7 @@ export function createDrawingLayer(options: {
 		if ((e.target as Element).closest?.("input, select, textarea, [contenteditable]")) return;
 		if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
 			e.preventDefault();
-			removeSelected(options.page()?.id); // on a storyboard, like a card's ×: off this page
+			removeSelected(options.page()?.id); // in story mode, like a card's ×: off this page
 		} else if (e.key === "Escape") {
 			if (tool !== "select") setTool("select");
 			else if (selectedId) select(null);
