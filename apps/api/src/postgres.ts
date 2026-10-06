@@ -1,5 +1,6 @@
 import postgres from "postgres";
-import type { StoragePort } from "@bekbon/core";
+import type { Change, SavedChanges, StoragePort } from "@bekbon/core";
+import { applyChanges } from "./changes.js";
 import { migrateBlob as runMigration, type MigrationResult } from "./migrate.js";
 import { APP_KEY, createMirror, readAppDataFromTables, type PostgresMirror } from "./mirror.js";
 
@@ -25,6 +26,11 @@ export interface PostgresStorage extends StoragePort {
 	/** Keeps the Postgres mirror in step with a saved text: one that reads as app data is mirrored, one that
 	 * doesn't leaves the mirror alone. Derived from the blob only — there is no way back into the app. */
 	syncFromText(text: string): Promise<void>;
+	/** Writes a change set of the app's data per unit — only the rows of the units it names, in one
+	 * transaction that also rebuilds the blob out of the tables (the read path's fallback) and raises the
+	 * revision — answering the new version and the units that collided (written anyway, last one wins).
+	 * Refused (thrown) only when it couldn't be written honestly; then nothing was written at all. */
+	writeChanges(key: string, changes: Change[]): Promise<SavedChanges>;
 	/** The mirror itself: the derived, read-only tables queries look at. */
 	mirror: PostgresMirror;
 	/** Moves the blob's data into the addressable tables once, on this storage's connection, and answers
@@ -129,6 +135,11 @@ export function postgresStorage(url: string): PostgresStorage {
 
 		syncFromText(text) {
 			return mirror.syncFromText(text);
+		},
+
+		writeChanges(_key, changes) {
+			// The route named the app's key — only its data lives in addressable units.
+			return applyChanges(sql, changes);
 		},
 
 		async healthy() {

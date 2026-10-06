@@ -1,6 +1,7 @@
 import { isUlid, ulid } from "./ulid.js";
 import type { Point } from "./connectors.js";
-import { SaveConflict, type StoragePort } from "./ports.js";
+import { changesBetween } from "./changes.js";
+import { ChangesUnsupported, SaveConflict, type StoragePort } from "./ports.js";
 import { clampZoom, defaultViewport, type Viewport } from "./viewport.js";
 import {
 	DEFAULT_CARD_SIZE,
@@ -270,9 +271,12 @@ export async function createStore(port: StoragePort, key = "entities-app") {
 	let savesSettled: Promise<void> = Promise.resolve();
 	/** The look for a newer stand that's on its way; a second ask joins it rather than running alongside. */
 	let newerLook: Promise<boolean> | null = null;
-	let { data, problem: loadProblem, text: unreadText } = await load();
+	let { data, problem: loadProblem, text: unreadText, stand: baseline } = await load();
 	let saveFailed = false;
 	let saveConflict = false;
+	/** A storage that threw `ChangesUnsupported` once won't get change sets again: every save takes the whole
+	 * document from then on, as the one way this storage has. */
+	let noChangeSets = false;
 	const problemListeners: (() => void)[] = [];
 	/** Earlier versions of the data for undo (newest last), and undone ones for redo. */
 	let undoStack: AppData[] = [];
@@ -281,35 +285,43 @@ export async function createStore(port: StoragePort, key = "entities-app") {
 	/** The data as last saved, to tell changes that change nothing. */
 	let savedJson = JSON.stringify(toSaved(data));
 
-	async function load(): Promise<{ data: AppData; problem: LoadProblem | null; text: string | null }> {
+	async function load(): Promise<{
+		data: AppData;
+		problem: LoadProblem | null;
+		text: string | null;
+		/** The stand the storage holds, as it was read in full — null when what it holds wasn't read whole: an
+		 * empty storage (this stand was never told to anyone), or one saved by a newer version, or only partly
+		 * read. Change sets build on this stand; without it, only the whole document can be saved honestly. */
+		stand: AppData | null;
+	}> {
 		let raw: string | null;
 		try {
 			raw = await port.getItem(key);
 		} catch {
 			// Storage blocked: nothing to protect; failed saves are reported.
-			return { data: emptyData(), problem: null, text: null };
+			return { data: emptyData(), problem: null, text: null, stand: null };
 		}
 		await rememberVersion();
-		if (raw === null) return { data: emptyData(), problem: null, text: null };
+		if (raw === null) return { data: emptyData(), problem: null, text: null, stand: null };
 		try {
 			const parsed: unknown = JSON.parse(raw);
 			if (looksLikeAppData(parsed)) {
 				if (savedVersion(parsed) > DATA_VERSION) {
 					// The original stays untouched (saving is paused), so it needs no backup.
 					const understood = reconcile(normalize(keepWellFormed(parsed as unknown as AppData)));
-					return { data: understood, problem: { code: "newerVersion" }, text: raw };
+					return { data: understood, problem: { code: "newerVersion" }, text: raw, stand: null };
 				}
 				const migrated = migrate(parsed) as unknown as AppData;
 				const kept = keepWellFormed(migrated);
 				const loaded = reconcile(normalize(kept));
 				const complete = itemCount(kept) === itemCount(migrated);
-				if (complete) return { data: loaded, problem: null, text: null };
-				return { data: loaded, problem: await backUp(raw, "partlyUnreadable"), text: raw };
+				if (complete) return { data: loaded, problem: null, text: raw, stand: loaded };
+				return { data: loaded, problem: await backUp(raw, "partlyUnreadable"), text: raw, stand: null };
 			}
 		} catch {
 			// Not JSON, or too broken to load at all: start fresh.
 		}
-		return { data: emptyData(), problem: await backUp(raw, "unreadable"), text: raw };
+		return { data: emptyData(), problem: await backUp(raw, "unreadable"), text: raw, stand: null };
 	}
 
 	/** Copies the saved text aside before a save can overwrite it. */
@@ -340,25 +352,63 @@ export async function createStore(port: StoragePort, key = "entities-app") {
 		// Keep the saved original: it isn't backed up, or a newer version saved it. And after a save was refused
 		// as outdated, keep this stand in memory until the data is read anew (reload) — not save over the others.
 		if (loadProblem?.code === "notBackedUp" || loadProblem?.code === "newerVersion" || saveConflict) return;
-		// The save goes off at once, as ever, and settles on its own; it's kept in the chain of the ones on their
-		// way, which a look for a newer stand waits behind — so it can't mistake the save just made here for
-		// someone else's newer stand.
-		const writing = persist(savedJson);
-		savesSettled = savesSettled.then(() => writing);
+		// With change sets, the save waits its turn before it goes off: it builds on the stand the saves
+		// before it left in the storage, so no unit changed in between is asked about twice (a save on its way
+		// stays unseen by a diff built too early). Without them, the save goes off at once, as ever, and it's
+		// kept in the chain of the ones on their way, which a look for a newer stand waits behind — so it can't
+		// mistake the save just made here for someone else's newer stand.
+		const walking = port.saveChanges && baseline && !noChangeSets;
+		const writing = walking ? savesSettled.then(() => persist(data)) : persist(data);
+		savesSettled = writing;
 	}
 
 	/** Writes the data. A write that merely fails flips `problems.saveFailed`; one the storage refuses
 	 * because someone else saved in between flips `problems.saveConflict`. Either way the data stays in
-	 * memory, and the problem says which of the two it was. */
-	async function persist(text: string): Promise<void> {
+	 * memory, and the problem says which of the two it was.
+	 *
+	 * Which way the write takes is what the storage can answer: change sets, from the stand the storage was
+	 * last known to hold (and only for the units that differ from it — a save that changes nothing writes
+	 * nothing at all), or the whole document otherwise. That stand is only advanced once the storage has
+	 * confirmed the write, so a save that fails isn't left behind on the next one's way.
+	 *
+	 * A unit someone else changed in between doesn't refuse the save — the storage answers its id (`collided`),
+	 * wrote it anyway (last one wins) and this side reports the conflict as before: pausing saves until the
+	 * data is read anew (reload), everything changed stays in memory, and the problem says what happened.
+	 */
+	async function persist(stand: AppData): Promise<void> {
+		const text = JSON.stringify(toSaved(stand));
 		let failed = false;
 		let conflict = false;
-		try {
-			await port.setItem(key, text);
-		} catch (error) {
-			// Storage full or blocked, or saved over by someone else: keep working in memory, and say which.
-			if (error instanceof SaveConflict) conflict = true;
-			else failed = true;
+		/** Whether the storage took the write. */
+		let written = false;
+		/** Whether the write went out as the whole document — only that way doesn't name the version it
+		 * reached itself, so only it asks the storage for it afterwards. */
+		let asDocument = false;
+		if (port.saveChanges && baseline && !noChangeSets) {
+			const changes = changesBetween(baseline, stand);
+			if (changes.length === 0) return; // the storage already holds this stand — nothing to write, nothing to say
+			try {
+				const answer = await port.saveChanges(key, changes, seenVersion);
+				// The units were written, whoever else had touched them — the storage holds this stand now.
+				baseline = stand;
+				seenVersion = answer.version;
+				// A unit someone else had changed in between didn't refuse the save: it was written anyway (the
+				// last one wins), and its id is reported as the conflict it was.
+				conflict = answer.collided.length > 0;
+				written = true;
+			} catch (error) {
+				if (error instanceof ChangesUnsupported) {
+					// The storage has no place the units could be written to: the whole document remains, the one
+					// way it always had — and no change set is asked of it again after that.
+					noChangeSets = true;
+					asDocument = true;
+					await saveDocument();
+				} else if (error instanceof SaveConflict) conflict = true;
+				else failed = true;
+			}
+		} else {
+			asDocument = true;
+			await saveDocument();
 		}
 		const changed = failed !== saveFailed || conflict !== saveConflict;
 		saveFailed = failed;
@@ -367,7 +417,23 @@ export async function createStore(port: StoragePort, key = "entities-app") {
 			for (const listener of problemListeners) listener();
 		}
 		// The save reached the storage: this is the newest stand, so the next look must not cry "newer" at it.
-		if (!failed && !conflict) await rememberVersion();
+		// Asking waits behind the problems above, so one save settling late can't undo another's word about them.
+		if (asDocument && written && !failed && !conflict) await rememberVersion();
+
+		/** Writes every unit of the stand over one text, the way a storage without addressable parts knows. */
+		async function saveDocument(): Promise<void> {
+			try {
+				await port.setItem(key, text);
+			} catch (error) {
+				// Storage full or blocked, or saved over by someone else: keep working in memory, and say which.
+				if (error instanceof SaveConflict) conflict = true;
+				else failed = true;
+				return;
+			}
+			// The storage holds this stand now; the next change set builds on it.
+			baseline = stand;
+			written = true;
+		}
 	}
 
 	/** Makes `next` the data and saves it; the data before goes onto the undo history. Changes that change nothing are skipped. */
@@ -431,7 +497,7 @@ export async function createStore(port: StoragePort, key = "entities-app") {
 		/** Reads the saved data again, e.g. after another tab saved it, so the next save here doesn't overwrite that.
 		 * Hereby this stand is current again too: saving, refused after a conflict, is tried once more. */
 		async reload(): Promise<void> {
-			({ data, problem: loadProblem, text: unreadText } = await load());
+			({ data, problem: loadProblem, text: unreadText, stand: baseline } = await load());
 			savedJson = JSON.stringify(toSaved(data));
 			saveConflict = false;
 			// The history is from before the other tab's changes; undoing it would undo those too.
