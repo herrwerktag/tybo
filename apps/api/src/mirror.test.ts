@@ -6,8 +6,8 @@ import { APP_KEY, readAppData, type Sql } from "./mirror.js";
 import { postgresStorage } from "./postgres.js";
 import { call, startApp } from "./test-server.js";
 
-/** The database these tests run against; without it they are skipped, not failed. */
-const url = process.env.DATABASE_URL;
+/** The test database these tests run against (never the productive DATABASE_URL); without it they are skipped, not failed. */
+const url = process.env.TEST_DATABASE_URL;
 
 /** Example app data, small enough that every mirror table gets exactly the rows one can check. */
 const sample: AppData = {

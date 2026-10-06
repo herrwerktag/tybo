@@ -4,8 +4,8 @@ import { test } from "node:test";
 import { postgresStorage } from "./postgres.js";
 import { call, startApp } from "./test-server.js";
 
-/** The database these tests run against; without it they are skipped, not failed. */
-const url = process.env.DATABASE_URL;
+/** The test database these tests run against (never the productive DATABASE_URL); without it they are skipped, not failed. */
+const url = process.env.TEST_DATABASE_URL;
 
 /** A key no other run will have used before, so no test sees another one's text. */
 const freshKey = () => `api-test:${randomUUID()}`;

@@ -6,8 +6,8 @@ import { APP_KEY, readAppData, readAppDataFromTables } from "./mirror.js";
 import { postgresStorage } from "./postgres.js";
 import { call, startApp } from "./test-server.js";
 
-/** The database these tests run against; without it they are skipped, not failed. */
-const url = process.env.DATABASE_URL;
+/** The test database these tests run against (never the productive DATABASE_URL); without it they are skipped, not failed. */
+const url = process.env.TEST_DATABASE_URL;
 
 /** A state of the app's data: one type with a text property, two entities, one board with two cards and
  * one drawing — enough of every unit to change, add or delete one without touching the others. */

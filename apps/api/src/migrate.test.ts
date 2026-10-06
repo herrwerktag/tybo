@@ -6,8 +6,8 @@ import { APP_KEY, DERIVED_TABLES, type Sql, type TableCounts } from "./mirror.js
 import { compareCounts, describeMigration, migrateBlob, tableCounts } from "./migrate.js";
 import { postgresStorage } from "./postgres.js";
 
-/** The database these tests run against; without it they are skipped, not failed. */
-const url = process.env.DATABASE_URL;
+/** The test database these tests run against (never the productive DATABASE_URL); without it they are skipped, not failed. */
+const url = process.env.TEST_DATABASE_URL;
 
 /** Example app data, wide enough that every derived table gets several rows to count and order. */
 const sample: AppData = {
