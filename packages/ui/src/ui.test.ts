@@ -25,7 +25,7 @@ function memoryStorage(saved?: unknown) {
 /** The storage behind the app the last startApp started. */
 let storage = memoryStorage();
 
-/** Renders the app on a fresh page (at `hash`, e.g. "#canvas"), with `saved` already in the storage. A different
+/** Renders the app on a fresh page (at `hash`, e.g. "#boards"), with `saved` already in the storage. A different
  * storage `behind` it shows what the app does with one that answers otherwise (with collisions, for instance). */
 async function startApp(saved?: unknown, hash = "", behind = memoryStorage(saved)): Promise<HTMLElement> {
 	freshDom();
@@ -68,8 +68,15 @@ const library = {
 	boards: [],
 };
 
+/** Shows another page, the way a click on a nav link does. */
+function goTo(hash: string): void {
+	location.hash = hash;
+	window.dispatchEvent(new Event("hashchange"));
+}
+
 test("a type with a property, then an entity of it, can be created through the forms and are saved", async () => {
-	const root = await startApp();
+	const root = await startApp(undefined, "#types");
+	byText(root, "button", text.createNewType).click();
 	const typeForm = root.querySelector<HTMLFormElement>("#type-form")!;
 	typeInto(typeForm.querySelector(`input[placeholder="${text.typeNamePlaceholder}"]`)!, "Book");
 	byText(typeForm, "button", text.addProperty).click();
@@ -82,7 +89,10 @@ test("a type with a property, then an entity of it, can be created through the f
 	const [book] = (await readSaved()).types;
 	assert.equal(book?.name, "Book");
 	assert.deepEqual(book?.properties.map((p) => p.name), ["author"]);
+	assert.equal(root.querySelector("#type-form"), null); // created: the form closes
 
+	goTo("#entities");
+	byText(root, "button", text.createNewEntity).click();
 	const entityForm = root.querySelector<HTMLFormElement>("#entity-form")!;
 	const [nameInput, authorInput] = entityForm.querySelectorAll<HTMLInputElement>("label.field input");
 	nameInput!.value = " Dune ";
@@ -94,10 +104,51 @@ test("a type with a property, then an entity of it, can be created through the f
 	const [dune] = (await readSaved()).entities;
 	assert.equal(dune?.name, "Dune");
 	assert.equal(dune?.values[book!.properties[0]!.id], "Herbert");
+	assert.equal(root.querySelector("#entity-form"), null);
+});
+
+test("Entities is the default page; its subnav switches between entity types and entities", async () => {
+	const root = await startApp(library);
+	assert.equal(root.querySelector(".app-nav .current")?.textContent, text.tabEntities);
+	assert.equal(root.querySelector(".sub-nav .current")?.textContent, text.entities);
+	assert.ok(byText(root, "td", "Dune"));
+	assert.equal(root.querySelector(".type-item"), null);
+
+	goTo("#types");
+	assert.equal(root.querySelector(".app-nav .current")?.textContent, text.tabEntities);
+	assert.equal(root.querySelector(".sub-nav .current")?.textContent, text.entityTypes);
+	assert.ok(byText(root, ".type-name", "Book"));
+	assert.equal(root.querySelector("td"), null);
+
+	goTo("#boards");
+	assert.equal(root.querySelector(".app-nav .current")?.textContent, text.tabBoards);
+	assert.equal(root.querySelector(".sub-nav"), null);
+
+	goTo("#canvas"); // the former name still leads there
+	assert.equal(root.querySelector(".app-nav .current")?.textContent, text.tabBoards);
+});
+
+test("the forms for a new type and a new entity are hidden until asked for, and Cancel hides them again", async () => {
+	const root = await startApp(library, "#types");
+	assert.equal(root.querySelector("#type-form"), null);
+	byText(root, "button", text.createNewType).click();
+	byText(root.querySelector("#type-form")!, "button", text.cancel).click();
+	assert.equal(root.querySelector("#type-form"), null);
+
+	goTo("#entities");
+	assert.equal(root.querySelector("#entity-form"), null);
+	byText(root, "button", text.createNewEntity).click();
+	byText(root.querySelector("#entity-form")!, "button", text.cancel).click();
+	assert.equal(root.querySelector("#entity-form"), null);
+
+	// Edit opens the form too.
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.edit).click();
+	assert.equal(root.querySelector<HTMLInputElement>("#entity-form input")?.value, "Dune");
 });
 
 test("an invalid type shows its problems and isn't saved", async () => {
-	const root = await startApp();
+	const root = await startApp(undefined, "#types");
+	byText(root, "button", text.createNewType).click();
 	byText(root.querySelector("#type-form")!, "button", text.createType).click();
 	assert.equal(root.querySelector("#type-form .error")?.textContent, text.validation({ code: "typeNameRequired" }));
 	assert.deepEqual((await readSaved()).types, []);
@@ -129,7 +180,7 @@ test("deleting an entity asks first; cancelling keeps it", async () => {
 test("a type other types refer to can't be deleted", async () => {
 	const data = structuredClone(library) as { types: unknown[]; boards: unknown[] };
 	data.types.push({ id: "review", name: "Review", properties: [{ id: "of", name: "of", kind: "reference", options: [], reference: { typeId: "book", multiple: false }, cardDisplay: "list" }] });
-	const root = await startApp(data);
+	const root = await startApp(data, "#types");
 	const alerts: string[] = [];
 	stub({ alert: (message: string) => void alerts.push(message), confirm: () => assert.fail("shouldn't ask to confirm") });
 
@@ -140,7 +191,7 @@ test("a type other types refer to can't be deleted", async () => {
 });
 
 test("a new workspace from the menu starts empty and becomes active; switching back shows the first one again", async () => {
-	const root = await startApp(library);
+	const root = await startApp(library, "#types");
 	const newForm = root.querySelector<HTMLFormElement>(".workspace-new")!;
 	newForm.querySelector<HTMLInputElement>("input:not([type])")!.value = "Second";
 	byText(newForm, "button", text.create).click();
@@ -174,7 +225,7 @@ test("a page that can't be drawn shows the error screen, which can still export"
 		return createElement(tag);
 	}) as typeof document.createElement;
 
-	byText(root.querySelector(".type-item")!, "button", text.edit).click(); // draws the page again
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.edit).click(); // draws the page again
 
 	const screen = root.querySelector(".error-screen");
 	assert.ok(screen);
@@ -219,6 +270,7 @@ test("Ctrl+Z undoes outside text fields; inside one it's left to the browser's t
 	stub({ confirm: () => true });
 	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.delete).click();
 
+	byText(root, "button", text.createNewEntity).click();
 	const nameInput = root.querySelector<HTMLInputElement>("#entity-form input")!;
 	assert.equal(press(nameInput, "z"), true); // not handled: the default (text undo) isn't prevented
 	assert.equal((await readSaved()).entities.length, 0);
@@ -232,7 +284,7 @@ test("Ctrl+Z undoes outside text fields; inside one it's left to the browser's t
 test("canvas changes can be undone too: the Undo button follows them without the page being drawn again", async () => {
 	const data = structuredClone(library) as { types: unknown[]; boards: unknown[] };
 	data.boards = [{ id: "b", name: "Board 1", cards: [{ id: "c", entityId: "01J00000000000000000000000", x: 0, y: 0, width: 240, height: 160 }], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] }];
-	const root = await startApp(data, "#canvas");
+	const root = await startApp(data, "#boards");
 	const [undo] = root.querySelectorAll<HTMLButtonElement>(".history-button");
 
 	root.querySelector<HTMLButtonElement>(".canvas-board .card-remove")!.click();
@@ -256,7 +308,8 @@ test("a save that collided warns of the conflict, not of a failing storage, and 
 	// A storage that answers every unit as collided — the way the API's does when someone else saved it first.
 	const behind = memoryStorage();
 	behind.port.saveChanges = async (_id, changes) => ({ version: "9", collided: changes.map((c) => c.id) });
-	const root = await startApp(undefined, "", behind);
+	const root = await startApp(undefined, "#types", behind);
+	byText(root, "button", text.createNewType).click();
 	const typeForm = root.querySelector<HTMLFormElement>("#type-form")!;
 	typeInto(typeForm.querySelector(`input[placeholder="${text.typeNamePlaceholder}"]`)!, "Book");
 	byText(typeForm, "button", text.createType).click();
@@ -326,7 +379,7 @@ test("drawing the page again and again starts no further timers: one watch for t
 	// faster with every re-draw): a route switch, a form opening, a language change from the menu.
 	window.dispatchEvent(new Event("hashchange"));
 	assert.equal(started.mock.callCount(), 1);
-	byText(root.querySelector(".type-item")!, "button", text.edit).click();
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.edit).click();
 	assert.equal(started.mock.callCount(), 1);
 	setLanguage("de"); // a language change draws the page again, every label of it
 	window.dispatchEvent(new Event("hashchange"));

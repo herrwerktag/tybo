@@ -38,6 +38,9 @@ interface UiState {
 	typeErrors: ValidationError[];
 	selectedTypeId: string | null;
 	editingEntityId: string | null;
+	/** Whether the form for a new type / a new entity is open; they stay hidden until asked for. */
+	creatingType: boolean;
+	creatingEntity: boolean;
 	/** Form to scroll into view and focus after the next render (set when Edit is clicked). */
 	focusForm: "type" | "entity" | null;
 	/** Drag handle to focus after the next render, so keyboard reordering keeps focus on the moved property. */
@@ -55,8 +58,17 @@ type MenuName = "settings" | "workspace";
 
 const PROPERTY_MIME = "application/x-property-index";
 
-/** The page shown, from the URL hash: data editing, board editing (canvas) or read-only boards (viewer). */
-type Route = "data" | "canvas" | "viewer";
+/** The page shown, from the URL hash: entity types, entities, board editing (boards) or read-only boards (view). */
+type Route = "types" | "entities" | "boards" | "view";
+
+/** Entities is the default page, so old links (e.g. "#data") still land there; "#canvas" and "#viewer" are the
+ * board pages' former names. */
+function routeFromHash(hash: string): Route {
+	const route = hash.slice(1);
+	if (route === "canvas") return "boards";
+	if (route === "viewer") return "view";
+	return route === "types" || route === "boards" || route === "view" ? route : "entities";
+}
 
 /** How often to look, in the background, for a stand of the open workspace that someone else saved in between:
  * generously — it's about not being blindsided before the next save, not about seconds (and the tab being looked
@@ -164,6 +176,8 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 		typeErrors: [],
 		selectedTypeId: store.data.types[0]?.id ?? null,
 		editingEntityId: null,
+		creatingType: false,
+		creatingEntity: false,
 		focusForm: null,
 		focusHandle: null,
 		openMenu: null,
@@ -224,6 +238,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 		state.draftColor = nextTypeColor(store.data.types.map((t) => t.color));
 		state.draftProps = [];
 		state.typeErrors = [];
+		state.creatingType = false;
 	}
 
 	/** Draws the page; if that fails, shows the error screen instead of a half-drawn page. */
@@ -260,24 +275,25 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 			state.selectedTypeId = store.data.types[0]?.id ?? null;
 			state.editingEntityId = null;
 		}
-		const route: Route = location.hash === "#canvas" ? "canvas" : location.hash === "#viewer" ? "viewer" : "data";
+		const route = routeFromHash(location.hash);
+		const entitiesTab = route === "types" || route === "entities";
 		renderBanner();
 		renderHistoryButtons();
 		root.replaceChildren(
 			// One header, so the page keeps its two rows (top, content) with or without warnings.
-			el("header", {}, navBar(route), banner),
-			route === "data"
-				? el("div", { className: "data-view" }, typesSection(), entitiesSection())
+			el("header", {}, navBar(route), ...(entitiesTab ? [subNav(route)] : []), banner),
+			entitiesTab
+				? el("div", { className: "data-view" }, route === "types" ? typesSection() : entitiesSection())
 				: canvasView(store, {
-						readOnly: route === "viewer",
-						// The details panel's Edit button: open the entity in the Data view's form.
+						readOnly: route === "view",
+						// The details panel's Edit button: open the entity in the Entities page's form.
 						onEditEntity: (entityId) => {
 							const entity = store.data.entities.find((e) => e.id === entityId);
 							if (!entity) return;
 							state.selectedTypeId = entity.typeId;
 							state.editingEntityId = entityId;
 							state.focusForm = "entity";
-							location.hash = "#data";
+							location.hash = "#entities";
 						},
 					}),
 		);
@@ -294,16 +310,25 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 	}
 
 	function navBar(route: Route): HTMLElement {
-		const tab = (id: Route, label: string) =>
-			el("a", { href: `#${id}`, className: route === id ? "tab current" : "tab" }, label);
+		const tab = (id: Route, label: string, current = route === id) =>
+			el("a", { href: `#${id}`, className: current ? "tab current" : "tab" }, label);
 		const nav = el(
 			"nav",
 			{ className: "app-nav" },
-			tab("data", text.tabData),
-			tab("canvas", text.tabCanvas),
-			tab("viewer", text.tabViewer),
+			tab("entities", text.tabEntities, route === "entities" || route === "types"),
+			tab("boards", text.tabBoards),
+			tab("view", text.tabView),
 			el("div", { className: "nav-menus" }, historyButtons, workspaceMenu(), settingsMenu()),
 		);
+		nav.querySelector(".current")?.setAttribute("aria-current", "page");
+		return nav;
+	}
+
+	/** The Entities tab's two pages: the entity types and the entities themselves. */
+	function subNav(route: "types" | "entities"): HTMLElement {
+		const tab = (id: "types" | "entities", label: string) =>
+			el("a", { href: `#${id}`, className: route === id ? "tab current" : "tab" }, label);
+		const nav = el("nav", { className: "sub-nav" }, tab("types", text.entityTypes), tab("entities", text.entities));
 		nav.querySelector(".current")?.setAttribute("aria-current", "page");
 		return nav;
 	}
@@ -504,6 +529,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 		resetTypeForm();
 		state.selectedTypeId = store.data.types[0]?.id ?? null;
 		state.editingEntityId = null;
+		state.creatingEntity = false;
 		state.openMenu = null;
 		rerender();
 	}
@@ -835,21 +861,17 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 					text.addProperty,
 				),
 				el("button", { type: "submit", className: "primary" }, editingType ? text.save : text.createType),
-				...(editingType
-					? [
-							el(
-								"button",
-								{
-									type: "button",
-									onclick: () => {
-										resetTypeForm();
-										rerender();
-									},
-								},
-								text.cancel,
-							),
-						]
-					: []),
+				el(
+					"button",
+					{
+						type: "button",
+						onclick: () => {
+							resetTypeForm();
+							rerender();
+						},
+					},
+					text.cancel,
+				),
 			),
 			...state.typeErrors.map((error) => el("p", { className: "error" }, text.validation(error))),
 		);
@@ -919,12 +941,27 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 			),
 		);
 
+		const createButton = el(
+			"button",
+			{
+				type: "button",
+				className: "primary",
+				onclick: () => {
+					resetTypeForm();
+					state.creatingType = true;
+					state.focusForm = "type";
+					rerender();
+				},
+			},
+			text.createNewType,
+		);
+
 		return el(
 			"section",
 			{},
-			el("h2", {}, text.entityTypes),
+			el("div", { className: "section-header" }, el("h2", {}, text.entityTypes), ...(editingType || state.creatingType ? [] : [createButton])),
+			...(editingType || state.creatingType ? [form] : []),
 			store.data.types.length > 0 ? list : el("p", { className: "muted" }, text.noTypesYet),
-			form,
 		);
 	}
 
@@ -944,6 +981,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 				onchange: () => {
 					state.selectedTypeId = typeSelect.value;
 					state.editingEntityId = null;
+					state.creatingEntity = false;
 					rerender();
 				},
 			},
@@ -953,9 +991,24 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 		const entities = store.data.entities.filter((e) => e.typeId === type.id);
 		const editing = entities.find((e) => e.id === state.editingEntityId);
 
-		header.append(typeSelect);
+		const formOpen = editing !== undefined || state.creatingEntity;
+		const createButton = el(
+			"button",
+			{
+				type: "button",
+				className: "primary",
+				onclick: () => {
+					state.creatingEntity = true;
+					state.focusForm = "entity";
+					rerender();
+				},
+			},
+			text.createNewEntity,
+		);
+
+		header.append(typeSelect, ...(formOpen ? [] : [createButton]));
 		section.append(
-			entityForm(type, editing),
+			...(formOpen ? [entityForm(type, editing)] : []),
 			entities.length > 0 ? entityTable(type, entities) : el("p", { className: "muted" }, text.noEntitiesOfType(type.name)),
 		);
 		return section;
@@ -986,6 +1039,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 						store.addEntity(type.id, name, contentInput.value, values, descriptionInput.value);
 					}
 					state.editingEntityId = null;
+					state.creatingEntity = false;
 					rerender();
 				},
 			},
@@ -1002,21 +1056,18 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 				"div",
 				{ className: "row" },
 				el("button", { type: "submit", className: "primary" }, editing ? text.save : text.create),
-				...(editing
-					? [
-							el(
-								"button",
-								{
-									type: "button",
-									onclick: () => {
-										state.editingEntityId = null;
-										rerender();
-									},
-								},
-								text.cancel,
-							),
-						]
-					: []),
+				el(
+					"button",
+					{
+						type: "button",
+						onclick: () => {
+							state.editingEntityId = null;
+							state.creatingEntity = false;
+							rerender();
+						},
+					},
+					text.cancel,
+				),
 			),
 		);
 	}
