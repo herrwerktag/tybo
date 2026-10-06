@@ -18,6 +18,7 @@ import {
 	type EntityType,
 	type LineArrow,
 } from "@bekbon/core";
+import { renderMarkdown } from "./markdown.js";
 import { readPreference, writePreference } from "./preferences.js";
 import type { Store } from "@bekbon/core";
 import { defaultViewport, screenToWorld, zoomAt, type Viewport } from "@bekbon/core";
@@ -447,7 +448,7 @@ export function canvasView(
 				section(
 					text.description,
 					entity.description.trim()
-						? el("p", { className: "details-text" }, entity.description)
+						? renderMarkdown(entity.description)
 						: el("p", { className: "muted" }, text.noDescription),
 				),
 				...(rows.length > 0
