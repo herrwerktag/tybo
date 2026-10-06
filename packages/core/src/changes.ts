@@ -1,4 +1,4 @@
-import type { AppData, CanvasCard, Drawing, Entity, EntityType } from "./model.js";
+import type { AppData, BoardKind, CanvasCard, Drawing, Entity, EntityType, StoryPage } from "./model.js";
 import type { Viewport } from "./viewport.js";
 
 /**
@@ -20,12 +20,14 @@ export function jsonEqual(a: unknown, b: unknown): boolean {
 	return false;
 }
 
-/** A board itself — `name` and `viewport`, without its cards and drawings. The two are units of their own,
- * so someone panning a board and someone moving a card never address the same one. */
+/** A board itself — `name`, `kind`, `viewport` and its storyboard pages, without its cards and drawings. The
+ * two are units of their own, so someone panning a board and someone moving a card never address the same one. */
 export interface BoardMeta {
 	id: string;
 	name: string;
+	kind: BoardKind;
 	viewport: Viewport;
+	pages: StoryPage[];
 }
 
 /** One unit's stand: the unit itself, the way the app's data holds it, and its place in the list it belongs
@@ -72,7 +74,7 @@ export function unitStands(data: AppData): UnitStands {
 		});
 	add("type", data.types);
 	add("entity", data.entities);
-	add("board", data.boards.map(({ id, name, viewport }): BoardMeta => ({ id, name, viewport })));
+	add("board", data.boards.map(({ id, name, kind, viewport, pages }): BoardMeta => ({ id, name, kind, viewport, pages })));
 	for (const board of data.boards) add("card", board.cards, board.id);
 	for (const board of data.boards) add("drawing", board.drawings, board.id);
 	return units;

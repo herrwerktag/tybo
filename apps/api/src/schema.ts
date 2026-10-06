@@ -116,6 +116,14 @@ export const MIGRATIONS: readonly Migration[] = [
 			)`;
 		},
 	},
+	{
+		version: 2,
+		name: "board kinds and storyboard pages",
+		async up(tx) {
+			// Null in rows from before: the app reads those boards as whiteboards without pages.
+			await tx`alter table boards add column kind text, add column pages jsonb`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */

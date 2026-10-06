@@ -1040,6 +1040,134 @@ button.ref-tag {
 	bottom: 0.75rem;
 }
 
+/* Storyboard pages: bottom center. The drawing style bar moves up above it. */
+.page-bar {
+	position: absolute;
+	left: 50%;
+	bottom: 0.75rem;
+	transform: translateX(-50%);
+	max-width: calc(100% - 1.5rem);
+	flex-wrap: wrap;
+	justify-content: center;
+}
+
+.storyboard .drawing-style {
+	bottom: 3.75rem;
+}
+
+.page-bar input.page-name {
+	width: 12rem;
+}
+
+.page-bar strong.page-name {
+	max-width: 24rem;
+	padding: 0 0.5rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.page-counter {
+	min-width: 3rem;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
+}
+
+.page-copy {
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
+}
+
+/* Too narrow for page bar and zoom side by side: zoom goes above. */
+@media (max-width: 60rem) {
+	.storyboard .canvas-zoom {
+		bottom: 3.75rem;
+	}
+}
+
+/* The step description, on the canvas like a card (see placeDescription), above the cards. Editor and viewer
+ * give it the same width and padding, so its text sits in the same place in both. */
+.page-description {
+	position: absolute;
+	width: 24rem;
+	padding: 0.5rem 0.75rem;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	box-shadow: 0 2px 6px rgb(0 0 0 / 0.08);
+}
+
+.page-description[hidden] {
+	display: none;
+}
+
+/* In the editor: the text to edit, filling the box like the viewer's text, and a handle left of it to move it. */
+.page-description textarea {
+	display: block;
+	width: 100%;
+	min-height: 4.5rem;
+	padding: 0;
+	border: none;
+	background: transparent;
+	font: inherit;
+	line-height: 1.55; /* as the viewer's Markdown */
+	resize: vertical;
+}
+
+.page-description textarea:focus-visible {
+	outline: none;
+}
+
+.page-description:has(textarea:focus-visible) {
+	outline: 2px solid var(--focus);
+	outline-offset: 1px;
+}
+
+.page-description-handle {
+	position: absolute;
+	top: 0.25rem;
+	left: -24px;
+	width: 24px;
+	box-sizing: border-box;
+	text-align: center;
+	padding: 0.25rem;
+	color: var(--muted);
+	cursor: move;
+	touch-action: none;
+	user-select: none;
+}
+
+/* Other pages' cards and drawings, shown faded in the storyboard editor so they can be shown here too. */
+.canvas-card.ghost {
+	opacity: 0.35;
+	border-style: dashed;
+}
+
+.canvas-card.ghost:hover {
+	opacity: 0.7;
+}
+
+.drawing.ghost {
+	opacity: 0.3;
+}
+
+/* Cards coming onto a storyboard page fade in. */
+.canvas-card.appear {
+	animation: card-appear 350ms ease-out;
+}
+
+@keyframes card-appear {
+	from {
+		opacity: 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.canvas-card.appear {
+		animation: none;
+	}
+}
+
 /* Smaller than the swatches in the type form (more specific than .swatch, which comes later). */
 .swatch.toolbar-swatch {
 	width: 1.25rem;
