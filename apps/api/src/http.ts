@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { StoragePort } from "@bekbon/core";
+import type { Change, SavedChanges, StoragePort } from "@bekbon/core";
+import { parseChanges } from "./changes.js";
 import { APP_KEY } from "./mirror.js";
 
 /** The port the server listens on when the PORT environment variable doesn't say otherwise.
@@ -38,6 +39,12 @@ export interface Api extends StoragePort {
 	/** Optional, the Postgres side: handed the text after a successful save, so its tables can mirror the app
 	 * data. Without it (an API not on Postgres, for instance), saving stands alone. */
 	syncFromText?(text: string): Promise<void>;
+	/** Writes a change set — per unit, only the rows of the units it names — for the app's data, whose units
+	 * the addressable tables hold. Optional, because only such a storage can answer it: without this
+	 * method, the route isn't there and the saver falls back onto the whole document, as ever. The version
+	 * the save is asked to build on doesn't refuse it: the units' `before` stands decide, one at a time,
+	 * which of them collided — answered, written anyway (last one wins), never a refusal without writing. */
+	writeChanges?(key: string, changes: Change[]): Promise<SavedChanges>;
 }
 
 /** The HTTP interface of the storage port.
@@ -51,6 +58,15 @@ export interface Api extends StoragePort {
  * writes nothing at all — the others' data stays instead of being silently run over. Without `if-match`,
  * a save passes only under a key nothing is stored under yet (the first write); over already stored
  * data it answers 409 as well. A successful save answers 204 with the new version in `etag`.
+ *
+ * PUT /texts/{key}/changes saves the app's data per unit — the request body a change set (JSON): only
+ * the rows of the units it names are written, whatever stand its `if-match` names, so units decide for
+ * themselves which of them collided with someone else's in-between save — the answer says which, and
+ * writes them anyway (last one wins): 200 with `{ version, collided }`, the new version in `etag`. The
+ * route serves the app's key alone (everything else keeps living as one whole text) and an API without
+ * tables to write per unit answers 404 for it, so a saver walks the whole-document way instead; a body
+ * that isn't a change set answers 400 and writes nothing.
+ *
  * DELETE /texts/{key} removes the text (if any) and answers 204 either way. GET /health answers
  * 200 while the database answers, 503 when it doesn't.
  *
@@ -89,6 +105,20 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api): Promi
 		}
 		const key = keyOf(url.pathname);
 		if (!key) return sendEmpty(res, 404);
+		// The change-set route first: its path ({key}/changes) would otherwise read as a key of its own.
+		if (url.pathname.endsWith("/changes")) {
+			const changesOf = key.slice(0, -"/changes".length);
+			// Only the app's data lives in addressable units; every other key keeps its one whole text.
+			if (changesOf !== APP_KEY) return sendEmpty(res, 404);
+			if (method !== "PUT") return notAllowed(res, "PUT");
+			// An API without tables to write per unit keeps its old ways — the saver falls back onto them.
+			if (!api.writeChanges) return sendEmpty(res, 404);
+			const changes = parseChanges(await readJson(req));
+			if (changes === null) return sendEmpty(res, 400);
+			const answer = await api.writeChanges(APP_KEY, changes);
+			res.setHeader("etag", answer.version);
+			return sendText(res, 200, JSON.stringify(answer), "application/json; charset=utf-8");
+		}
 		switch (method) {
 			case "GET": {
 				const stored = await api.read(key);
@@ -157,6 +187,15 @@ async function body(req: IncomingMessage): Promise<string> {
 	return Buffer.concat(chunks).toString("utf8");
 }
 
+/** The request body parsed as JSON, or null when it doesn't parse (the caller answers 400 for it). */
+async function readJson(req: IncomingMessage): Promise<unknown> {
+	try {
+		return JSON.parse(await body(req));
+	} catch {
+		return null;
+	}
+}
+
 /** The first value of a `name`d request header, or null when the request doesn't carry it. */
 function header(req: IncomingMessage, name: string): string | null {
 	const value = req.headers[name];
@@ -169,8 +208,8 @@ function sendEmpty(res: ServerResponse, status: number): void {
 	res.end();
 }
 
-function sendText(res: ServerResponse, status: number, text: string): void {
-	res.writeHead(status, { "content-type": "text/plain; charset=utf-8" });
+function sendText(res: ServerResponse, status: number, text: string, type = "text/plain; charset=utf-8"): void {
+	res.writeHead(status, { "content-type": type });
 	res.end(text);
 }
 

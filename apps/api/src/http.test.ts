@@ -344,3 +344,71 @@ test("the allowed origin comes from CORS_ORIGIN, with its fallback", () => {
 	assert.equal(corsOriginFromEnv(undefined), DEFAULT_CORS_ORIGIN);
 	assert.equal(corsOriginFromEnv(""), DEFAULT_CORS_ORIGIN);
 });
+
+/** The API like the one on Postgres, able to answer change sets — and how often it wrote them. */
+function memoryApiWithChanges(initial: Record<string, string> = {}): { api: Api; writes: () => number } {
+	const api = memoryApi(initial);
+	let written = 0;
+	return {
+		api: {
+			...api,
+			writeChanges: async (key, changes) => {
+				written++;
+				await api.setItem(key, "the change set was written");
+				return { version: "7", collided: changes.flatMap((c) => (c.after === null ? [] : [c.id])) };
+			},
+		},
+		writes: () => written,
+	};
+}
+
+test("the change-set route: PUT on the app's key answers version and collisions, with the version in etag", async () => {
+	const behind = memoryApiWithChanges();
+	const api = await startApp(behind.api);
+	try {
+		const put = await call(api.url, "texts/entities-app/changes", {
+			method: "PUT",
+			body: JSON.stringify([{ kind: "entity", id: "ent-1", before: null, after: { value: { id: "ent-1" }, position: 0 } }]),
+		});
+		assert.equal(put.status, 200);
+		assert.equal(put.header("content-type"), "application/json; charset=utf-8");
+		assert.deepEqual(JSON.parse(put.text), { version: "7", collided: ["ent-1"] });
+		assert.equal(put.header("etag"), "7");
+
+		// What got there: the API behind was asked, exactly once.
+		assert.equal(behind.writes(), 1);
+	} finally {
+		await api.close();
+	}
+});
+
+test("a change set that isn't one answers 400 and writes nothing; without an apt key or API, 404", async () => {
+	const behind = memoryApiWithChanges();
+	const api = await startApp(behind.api);
+	try {
+		// Not JSON, not an array, not a unit: refused, nothing asked of the storage behind. (An empty
+		// change set is a valid one — it just has nothing to write, the DB tests cover it.)
+		for (const body of ["not json", "{}", '[{"kind":"star","id":"x"}]', '[{"kind":"type","id":""}]', '[{"kind":"card","id":"c"}]', '[{"kind":"type","id":"t","before":null,"after":null}]']) {
+			const refused = await call(api.url, "texts/entities-app/changes", { method: "PUT", body });
+			assert.equal(refused.status, 400, `"${body}" should not be a change set`);
+		}
+		assert.equal(behind.writes(), 0);
+
+		// The route serves the app's key alone: every other text keeps its one whole way.
+		assert.equal((await call(api.url, "texts/another-key/changes", { method: "PUT", body: "[]" })).status, 404);
+
+		// Only PUT is served on it.
+		assert.equal((await call(api.url, "texts/entities-app/changes")).status, 405);
+		assert.equal((await call(api.url, "texts/entities-app/changes", { method: "DELETE" })).status, 405);
+	} finally {
+		await api.close();
+	}
+
+	// An API without a change-set way of writing answers 404 — the saver walks the whole-document way.
+	const older = await startApp(memoryApi());
+	try {
+		assert.equal((await call(older.url, "texts/entities-app/changes", { method: "PUT", body: "[]" })).status, 404);
+	} finally {
+		await older.close();
+	}
+});

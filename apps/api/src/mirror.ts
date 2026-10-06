@@ -52,9 +52,13 @@ const MIRROR_TABLES = [...DERIVED_TABLES, "mirror_meta"] as const;
 /** The driver's query function, so the mirror can share the storage's connection. */
 export type Sql = postgres.Sql<{}>;
 
+/** The queries of a connection or of a transaction in one: reading the tables is the same for either, and
+ * even the writer of change sets reads them within its own transaction, so it sees its own writes. */
+export type Queries = postgres.ISql<{}>;
+
 /** The parameter for a jsonb column: `null` where the data has nothing (SQL null, not jsonb `null`), the
  * value as JSON everywhere else — the driver's own serializer, nothing home-grown. */
-const jsonb = (sql: Sql, value: unknown): postgres.Parameter | null =>
+const jsonb = (sql: Queries, value: unknown): postgres.Parameter | null =>
 	value === null || value === undefined ? null : sql.json(value as postgres.JSONValue);
 
 /** The Postgres side of the mirror. None of this ever flows back into the app: the only writer of app data
@@ -80,8 +84,9 @@ export function readAppData(text: string): AppData | null {
 	}
 }
 
-/** Assembles the app's data out of the addressable tables — the reverse of what `syncMirror` writes, in
- * one snapshot of the database, so a mirror being rebuilt alongside can't tear the picture in half.
+/**
+ * Assembles the app's data out of the addressable tables — the reverse of what `syncMirror` writes, with
+ * the queries given: a connection of one of its own, or the transaction of a write that reads within it.
  *
  * The `position` columns hold every array's order; floats come back bit for bit, the way Postgres stores
  * and answers them. Rows without a parent (a property whose type is missing, a card without its board)
@@ -89,103 +94,147 @@ export function readAppData(text: string): AppData | null {
  * there — must not fail the read either: it's skipped, like the mirror itself would.
  *
  * Answers null when no data table holds any row at all — a database before its first sync, or one whose
- * mirror was emptied — telling the caller to fall back to the blob for the app's key. */
-export async function readAppDataFromTables(sql: Sql): Promise<AppData | null> {
-	return sql.begin("isolation level repeatable read", async (tx) => {
-		const [types, properties, entities, values, boards, cards, drawings, extras] = await Promise.all([
-			tx`select id, position, name, content_template, color from entity_types order by position, id`,
-			tx`select id, type_id, position, name, kind, options, reference, card_display from properties order by type_id, position, id`,
-			tx`select id, type_id, position, name, content, description from entities order by position, id`,
-			tx`select entity_id, property_id, position, value from entity_values order by entity_id, position, property_id`,
-			tx`select id, position, name, viewport from boards order by position, id`,
-			tx`select id, board_id, position, entity_id, x, y, width, height from cards order by board_id, position, id`,
-			tx`select board_id, position, body from drawings order by board_id, position, id`,
-			tx`select value from mirror_meta where key = 'extras'`,
-		]);
-		// No rows anywhere: nothing was ever mirrored, or the mirror was emptied for an empty source. The
-		// tables owe no answer — the caller falls back to the blob rather than serving an empty app.
-		if ([types, properties, entities, values, boards, cards, drawings].every((rows) => rows.length === 0)) return null;
+ * mirror was emptied — telling the caller to fall back to the blob for the app's key.
+ */
+export async function readAppDataFrom(queries: Queries): Promise<AppData | null> {
+	const [types, properties, entities, values, boards, cards, drawings, extras] = await Promise.all([
+		queries`select id, position, name, content_template, color from entity_types order by position, id`,
+		queries`select id, type_id, position, name, kind, options, reference, card_display from properties order by type_id, position, id`,
+		queries`select id, type_id, position, name, content, description from entities order by position, id`,
+		queries`select entity_id, property_id, position, value from entity_values order by entity_id, position, property_id`,
+		queries`select id, position, name, viewport from boards order by position, id`,
+		queries`select id, board_id, position, entity_id, x, y, width, height from cards order by board_id, position, id`,
+		queries`select board_id, position, body from drawings order by board_id, position, id`,
+		queries`select value from mirror_meta where key = 'extras'`,
+	]);
+	// No rows anywhere: nothing was ever mirrored, or the mirror was emptied for an empty source. The
+	// tables owe no answer — the caller falls back to the blob rather than serving an empty app.
+	if ([types, properties, entities, values, boards, cards, drawings].every((rows) => rows.length === 0)) return null;
 
-		const typeIds = new Set(types.map(({ id }) => id));
-		const propertyIds = new Set(properties.map(({ id }) => id));
-		const entityIds = new Set(entities.map(({ id }) => id));
-		const boardIds = new Set(boards.map(({ id }) => id));
+	const typeIds = new Set(types.map(({ id }) => id));
+	const propertyIds = new Set(properties.map(({ id }) => id));
+	const entityIds = new Set(entities.map(({ id }) => id));
+	const boardIds = new Set(boards.map(({ id }) => id));
 
-		const propertiesOf = new Map<string, unknown[]>();
-		for (const property of properties) {
-			if (!typeIds.has(property.type_id)) continue; // a stray row, one the mirror would never write
-			const list = propertiesOf.get(property.type_id) ?? [];
-			list.push({
-				id: property.id,
-				name: property.name,
-				kind: property.kind,
-				options: property.options ?? [],
-				reference: property.reference ?? null,
-				cardDisplay: property.card_display,
-			});
-			propertiesOf.set(property.type_id, list);
-		}
+	const propertiesOf = new Map<string, unknown[]>();
+	for (const property of properties) {
+		if (!typeIds.has(property.type_id)) continue; // a stray row, one the mirror would never write
+		const list = propertiesOf.get(property.type_id) ?? [];
+		list.push({
+			id: property.id,
+			name: property.name,
+			kind: property.kind,
+			options: property.options ?? [],
+			reference: property.reference ?? null,
+			cardDisplay: property.card_display,
+		});
+		propertiesOf.set(property.type_id, list);
+	}
 
-		const valuesOf = new Map<string, Record<string, unknown>>();
-		for (const { entity_id, property_id, value } of values) {
-			if (!entityIds.has(entity_id) || !propertyIds.has(property_id)) continue;
-			const record = valuesOf.get(entity_id) ?? {};
-			record[property_id] = value;
-			valuesOf.set(entity_id, record);
-		}
+	const valuesOf = new Map<string, Record<string, unknown>>();
+	for (const { entity_id, property_id, value } of values) {
+		if (!entityIds.has(entity_id) || !propertyIds.has(property_id)) continue;
+		const record = valuesOf.get(entity_id) ?? {};
+		record[property_id] = value;
+		valuesOf.set(entity_id, record);
+	}
 
-		const cardsOf = new Map<string, unknown[]>();
-		for (const { id, board_id, entity_id, x, y, width, height } of cards) {
-			if (!boardIds.has(board_id) || !entityIds.has(entity_id)) continue;
-			const list = cardsOf.get(board_id) ?? [];
-			list.push({ id, entityId: entity_id, x, y, width, height });
-			cardsOf.set(board_id, list);
-		}
+	const cardsOf = new Map<string, unknown[]>();
+	for (const { id, board_id, entity_id, x, y, width, height } of cards) {
+		if (!boardIds.has(board_id) || !entityIds.has(entity_id)) continue;
+		const list = cardsOf.get(board_id) ?? [];
+		list.push({ id, entityId: entity_id, x, y, width, height });
+		cardsOf.set(board_id, list);
+	}
 
-		const drawingsOf = new Map<string, Drawing[]>();
-		for (const { board_id, body } of drawings) {
-			if (!boardIds.has(board_id)) continue;
-			const list = drawingsOf.get(board_id) ?? [];
-			list.push(body as Drawing);
-			drawingsOf.set(board_id, list);
-		}
+	const drawingsOf = new Map<string, Drawing[]>();
+	for (const { board_id, body } of drawings) {
+		if (!boardIds.has(board_id)) continue;
+		const list = drawingsOf.get(board_id) ?? [];
+		list.push(body as Drawing);
+		drawingsOf.set(board_id, list);
+	}
 
-		const extrasRow = extras[0] as { value: unknown } | undefined;
-		const extrasValue =
-			extrasRow && typeof extrasRow.value === "object" && extrasRow.value !== null
-				? (extrasRow.value as Record<string, unknown>)
-				: {};
+	const extrasRow = extras[0] as { value: unknown } | undefined;
+	const extrasValue =
+		extrasRow && typeof extrasRow.value === "object" && extrasRow.value !== null
+			? (extrasRow.value as Record<string, unknown>)
+			: {};
 
-		return {
-			...extrasValue,
-			types: types.map(({ id, name, content_template, color }) => ({
-				id,
-				name,
-				properties: propertiesOf.get(id) ?? [],
-				contentTemplate: content_template,
-				color,
-			})),
-			entities: entities.map(({ id, type_id, name, content, description }) => ({
-				id,
-				typeId: type_id,
-				name,
-				content,
-				description,
-				values: valuesOf.get(id) ?? {},
-			})),
-			boards: boards.map(({ id, name, viewport }) => ({
-				id,
-				name,
-				cards: cardsOf.get(id) ?? [],
-				viewport,
-				drawings: drawingsOf.get(id) ?? [],
-			})),
-		} as AppData;
-	});
+	return {
+		...extrasValue,
+		types: types.map(({ id, name, content_template, color }) => ({
+			id,
+			name,
+			properties: propertiesOf.get(id) ?? [],
+			contentTemplate: content_template,
+			color,
+		})),
+		entities: entities.map(({ id, type_id, name, content, description }) => ({
+			id,
+			typeId: type_id,
+			name,
+			content,
+			description,
+			values: valuesOf.get(id) ?? {},
+		})),
+		boards: boards.map(({ id, name, viewport }) => ({
+			id,
+			name,
+			cards: cardsOf.get(id) ?? [],
+			viewport,
+			drawings: drawingsOf.get(id) ?? [],
+		})),
+	} as AppData;
+}
+
+/**
+ * The mirror's rows, written within the queries given — the transaction of `syncMirror`, or that of a
+ * change-set save filling the emptied mirror from the blob (all-or-nothing with its own writes). Any
+ * rows of the mirror that are there don't survive: the mirror holds the source's whole truth, rebuilt.
+ * Only the mirror's own tables are ever truncated — `texts` is never touched here, and neither is
+ * anything else a caller writes in the same transaction.
+ */
+export async function writeMirrorRows(queries: Queries, data: AppData): Promise<void> {
+	const json = (value: unknown) => jsonb(queries, value);
+	const rows = mirrorRows(data);
+	await queries`truncate entity_types, properties, entities, entity_values, boards, cards, drawings, mirror_meta`;
+	// Parents before children, so the references between the mirror's tables hold while inserting.
+	for (const { id, position, name, contentTemplate, color } of rows.entityTypes) {
+		await queries`insert into entity_types (id, position, name, content_template, color)
+			values (${id}, ${position}, ${name}, ${contentTemplate}, ${color})`;
+	}
+	for (const { id, typeId, position, name, kind, options, reference, cardDisplay } of rows.properties) {
+		await queries`insert into properties (id, type_id, position, name, kind, options, reference, card_display)
+			values (${id}, ${typeId}, ${position}, ${name}, ${kind}, ${json(options)}, ${json(reference)}, ${cardDisplay})`;
+	}
+	for (const { id, typeId, position, name, content, description } of rows.entities) {
+		await queries`insert into entities (id, type_id, position, name, content, description)
+			values (${id}, ${typeId}, ${position}, ${name}, ${content}, ${description})`;
+	}
+	for (const { entityId, propertyId, position, value } of rows.entityValues) {
+		await queries`insert into entity_values (entity_id, property_id, position, value)
+			values (${entityId}, ${propertyId}, ${position}, ${json(value)})`;
+	}
+	for (const { id, position, name, viewport } of rows.boards) {
+		await queries`insert into boards (id, position, name, viewport)
+			values (${id}, ${position}, ${name}, ${json(viewport)})`;
+	}
+	for (const { id, boardId, entityId, position, x, y, width, height } of rows.cards) {
+		await queries`insert into cards (id, board_id, entity_id, position, x, y, width, height)
+			values (${id}, ${boardId}, ${entityId}, ${position}, ${x}, ${y}, ${width}, ${height})`;
+	}
+	for (const { id, boardId, position, kind, body } of rows.drawings) {
+		await queries`insert into drawings (id, board_id, position, kind, body)
+			values (${id}, ${boardId}, ${position}, ${kind}, ${json(body)})`;
+	}
+	await queries`insert into mirror_meta (key, value) values
+		('sync', ${json({ source_key: APP_KEY, synced_at: new Date().toISOString(), counts: rows.counts })}),
+		('direction', ${json(DIRECTION)}),
+		('extras', ${json(rows.extras)})`;
 }
 
 export function createMirror(sql: Sql): PostgresMirror {
-	const json = (value: unknown) => jsonb(sql, value);
 	const mirror: PostgresMirror = {
 		async init() {
 			await sql`create table if not exists entity_types (
@@ -264,46 +313,8 @@ export function createMirror(sql: Sql): PostgresMirror {
 
 		async syncMirror(data) {
 			if (!isAppData(data)) return;
-			const rows = mirrorRows(data);
-			await sql.begin(async (tx) => {
-				// Only the mirror's own tables are ever truncated — `texts` is never touched here.
-				await tx`truncate entity_types, properties, entities, entity_values, boards, cards, drawings, mirror_meta`;
-				// Parents before children, so the references between the mirror's tables hold while inserting.
-				for (const { id, position, name, contentTemplate, color } of rows.entityTypes) {
-					await tx`insert into entity_types (id, position, name, content_template, color)
-						values (${id}, ${position}, ${name}, ${contentTemplate}, ${color})`;
-				}
-				for (const { id, typeId, position, name, kind, options, reference, cardDisplay } of rows.properties) {
-					await tx`insert into properties (id, type_id, position, name, kind, options, reference, card_display)
-						values (${id}, ${typeId}, ${position}, ${name}, ${kind}, ${json(options)}, ${json(reference)}, ${cardDisplay})`;
-				}
-				for (const { id, typeId, position, name, content, description } of rows.entities) {
-					await tx`insert into entities (id, type_id, position, name, content, description)
-						values (${id}, ${typeId}, ${position}, ${name}, ${content}, ${description})`;
-				}
-				for (const { entityId, propertyId, position, value } of rows.entityValues) {
-					await tx`insert into entity_values (entity_id, property_id, position, value)
-						values (${entityId}, ${propertyId}, ${position}, ${json(value)})`;
-				}
-				for (const { id, position, name, viewport } of rows.boards) {
-					await tx`insert into boards (id, position, name, viewport)
-						values (${id}, ${position}, ${name}, ${json(viewport)})`;
-				}
-				for (const { id, boardId, entityId, position, x, y, width, height } of rows.cards) {
-					await tx`insert into cards (id, board_id, entity_id, position, x, y, width, height)
-						values (${id}, ${boardId}, ${entityId}, ${position}, ${x}, ${y}, ${width}, ${height})`;
-				}
-				for (const { id, boardId, position, kind, body } of rows.drawings) {
-					await tx`insert into drawings (id, board_id, position, kind, body)
-						values (${id}, ${boardId}, ${position}, ${kind}, ${json(body)})`;
-				}
-				await tx`insert into mirror_meta (key, value) values
-					('sync', ${json({ source_key: APP_KEY, synced_at: new Date().toISOString(), counts: rows.counts })}),
-					('direction', ${json(DIRECTION)}),
-					('extras', ${json(rows.extras)})`;
-			});
+			await sql.begin(async (tx) => writeMirrorRows(tx, data));
 		},
-
 		async syncFromText(text) {
 			const data = readAppData(text);
 			if (data) await mirror.syncMirror(data);
@@ -451,4 +462,12 @@ function mirrorRows(data: AppData): MirrorRows {
  * become rows, so they count in nowhere — the migration's completeness check builds on exactly this. */
 export function expectedMirrorCounts(data: AppData): TableCounts {
 	return isAppData(data) ? mirrorRows(data).counts : EMPTY_TABLE_COUNTS;
+}
+
+
+/** Assembles the app's data out of the addressable tables — the reverse of what `syncMirror` writes, in
+ * one snapshot of the database, so a mirror being rebuilt alongside can't tear the picture in half.
+ * Answers null when nothing was ever mirrored; see `readAppDataFrom` above for the rest. */
+export async function readAppDataFromTables(sql: Sql): Promise<AppData | null> {
+	return sql.begin("isolation level repeatable read", async (tx) => readAppDataFrom(tx));
 }

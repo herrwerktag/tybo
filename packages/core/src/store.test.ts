@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { Change } from "./changes.js";
 import { TYPE_COLORS, type AppData, type DraftProperty } from "./model.js";
-import { SaveConflict } from "./ports.js";
+import { ChangesUnsupported, SaveConflict, type StoragePort } from "./ports.js";
 import { DATA_VERSION, MIGRATIONS, createStore, migrate, type Store } from "./store.js";
 import { isUlid } from "./ulid.js";
 
@@ -928,4 +929,197 @@ test("a look the storage can't answer is no event: false, nothing changed, nothi
 	assert.equal(JSON.stringify(store.data), seen);
 	assert.deepEqual(store.history, { canUndo: true, canRedo: false });
 	assert.deepEqual(store.problems, { load: null, saveFailed: false, saveConflict: false });
+});
+
+
+/** A storage that writes change sets, like the API's: the whole document first (nothing being stored yet,
+ * that being its first write), then only what changed per unit — each call recorded, with the version it
+ * was asked to save against, and answered the way the API's answers: `{ version, collided }`. What it holds
+ * stays the stand of the first write: applying the units is the storage writer's business (apps/api proves
+ * it against its tables), not the port's. */
+function changesStorage() {
+	const map = new Map<string, string>();
+	const saved: { key: string; changes: Change[]; version: string | null }[] = [];
+	const calls = { setItem: 0, saveChanges: 0 };
+	const port: StoragePort = {
+		getItem: async (key: string) => map.get(key) ?? null,
+		setItem: async (key: string, value: string) => {
+			calls.setItem++;
+			map.set(key, value);
+		},
+		removeItem: async (key: string) => void map.delete(key),
+		/** Where its text stands: the stands its writes reached, numbered the way the API's revision is. */
+		async version(key: string) {
+			return map.has(key) ? String(calls.setItem + calls.saveChanges) : null;
+		},
+		async saveChanges(key: string, changes: Change[], version: string | null) {
+			calls.saveChanges++;
+			saved.push({ key, changes, version });
+			return { version: String(calls.setItem + calls.saveChanges), collided: [] };
+		},
+	};
+	return { map, saved, calls, port };
+}
+
+test("after the first write (the whole document), saves go out as change sets of only what changed", async () => {
+	const storage = changesStorage();
+	const store = await createStore(storage.port);
+	const type = store.addType("Book", [titleDraft], "");
+	const board = firstBoard(store);
+	await settle();
+	// Nothing was stored when this started, so the first save took the one way it had: the whole document.
+	assert.equal(storage.calls.setItem, 1);
+	assert.equal(storage.calls.saveChanges, 0);
+
+	const entity = store.addEntity(type.id, "Dune", "", {});
+	await settle();
+	assert.equal(storage.calls.setItem, 1, "the entity was saved per unit — no whole document went out");
+	assert.equal(storage.calls.saveChanges, 1);
+	assert.equal(storage.saved[0]!.version, "1", "named the version the first write answered, as the read did");
+	const [unit] = storage.saved[0]!.changes;
+	assert.equal(unit?.kind, "entity");
+	assert.equal(unit?.id, entity.id);
+	assert.equal(unit?.before, null);
+	assert.equal(unit?.after?.value.name, "Dune");
+
+	const card = store.addCard(board.id, entity.id, 5, 6);
+	await settle();
+	assert.deepEqual(
+		storage.saved[1]!.changes.map((c) => c.kind),
+		["card"],
+	);
+
+	// Panning and zooming is the board's own unit — the card on it stays out of it.
+	store.setViewport(board.id, { x: 3, y: 4, zoom: 1 });
+	await settle();
+	assert.deepEqual(
+		storage.saved[2]!.changes.map((c) => c.kind),
+		["board"],
+	);
+
+	store.moveCard(card.id, 66, 77);
+	await settle();
+	assert.deepEqual(
+		storage.saved.at(-1)!.changes.map((c) => c.kind),
+		["card"],
+	);
+	assert.equal(storage.calls.setItem, 1);
+});
+
+test("a save that changes nothing never goes out — not one write, not one call", async () => {
+	const storage = changesStorage();
+	const store = await createStore(storage.port);
+	store.addBoard("Extra");
+	await settle();
+	const seen = { ...storage.calls };
+	assert.equal(seen.setItem, 1);
+
+	const board = store.data.boards[0]!;
+	store.setViewport(board.id, { ...board.viewport }); // the same stand of the board, saved anyway
+	store.renameBoard(board.id, board.name); // changed nothing
+	await settle();
+	assert.deepEqual(storage.calls, seen);
+});
+
+test("without a storage that takes change sets, the whole document is the way, as ever", async () => {
+	const storage = memoryStorage();
+	let writes = 0;
+	const port: StoragePort = {
+		getItem: (key: string) => storage.getItem(key),
+		setItem: async (key: string, value: string) => {
+			writes++;
+			await storage.setItem(key, value);
+		},
+		removeItem: (key: string) => storage.removeItem(key),
+	};
+	const store = await createStore(port);
+	const book = store.addType("Book", [titleDraft], "");
+	await settle();
+	store.addEntity(book.id, "Dune", "", {});
+	await settle();
+	// One full write per change — nothing about a storage without units changed.
+	assert.equal(writes, 2);
+	const saved: { version: number; types: { name: string }[]; entities: { name: string }[] } = JSON.parse(
+		(await storage.getItem("entities-app"))!,
+	);
+	assert.equal(saved.version, DATA_VERSION);
+	assert.deepEqual(saved.types.map((t) => t.name), ["Book"]);
+	assert.deepEqual(saved.entities.map((e) => e.name), ["Dune"]);
+});
+
+test("a change set that collided is the known conflict: last one wins (the storage holds it), saving waits for the read", async () => {
+	const map = new Map<string, string>();
+	let asked = 0;
+	const port: StoragePort = {
+		getItem: async (key: string) => map.get(key) ?? null,
+		setItem: async (key: string, value: string) => void map.set(key, value),
+		removeItem: async (key: string) => void map.delete(key),
+		async saveChanges(_key: string, changes: Change[]) {
+			asked++;
+			// The first save meets someone else's change on the very unit it names: the storage wrote it
+			// anyway (this one is the last), and answers the collision — the way the API's answers.
+			return asked === 1 ? { version: "9", collided: changes.map((c) => c.id) } : { version: "9", collided: [] };
+		},
+	};
+	// A stand already saved: this store's saves are change sets from the start.
+	map.set(
+		"entities-app",
+		JSON.stringify({ version: 1, types: [], entities: [], boards: firstBoardish() }),
+	);
+	const store = await createStore(port);
+	let notified = 0;
+	store.onProblemsChange(() => notified++);
+
+	store.addBoard("Second");
+	await settle();
+	assert.deepEqual(store.problems, { load: null, saveFailed: false, saveConflict: true });
+	assert.equal(notified, 1);
+
+	// The collided change and everything after stay in memory; nothing more goes out over it.
+	store.addBoard("Third");
+	await settle();
+	assert.equal(asked, 1);
+	assert.ok(store.data.boards.some((b) => b.name === "Third"));
+
+	// Reading anew makes this stand current again — the next change goes out as ever.
+	await store.reload();
+	assert.equal(store.problems.saveConflict, false);
+	store.addBoard("Fourth");
+	await settle();
+	assert.equal(asked, 2);
+});
+
+/** The board a fresh store's data starts with, as saved data names it. */
+function firstBoardish() {
+	return [{ id: "board-1", name: "Board 1", cards: [], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] }];
+}
+
+test("a storage that answers no change sets keeps the whole-document way, and isn't asked again", async () => {
+	const storage = memoryStorage();
+	await storage.setItem("entities-app", JSON.stringify({ version: 1, types: [], entities: [], boards: firstBoardish() }));
+	let asked = 0;
+	const port: StoragePort = {
+		getItem: (key: string) => storage.getItem(key),
+		setItem: (key: string, value: string) => storage.setItem(key, value),
+		removeItem: (key: string) => storage.removeItem(key),
+		async saveChanges() {
+			asked++;
+			throw new ChangesUnsupported("entities-app"); // the API behind has no changes route
+		},
+	};
+	const store = await createStore(port);
+	const book = store.addType("Book", [titleDraft], "");
+	await settle();
+	// The change set was refused for what it is, and the save fell back on the whole document — no loss, no
+	// problem shown for it.
+	assert.equal(asked, 1);
+	assert.ok(store.problems.saveFailed === false && store.problems.saveConflict === false);
+	const first: { types: { name: string }[] } = JSON.parse((await storage.getItem("entities-app"))!);
+	assert.deepEqual(first.types.map((t) => t.name), ["Book"]);
+
+	store.addEntity(book.id, "Dune", "", {});
+	await settle();
+	assert.equal(asked, 1, "no change set asked of it again");
+	const second: { entities: { name: string }[] } = JSON.parse((await storage.getItem("entities-app"))!);
+	assert.deepEqual(second.entities.map((e) => e.name), ["Dune"]);
 });

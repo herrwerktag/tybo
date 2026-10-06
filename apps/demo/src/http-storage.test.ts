@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { SaveConflict } from "@bekbon/core";
+import { ChangesUnsupported, SaveConflict } from "@bekbon/core";
 import { httpStorage } from "./http-storage.js";
 
 /** One request the port made to the API. */
@@ -232,6 +232,65 @@ test("a look after version changes nothing: the stand this port's saves build on
 		assert.equal(await port.version!("entities-app"), "9");
 		await port.setItem("entities-app", "the new data");
 		assert.equal(api.sent[2]!.headers["if-match"], "7"); // what was read here, not what the look saw
+	} finally {
+		api.restore();
+	}
+});
+
+test("saveChanges PUTs the change set to the API's changes route, naming the stand it builds on", async () => {
+	const changes = [{ kind: "entity", id: "ent-1", before: null, after: { value: { id: "ent-1", name: "Neu" }, position: 0 } }];
+	const api = fakeFetch((sent) =>
+		sent.method === "GET"
+			? answer(200, "the saved data", { etag: "7" })
+			: answer(200, JSON.stringify({ version: "9", collided: ["ent-1"] }), {}),
+	);
+	const port = httpStorage("http://api.local/");
+	try {
+		await port.getItem("entities-app"); // remembers the version 7: the stand a save builds on
+		const saved = await port.saveChanges!("entities-app", changes as never, null);
+		assert.deepEqual(saved, { version: "9", collided: ["ent-1"] });
+		assert.deepEqual(api.sent[1], {
+			method: "PUT",
+			url: "http://api.local/texts/entities-app/changes",
+			body: JSON.stringify(changes),
+			headers: { "content-type": "application/json", "if-match": "7" },
+		});
+
+		// The answered version becomes the stand the next save under the key builds on.
+		await port.setItem("entities-app", "the new data");
+		assert.deepEqual(api.sent[2]!.headers, { "if-match": "9" });
+	} finally {
+		api.restore();
+	}
+});
+
+test("an older API answers 404 for the changes route: the port names it as it is, and the core's whole-document way remains", async () => {
+	const api = fakeFetch(() => answer(404));
+	const port = httpStorage("http://api.local/");
+	try {
+		await assert.rejects(
+			port.saveChanges!("entities-app", [], null),
+			(error: unknown) => error instanceof ChangesUnsupported, // not a failed storage, no data at risk
+		);
+	} finally {
+		api.restore();
+	}
+});
+
+test("an answer the API's changes route doesn't give rejects — saveChanges and a broken one alike", async () => {
+	let broken = false;
+	const api = fakeFetch((sent) =>
+		sent.method === "PUT" && sent.url.endsWith("/changes")
+			? broken
+				? answer(500, "the database fell over")
+				: answer(200, "not { the answer } either")
+			: answer(204),
+	);
+	const port = httpStorage("http://api.local/");
+	try {
+		await assert.rejects(port.saveChanges!("entities-app", [], null)); // not even JSON
+		broken = true;
+		await assert.rejects(port.saveChanges!("entities-app", [], null));
 	} finally {
 		api.restore();
 	}
