@@ -15,27 +15,11 @@ interface Migration {
 	up(tx: Queries): Promise<void>;
 }
 
-/** The app's data tables, children after their parents — the order they are created in. */
-export const DATA_TABLES = ["entity_types", "properties", "entities", "entity_values", "boards", "cards", "drawings"] as const;
-
 /** The schema, step by step. The app's data lives in these tables and nowhere else: every row belongs to its
  * workspace, and a workspace's rows go with it. */
 export const MIGRATIONS: readonly Migration[] = [
 	{
 		version: 1,
-		name: "retire the text storage",
-		async up(tx) {
-			// The texts under keys are no longer read or written by anything; they stay aside, untouched, until
-			// a later step drops them. The tables mirrored from them carried only derived copies — they go now,
-			// so the app's own tables can take their names.
-			if (await exists(tx, "texts")) await tx`alter table texts rename to texts_archive`;
-			for (const table of ["mirror_meta", ...DATA_TABLES].reverse()) {
-				if (await exists(tx, table)) await tx`drop table ${tx(table)} cascade`;
-			}
-		},
-	},
-	{
-		version: 2,
 		name: "workspaces and their data tables",
 		async up(tx) {
 			// `revision` is the workspace's version: it grows by one on every save of its data, so no two saves
@@ -130,14 +114,6 @@ export const MIGRATIONS: readonly Migration[] = [
 				primary key (workspace_id, id),
 				foreign key (workspace_id, board_id) references boards(workspace_id, id) on delete cascade
 			)`;
-		},
-	},
-	{
-		version: 3,
-		name: "drop the archived text storage",
-		async up(tx) {
-			// The texts set aside in step 1 were never read again; with the tables in use, they go for good.
-			if (await exists(tx, "texts_archive")) await tx`drop table texts_archive`;
 		},
 	},
 ];
