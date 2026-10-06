@@ -1,14 +1,15 @@
-import { freshDom, localStoragePort } from "./test-dom.js";
+import { freshDom } from "./test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { canvasView } from "./canvas.js";
 import { CLICK_TOLERANCE } from "./dom.js";
-import { createStore, type Store } from "@bekbon/core";
+import { createStore, DATA_VERSION, type Store } from "@bekbon/core";
+import { memoryDataPort } from "@bekbon/core/testing";
 
 /** A board with one card for Dune (with content, so it can be resized) and one for Herbert. */
 async function setup({ readOnly = false } = {}) {
 	freshDom();
-	const store = await createStore(localStoragePort());
+	const store = await createStore(memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } }).port, "ws");
 	const book = store.addType("Book", [], "");
 	const dune = store.addEntity(book.id, "Dune", "A desert planet.", {});
 	const herbert = store.addEntity(book.id, "Herbert", "", {});

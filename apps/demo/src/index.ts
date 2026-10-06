@@ -1,16 +1,22 @@
 import { createWorkspaces } from "@bekbon/core";
-import { localStoragePort } from "./local-storage.js";
-import { httpStorage } from "./http-storage.js";
-import { render, text } from "@bekbon/ui";
+import { httpData } from "./http-data.js";
+import { activeWorkspacePreference, render, renderServerUnreachable, text } from "@bekbon/ui";
 
 const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("#app element not found");
 
-// VITE_API_URL, set when starting Vite, decides where the data is saved: through the storage API
-// (into Postgres), or — empty, the standard — in the browser's localStorage, as before.
+// VITE_API_URL, set when starting Vite, says where the storage API (apps/api) answers: the data lives there,
+// in Postgres, and nowhere else. Without it — or with an API that doesn't answer — there's nothing to show.
 const apiUrl = import.meta.env.VITE_API_URL;
-
-const workspaces = await createWorkspaces(apiUrl ? httpStorage(apiUrl) : localStoragePort(), (n) =>
-	text.defaultWorkspaceName(n),
-);
-await render(root, workspaces);
+if (!apiUrl) {
+	console.error("VITE_API_URL isn't set — the demo needs the storage API's address (see apps/demo/.env.example).");
+	renderServerUnreachable(root);
+} else {
+	try {
+		const workspaces = await createWorkspaces(httpData(apiUrl), (n) => text.defaultWorkspaceName(n), activeWorkspacePreference);
+		await render(root, workspaces);
+	} catch (error) {
+		console.error(error);
+		renderServerUnreachable(root);
+	}
+}

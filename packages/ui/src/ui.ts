@@ -25,7 +25,7 @@ import { canvasView } from "./canvas.js";
 import { downloadFile, el, safeFileName, typeDot } from "./dom.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
 import type { Store } from "@bekbon/core";
-import { INDEX_KEY, dataKey, exportWorkspace, readWorkspaceFile, type Workspaces } from "@bekbon/core";
+import { exportWorkspace, readWorkspaceFile, type Workspaces } from "@bekbon/core";
 
 interface UiState {
 	editingTypeId: string | null;
@@ -42,8 +42,6 @@ interface UiState {
 	focusHandle: number | null;
 	/** The open top-bar menu, if any (kept across re-renders, e.g. a language change). */
 	openMenu: MenuName | null;
-	/** Whether the warning about this workspace's unreadable saved data was dismissed. */
-	loadProblemDismissed: boolean;
 	/** Whether a background look saw a newer stand of the open workspace than this page holds (someone else
 	 * saved in between). A hint only: nothing is reloaded for it without the user's word. */
 	newerStand: boolean;
@@ -104,6 +102,20 @@ function newDraftProperty(): DraftProperty {
 	return { name: "", kind: "text", options: [], reference: null, cardDisplay: "list" };
 }
 
+/** What the page shows instead of the app when the storage API can't be reached: nothing could be loaded, so
+ * nothing is shown or saved — only what happened, and the reload that tries again. */
+export function renderServerUnreachable(root: HTMLElement): void {
+	root.replaceChildren(
+		el(
+			"section",
+			{ className: "error-screen", role: "alert" },
+			el("h2", {}, text.serverUnreachableTitle),
+			el("p", {}, text.serverUnreachableHint),
+			el("div", { className: "row" }, el("button", { type: "button", onclick: () => location.reload() }, text.reload)),
+		),
+	);
+}
+
 export async function render(root: HTMLElement, workspaces: Workspaces): Promise<void> {
 	/** Warnings about the saved data and its saving, below the top bar; updated on its own, since failed or
 	 refused saves can happen on the canvas. */
@@ -156,7 +168,6 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 		focusForm: null,
 		focusHandle: null,
 		openMenu: null,
-		loadProblemDismissed: false,
 		newerStand: false,
 		unexpectedError: null,
 	};
@@ -171,50 +182,18 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 
 	function renderBanner(): void {
 		const { load, saveFailed, saveConflict } = store.problems;
-		const original = store.originalText();
-		// The saved text that couldn't be read, to fix by hand and import again.
-		const download = original
-			? [
-					" ",
-					el(
-						"button",
-						{
-							type: "button",
-							onclick: () => downloadFile(`${safeFileName(workspaces.active.name)} original.json`, original),
-						},
-						text.downloadOriginal,
-					),
-				]
-			: [];
 		const messages: Node[] = [];
 		if (state.unexpectedError !== null) {
 			messages.push(el("p", {}, text.unexpectedError(state.unexpectedError), " ", reloadButton()));
 		}
-		// Someone else saved in between, so this stand was refused: say what happened, and offer the newer data.
+		// Someone else saved the same units in between: say what happened, and offer the newer data.
 		if (saveConflict) messages.push(el("p", {}, text.saveConflict, " ", reloadButton()));
 		if (saveFailed) messages.push(el("p", {}, text.saveFailed));
 		// Someone else saved the workspace anew in between — a look saw it; nothing of it was loaded here. Say so and
 		// offer the newer stand: loading it is the user's word (the button), never this page's own doing.
 		if (state.newerStand) messages.push(el("p", {}, text.changedElsewhere, " ", reloadButton()));
-		if (load?.code === "newerVersion") {
-			messages.push(el("p", {}, text.loadNewerVersion, " ", reloadButton()));
-		} else if (load?.code === "notBackedUp") {
-			messages.push(el("p", {}, text.loadNotBackedUp, ...download));
-		} else if (load && !state.loadProblemDismissed) {
-			const message = load.code === "unreadable" ? text.loadUnreadable(load.backupKey) : text.loadPartlyUnreadable(load.backupKey);
-			const dismiss = el(
-				"button",
-				{
-					type: "button",
-					onclick: () => {
-						state.loadProblemDismissed = true;
-						renderBanner();
-					},
-				},
-				text.dismiss,
-			);
-			messages.push(el("p", {}, message, ...download, " ", dismiss));
-		}
+		if (load?.code === "newerVersion") messages.push(el("p", {}, text.loadNewerVersion, " ", reloadButton()));
+		if (load?.code === "unavailable") messages.push(el("p", {}, text.loadUnavailable, " ", reloadButton()));
 		banner.replaceChildren(...messages);
 		banner.hidden = messages.length === 0;
 	}
@@ -426,6 +405,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 				onsubmit: async (e) => {
 					e.preventDefault();
 					const added = await workspaces.add(nameInput.value, copyTypes.checked ? store.data.types : []);
+					if (!added) return alert(text.createFailed);
 					await switchWorkspace(added.id);
 				},
 			},
@@ -447,7 +427,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 				const read = readWorkspaceFile(await file.text().catch(() => ""));
 				if (!read) return alert(text.importInvalid);
 				const added = await workspaces.addImported(read.name ?? file.name.replace(/\.json$/i, ""), read.data);
-				if (!added) return alert(text.importNoSpace);
+				if (!added) return alert(text.importFailed);
 				await switchWorkspace(added.id);
 			},
 		});
@@ -521,7 +501,6 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 	async function switchWorkspace(id: string): Promise<void> {
 		workspaces.setActive(id);
 		store = await openStore(workspaces.active.id);
-		state.loadProblemDismissed = false;
 		state.newerStand = false; // the opened stand is the one to look from now on
 		resetTypeForm();
 		state.selectedTypeId = store.data.types[0]?.id ?? null;
@@ -1204,30 +1183,6 @@ export async function render(root: HTMLElement, workspaces: Workspaces): Promise
 	};
 	window.addEventListener("error", (e) => showUnexpectedError(e.error ?? e.message));
 	window.addEventListener("unhandledrejection", (e) => showUnexpectedError(e.reason));
-
-	// Another tab saved (browsers tell every other tab): take over its changes, so saving here doesn't overwrite them.
-	window.addEventListener("storage", (e) => {
-		if (e.storageArea !== localStorage) return;
-		void takeOverOtherTabsChanges(e.key);
-	});
-
-	/** Reloads the workspace list and the open store (async, like every step through the storage port). */
-	async function takeOverOtherTabsChanges(key: string | null): Promise<void> {
-		const cleared = key === null;
-		const { id } = workspaces.active;
-		if (cleared || key === INDEX_KEY) {
-			await workspaces.reload();
-			if (workspaces.active.id !== id) {
-				switchWorkspace(workspaces.active.id); // deleted in the other tab
-				return;
-			}
-		}
-		if (cleared || key === dataKey(id)) {
-			await store.reload();
-			state.newerStand = false; // read anew: this stand is current, so no look may claim otherwise
-		} else if (key !== INDEX_KEY) return; // another workspace's data, or a preference
-		rerender();
-	}
 
 	// Ctrl/⌘+Z undoes, Ctrl/⌘+Shift+Z or Ctrl+Y redoes; in text fields they stay the browser's own text undo.
 	document.addEventListener("keydown", (e) => {

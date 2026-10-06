@@ -15,3 +15,9 @@ export function writePreference(key: string, value: string): void {
 		// Storage blocked: the choice just isn't remembered.
 	}
 }
+
+/** Which workspace this browser opens — a view of the data, like the active board, so it's remembered here. */
+export const activeWorkspacePreference = {
+	read: () => readPreference("active-workspace"),
+	write: (id: string) => writePreference("active-workspace", id),
+};

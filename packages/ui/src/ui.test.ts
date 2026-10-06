@@ -1,31 +1,41 @@
-import { freshDom, localStoragePort } from "./test-dom.js";
+import { freshDom } from "./test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setLanguage, text } from "./i18n.js";
-import type { AppData, StoragePort } from "@bekbon/core";
+import type { AppData } from "@bekbon/core";
 import { render } from "./ui.js";
-import { createStore, SaveConflict } from "@bekbon/core";
-import { createWorkspaces, dataKey } from "@bekbon/core";
+import { createWorkspaces } from "@bekbon/core";
+import { memoryDataPort } from "@bekbon/core/testing";
+import { activeWorkspacePreference } from "./preferences.js";
 
-/** Renders the app on a fresh page (at `hash`, e.g. "#canvas"), with `saved` already in the browser storage.
- * A different `port` shows what a save through other storage does with the app (one that refuses outdated
- * saves, for instance). */
-async function startApp(
-	saved: Record<string, string> = {},
-	hash = "",
-	port: StoragePort = localStoragePort(),
-): Promise<HTMLElement> {
+/** Lets work started by a click or an event finish first (the stores open and save through the async port). */
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve));
+
+/** The workspace the tests' saved data is in. */
+const WS = "ws";
+
+/** The storage in memory, with `saved` as the data of the workspace WS (named as the first workspace is) — or
+ * no workspace at all, the way the very first start finds it. */
+function memoryStorage(saved?: unknown) {
+	const behind = memoryDataPort(saved === undefined ? {} : { [WS]: saved });
+	if (saved !== undefined) void behind.port.renameWorkspace(WS, text.defaultWorkspaceName(1)); // done at once, in memory
+	return behind;
+}
+
+/** The storage behind the app the last startApp started. */
+let storage = memoryStorage();
+
+/** Renders the app on a fresh page (at `hash`, e.g. "#canvas"), with `saved` already in the storage. A different
+ * storage `behind` it shows what the app does with one that answers otherwise (with collisions, for instance). */
+async function startApp(saved?: unknown, hash = "", behind = memoryStorage(saved)): Promise<HTMLElement> {
 	freshDom();
 	location.hash = hash;
-	for (const [key, value] of Object.entries(saved)) localStorage.setItem(key, value);
+	storage = behind;
 	const root = document.querySelector<HTMLElement>("#app")!;
-	const workspaces = await createWorkspaces(port, text.defaultWorkspaceName);
+	const workspaces = await createWorkspaces(behind.port, text.defaultWorkspaceName, activeWorkspacePreference);
 	await render(root, workspaces);
 	return root;
 }
-
-/** Lets work started by a click or an event finish first (the stores open through the async storage port). */
-const settle = () => new Promise<void>((resolve) => setTimeout(resolve));
 
 /** The element matching `selector` whose text is `label`. */
 function byText<T extends HTMLElement = HTMLElement>(root: ParentNode, selector: string, label: string): T {
@@ -42,16 +52,21 @@ function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string):
 /** Replaces browser dialogs (alert, confirm, prompt) for the current page. */
 const stub = (dialogs: Partial<Record<"alert" | "confirm" | "prompt", (message: string) => unknown>>) => Object.assign(globalThis, dialogs);
 
-const savedData = (key = "entities-app"): AppData => JSON.parse(localStorage.getItem(key) ?? "null");
+/** The data of the first workspace, as the storage holds it once the saves on their way have landed. */
+async function readSaved(): Promise<AppData> {
+	await settle();
+	const [first] = await storage.port.listWorkspaces();
+	return storage.data(first!.id) as unknown as AppData;
+}
 
 /** One type (Book, with a text property "author") and one entity (Dune), as saved data. */
-const library = JSON.stringify({
+const library = {
 	types: [
 		{ id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", properties: [{ id: "author", name: "author", kind: "text", options: [], reference: null, cardDisplay: "list" }] },
 	],
 	entities: [{ id: "01J00000000000000000000000", typeId: "book", name: "Dune", content: "", description: "", values: { author: "Herbert" } }],
 	boards: [],
-});
+};
 
 test("a type with a property, then an entity of it, can be created through the forms and are saved", async () => {
 	const root = await startApp();
@@ -64,7 +79,7 @@ test("a type with a property, then an entity of it, can be created through the f
 	byText(form, "button", text.createType).click();
 
 	assert.ok(byText(root, ".type-name", "Book"));
-	const [book] = savedData().types;
+	const [book] = (await readSaved()).types;
 	assert.equal(book?.name, "Book");
 	assert.deepEqual(book?.properties.map((p) => p.name), ["author"]);
 
@@ -76,7 +91,7 @@ test("a type with a property, then an entity of it, can be created through the f
 
 	assert.ok(byText(root, "td", "Dune"));
 	assert.ok(byText(root, "td", "Herbert"));
-	const [dune] = savedData().entities;
+	const [dune] = (await readSaved()).entities;
 	assert.equal(dune?.name, "Dune");
 	assert.equal(dune?.values[book!.properties[0]!.id], "Herbert");
 });
@@ -85,11 +100,12 @@ test("an invalid type shows its problems and isn't saved", async () => {
 	const root = await startApp();
 	byText(root.querySelector("#type-form")!, "button", text.createType).click();
 	assert.equal(root.querySelector("#type-form .error")?.textContent, text.validation({ code: "typeNameRequired" }));
-	assert.equal(localStorage.getItem("entities-app"), null);
+	assert.deepEqual((await readSaved()).types, []);
+	assert.equal(storage.saves.length, 0);
 });
 
 test("deleting an entity asks first; cancelling keeps it", async () => {
-	const root = await startApp({ "entities-app": library });
+	const root = await startApp(library);
 	const questions: string[] = [];
 	let answer = false;
 	stub({
@@ -102,29 +118,29 @@ test("deleting an entity asks first; cancelling keeps it", async () => {
 
 	deleteDune();
 	assert.deepEqual(questions, [text.confirmDeleteEntity("Dune", 0)]);
-	assert.equal(savedData().entities.length, 1);
+	assert.equal((await readSaved()).entities.length, 1);
 
 	answer = true;
 	deleteDune();
-	assert.equal(savedData().entities.length, 0);
+	assert.equal((await readSaved()).entities.length, 0);
 	assert.ok(byText(root, "p", text.noEntitiesOfType("Book")));
 });
 
 test("a type other types refer to can't be deleted", async () => {
-	const data = JSON.parse(library);
+	const data = structuredClone(library) as { types: unknown[]; boards: unknown[] };
 	data.types.push({ id: "review", name: "Review", properties: [{ id: "of", name: "of", kind: "reference", options: [], reference: { typeId: "book", multiple: false }, cardDisplay: "list" }] });
-	const root = await startApp({ "entities-app": JSON.stringify(data) });
+	const root = await startApp(data);
 	const alerts: string[] = [];
 	stub({ alert: (message: string) => void alerts.push(message), confirm: () => assert.fail("shouldn't ask to confirm") });
 
 	const bookItem = root.querySelector(".type-item")!;
 	byText(bookItem, "button", text.delete).click();
 	assert.deepEqual(alerts, [text.cannotDeleteType("Book", "Review.of")]);
-	assert.equal(savedData().types.length, 2);
+	assert.equal((await readSaved()).types.length, 2);
 });
 
 test("a new workspace from the menu starts empty and becomes active; switching back shows the first one again", async () => {
-	const root = await startApp({ "entities-app": library });
+	const root = await startApp(library);
 	const newForm = root.querySelector<HTMLFormElement>(".workspace-new")!;
 	newForm.querySelector<HTMLInputElement>("input:not([type])")!.value = "Second";
 	byText(newForm, "button", text.create).click();
@@ -139,20 +155,19 @@ test("a new workspace from the menu starts empty and becomes active; switching b
 	assert.ok(byText(root, ".type-name", "Book"));
 });
 
-test("the banner warns about unreadable saved data until dismissed", async () => {
-	const root = await startApp({ "entities-app": "{not json" });
+test("a workspace whose data can't be loaded warns that changes aren't saved, and offers a reload", async () => {
+	const behind = memoryStorage(library);
+	behind.failing.loads = true;
+	const root = await startApp(undefined, "", behind);
 	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
 	assert.equal(banner.hidden, false);
-	assert.match(banner.textContent ?? "", /entities-app:backup:/);
-	assert.ok(byText(banner, "button", text.downloadOriginal));
-
-	byText(banner, "button", text.dismiss).click();
-	assert.equal(banner.hidden, true);
+	assert.ok(banner.textContent!.includes(text.loadUnavailable));
+	assert.ok(byText(banner, "button", text.reload));
 });
 
 test("a page that can't be drawn shows the error screen, which can still export", async (t) => {
 	const logged = t.mock.method(console, "error", () => {});
-	const root = await startApp({ "entities-app": library });
+	const root = await startApp(library);
 	const createElement = document.createElement.bind(document);
 	document.createElement = ((tag: string) => {
 		if (tag === "table") throw new Error("table failed");
@@ -177,47 +192,11 @@ test("errors thrown outside rendering show in the banner", async () => {
 	assert.match(banner.textContent ?? "", /handler failed/);
 });
 
-/** What a browser does in this tab when another tab saved under `key`. */
-const otherTabSaved = (key: string) =>
-	window.dispatchEvent(new StorageEvent("storage", { key, newValue: localStorage.getItem(key), storageArea: localStorage }));
-
-test("changes saved in another tab show up here, and saving here keeps them", async () => {
-	const root = await startApp({ "entities-app": library });
-	(await createStore(localStoragePort())).addType("Film", [], ""); // in the other tab
-	otherTabSaved("entities-app");
-	await settle();
-	assert.ok(byText(root, ".type-name", "Film"));
-
-	// Saving here (deleting Dune) mustn't drop the other tab's type.
-	stub({ confirm: () => true });
-	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.delete).click();
-	assert.deepEqual(savedData().types.map((t) => t.name), ["Book", "Film"]);
-	assert.equal(savedData().entities.length, 0);
-});
-
-test("when another tab deletes the workspace open here, this tab switches to one that's left", async () => {
-	const root = await startApp();
-	const newForm = root.querySelector<HTMLFormElement>(".workspace-new")!;
-	newForm.querySelector<HTMLInputElement>("input:not([type])")!.value = "Second";
-	byText(newForm, "button", text.create).click();
-	await settle();
-	const secondId = (await createWorkspaces(localStoragePort(), text.defaultWorkspaceName)).active.id;
-
-	const otherTab = await createWorkspaces(localStoragePort(), text.defaultWorkspaceName);
-	otherTab.remove(secondId);
-	otherTabSaved(dataKey(secondId));
-	otherTabSaved("workspaces");
-	await settle();
-
-	assert.equal(root.querySelector(".workspace-name")?.textContent, text.defaultWorkspaceName(1));
-	assert.equal(localStorage.getItem(dataKey(secondId)), null); // not written back
-});
-
 const press = (target: Element, key: string, modifiers: KeyboardEventInit = {}) =>
 	target.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, bubbles: true, cancelable: true, ...modifiers }));
 
 test("a deleted entity comes back with the Undo button, and goes again with Ctrl+Y", async () => {
-	const root = await startApp({ "entities-app": library });
+	const root = await startApp(library);
 	const [undo, redo] = root.querySelectorAll<HTMLButtonElement>(".history-button") as unknown as [HTMLButtonElement, HTMLButtonElement];
 	assert.equal(undo.disabled, true);
 
@@ -227,33 +206,33 @@ test("a deleted entity comes back with the Undo button, and goes again with Ctrl
 
 	undo.click();
 	assert.ok(byText(root, "td", "Dune"));
-	assert.equal(savedData().entities.length, 1);
+	assert.equal((await readSaved()).entities.length, 1);
 	assert.equal(redo.disabled, false);
 
 	press(document.body, "y");
-	assert.equal(savedData().entities.length, 0);
+	assert.equal((await readSaved()).entities.length, 0);
 	assert.equal(root.querySelector("td"), null);
 });
 
 test("Ctrl+Z undoes outside text fields; inside one it's left to the browser's text undo", async () => {
-	const root = await startApp({ "entities-app": library });
+	const root = await startApp(library);
 	stub({ confirm: () => true });
 	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.delete).click();
 
 	const nameInput = root.querySelector<HTMLInputElement>("#entity-form input")!;
 	assert.equal(press(nameInput, "z"), true); // not handled: the default (text undo) isn't prevented
-	assert.equal(savedData().entities.length, 0);
+	assert.equal((await readSaved()).entities.length, 0);
 
 	assert.equal(press(document.body, "z"), false);
-	assert.equal(savedData().entities.length, 1);
+	assert.equal((await readSaved()).entities.length, 1);
 	press(document.body, "z", { shiftKey: true });
-	assert.equal(savedData().entities.length, 0);
+	assert.equal((await readSaved()).entities.length, 0);
 });
 
 test("canvas changes can be undone too: the Undo button follows them without the page being drawn again", async () => {
-	const data = JSON.parse(library);
+	const data = structuredClone(library) as { types: unknown[]; boards: unknown[] };
 	data.boards = [{ id: "b", name: "Board 1", cards: [{ id: "c", entityId: "01J00000000000000000000000", x: 0, y: 0, width: 240, height: 160 }], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] }];
-	const root = await startApp({ "entities-app": JSON.stringify(data) }, "#canvas");
+	const root = await startApp(data, "#canvas");
 	const [undo] = root.querySelectorAll<HTMLButtonElement>(".history-button");
 
 	root.querySelector<HTMLButtonElement>(".canvas-board .card-remove")!.click();
@@ -265,7 +244,7 @@ test("canvas changes can be undone too: the Undo button follows them without the
 });
 
 test("a workspace saved by a newer version warns that changes aren't saved, and offers a reload", async () => {
-	const root = await startApp({ "entities-app": JSON.stringify({ version: 999, types: [], entities: [] }) });
+	const root = await startApp({ version: 999, types: [], entities: [] });
 	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
 	assert.equal(banner.hidden, false);
 	assert.match(banner.textContent ?? "", new RegExp(text.loadNewerVersion.slice(0, 20)));
@@ -273,16 +252,11 @@ test("a workspace saved by a newer version warns that changes aren't saved, and 
 	assert.equal(banner.querySelector(`button`)?.textContent, text.reload); // nothing to dismiss
 });
 
-test("a save refused as outdated warns of the conflict, not of a full storage, and offers a reload", async () => {
-	// A storage that refuses every save as outdated — the way the API's does when someone else saved first.
-	const port: StoragePort = {
-		getItem: async () => null,
-		setItem: async () => {
-			throw new SaveConflict("entities-app");
-		},
-		removeItem: async () => {},
-	};
-	const root = await startApp({}, "", port);
+test("a save that collided warns of the conflict, not of a failing storage, and offers a reload", async () => {
+	// A storage that answers every unit as collided — the way the API's does when someone else saved it first.
+	const behind = memoryStorage();
+	behind.port.saveChanges = async (_id, changes) => ({ version: "9", collided: changes.map((c) => c.id) });
+	const root = await startApp(undefined, "", behind);
 	const typeForm = root.querySelector<HTMLFormElement>("#type-form")!;
 	typeInto(typeForm.querySelector(`input[placeholder="${text.typeNamePlaceholder}"]`)!, "Book");
 	byText(typeForm, "button", text.createType).click();
@@ -295,48 +269,16 @@ test("a save refused as outdated warns of the conflict, not of a full storage, a
 	assert.ok(byText(banner, "button", text.reload));
 });
 
-/** A port that names versions, as the HTTP storage does: every write here moves the standing version on, and
- * `bump` moves it without writing here — the way another tab's or another device's save would. `looks` counts
- * the version questions the port answered (a look is one). */
-function versionedPort(): { port: StoragePort; bump: () => void; looks: () => number; failLooks: (fail: boolean) => void } {
-	let revision = 0;
-	let asked = 0;
-	let failing = false;
-	return {
-		bump: () => void revision++, // someone else saved: the stand moves, nothing written here
-		looks: () => asked,
-		failLooks: (fail) => void (failing = fail),
-		port: {
-			async getItem(key) {
-				return localStorage.getItem(key);
-			},
-			async setItem(key, value) {
-				localStorage.setItem(key, value);
-				revision++; // this side's own save: the stand it reaches is its
-			},
-			async removeItem(key) {
-				localStorage.removeItem(key);
-			},
-			async version() {
-				asked++;
-				if (failing) throw new Error("the storage doesn't answer");
-				return String(revision);
-			},
-		},
-	};
-}
-
 /** What the page does when the tab takes the front again: it looks for a newer stand at once. */
 const lookNow = () => window.dispatchEvent(new Event("focus"));
 
 test("a stand saved elsewhere in between is noticed and offered with the reload button — nothing loads it on its own", async () => {
-	const { port, bump } = versionedPort();
-	const root = await startApp({ "entities-app": library }, "", port);
+	const root = await startApp(library);
 	await settle();
 	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
 	assert.equal(banner.hidden, true); // nobody else changed anything: no hint
 
-	bump(); // another tab saved this workspace in between
+	storage.saveElsewhere(WS); // another tab saved this workspace in between
 	lookNow();
 	await settle();
 	assert.equal(banner.hidden, false);
@@ -345,17 +287,11 @@ test("a stand saved elsewhere in between is noticed and offered with the reload 
 
 	// The look didn't load anything: the page shows the stand it read, and the saved data wasn't run over.
 	assert.ok(byText(root, "td", "Dune"));
-	assert.equal(localStorage.getItem("entities-app"), library);
-
-	// Reading anew — the user's word, here the other tab's arrival — takes the hint back: no sticking warning.
-	otherTabSaved("entities-app");
-	await settle();
-	assert.equal(banner.hidden, true);
+	assert.deepEqual(storage.data(WS), library);
 });
 
 test("after a save of its own, the workspace isn't 'changed elsewhere' — no false alarm over its own work", async () => {
-	const { port } = versionedPort();
-	const root = await startApp({ "entities-app": library }, "", port);
+	const root = await startApp(library);
 	const typeForm = root.querySelector<HTMLFormElement>("#type-form")!;
 	typeInto(typeForm.querySelector(`input[placeholder="${text.typeNamePlaceholder}"]`)!, "Film");
 	byText(typeForm, "button", text.createType).click();
@@ -366,9 +302,8 @@ test("after a save of its own, the workspace isn't 'changed elsewhere' — no fa
 });
 
 test("a look the storage can't answer starts no message: a failed background look is no event", async () => {
-	const { port, failLooks } = versionedPort();
-	const root = await startApp({ "entities-app": library }, "", port);
-	failLooks(true); // the network is gone: the look goes nowhere
+	const root = await startApp(library);
+	storage.failing.looks = true; // the network is gone: the look goes nowhere
 	lookNow();
 	await settle();
 	lookNow(); // and again — still nothing
@@ -377,8 +312,8 @@ test("a look the storage can't answer starts no message: a failed background loo
 });
 
 test("the tab hidden asks nothing: no eyes on it, nothing on the wire; visible again, it looks", async () => {
-	const { port, looks } = versionedPort();
-	const root = await startApp({ "entities-app": library }, "", port);
+	const root = await startApp(library);
+	const looks = storage.looks;
 	await settle();
 	const asked = looks();
 
@@ -404,9 +339,8 @@ test("the tab hidden asks nothing: no eyes on it, nothing on the wire; visible a
 test("drawing the page again and again starts no further timers: one watch for the page's whole life", async (t) => {
 	freshDom();
 	const started = t.mock.method(window, "setInterval");
-	localStorage.setItem("entities-app", library);
 	const root = document.querySelector<HTMLElement>("#app")!;
-	await render(root, await createWorkspaces(localStoragePort(), text.defaultWorkspaceName));
+	await render(root, await createWorkspaces(memoryStorage(library).port, text.defaultWorkspaceName, activeWorkspacePreference));
 	assert.equal(started.mock.callCount(), 1);
 
 	// Whatever draws the page anew, none of it may start a watch of its own (or the page would ask faster and

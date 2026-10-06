@@ -1,23 +1,28 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Change } from "./changes.js";
 import { TYPE_COLORS, type AppData, type DraftProperty } from "./model.js";
-import { ChangesUnsupported, SaveConflict, type StoragePort } from "./ports.js";
+import { memoryDataPort } from "./memory-port.js";
 import { DATA_VERSION, MIGRATIONS, createStore, migrate, type Store } from "./store.js";
 import { isUlid } from "./ulid.js";
 
-function memoryStorage(initial: Record<string, string> = {}) {
-	const map = new Map(Object.entries(initial));
-	return {
-		map,
-		getItem: async (key: string) => map.get(key) ?? null,
-		setItem: async (key: string, value: string) => void map.set(key, value),
-		removeItem: async (key: string) => void map.delete(key),
-	};
-}
-
 /** Lets background saves finish and report how they went (a failed save flips `problems.saveFailed` only then). */
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve));
+
+/** The workspace the tests' stores open. */
+const WS = "ws";
+
+/** The data port in memory, with the workspace WS already there — holding `saved` when given (as data stored
+ * by whatever version of the app saved it), or nothing at all, the way a workspace starts. */
+function memoryStorage(saved: unknown = { version: DATA_VERSION, types: [], entities: [], boards: [] }) {
+	return memoryDataPort({ [WS]: saved });
+}
+
+/** The store of the workspace WS, through the port in memory — once the saves on their way have landed, the
+ * way another tab opening it a moment later would find them. */
+const open = async (storage: ReturnType<typeof memoryStorage>) => {
+	await settle();
+	return createStore(storage.port, WS);
+};
 
 /** Checks for fresh data: no types or entities, and one empty default board. */
 function assertEmpty(data: AppData) {
@@ -34,19 +39,19 @@ const titleDraft: DraftProperty = { name: "title", kind: "text", options: [], re
 
 test("data persists across store instances", async () => {
 	const storage = memoryStorage();
-	const store = await createStore(storage);
+	const store = await open(storage);
 	const type = store.addType(" Book ", [titleDraft], "");
 	const prop = type.properties[0]!;
 	store.addEntity(type.id, "Dune", "", { [prop.id]: "Dune" });
 
-	const reloaded = await createStore(storage);
+	const reloaded = await open(storage);
 	assert.equal(reloaded.data.types[0]?.name, "Book");
 	assert.equal(reloaded.data.entities[0]?.name, "Dune");
 	assert.equal(reloaded.data.entities[0]?.values[prop.id], "Dune");
 });
 
 test("addEntity assigns a ULID; updateEntity keeps it", async () => {
-	const store = await createStore(memoryStorage());
+	const store = await open(memoryStorage());
 	const type = store.addType("Book", [titleDraft], "");
 	const prop = type.properties[0]!;
 	const a = store.addEntity(type.id, " A ", "", { [prop.id]: "A" });
@@ -67,7 +72,7 @@ test("addEntity assigns a ULID; updateEntity keeps it", async () => {
 });
 
 test("updateType keeps property ids and migrates only that type's entities", async () => {
-	const store = await createStore(memoryStorage());
+	const store = await open(memoryStorage());
 	const book = store.addType("Book", [titleDraft, { name: "status", kind: "options", options: ["Draft", "Published"], reference: null, cardDisplay: "list" }], "");
 	const film = store.addType("Film", [titleDraft], "");
 	const title = book.properties[0]!;
@@ -99,7 +104,7 @@ test("updateType keeps property ids and migrates only that type's entities", asy
 });
 
 test("deleteType removes its entities only", async () => {
-	const store = await createStore(memoryStorage());
+	const store = await open(memoryStorage());
 	const book = store.addType("Book", [titleDraft], "");
 	const film = store.addType("Film", [titleDraft], "");
 	store.addEntity(book.id, "Dune", "", {});
@@ -121,7 +126,7 @@ test("loads data saved with the old number/boolean/date kinds as text", async ()
 		types: [{ id: "b", name: "Book", properties: [{ id: "p", name: "pages", kind: "number" }] }],
 		entities: [{ id: "e", typeId: "b", values: { p: 42 } }],
 	};
-	const store = await createStore(memoryStorage({ "entities-app": JSON.stringify(old) }));
+	const store = await open(memoryStorage(old));
 	assert.deepEqual(store.data.types[0]?.properties[0], {
 		id: "p",
 		name: "pages",
@@ -150,35 +155,42 @@ test("gives old entities a ULID and a name from their first property", async () 
 			{ id: "x", typeId: "b", values: { t: null } },
 		],
 	};
-	const [dune, empty] = (await createStore(memoryStorage({ "entities-app": JSON.stringify(old) }))).data.entities;
+	const [dune, empty] = (await open(memoryStorage(old))).data.entities;
 	assert.ok(isUlid(dune?.id));
 	assert.equal(dune?.name, "Dune");
 	assert.equal(empty?.name, "Untitled");
 });
 
-test("falls back to empty data on corrupt or throwing storage", async () => {
-	assertEmpty((await createStore(memoryStorage({ "entities-app": "{not json" }))).data);
-	assertEmpty((await createStore(memoryStorage({ "entities-app": '{"types":1}' }))).data);
+/** The names of the boards the workspace WS holds in the storage. */
+const storedBoards = (storage: ReturnType<typeof memoryStorage>) =>
+	(storage.data(WS)!.boards as { name: string }[]).map((b) => b.name);
 
-	const throwing = {
-		getItem: () => {
-			throw new Error("blocked");
-		},
-		setItem: () => {
-			throw new Error("blocked");
-		},
-		removeItem: () => {
-			throw new Error("blocked");
-		},
-	};
-	const store = await createStore(throwing);
+test("a workspace that can't be loaded starts empty, and nothing is saved over it", async () => {
+	const storage = memoryStorage({ version: 1, types: [{ id: "b", name: "Book", properties: [] }], entities: [], boards: [] });
+	storage.failing.loads = true;
+	const store = await open(storage);
 	assertEmpty(store.data);
-	store.addType("Book", [titleDraft], "");
+	assert.deepEqual(store.problems.load, { code: "unavailable" });
+
+	// Changes work in memory, but nothing goes out: what's stored stays exactly as it was.
+	store.addType("Film", [], "");
+	await settle();
 	assert.equal(store.data.types.length, 1);
+	assert.equal(storage.saves.length, 0);
+
+	// A workspace that isn't there (deleted elsewhere) is just as unavailable.
+	const gone = await createStore(memoryStorage().port, "not-there");
+	assert.deepEqual(gone.problems.load, { code: "unavailable" });
+
+	// Reading anew once the storage answers again: the data is there, saving goes on.
+	storage.failing.loads = false;
+	await store.reload();
+	assert.equal(store.problems.load, null);
+	assert.deepEqual(store.data.types.map((t) => t.name), ["Book"]);
 });
 
-test("one malformed type or entity is dropped on its own; the original is backed up first", async () => {
-	const saved = JSON.stringify({
+test("one malformed type or entity is dropped on its own — and left as it is stored, not deleted", async () => {
+	const saved = {
 		types: [
 			{ id: "broken", name: "Broken" }, // no properties: loads with none
 			{ id: "b", name: "Book", properties: [{ id: "t", name: "title", kind: "text" }, "not a property"] },
@@ -190,9 +202,9 @@ test("one malformed type or entity is dropped on its own; the original is backed
 			{ name: "no type id" },
 		],
 		boards: [],
-	});
-	const storage = memoryStorage({ "entities-app": saved });
-	const store = await createStore(storage);
+	};
+	const storage = memoryStorage(saved);
+	const store = await open(storage);
 	assert.deepEqual(
 		store.data.types.map((t) => [t.id, t.properties.map((p) => p.id)]),
 		[["broken", []], ["b", ["t"]]],
@@ -201,96 +213,40 @@ test("one malformed type or entity is dropped on its own; the original is backed
 		store.data.entities.map((e) => [e.name, e.values]),
 		[["Dune", { t: "Dune" }], ["No values", {}]],
 	);
+	assert.equal(store.problems.load, null);
 
-	const problem = store.problems.load;
-	assert.equal(problem?.code, "partlyUnreadable");
-	assert.ok(problem && "backupKey" in problem && problem.backupKey.startsWith("entities-app:backup:"));
-	assert.equal(await storage.getItem(problem.backupKey), saved);
-
-	// Saving overwrites the original, but the backup stays.
+	// Saving writes what changed — what couldn't be read was never this store's to delete.
 	store.addBoard("New");
-	assert.notEqual(await storage.getItem("entities-app"), saved);
-	assert.equal(await storage.getItem(problem.backupKey), saved);
+	await settle();
+	assert.ok((storage.data(WS)!.types as unknown[]).includes("not a type"));
 });
 
-test("unreadable data is backed up before starting fresh; data that loads fine isn't", async () => {
-	const storage = memoryStorage({ "entities-app": "{not json" });
-	const store = await createStore(storage);
-	assertEmpty(store.data);
-	const problem = store.problems.load;
-	assert.equal(problem?.code, "unreadable");
-	assert.ok(problem && "backupKey" in problem);
-	assert.equal(await storage.getItem(problem.backupKey), "{not json");
-	assert.equal(store.originalText(), "{not json");
-
-	store.addType("Book", [titleDraft], "");
-	const reloaded = await createStore(storage);
-	assert.equal(reloaded.problems.load, null);
-	assert.equal((await createStore(memoryStorage())).problems.load, null);
-	assert.equal([...storage.map.keys()].filter((k) => k.includes(":backup:")).length, 1);
-});
-
-test("when the backup can't be written, saving stays paused so the original isn't overwritten", async () => {
-	const map = new Map([["entities-app", "{not json"]]);
-	const storage = {
-		getItem: async (key: string) => map.get(key) ?? null,
-		setItem: async (key: string, value: string) => {
-			if (key.includes(":backup:")) throw new Error("quota");
-			map.set(key, value);
-		},
-		removeItem: async (key: string) => void map.delete(key),
-	};
-	const store = await createStore(storage);
-	assert.deepEqual(store.problems.load, { code: "notBackedUp" });
-	store.addType("Book", [titleDraft], "");
-	assert.equal(store.data.types.length, 1);
-	assert.equal(map.get("entities-app"), "{not json");
-	assert.equal(store.originalText(), "{not json");
-});
-
-test("failed saves are reported until a save succeeds again", async () => {
-	let full = false;
-	const map = new Map<string, string>();
-	const storage = {
-		getItem: async (key: string) => map.get(key) ?? null,
-		setItem: async (key: string, value: string) => {
-			if (full) throw new Error("quota");
-			map.set(key, value);
-		},
-		removeItem: async (key: string) => void map.delete(key),
-	};
-	const store = await createStore(storage);
+test("failed saves are reported until a save succeeds again — and then nothing of the failed ones is missing", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
 	let notified = 0;
 	store.onProblemsChange(() => notified++);
 
 	store.addBoard("A");
+	await settle();
 	assert.equal(store.problems.saveFailed, false);
-	full = true;
+	storage.failing.saves = true;
 	store.addBoard("B");
 	store.addBoard("C");
 	await settle();
 	assert.equal(store.problems.saveFailed, true);
 	assert.equal(notified, 1);
-	full = false;
+	storage.failing.saves = false;
 	store.addBoard("D");
 	await settle();
 	assert.equal(store.problems.saveFailed, false);
 	assert.equal(notified, 2);
-	assert.equal(JSON.parse(map.get("entities-app")!).boards.length, 5);
+	assert.deepEqual(storedBoards(storage), ["Board 1", "A", "B", "C", "D"]);
 });
 
-test("a save the storage refuses as outdated is its own problem, and saving stops until it's read anew", async () => {
-	const map = new Map<string, string>();
-	let outdated = false;
-	const storage = {
-		getItem: async (key: string) => map.get(key) ?? null,
-		setItem: async (key: string, value: string) => {
-			if (outdated) throw new SaveConflict(key); // someone else saved in between
-			map.set(key, value);
-		},
-		removeItem: async (key: string) => void map.delete(key),
-	};
-	const store = await createStore(storage);
+test("a save that collided with someone else's is its own problem, and saving stops until it's read anew", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
 	let notified = 0;
 	store.onProblemsChange(() => notified++);
 
@@ -298,37 +254,33 @@ test("a save the storage refuses as outdated is its own problem, and saving stop
 	await settle();
 	assert.equal(store.problems.saveConflict, false);
 
-	outdated = true;
-	store.addBoard("B");
+	// Someone else renames board A in between; here it's renamed too — the same unit from two sides.
+	const theirs = structuredClone(storage.data(WS)!) as unknown as AppData;
+	theirs.boards[1]!.name = "Theirs";
+	storage.saveElsewhere(WS, theirs as unknown as Record<string, unknown>);
+	store.renameBoard(store.data.boards[1]!.id, "Mine");
 	await settle();
-	// Not a failed save (no storage problem) — a conflict, honestly named.
+	// Not a failed save (no storage problem) — a conflict, honestly named. The last save won.
 	assert.deepEqual(store.problems, { load: null, saveFailed: false, saveConflict: true });
 	assert.equal(notified, 1);
+	assert.deepEqual(storedBoards(storage), ["Board 1", "Mine"]);
 
-	// The refused one and further changes stay in memory; nothing more is saved over the others' work.
+	// Further changes stay in memory; nothing more is written until the data is read anew.
 	store.addBoard("C");
 	await settle();
 	assert.equal(notified, 1);
-	// The refused change (B) and the further one (C) stay in memory; nothing more is written over theirs.
-	assert.deepEqual(
-		JSON.parse(map.get("entities-app")!).boards.map((b: { name: string }) => b.name),
-		["Board 1", "A"], // what had been saved before the conflict stands, no B or C
-	);
+	assert.deepEqual(storedBoards(storage), ["Board 1", "Mine"]);
 
 	// Reading anew makes this stand current again: the next change goes through.
-	outdated = false;
 	await store.reload();
 	assert.equal(store.problems.saveConflict, false);
 	store.addBoard("D");
 	await settle();
-	assert.deepEqual(
-		JSON.parse(map.get("entities-app")!).boards.map((b: { name: string }) => b.name),
-		["Board 1", "A", "D"],
-	);
+	assert.deepEqual(storedBoards(storage), ["Board 1", "Mine", "D"]);
 });
 
 async function referenceSetup() {
-	const store = await createStore(memoryStorage());
+	const store = await open(memoryStorage());
 	const person = store.addType("Person", [], "");
 	const tag = store.addType("Tag", [], "");
 	const book = store.addType("Book", [
@@ -375,7 +327,7 @@ test("updateType: changing a reference's target type clears its values", async (
 
 test("reference values persist across store instances", async () => {
 	const storage = memoryStorage();
-	const store = await createStore(storage);
+	const store = await open(storage);
 	const tag = store.addType("Tag", [], "");
 	const book = store.addType("Book", [
 		{ name: "tags", kind: "reference", options: [], reference: { typeId: tag.id, multiple: true, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" },
@@ -383,12 +335,12 @@ test("reference values persist across store instances", async () => {
 	const scifi = store.addEntity(tag.id, "Sci-fi", "", {});
 	const dune = store.addEntity(book.id, "Dune", "", { [book.properties[0]!.id]: [scifi.id] });
 
-	const reloaded = await createStore(storage);
+	const reloaded = await open(storage);
 	assert.deepEqual(reloaded.data.entities.find((e) => e.id === dune.id)?.values, { [book.properties[0]!.id]: [scifi.id] });
 });
 
 test("content and the type's template keep their line breaks; template changes leave entities alone", async () => {
-	const store = await createStore(memoryStorage());
+	const store = await open(memoryStorage());
 	const note = store.addType("Note", [], "# Title\n\n- ");
 	assert.equal(note.contentTemplate, "# Title\n\n- ");
 
@@ -408,13 +360,13 @@ test("old data without content fields loads with empty strings", async () => {
 		types: [{ id: "b", name: "Book", properties: [] }],
 		entities: [{ id: "01ARYZ6S41TSV4RRFFQ69G5FAV", typeId: "b", name: "Dune", values: {} }],
 	};
-	const store = await createStore(memoryStorage({ "entities-app": JSON.stringify(old) }));
+	const store = await open(memoryStorage(old));
 	assert.equal(store.data.types[0]?.contentTemplate, "");
 	assert.equal(store.data.entities[0]?.content, "");
 });
 
 test("an entity can have several cards; moveCard brings a card to the front", async () => {
-	const store = await createStore(memoryStorage());
+	const store = await open(memoryStorage());
 	const note = store.addType("Note", [], "");
 	const a = store.addEntity(note.id, "A", "", {});
 	const b = store.addEntity(note.id, "B", "", {});
@@ -435,7 +387,7 @@ test("an entity can have several cards; moveCard brings a card to the front", as
 });
 
 test("resizeCard enforces the minimum size; removeCard removes one card and keeps the entity", async () => {
-	const store = await createStore(memoryStorage());
+	const store = await open(memoryStorage());
 	const note = store.addType("Note", [], "");
 	const a = store.addEntity(note.id, "A", "", {});
 	const first = store.addCard(firstBoard(store).id, a.id, 0, 0);
@@ -453,7 +405,7 @@ test("resizeCard enforces the minimum size; removeCard removes one card and keep
 });
 
 test("deleting an entity or its type removes its card", async () => {
-	const store = await createStore(memoryStorage());
+	const store = await open(memoryStorage());
 	const note = store.addType("Note", [], "");
 	const other = store.addType("Other", [], "");
 	const a = store.addEntity(note.id, "A", "", {});
@@ -471,18 +423,18 @@ test("deleting an entity or its type removes its card", async () => {
 
 test("cards and viewport persist; bad canvas data falls back to empty", async () => {
 	const storage = memoryStorage();
-	const store = await createStore(storage);
+	const store = await open(storage);
 	const note = store.addType("Note", [], "");
 	const a = store.addEntity(note.id, "A", "", {});
 	store.addCard(firstBoard(store).id, a.id, 5, 6);
 	store.setViewport(firstBoard(store).id, { x: 100, y: -50, zoom: 9 });
 
-	const reloaded = await createStore(storage);
+	const reloaded = await open(storage);
 	assert.equal(firstBoard(reloaded).cards[0]?.x, 5);
 	assert.deepEqual(firstBoard(reloaded).viewport, { x: 100, y: -50, zoom: 2 });
 
 	const bad = { types: [], entities: [], boards: [{ cards: [{ entityId: "x", x: "1" }], viewport: null }] };
-	assertEmpty((await createStore(memoryStorage({ "entities-app": JSON.stringify(bad) }))).data);
+	assertEmpty((await open(memoryStorage(bad))).data);
 });
 
 test("the single canvas saved before boards existed becomes Board 1; its cards get ids", async () => {
@@ -494,7 +446,7 @@ test("the single canvas saved before boards existed becomes Board 1; its cards g
 			viewport: { x: 0, y: 0, zoom: 1 },
 		},
 	};
-	const { boards } = (await createStore(memoryStorage({ "entities-app": JSON.stringify(old) }))).data;
+	const { boards } = (await open(memoryStorage(old))).data;
 	assert.equal(boards.length, 1);
 	assert.equal(boards[0]?.name, "Board 1");
 	const [card] = boards[0]!.cards;
@@ -503,7 +455,7 @@ test("the single canvas saved before boards existed becomes Board 1; its cards g
 });
 
 test("boards can be added, renamed and deleted, but never the last one", async () => {
-	const store = await createStore(memoryStorage());
+	const store = await open(memoryStorage());
 	const first = firstBoard(store);
 	const second = store.addBoard(" Planning ");
 	assert.equal(second.name, "Planning");
@@ -524,7 +476,7 @@ test("boards can be added, renamed and deleted, but never the last one", async (
 });
 
 test("each board has its own cards and viewport; card changes stay on their board", async () => {
-	const store = await createStore(memoryStorage());
+	const store = await open(memoryStorage());
 	const note = store.addType("Note", [], "");
 	const a = store.addEntity(note.id, "A", "", {});
 	const one = firstBoard(store);
@@ -556,7 +508,7 @@ test("each board has its own cards and viewport; card changes stay on their boar
 
 test("types get distinct palette colors; a chosen color is kept and can be changed", async () => {
 	const palette = TYPE_COLORS.map((c) => c.value);
-	const store = await createStore(memoryStorage());
+	const store = await open(memoryStorage());
 	const a = store.addType("A", [], "");
 	const b = store.addType("B", [], "", palette[3]);
 	const c = store.addType("C", [], "");
@@ -578,7 +530,7 @@ test("types saved without a color get the next free ones in order", async () => 
 		],
 		entities: [],
 	};
-	const { types } = (await createStore(memoryStorage({ "entities-app": JSON.stringify(old) }))).data;
+	const { types } = (await open(memoryStorage(old))).data;
 	assert.deepEqual(
 		types.map((t) => t.color),
 		[palette[1], palette[0], palette[2]],
@@ -587,9 +539,9 @@ test("types saved without a color get the next free ones in order", async () => 
 
 test("cardDisplay is saved per property; line falls back to list for non-references", async () => {
 	const storage = memoryStorage();
-	const store = await createStore(storage);
+	const store = await open(storage);
 	const type = store.addType("Book", [{ ...titleDraft, cardDisplay: "hidden" }], "");
-	assert.equal((await createStore(storage)).data.types[0]?.properties[0]?.cardDisplay, "hidden");
+	assert.equal((await open(storage)).data.types[0]?.properties[0]?.cardDisplay, "hidden");
 
 	store.updateType(type.id, "Book", [{ ...type.properties[0]!, cardDisplay: "line" }], "");
 	assert.equal(store.data.types[0]?.properties[0]?.cardDisplay, "list");
@@ -601,7 +553,7 @@ test("the old showOnCard checkbox converts to cardDisplay", async () => {
 		types: [{ id: "b", name: "Book", properties: [prop("shown", { showOnCard: true }), prop("off", { showOnCard: false }), prop("older", {})] }],
 		entities: [],
 	};
-	const [shown, off, older] = (await createStore(memoryStorage({ "entities-app": JSON.stringify(old) }))).data.types[0]!.properties;
+	const [shown, off, older] = (await open(memoryStorage(old))).data.types[0]!.properties;
 	assert.deepEqual([shown?.cardDisplay, off?.cardDisplay, older?.cardDisplay], ["list", "hidden", "list"]);
 	assert.ok(!("showOnCard" in shown!));
 });
@@ -618,7 +570,7 @@ test("references get arrow, line label and inverse label defaults; labels are tr
 		],
 		entities: [],
 	};
-	const store = await createStore(memoryStorage({ "entities-app": JSON.stringify(old) }));
+	const store = await open(memoryStorage(old));
 	const author = store.data.types[1]!.properties[0]!;
 	assert.deepEqual(author.reference, { typeId: "p", multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" });
 
@@ -639,10 +591,10 @@ test("references get arrow, line label and inverse label defaults; labels are tr
 
 test("description: saved on add, kept when an update leaves it out, defaults to empty for older data", async () => {
 	const storage = memoryStorage();
-	const store = await createStore(storage);
+	const store = await open(storage);
 	const type = store.addType("Note", [], "");
 	const note = store.addEntity(type.id, "A", "short", {}, "Long\n\ndetails");
-	assert.equal((await createStore(storage)).data.entities[0]?.description, "Long\n\ndetails");
+	assert.equal((await open(storage)).data.entities[0]?.description, "Long\n\ndetails");
 
 	store.updateEntity(note.id, "A", "short", {});
 	assert.equal(store.data.entities[0]?.description, "Long\n\ndetails");
@@ -654,12 +606,12 @@ test("description: saved on add, kept when an update leaves it out, defaults to 
 		types: [{ id: "n", name: "Note", properties: [] }],
 		entities: [{ id: "01ARYZ6S41TSV4RRFFQ69G5FAV", typeId: "n", name: "Old", content: "", values: {} }],
 	};
-	assert.equal((await createStore(memoryStorage({ "entities-app": JSON.stringify(old) }))).data.entities[0]?.description, "");
+	assert.equal((await open(memoryStorage(old))).data.entities[0]?.description, "");
 });
 
 test("drawings: added, replaced and removed on their own board", async () => {
 	const storage = memoryStorage();
-	const store = await createStore(storage);
+	const store = await open(storage);
 	const one = firstBoard(store);
 	const two = store.addBoard("Two");
 	const rect = store.addDrawing(one.id, {
@@ -676,7 +628,7 @@ test("drawings: added, replaced and removed on their own board", async () => {
 
 	store.replaceDrawing({ ...rect, text: "Phase A" } as typeof rect);
 	assert.deepEqual(
-		(await createStore(storage)).data.boards.map((b) => b.drawings),
+		(await open(storage)).data.boards.map((b) => b.drawings),
 		[[{ ...rect, text: "Phase A" }], [arrow]],
 	);
 
@@ -707,7 +659,7 @@ test("older boards load without drawings; malformed drawings are dropped", async
 			},
 		],
 	};
-	const [old, mixed] = (await createStore(memoryStorage({ "entities-app": JSON.stringify(saved) }))).data.boards;
+	const [old, mixed] = (await open(memoryStorage(saved))).data.boards;
 	assert.deepEqual(old?.drawings, []);
 	assert.deepEqual(
 		mixed?.drawings.map((d) => d.id),
@@ -719,21 +671,21 @@ test("older boards load without drawings; malformed drawings are dropped", async
 
 test("reload takes over what another tab saved, so saving here keeps it", async () => {
 	const storage = memoryStorage();
-	const here = await createStore(storage);
-	const otherTab = await createStore(storage);
+	const here = await open(storage);
+	const otherTab = await open(storage);
 	const book = otherTab.addType("Book", [titleDraft], "");
 
 	await here.reload();
 	assert.deepEqual(here.data.types.map((t) => t.name), ["Book"]);
 	here.addEntity(book.id, "Dune", "", {});
-	const saved = await createStore(storage);
+	const saved = await open(storage);
 	assert.deepEqual(saved.data.types.map((t) => t.name), ["Book"]);
 	assert.deepEqual(saved.data.entities.map((e) => e.name), ["Dune"]);
 });
 
 test("undo and redo step through changes, and are saved", async () => {
 	const storage = memoryStorage();
-	const store = await createStore(storage);
+	const store = await open(storage);
 	assert.deepEqual(store.history, { canUndo: false, canRedo: false });
 	const book = store.addType("Book", [titleDraft], "");
 	const dune = store.addEntity(book.id, "Dune", "", {});
@@ -741,7 +693,7 @@ test("undo and redo step through changes, and are saved", async () => {
 
 	assert.equal(store.undo(), true);
 	assert.deepEqual(store.data.entities.map((e) => e.name), ["Dune"]);
-	assert.deepEqual((await createStore(storage)).data.entities.map((e) => e.name), ["Dune"]);
+	assert.deepEqual((await open(storage)).data.entities.map((e) => e.name), ["Dune"]);
 	assert.deepEqual(store.history, { canUndo: true, canRedo: true });
 
 	store.undo();
@@ -760,7 +712,7 @@ test("undo and redo step through changes, and are saved", async () => {
 });
 
 test("pan and zoom aren't undone, and undo keeps the current view; changes that change nothing aren't recorded", async () => {
-	const store = await createStore(memoryStorage());
+	const store = await open(memoryStorage());
 	const board = firstBoard(store);
 	const card = store.addCard(board.id, "missing", 0, 0); // entity check happens on load only
 	store.setViewport(board.id, { x: 10, y: 20, zoom: 2 });
@@ -776,7 +728,7 @@ test("pan and zoom aren't undone, and undo keeps the current view; changes that 
 
 test("history is limited, cleared on reload, and changes to it are reported", async () => {
 	const storage = memoryStorage();
-	const store = await createStore(storage);
+	const store = await open(storage);
 	let reported = 0;
 	store.onHistoryChange(() => reported++);
 	for (let i = 0; i < 120; i++) store.addBoard(`B${i}`);
@@ -790,15 +742,15 @@ test("history is limited, cleared on reload, and changes to it are reported", as
 	assert.deepEqual(store.history, { canUndo: false, canRedo: false });
 });
 
-test("saved data carries the format version; data saved before versions existed loads and gets it on the next save", async () => {
-	const storage = memoryStorage({ "entities-app": JSON.stringify({ types: [{ id: "b", name: "Book", properties: [] }], entities: [] }) });
-	const store = await createStore(storage);
+test("data saved before versions existed loads without a problem, and saving goes on from it", async () => {
+	const storage = memoryStorage({ types: [{ id: "b", name: "Book", properties: [] }], entities: [] });
+	const store = await open(storage);
 	assert.equal(store.problems.load, null);
 	store.addBoard("Second");
-	const saved = JSON.parse((await storage.getItem("entities-app"))!);
-	assert.equal(saved.version, DATA_VERSION);
-	assert.deepEqual(saved.types.map((t: { name: string }) => t.name), ["Book"]);
-	assert.equal((await createStore(storage)).problems.load, null);
+	await settle();
+	assert.deepEqual((storage.data(WS)!.types as { name: string }[]).map((t) => t.name), ["Book"]);
+	assert.deepEqual(storedBoards(storage), ["Board 1", "Second"]);
+	assert.equal((await open(storage)).problems.load, null);
 	assert.equal("version" in store.data, false);
 });
 
@@ -817,50 +769,28 @@ test("migrate runs one step per version, in order, from the saved version up", (
 });
 
 test("data from a newer version is shown as far as it's understood, but never saved over", async () => {
-	const newer = JSON.stringify({ version: DATA_VERSION + 1, types: [{ id: "b", name: "Book", properties: [], icon: "📕" }], entities: [], future: true });
-	const storage = memoryStorage({ "entities-app": newer });
-	const store = await createStore(storage);
+	const newer = { version: DATA_VERSION + 1, types: [{ id: "b", name: "Book", properties: [], icon: "📕" }], entities: [], future: true };
+	const storage = memoryStorage(newer);
+	const store = await open(storage);
 	assert.deepEqual(store.problems.load, { code: "newerVersion" });
 	assert.deepEqual(store.data.types.map((t) => t.name), ["Book"]);
 
 	store.addType("Film", [titleDraft], "");
+	await settle();
 	assert.equal(store.data.types.length, 2);
-	assert.equal(await storage.getItem("entities-app"), newer);
-	assert.deepEqual([...storage.map.keys()], ["entities-app"]); // no backup needed: the original stays
+	assert.deepEqual(storage.data(WS), newer);
+	assert.equal(storage.saves.length, 0);
 });
 
-/** A storage that, like the API's, names each stored text's version: own writes move it on, and `bump` moves
- * it without a write here — the way another tab's or another device's save would. */
-function versionedStorage() {
-	const texts = new Map<string, string>();
-	let revision = 0;
-	return {
-		texts,
-		getItem: async (key: string) => texts.get(key) ?? null,
-		setItem: async (key: string, value: string) => {
-			texts.set(key, value);
-			revision++;
-		},
-		removeItem: async (key: string) => void texts.delete(key),
-		async version() {
-			return String(revision);
-		},
-		/** Someone else saved: the stand moves without anything being written here. */
-		bump() {
-			revision++;
-		},
-	};
-}
-
 test("a newer stand is seen by looking only — nothing in memory changes, nothing is given up", async () => {
-	const storage = versionedStorage();
-	const store = await createStore(storage);
+	const storage = memoryStorage();
+	const store = await open(storage);
 	const book = store.addType("Book", [titleDraft], "");
 	store.addEntity(book.id, "Dune", "", {});
 	await settle();
 	assert.equal(await store.checkForNewer(), false); // this stand is the one the save reached
 
-	storage.bump(); // someone else saved in between
+	storage.saveElsewhere(WS); // someone else saved in between
 	const seen = JSON.stringify(store.data);
 	assert.equal(await store.checkForNewer(), true);
 
@@ -869,26 +799,26 @@ test("a newer stand is seen by looking only — nothing in memory changes, nothi
 	assert.deepEqual(store.history, { canUndo: true, canRedo: false });
 	assert.deepEqual(store.problems, { load: null, saveFailed: false, saveConflict: false });
 
-	// Nothing was reloaded or discarded for it: the history still undoes. The undo's save reaches the storage
-	// here (the fake doesn't refuse it as outdated; against the real API, saving stops on the conflict instead) —
-	// either way the stand of this store is as current as the last word said, no look's doing.
+	// Nothing was reloaded or discarded for it: the history still undoes, and the undo's save reaches the
+	// storage — its version is this store's own stand again, no look's doing.
 	assert.equal(store.undo(), true);
 	assert.equal(store.data.entities.some((e) => e.name === "Dune"), false);
 	assert.equal(await store.checkForNewer(), false);
 
 	// Reading anew is nobody's decision but the user's; once read, the newer stand is simply this one.
+	storage.saveElsewhere(WS);
 	await store.reload();
 	assert.equal(await store.checkForNewer(), false);
 });
 
 test("after a save of its own, this stand is the newer one — no false alarm over its own work", async () => {
-	const storage = versionedStorage();
-	const store = await createStore(storage);
-	assert.equal(await store.checkForNewer(), false); // nothing stored, and this is the one that read it
+	const storage = memoryStorage();
+	const store = await open(storage);
+	assert.equal(await store.checkForNewer(), false); // the stand this one read
 
 	store.addBoard("A");
-	// Even while the save is still on its way: versionedStorage has already moved its version, but the look
-	// waits behind the save, so it never reports this stand's own brand-new save as someone else's.
+	// Even while the save is still on its way: the look waits behind the save, so it never reports this
+	// stand's own brand-new save as someone else's.
 	assert.equal(await store.checkForNewer(), false);
 	await settle();
 	assert.equal(await store.checkForNewer(), false); // settled: the save's own stand, not a newer one
@@ -898,85 +828,33 @@ test("after a save of its own, this stand is the newer one — no false alarm ov
 	assert.equal(await store.checkForNewer(), false); // and the one after that too
 });
 
-test("without a storage that names versions, a newer stand is never claimed", async () => {
-	const storage = memoryStorage();
-	const store = await createStore(storage);
-	store.addBoard("A");
-	await settle();
-	// localStorage has no versions to answer with: every look says "nothing newer", and nothing changes.
-	assert.equal(await store.checkForNewer(), false);
-	assert.equal(await store.checkForNewer(), false);
-});
-
 test("a look the storage can't answer is no event: false, nothing changed, nothing reported", async () => {
-	const texts = new Map<string, string>();
-	let answered = 0;
-	const unreliable = {
-		getItem: async (key: string) => texts.get(key) ?? null,
-		setItem: async (key: string, value: string) => void texts.set(key, value),
-		removeItem: async (key: string) => void texts.delete(key),
-		async version() {
-			answered++;
-			throw new Error("the storage doesn't answer");
-		},
-	};
-	const store = await createStore(unreliable); // even the look while loading failed
+	const storage = memoryStorage();
+	const store = await open(storage);
 	store.addBoard("A");
 	await settle();
+	storage.failing.looks = true;
 	const seen = JSON.stringify(store.data);
 	assert.equal(await store.checkForNewer(), false);
-	assert.ok(answered >= 1);
+	assert.equal(storage.looks(), 1);
 	assert.equal(JSON.stringify(store.data), seen);
 	assert.deepEqual(store.history, { canUndo: true, canRedo: false });
 	assert.deepEqual(store.problems, { load: null, saveFailed: false, saveConflict: false });
 });
 
-
-/** A storage that writes change sets, like the API's: the whole document first (nothing being stored yet,
- * that being its first write), then only what changed per unit — each call recorded, with the version it
- * was asked to save against, and answered the way the API's answers: `{ version, collided }`. What it holds
- * stays the stand of the first write: applying the units is the storage writer's business (apps/api proves
- * it against its tables), not the port's. */
-function changesStorage() {
-	const map = new Map<string, string>();
-	const saved: { key: string; changes: Change[]; version: string | null }[] = [];
-	const calls = { setItem: 0, saveChanges: 0 };
-	const port: StoragePort = {
-		getItem: async (key: string) => map.get(key) ?? null,
-		setItem: async (key: string, value: string) => {
-			calls.setItem++;
-			map.set(key, value);
-		},
-		removeItem: async (key: string) => void map.delete(key),
-		/** Where its text stands: the stands its writes reached, numbered the way the API's revision is. */
-		async version(key: string) {
-			return map.has(key) ? String(calls.setItem + calls.saveChanges) : null;
-		},
-		async saveChanges(key: string, changes: Change[], version: string | null) {
-			calls.saveChanges++;
-			saved.push({ key, changes, version });
-			return { version: String(calls.setItem + calls.saveChanges), collided: [] };
-		},
-	};
-	return { map, saved, calls, port };
-}
-
-test("after the first write (the whole document), saves go out as change sets of only what changed", async () => {
-	const storage = changesStorage();
-	const store = await createStore(storage.port);
+test("saves go out as change sets of only what changed", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
 	const type = store.addType("Book", [titleDraft], "");
 	const board = firstBoard(store);
 	await settle();
-	// Nothing was stored when this started, so the first save took the one way it had: the whole document.
-	assert.equal(storage.calls.setItem, 1);
-	assert.equal(storage.calls.saveChanges, 0);
+	// The workspace started with nothing stored: the first save brings the board it opened with, and the type.
+	assert.deepEqual(storage.saves[0]!.map((c) => `${c.kind}:${c.id}`), [`type:${type.id}`, `board:${board.id}`]);
 
 	const entity = store.addEntity(type.id, "Dune", "", {});
 	await settle();
-	assert.equal(storage.calls.setItem, 1, "the entity was saved per unit — no whole document went out");
-	assert.equal(storage.calls.saveChanges, 1);
-	assert.equal(storage.saved[0]!.version, "1", "named the version the first write answered, as the read did");
-	const [unit] = storage.saved[0]!.changes;
+	const [unit] = storage.saves[1]!;
+	assert.equal(storage.saves[1]!.length, 1);
 	assert.equal(unit?.kind, "entity");
 	assert.equal(unit?.id, entity.id);
 	assert.equal(unit?.before, null);
@@ -984,142 +862,31 @@ test("after the first write (the whole document), saves go out as change sets of
 
 	const card = store.addCard(board.id, entity.id, 5, 6);
 	await settle();
-	assert.deepEqual(
-		storage.saved[1]!.changes.map((c) => c.kind),
-		["card"],
-	);
+	assert.deepEqual(storage.saves[2]!.map((c) => c.kind), ["card"]);
 
 	// Panning and zooming is the board's own unit — the card on it stays out of it.
 	store.setViewport(board.id, { x: 3, y: 4, zoom: 1 });
 	await settle();
-	assert.deepEqual(
-		storage.saved[2]!.changes.map((c) => c.kind),
-		["board"],
-	);
+	assert.deepEqual(storage.saves[3]!.map((c) => c.kind), ["board"]);
 
 	store.moveCard(card.id, 66, 77);
 	await settle();
-	assert.deepEqual(
-		storage.saved.at(-1)!.changes.map((c) => c.kind),
-		["card"],
-	);
-	assert.equal(storage.calls.setItem, 1);
+	assert.deepEqual(storage.saves.at(-1)!.map((c) => c.kind), ["card"]);
+
+	// What the storage holds is exactly what the store holds.
+	assert.deepEqual((await open(storage)).data, store.data);
 });
 
-test("a save that changes nothing never goes out — not one write, not one call", async () => {
-	const storage = changesStorage();
-	const store = await createStore(storage.port);
+test("a save that changes nothing never goes out — not one call", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
 	store.addBoard("Extra");
 	await settle();
-	const seen = { ...storage.calls };
-	assert.equal(seen.setItem, 1);
+	assert.equal(storage.saves.length, 1);
 
 	const board = store.data.boards[0]!;
 	store.setViewport(board.id, { ...board.viewport }); // the same stand of the board, saved anyway
 	store.renameBoard(board.id, board.name); // changed nothing
 	await settle();
-	assert.deepEqual(storage.calls, seen);
-});
-
-test("without a storage that takes change sets, the whole document is the way, as ever", async () => {
-	const storage = memoryStorage();
-	let writes = 0;
-	const port: StoragePort = {
-		getItem: (key: string) => storage.getItem(key),
-		setItem: async (key: string, value: string) => {
-			writes++;
-			await storage.setItem(key, value);
-		},
-		removeItem: (key: string) => storage.removeItem(key),
-	};
-	const store = await createStore(port);
-	const book = store.addType("Book", [titleDraft], "");
-	await settle();
-	store.addEntity(book.id, "Dune", "", {});
-	await settle();
-	// One full write per change — nothing about a storage without units changed.
-	assert.equal(writes, 2);
-	const saved: { version: number; types: { name: string }[]; entities: { name: string }[] } = JSON.parse(
-		(await storage.getItem("entities-app"))!,
-	);
-	assert.equal(saved.version, DATA_VERSION);
-	assert.deepEqual(saved.types.map((t) => t.name), ["Book"]);
-	assert.deepEqual(saved.entities.map((e) => e.name), ["Dune"]);
-});
-
-test("a change set that collided is the known conflict: last one wins (the storage holds it), saving waits for the read", async () => {
-	const map = new Map<string, string>();
-	let asked = 0;
-	const port: StoragePort = {
-		getItem: async (key: string) => map.get(key) ?? null,
-		setItem: async (key: string, value: string) => void map.set(key, value),
-		removeItem: async (key: string) => void map.delete(key),
-		async saveChanges(_key: string, changes: Change[]) {
-			asked++;
-			// The first save meets someone else's change on the very unit it names: the storage wrote it
-			// anyway (this one is the last), and answers the collision — the way the API's answers.
-			return asked === 1 ? { version: "9", collided: changes.map((c) => c.id) } : { version: "9", collided: [] };
-		},
-	};
-	// A stand already saved: this store's saves are change sets from the start.
-	map.set(
-		"entities-app",
-		JSON.stringify({ version: 1, types: [], entities: [], boards: firstBoardish() }),
-	);
-	const store = await createStore(port);
-	let notified = 0;
-	store.onProblemsChange(() => notified++);
-
-	store.addBoard("Second");
-	await settle();
-	assert.deepEqual(store.problems, { load: null, saveFailed: false, saveConflict: true });
-	assert.equal(notified, 1);
-
-	// The collided change and everything after stay in memory; nothing more goes out over it.
-	store.addBoard("Third");
-	await settle();
-	assert.equal(asked, 1);
-	assert.ok(store.data.boards.some((b) => b.name === "Third"));
-
-	// Reading anew makes this stand current again — the next change goes out as ever.
-	await store.reload();
-	assert.equal(store.problems.saveConflict, false);
-	store.addBoard("Fourth");
-	await settle();
-	assert.equal(asked, 2);
-});
-
-/** The board a fresh store's data starts with, as saved data names it. */
-function firstBoardish() {
-	return [{ id: "board-1", name: "Board 1", cards: [], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] }];
-}
-
-test("a storage that answers no change sets keeps the whole-document way, and isn't asked again", async () => {
-	const storage = memoryStorage();
-	await storage.setItem("entities-app", JSON.stringify({ version: 1, types: [], entities: [], boards: firstBoardish() }));
-	let asked = 0;
-	const port: StoragePort = {
-		getItem: (key: string) => storage.getItem(key),
-		setItem: (key: string, value: string) => storage.setItem(key, value),
-		removeItem: (key: string) => storage.removeItem(key),
-		async saveChanges() {
-			asked++;
-			throw new ChangesUnsupported("entities-app"); // the API behind has no changes route
-		},
-	};
-	const store = await createStore(port);
-	const book = store.addType("Book", [titleDraft], "");
-	await settle();
-	// The change set was refused for what it is, and the save fell back on the whole document — no loss, no
-	// problem shown for it.
-	assert.equal(asked, 1);
-	assert.ok(store.problems.saveFailed === false && store.problems.saveConflict === false);
-	const first: { types: { name: string }[] } = JSON.parse((await storage.getItem("entities-app"))!);
-	assert.deepEqual(first.types.map((t) => t.name), ["Book"]);
-
-	store.addEntity(book.id, "Dune", "", {});
-	await settle();
-	assert.equal(asked, 1, "no change set asked of it again");
-	const second: { entities: { name: string }[] } = JSON.parse((await storage.getItem("entities-app"))!);
-	assert.deepEqual(second.entities.map((e) => e.name), ["Dune"]);
+	assert.equal(storage.saves.length, 1);
 });
