@@ -3,184 +3,191 @@ import { test } from "node:test";
 import { DEFAULT_CORS_ORIGIN, corsOriginFromEnv, DEFAULT_PORT, portFromEnv, type Api } from "./http.js";
 import { call, startApp } from "./test-server.js";
 
-/** The API on whatever texts the map holds — like localStorage would, without needing any. Every write
- * grows the key's version by one, the way the storage's revision column does. */
-function memoryApi(initial: Record<string, string> = {}, healthy: () => Promise<boolean> = async () => true): Api {
-	const map = new Map(Object.entries(initial));
-	const versions = new Map<string, number>();
+/** The API on workspaces held in memory — what the database does, without needing one. A change set isn't
+ * applied (the database tests cover that); it only grows the revision by one, the way a save does, and
+ * reports every unit it deletes as collided, so the answer has something to carry. */
+function memoryApi(healthy: () => Promise<boolean> = async () => true): Api & { writes: () => number } {
+	const workspaces = new Map<string, { name: string; dataVersion: number; revision: number }>();
+	let written = 0;
 	return {
-		getItem: async (key) => map.get(key) ?? null,
-		read: async (key) => {
-			const text = map.get(key);
-			return text === undefined ? null : { text, version: String(versions.get(key) ?? 0) };
-		},
-		setItem: async (key, value) => {
-			map.set(key, value);
-			versions.set(key, (versions.get(key) ?? 0) + 1);
-		},
-		write: async (key, value, seen) => {
-			if (seen === null) {
-				if (map.has(key)) return null;
-				map.set(key, value);
-				versions.set(key, 1);
-				return "1";
-			}
-			if (String(versions.get(key) ?? 0) !== seen) return null;
-			map.set(key, value);
-			versions.set(key, Number(seen) + 1);
-			return String(Number(seen) + 1);
-		},
-		removeItem: async (key) => {
-			map.delete(key);
-			versions.delete(key);
-		},
 		healthy,
+		listWorkspaces: async () => [...workspaces].map(([id, { name }]) => ({ id, name })),
+		createWorkspace: async ({ id, name }, dataVersion) => {
+			if (workspaces.has(id)) return false;
+			workspaces.set(id, { name, dataVersion, revision: 0 });
+			return true;
+		},
+		renameWorkspace: async (id, name) => {
+			const workspace = workspaces.get(id);
+			if (!workspace) return false;
+			workspace.name = name;
+			return true;
+		},
+		deleteWorkspace: async (id) => {
+			workspaces.delete(id);
+		},
+		readWorkspace: async (id) => {
+			const workspace = workspaces.get(id);
+			if (!workspace) return null;
+			return { data: { version: workspace.dataVersion, types: [], entities: [], boards: [] }, revision: String(workspace.revision) };
+		},
+		workspaceRevision: async (id) => {
+			const workspace = workspaces.get(id);
+			return workspace ? String(workspace.revision) : null;
+		},
+		writeChanges: async (id, changes) => {
+			const workspace = workspaces.get(id);
+			if (!workspace) return null;
+			written++;
+			workspace.revision++;
+			return { version: String(workspace.revision), collided: changes.flatMap((c) => (c.after === null ? [c.id] : [])) };
+		},
+		writes: () => written,
 	};
 }
 
 /** The API against a storage whose every call fails, like a database that is gone. */
 function failingApi(): Api {
-	const gone = async () => {
+	const gone = async (): Promise<never> => {
 		throw new Error("the storage is gone");
 	};
 	return {
-		getItem: gone,
-		read: gone,
-		setItem: gone,
-		write: gone,
-		removeItem: gone,
 		healthy: async () => false,
+		listWorkspaces: gone,
+		createWorkspace: gone,
+		renameWorkspace: gone,
+		deleteWorkspace: gone,
+		readWorkspace: gone,
+		workspaceRevision: gone,
+		writeChanges: gone,
 	};
 }
 
-test("GET answers 404 under a key nothing is stored, as with paths that lead nowhere", async () => {
+/** A POST that makes the workspace `id`, answering what the API said. */
+const create = (base: URL, id: string, name = "Arbeit", dataVersion = 1) =>
+	call(base, "workspaces", { method: "POST", body: JSON.stringify({ id, name, dataVersion }) });
+
+/** A change set of one new entity — enough of one for the route to take. */
+const oneNewEntity = JSON.stringify([{ kind: "entity", id: "ent-1", before: null, after: { value: { id: "ent-1" }, position: 0 } }]);
+
+test("workspaces are listed, made, renamed and deleted — each answer with its status", async () => {
 	const api = await startApp(memoryApi());
 	try {
-		assert.equal((await call(api.url, "texts/nothing-here")).status, 404);
-		assert.equal((await call(api.url, "texts/")).status, 404);
-		assert.equal((await call(api.url, "texts")).status, 404);
-		assert.equal((await call(api.url, "nowhere")).status, 404);
+		assert.deepEqual(JSON.parse((await call(api.url, "workspaces")).text), []);
+
+		assert.equal((await create(api.url, "ws-1", "Erste")).status, 201);
+		assert.equal((await create(api.url, "ws-2", "Zweite")).status, 201);
+		const list = await call(api.url, "workspaces");
+		assert.equal(list.status, 200);
+		assert.equal(list.header("content-type"), "application/json; charset=utf-8");
+		assert.deepEqual(JSON.parse(list.text), [
+			{ id: "ws-1", name: "Erste" },
+			{ id: "ws-2", name: "Zweite" },
+		]);
+
+		const renamed = await call(api.url, "workspaces/ws-1", { method: "PATCH", body: JSON.stringify({ name: "  Neu  " }) });
+		assert.equal(renamed.status, 204);
+		assert.equal(JSON.parse((await call(api.url, "workspaces")).text)[0].name, "Neu", "the name is kept trimmed");
+
+		assert.equal((await call(api.url, "workspaces/ws-1", { method: "DELETE" })).status, 204);
+		assert.equal((await call(api.url, "workspaces/ws-1", { method: "DELETE" })).status, 204, "gone already is no error");
+		assert.deepEqual(JSON.parse((await call(api.url, "workspaces")).text), [{ id: "ws-2", name: "Zweite" }]);
 	} finally {
 		await api.close();
 	}
 });
 
-test("a first PUT stores the request body under the key, answering 204 with the new version in etag", async () => {
+test("a workspace id that is taken answers 409, and a body that says too little answers 400", async () => {
 	const api = await startApp(memoryApi());
 	try {
-		const put = await call(api.url, "texts/entities-app", { method: "PUT", body: "the saved data" });
-		assert.equal(put.status, 204);
-		assert.ok(put.header("etag"), "the answer names the version it saved");
+		assert.equal((await create(api.url, "ws-1", "Erste")).status, 201);
+		assert.equal((await create(api.url, "ws-1", "Noch eine")).status, 409);
+		assert.equal(JSON.parse((await call(api.url, "workspaces")).text)[0].name, "Erste", "nothing was written over");
 
-		const get = await call(api.url, "texts/entities-app");
-		assert.equal(get.status, 200);
-		assert.equal(get.text, "the saved data");
-		assert.equal(get.header("etag"), put.header("etag"));
+		for (const body of ["not json", "{}", '{"id":"x","name":"  ","dataVersion":1}', '{"id":"","name":"n","dataVersion":1}', '{"id":"x","name":"n","dataVersion":-1}', '{"id":"x","name":"n"}']) {
+			assert.equal((await call(api.url, "workspaces", { method: "POST", body })).status, 400, `"${body}" makes no workspace`);
+		}
+		for (const body of ["not json", "{}", '{"name":""}', '{"name":5}']) {
+			assert.equal((await call(api.url, "workspaces/ws-1", { method: "PATCH", body })).status, 400, `"${body}" is no name`);
+		}
+		assert.equal((await call(api.url, "workspaces/none", { method: "PATCH", body: '{"name":"n"}' })).status, 404);
 	} finally {
 		await api.close();
 	}
 });
 
-test("a PUT naming the current version overwrites what was stored, and an empty body is a text of its own", async () => {
+test("a workspace's data is answered as JSON with its revision in etag; HEAD answers the revision alone", async () => {
 	const api = await startApp(memoryApi());
 	try {
-		await call(api.url, "texts/entities-app", { method: "PUT", body: "first" });
-		const first = await call(api.url, "texts/entities-app");
-		const second = await call(api.url, "texts/entities-app", {
-			method: "PUT",
-			body: "",
-			headers: { "if-match": first.header("etag")! },
-		});
-		assert.equal(second.status, 204);
-		assert.notEqual(second.header("etag"), first.header("etag"));
+		assert.equal((await call(api.url, "workspaces/ws-1/data")).status, 404);
+		assert.equal((await call(api.url, "workspaces/ws-1/data", { method: "HEAD" })).status, 404);
 
-		const get = await call(api.url, "texts/entities-app");
-		assert.equal(get.status, 200);
-		assert.equal(get.text, "");
+		await create(api.url, "ws-1");
+		const got = await call(api.url, "workspaces/ws-1/data");
+		assert.equal(got.status, 200);
+		assert.equal(got.header("content-type"), "application/json; charset=utf-8");
+		assert.deepEqual(JSON.parse(got.text), { version: 1, types: [], entities: [], boards: [] });
+		assert.equal(got.header("etag"), "0");
+
+		const head = await call(api.url, "workspaces/ws-1/data", { method: "HEAD" });
+		assert.equal(head.status, 200);
+		assert.equal(head.text, ""); // a HEAD carries no body
+		assert.equal(head.header("etag"), "0");
+
+		// Someone saves: the next look names the newer revision, still without the data.
+		await call(api.url, "workspaces/ws-1/changes", { method: "PUT", body: oneNewEntity });
+		assert.equal((await call(api.url, "workspaces/ws-1/data", { method: "HEAD" })).header("etag"), "1");
 	} finally {
 		await api.close();
 	}
 });
 
-test("a save over stored data without naming the stand it read is refused with 409, and writes nothing", async () => {
-	const api = await startApp(memoryApi({ "entities-app": "the saved data" }));
+test("ids keep the characters they came with, escaped in the URL", async () => {
+	const api = await startApp(memoryApi());
 	try {
-		const refused = await call(api.url, "texts/entities-app", { method: "PUT", body: "quietly over" });
-		assert.equal(refused.status, 409);
-		assert.equal(refused.text, "");
-
-		// Nothing was written, not a part of it either.
-		const get = await call(api.url, "texts/entities-app");
-		assert.equal(get.status, 200);
-		assert.equal(get.text, "the saved data");
+		const id = "ws/ü?#1";
+		assert.equal((await create(api.url, id)).status, 201);
+		assert.equal((await call(api.url, `workspaces/${encodeURIComponent(id)}/data`)).status, 200);
+		assert.equal((await call(api.url, `workspaces/${encodeURIComponent(id)}`, { method: "PATCH", body: '{"name":"n"}' })).status, 204);
 	} finally {
 		await api.close();
 	}
 });
 
-test("a save on an outdated stand loses, word for word: 409, nothing changed; on the current stand it wins", async () => {
-	const api = await startApp(memoryApi());
+test("the change-set route answers version and collisions, with the version in etag", async () => {
+	const behind = memoryApi();
+	const api = await startApp(behind);
 	try {
-		const read = await call(api.url, "texts/entities-app", { method: "PUT", body: "the text we read" });
-		const seen = read.header("etag")!;
+		await create(api.url, "ws-1");
+		const body = JSON.stringify([
+			{ kind: "entity", id: "ent-1", before: null, after: { value: { id: "ent-1" }, position: 0 } },
+			{ kind: "card", id: "card-1", boardId: "board-1", before: { value: { id: "card-1" }, position: 0 }, after: null },
+		]);
+		const put = await call(api.url, "workspaces/ws-1/changes", { method: "PUT", body });
+		assert.equal(put.status, 200);
+		assert.equal(put.header("content-type"), "application/json; charset=utf-8");
+		assert.deepEqual(JSON.parse(put.text), { version: "1", collided: ["card-1"] });
+		assert.equal(put.header("etag"), "1");
+		assert.equal(behind.writes(), 1);
 
-		// Someone else saves first, building on the current version.
-		const theirs = await call(api.url, "texts/entities-app", {
-			method: "PUT",
-			body: "someone else's text, saved first",
-			headers: { "if-match": seen },
-		});
-		assert.equal(theirs.status, 204);
-		assert.ok(theirs.header("etag"));
-		assert.notEqual(theirs.header("etag"), seen);
-
-		// Our save, still on the stand we read: refused without touching anything.
-		const refused = await call(api.url, "texts/entities-app", {
-			method: "PUT",
-			body: "our text, based on the old stand",
-			headers: { "if-match": seen },
-		});
-		assert.equal(refused.status, 409);
-		assert.equal(refused.text, "");
-		const current = await call(api.url, "texts/entities-app");
-		assert.equal(current.text, "someone else's text, saved first");
-		assert.equal(current.header("etag"), theirs.header("etag"));
-
-		// Building on the current stand, the same save goes through and answers the next version.
-		const ours = await call(api.url, "texts/entities-app", {
-			method: "PUT",
-			body: "our text, now on the current stand",
-			headers: { "if-match": theirs.header("etag")! },
-		});
-		assert.equal(ours.status, 204);
-		const again = await call(api.url, "texts/entities-app");
-		assert.equal(again.text, "our text, now on the current stand");
-		assert.equal(again.header("etag"), ours.header("etag"));
+		assert.equal((await call(api.url, "workspaces/none/changes", { method: "PUT", body })).status, 404);
 	} finally {
 		await api.close();
 	}
 });
 
-test("keys keep the characters they came with, escaped in the URL", async () => {
-	const api = await startApp(memoryApi());
-	const key = "entities-app:backup:2026-10-04/ähm +1";
+test("a change set that isn't one answers 400 and writes nothing", async () => {
+	const behind = memoryApi();
+	const api = await startApp(behind);
 	try {
-		await call(api.url, `texts/${encodeURIComponent(key)}`, { method: "PUT", body: "backed up" });
-		assert.equal((await call(api.url, `texts/${encodeURIComponent(key)}`)).text, "backed up");
-	} finally {
-		await api.close();
-	}
-});
-
-test("DELETE answers 204 whether anything was stored, and takes the stored text away", async () => {
-	const api = await startApp(memoryApi());
-	try {
-		assert.equal((await call(api.url, "texts/entities-app", { method: "DELETE" })).status, 204);
-
-		await call(api.url, "texts/entities-app", { method: "PUT", body: "the saved data" });
-		assert.equal((await call(api.url, "texts/entities-app", { method: "DELETE" })).status, 204);
-		assert.equal((await call(api.url, "texts/entities-app")).status, 404);
-		assert.equal((await call(api.url, "texts/entities-app", { method: "DELETE" })).status, 204);
+		await create(api.url, "ws-1");
+		// Not JSON, not an array, not a unit: refused, nothing asked of the storage behind. (An empty
+		// change set is a valid one — it just has nothing to write, the DB tests cover it.)
+		for (const body of ["not json", "{}", '[{"kind":"star","id":"x"}]', '[{"kind":"type","id":""}]', '[{"kind":"card","id":"c"}]', '[{"kind":"type","id":"t","before":null,"after":null}]']) {
+			const refused = await call(api.url, "workspaces/ws-1/changes", { method: "PUT", body });
+			assert.equal(refused.status, 400, `"${body}" should not be a change set`);
+		}
+		assert.equal(behind.writes(), 0);
 	} finally {
 		await api.close();
 	}
@@ -189,13 +196,12 @@ test("DELETE answers 204 whether anything was stored, and takes the stored text 
 test("/health says 200 while the storage answers, and 503 once it doesn't", async () => {
 	const api = await startApp(memoryApi());
 	try {
-		const healthy = await call(api.url, "health");
-		assert.equal(healthy.status, 200);
+		assert.equal((await call(api.url, "health")).status, 200);
 	} finally {
 		await api.close();
 	}
 
-	const sick = await startApp(memoryApi({}, async () => false));
+	const sick = await startApp(memoryApi(async () => false));
 	try {
 		assert.equal((await call(sick.url, "health")).status, 503);
 	} finally {
@@ -206,8 +212,13 @@ test("/health says 200 while the storage answers, and 503 once it doesn't", asyn
 test("requests the API doesn't serve answer 404, or 405 where only the method is wrong", async () => {
 	const api = await startApp(memoryApi());
 	try {
-		assert.equal((await call(api.url, "nowhere")).status, 404);
-		assert.equal((await call(api.url, "texts/anything", { method: "POST", body: "x" })).status, 405);
+		for (const path of ["nowhere", "texts/entities-app", "workspaces/", "workspaces/ws-1/elsewhere", "workspaces/ws-1/data/more"]) {
+			assert.equal((await call(api.url, path)).status, 404, `${path} leads nowhere`);
+		}
+		assert.equal((await call(api.url, "workspaces", { method: "DELETE" })).status, 405);
+		assert.equal((await call(api.url, "workspaces/ws-1")).status, 405);
+		assert.equal((await call(api.url, "workspaces/ws-1/data", { method: "PUT", body: "{}" })).status, 405);
+		assert.equal((await call(api.url, "workspaces/ws-1/changes")).status, 405);
 		assert.equal((await call(api.url, "health", { method: "PUT", body: "x" })).status, 405);
 	} finally {
 		await api.close();
@@ -217,15 +228,14 @@ test("requests the API doesn't serve answer 404, or 405 where only the method is
 test("a failing storage answers 503, without anything that could explain why", async () => {
 	const api = await startApp(failingApi());
 	try {
-		const get = await call(api.url, "texts/entities-app");
-		assert.equal(get.status, 503);
-		assert.equal(get.text, "");
-
-		const put = await call(api.url, "texts/entities-app", { method: "PUT", body: "x" });
-		assert.equal(put.status, 503);
-
-		const remove = await call(api.url, "texts/entities-app", { method: "DELETE" });
-		assert.equal(remove.status, 503);
+		const list = await call(api.url, "workspaces");
+		assert.equal(list.status, 503);
+		assert.equal(list.text, "");
+		assert.equal((await create(api.url, "ws-1")).status, 503);
+		assert.equal((await call(api.url, "workspaces/ws-1/data")).status, 503);
+		assert.equal((await call(api.url, "workspaces/ws-1/data", { method: "HEAD" })).status, 503);
+		assert.equal((await call(api.url, "workspaces/ws-1/changes", { method: "PUT", body: oneNewEntity })).status, 503);
+		assert.equal((await call(api.url, "workspaces/ws-1", { method: "DELETE" })).status, 503);
 	} finally {
 		await api.close();
 	}
@@ -245,22 +255,17 @@ const demoOrigin = "http://the-demo.example:5173";
  * what, and which answer headers JavaScript may read. */
 function assertCrossOriginAllowed(response: Awaited<ReturnType<typeof call>>, origin: string): void {
 	assert.equal(response.header("access-control-allow-origin"), origin);
-	assert.equal(response.header("access-control-allow-methods"), "GET, HEAD, PUT, DELETE");
-	assert.equal(response.header("access-control-allow-headers"), "Content-Type, If-Match");
+	assert.equal(response.header("access-control-allow-methods"), "GET, HEAD, POST, PUT, PATCH, DELETE");
+	assert.equal(response.header("access-control-allow-headers"), "Content-Type");
 	assert.equal(response.header("access-control-expose-headers"), "ETag");
 }
 
-test("the browser's preflight (OPTIONS before PUT and DELETE) is answered 204 with what it asks for", async () => {
+test("the browser's preflight is answered 204 with what it asks for", async () => {
 	const api = await startApp(memoryApi(), demoOrigin);
 	try {
-		const preflight = await call(api.url, "texts/entities-app", {
+		const preflight = await call(api.url, "workspaces/ws-1/changes", {
 			method: "OPTIONS",
-			headers: {
-				// What the browser asks before sending the request it actually wants to send (If-Match, since
-				// a save names the stand it read):
-				"access-control-request-method": "PUT",
-				"access-control-request-headers": "content-type, if-match",
-			},
+			headers: { "access-control-request-method": "PUT", "access-control-request-headers": "content-type" },
 		});
 		assert.equal(preflight.status, 204);
 		assertCrossOriginAllowed(preflight, demoOrigin);
@@ -269,71 +274,21 @@ test("the browser's preflight (OPTIONS before PUT and DELETE) is answered 204 wi
 	}
 });
 
-test("the answers of GET, PUT, 409 and DELETE carry the same allowance, so the browser accepts them", async () => {
+test("every answer carries the same allowance, a 404 and a HEAD included, so the browser accepts them", async () => {
 	const api = await startApp(memoryApi(), demoOrigin);
 	try {
-		const put = await call(api.url, "texts/entities-app", { method: "PUT", body: "the saved data" });
-		assert.equal(put.status, 204);
-		assertCrossOriginAllowed(put, demoOrigin);
-
-		const get = await call(api.url, "texts/entities-app");
-		assert.equal(get.status, 200);
-		assertCrossOriginAllowed(get, demoOrigin);
-
-		// The browser would otherwise hide the 409 from the app, and it would look like any failure.
-		const refused = await call(api.url, "texts/entities-app", { method: "PUT", body: "over it quietly" });
-		assert.equal(refused.status, 409);
-		assertCrossOriginAllowed(refused, demoOrigin);
-
-		const remove = await call(api.url, "texts/entities-app", { method: "DELETE" });
-		assert.equal(remove.status, 204);
-		assertCrossOriginAllowed(remove, demoOrigin);
-	} finally {
-		await api.close();
-	}
-});
-
-test("HEAD answers the stored text's version in etag, without a body — and nothing stored answers 404", async () => {
-	const api = await startApp(memoryApi());
-	try {
-		const absent = await call(api.url, "texts/entities-app", { method: "HEAD" });
-		assert.equal(absent.status, 404);
-
-		const put = await call(api.url, "texts/entities-app", { method: "PUT", body: "the saved data" });
-		const head = await call(api.url, "texts/entities-app", { method: "HEAD" });
-		assert.equal(head.status, 200);
-		assert.equal(head.text, ""); // a HEAD carries no body, so no text travelled
-		assert.equal(head.header("etag"), put.header("etag")); // the same version a GET would name
-
-		// Someone else saves in between: the next HEAD answers the newer version, still without a text.
-		await call(api.url, "texts/entities-app", { method: "PUT", body: "someone else's text", headers: { "if-match": put.header("etag")! } });
-		const newer = await call(api.url, "texts/entities-app", { method: "HEAD" });
-		assert.notEqual(newer.header("etag"), put.header("etag"));
-	} finally {
-		await api.close();
-	}
-});
-
-test("HEAD carries what the browser needs to see it from another origin, like GET — the etag included", async () => {
-	const api = await startApp(memoryApi(), demoOrigin);
-	try {
-		await call(api.url, "texts/entities-app", { method: "PUT", body: "the saved data" });
-		const head = await call(api.url, "texts/entities-app", { method: "HEAD" });
-		assert.equal(head.status, 200);
-		assertCrossOriginAllowed(head, demoOrigin);
-		// Without the exposition the browser hides the etag from JavaScript, and there'd be no version to see.
-		assert.ok(head.header("etag"));
-	} finally {
-		await api.close();
-	}
-});
-
-test("even a 404 says whose origin it may be read from — the browser would otherwise hide the answer", async () => {
-	const api = await startApp(memoryApi(), demoOrigin);
-	try {
-		const nothingStored = await call(api.url, "texts/entities-app");
-		assert.equal(nothingStored.status, 404);
-		assertCrossOriginAllowed(nothingStored, demoOrigin);
+		const answers = [
+			await create(api.url, "ws-1"),
+			await call(api.url, "workspaces"),
+			await call(api.url, "workspaces/ws-1/data"),
+			await call(api.url, "workspaces/ws-1/data", { method: "HEAD" }),
+			await call(api.url, "workspaces/ws-1/changes", { method: "PUT", body: oneNewEntity }),
+			await call(api.url, "workspaces/ws-1", { method: "PATCH", body: '{"name":"n"}' }),
+			await call(api.url, "workspaces/none/data"),
+			await call(api.url, "workspaces/ws-1", { method: "DELETE" }),
+		];
+		for (const answer of answers) assertCrossOriginAllowed(answer, demoOrigin);
+		assert.equal(answers[6]!.status, 404);
 	} finally {
 		await api.close();
 	}
@@ -343,72 +298,4 @@ test("the allowed origin comes from CORS_ORIGIN, with its fallback", () => {
 	assert.equal(corsOriginFromEnv("https://demo.example"), "https://demo.example");
 	assert.equal(corsOriginFromEnv(undefined), DEFAULT_CORS_ORIGIN);
 	assert.equal(corsOriginFromEnv(""), DEFAULT_CORS_ORIGIN);
-});
-
-/** The API like the one on Postgres, able to answer change sets — and how often it wrote them. */
-function memoryApiWithChanges(initial: Record<string, string> = {}): { api: Api; writes: () => number } {
-	const api = memoryApi(initial);
-	let written = 0;
-	return {
-		api: {
-			...api,
-			writeChanges: async (key, changes) => {
-				written++;
-				await api.setItem(key, "the change set was written");
-				return { version: "7", collided: changes.flatMap((c) => (c.after === null ? [] : [c.id])) };
-			},
-		},
-		writes: () => written,
-	};
-}
-
-test("the change-set route: PUT on the app's key answers version and collisions, with the version in etag", async () => {
-	const behind = memoryApiWithChanges();
-	const api = await startApp(behind.api);
-	try {
-		const put = await call(api.url, "texts/entities-app/changes", {
-			method: "PUT",
-			body: JSON.stringify([{ kind: "entity", id: "ent-1", before: null, after: { value: { id: "ent-1" }, position: 0 } }]),
-		});
-		assert.equal(put.status, 200);
-		assert.equal(put.header("content-type"), "application/json; charset=utf-8");
-		assert.deepEqual(JSON.parse(put.text), { version: "7", collided: ["ent-1"] });
-		assert.equal(put.header("etag"), "7");
-
-		// What got there: the API behind was asked, exactly once.
-		assert.equal(behind.writes(), 1);
-	} finally {
-		await api.close();
-	}
-});
-
-test("a change set that isn't one answers 400 and writes nothing; without an apt key or API, 404", async () => {
-	const behind = memoryApiWithChanges();
-	const api = await startApp(behind.api);
-	try {
-		// Not JSON, not an array, not a unit: refused, nothing asked of the storage behind. (An empty
-		// change set is a valid one — it just has nothing to write, the DB tests cover it.)
-		for (const body of ["not json", "{}", '[{"kind":"star","id":"x"}]', '[{"kind":"type","id":""}]', '[{"kind":"card","id":"c"}]', '[{"kind":"type","id":"t","before":null,"after":null}]']) {
-			const refused = await call(api.url, "texts/entities-app/changes", { method: "PUT", body });
-			assert.equal(refused.status, 400, `"${body}" should not be a change set`);
-		}
-		assert.equal(behind.writes(), 0);
-
-		// The route serves the app's key alone: every other text keeps its one whole way.
-		assert.equal((await call(api.url, "texts/another-key/changes", { method: "PUT", body: "[]" })).status, 404);
-
-		// Only PUT is served on it.
-		assert.equal((await call(api.url, "texts/entities-app/changes")).status, 405);
-		assert.equal((await call(api.url, "texts/entities-app/changes", { method: "DELETE" })).status, 405);
-	} finally {
-		await api.close();
-	}
-
-	// An API without a change-set way of writing answers 404 — the saver walks the whole-document way.
-	const older = await startApp(memoryApi());
-	try {
-		assert.equal((await call(older.url, "texts/entities-app/changes", { method: "PUT", body: "[]" })).status, 404);
-	} finally {
-		await older.close();
-	}
 });

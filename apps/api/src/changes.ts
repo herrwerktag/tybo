@@ -1,23 +1,22 @@
-import type { AppData, Change, SavedChanges } from "@bekbon/core";
+import type { Change, SavedChanges } from "@bekbon/core";
 import { jsonEqual, unitStands } from "@bekbon/core";
-import { APP_KEY, expectedMirrorCounts, readAppData, readAppDataFrom, writeMirrorRows, type Queries, type Sql } from "./mirror.js";
+import { readAppData } from "./data.js";
+import type { Queries, Sql } from "./schema.js";
 
 /**
- * The change-set writer: the writing side of the addressable tables, while reading comes out of them
- * (2b-2a). A save no longer carries the whole document — only the units it changed, each by its id, so
- * whoever moves a card and whoever edits an entity write different rows, let alone collide on them.
+ * The change-set writer: the one way the app's data is written. A save never carries the whole document —
+ * only the units it changed, each by its id, so whoever moves a card and whoever edits an entity write
+ * different rows, let alone collide on them.
  *
  * Which units collided decides the writer, one at a time: a unit whose `before` is the stand the tables
  * hold right now — or whose absence its "new" says — was touched by nobody else and writes without a
  * word. A unit whose stand differs (someone else changed it in between, or it went away) is a collision;
  * it is written anyway — the last save wins — and its id is reported back, so the saver can tell its user
- * about it the way it always did (`saveConflict`): warn, keep the own changes, reload to see the rest.
- * Units a change set never names are never touched at all — therein lies the whole gain.
+ * about it: warn, keep the own changes, reload to see the rest. Units a change set never names are never
+ * touched at all.
  *
- * All-or-nothing: the whole save runs in one transaction, so a failure writes nothing half. The blob
- * (`texts`) is kept in step with the tables — it's the fallback of the read path — by rebuilding it out
- * of the tables within the very same transaction and raising the revision by one, so tables, blob and
- * version can't disagree afterwards.
+ * All-or-nothing: the whole save runs in one transaction, which also raises the workspace's revision by
+ * one, so the rows and the version can't disagree afterwards.
  */
 
 /** The change kinds, in the order their rows are written: parents before children. */
@@ -67,22 +66,23 @@ function stand(raw: unknown): { value: object; position: number } | null | undef
 	return { value, position };
 }
 
-/** Writes the change set: only the rows of the units it names, one transaction around everything — a
- * failure writes nothing half. Answers the new version and the ids of the units that collided (written
- * anyway — the last save wins). A change set without a unit writes nothing at all, and says where the
- * version stands. Refused (thrown) only when it couldn't be written honestly — then it changed nothing. */
-export async function applyChanges(sql: Sql, changes: readonly Change[]): Promise<SavedChanges> {
+/** Writes the change set into the workspace: only the rows of the units it names, one transaction around
+ * everything — a failure writes nothing half. Answers the new revision and the ids of the units that
+ * collided (written anyway — the last save wins). A change set without a unit writes nothing at all, and
+ * says where the revision stands. Null when there is no workspace of that id; refused (thrown) when it
+ * couldn't be written honestly — then it changed nothing. */
+export async function applyChanges(sql: Sql, workspaceId: string, changes: readonly Change[]): Promise<SavedChanges | null> {
 	if (changes.length === 0) {
-		// Nothing changed: nothing is written, not even the blob and its revision.
-		const rows = await sql`select revision::text as version from texts where key = ${APP_KEY}`;
-		return { version: (rows[0] as { version?: string } | undefined)?.version ?? "0", collided: [] };
+		// Nothing changed: nothing is written, not even the revision.
+		const [row] = await sql`select revision::text as version from workspaces where id = ${workspaceId}`;
+		return row ? { version: row.version as string, collided: [] } : null;
 	}
 	return sql.begin(async (tx) => {
-		// One save at a time: the blob is rebuilt from what the tables hold afterwards, so saves must not
-		// interleave. The whole-document write waits behind the same row, so the two ways stay in step.
-		await tx`select revision from texts where key = ${APP_KEY} for update`;
+		// One save of a workspace at a time: each compares its units with what the one before it left.
+		const [locked] = await tx`select id from workspaces where id = ${workspaceId} for update`;
+		if (!locked) return null;
 
-		const stands = unitStands((await currentData(tx)) ?? emptyApp());
+		const stands = unitStands(await readAppData(tx, workspaceId));
 		const byKind: Record<ChangeKind, Change[]> = { type: [], entity: [], board: [], card: [], drawing: [] };
 		for (const unit of changes) byKind[unit.kind]!.push(unit);
 		const collided: string[] = [];
@@ -90,60 +90,20 @@ export async function applyChanges(sql: Sql, changes: readonly Change[]): Promis
 			for (const unit of byKind[kind]) {
 				// Whatever the tables hold differs from the unit's `before`: someone else was here first.
 				if (!untouched(stands, unit)) collided.push(unit.id);
-				await writeUnit(tx, unit);
+				await writeUnit(tx, workspaceId, unit);
 			}
 		}
 
-		// The blob is the read path's fallback: it's put together out of the tables' very answer, in this
-		// transaction — whatever made applying the units fail or left nothing to answer throws, refuses
-		// the whole save, and leaves tables and blob exactly as they were.
-		const built = await readAppDataFrom(tx);
-		if (built === null) throw new Error("the tables answer nothing to build the blob from");
-		const stored = await tx`insert into texts (key, value, revision)
-			values (${APP_KEY}, ${JSON.stringify(built)}, 1)
-			on conflict (key) do update set value = excluded.value, updated_at = now(), revision = texts.revision + 1
-			returning revision::text`;
-		const version = (stored[0] as { revision?: string } | undefined)?.revision ?? "0";
-		// What every query sees of the mirror: filled by the last save, whichever way it went out.
-		await tx`insert into mirror_meta (key, value) values
-			('sync', ${jsonbParameter(tx, {
-				source_key: APP_KEY,
-				synced_at: new Date().toISOString(),
-				revision: version,
-				counts: expectedMirrorCounts(built),
-			})})
-			on conflict (key) do update set value = excluded.value`;
-		return { version, collided };
+		const [stored] = await tx`update workspaces set revision = revision + 1, updated_at = now()
+			where id = ${workspaceId}
+			returning revision::text as version`;
+		return { version: stored!.version as string, collided };
 	});
 }
 
-/** The jsonb parameter the driver makes, in the transaction at hand (`null` stays SQL null, the way the
- * mirror's own helper writes a jsonb column). */
+/** The jsonb parameter the driver makes, in the transaction at hand (`null` stays SQL null, not jsonb `null`). */
 function jsonbParameter(queries: Queries, value: unknown) {
 	return value === null || value === undefined ? null : queries.json(value as never);
-}
-
-/** The app data the tables answer right now, within this transaction. Nothing mirrored? The blob — the
- * very fallback the read path leans on — fills the mirror first, all-or-nothing with this save: change
- * sets build on a whole read, so the tables must answer one before their units can be written from it.
- * Without a blob there was nothing saved at all — a first write, unit by unit, with nothing to lose.
- * Refuses (throws) when the blob is there but answers nothing the tables could be filled from: the data
- * stays as it is. */
-async function currentData(tx: Queries): Promise<AppData | null> {
-	const fromTables = await readAppDataFrom(tx);
-	if (fromTables !== null) return fromTables;
-	const rows = await tx`select value from texts where key = ${APP_KEY}`;
-	const blob = (rows[0] as { value: string } | undefined)?.value;
-	if (blob === undefined) return null;
-	const data = readAppData(blob);
-	if (data === null) throw new Error("the blob answers nothing the tables could be filled from");
-	await writeMirrorRows(tx, data);
-	return (await readAppDataFrom(tx)) ?? null;
-}
-
-/** The app data of a database before its first row — nothing anywhere, not even a board. */
-function emptyApp(): AppData {
-	return { types: [], entities: [], boards: [] };
 }
 
 /** The stand the tables hold for the unit right now, by the unit's own kind. */
@@ -173,45 +133,45 @@ function untouched(stands: ReturnType<typeof unitStands>, unit: Change): boolean
 	return now !== null && now.position === unit.before.position && jsonEqual(now.value, unit.before.value);
 }
 
-/** Writes one unit's rows within the transaction — only that unit's own: its delete is a delete of its
- * one row (the tables' references cascade what hung below it), its write an upsert of it. */
-async function writeUnit(tx: Queries, unit: Change): Promise<void> {
+/** Writes one unit's rows within the transaction — only that unit's own, in its workspace: its delete is a
+ * delete of its one row (the tables' references cascade what hung below it), its write an upsert of it. */
+async function writeUnit(tx: Queries, ws: string, unit: Change): Promise<void> {
 	if (unit.after === null) {
 		// Gone: its one row goes, and the tables' references take care of what belonged below it — values
 		// with their property or entity, cards and drawings with their board.
 		switch (unit.kind) {
 			case "type":
-				return void (await tx`delete from entity_types where id = ${unit.id}`);
+				return void (await tx`delete from entity_types where workspace_id = ${ws} and id = ${unit.id}`);
 			case "entity":
-				return void (await tx`delete from entities where id = ${unit.id}`);
+				return void (await tx`delete from entities where workspace_id = ${ws} and id = ${unit.id}`);
 			case "board":
-				return void (await tx`delete from boards where id = ${unit.id}`);
+				return void (await tx`delete from boards where workspace_id = ${ws} and id = ${unit.id}`);
 			case "card":
-				return void (await tx`delete from cards where id = ${unit.id}`);
+				return void (await tx`delete from cards where workspace_id = ${ws} and id = ${unit.id}`);
 			case "drawing":
-				return void (await tx`delete from drawings where id = ${unit.id}`);
+				return void (await tx`delete from drawings where workspace_id = ${ws} and id = ${unit.id}`);
 		}
 	}
 	switch (unit.kind) {
 		case "type": {
 			const type = unit.after.value;
-			await tx`insert into entity_types (id, position, name, content_template, color, updated_at)
-				values (${type.id}, ${unit.after.position}, ${type.name}, ${type.contentTemplate}, ${type.color}, now())
-				on conflict (id) do update set
+			await tx`insert into entity_types (workspace_id, id, position, name, content_template, color, updated_at)
+				values (${ws}, ${type.id}, ${unit.after.position}, ${type.name}, ${type.contentTemplate}, ${type.color}, now())
+				on conflict (workspace_id, id) do update set
 					position = excluded.position, name = excluded.name,
 					content_template = excluded.content_template, color = excluded.color, updated_at = now()`;
 			const properties = type.properties ?? [];
-			// Properties the type no longer has lost their rows — their values go with them, the tables'
+			// Properties the type no longer has lose their rows — their values go with them, the tables'
 			// references take care of what hangs below a property (or its type) going away.
-			if (properties.length === 0) await tx`delete from properties where type_id = ${type.id}`;
+			if (properties.length === 0) await tx`delete from properties where workspace_id = ${ws} and type_id = ${type.id}`;
 			else
 				await tx`delete from properties
-					where type_id = ${type.id} and id <> all(${properties.map((p) => p.id)})`;
+					where workspace_id = ${ws} and type_id = ${type.id} and id <> all(${properties.map((p) => p.id)})`;
 			for (const [index, property] of properties.entries()) {
-				await tx`insert into properties (id, type_id, position, name, kind, options, reference, card_display)
-					values (${property.id}, ${type.id}, ${index}, ${property.name}, ${property.kind},
+				await tx`insert into properties (workspace_id, id, type_id, position, name, kind, options, reference, card_display)
+					values (${ws}, ${property.id}, ${type.id}, ${index}, ${property.name}, ${property.kind},
 						${jsonbParameter(tx, property.options)}, ${jsonbParameter(tx, property.reference)}, ${property.cardDisplay})
-					on conflict (id) do update set
+					on conflict (workspace_id, id) do update set
 						type_id = excluded.type_id, position = excluded.position, name = excluded.name,
 						kind = excluded.kind, options = excluded.options, reference = excluded.reference,
 						card_display = excluded.card_display`;
@@ -220,47 +180,47 @@ async function writeUnit(tx: Queries, unit: Change): Promise<void> {
 		}
 		case "entity": {
 			const entity = unit.after.value;
-			await tx`insert into entities (id, type_id, position, name, content, description, updated_at)
-				values (${entity.id}, ${entity.typeId}, ${unit.after.position}, ${entity.name}, ${entity.content}, ${entity.description}, now())
-				on conflict (id) do update set
+			await tx`insert into entities (workspace_id, id, type_id, position, name, content, description, updated_at)
+				values (${ws}, ${entity.id}, ${entity.typeId}, ${unit.after.position}, ${entity.name}, ${entity.content}, ${entity.description}, now())
+				on conflict (workspace_id, id) do update set
 					type_id = excluded.type_id, position = excluded.position, name = excluded.name,
 					content = excluded.content, description = excluded.description, updated_at = now()`;
-			// The values the entity no longer has lost their rows; the ones it has are written — the place
+			// The values the entity no longer has lose their rows; the ones it has are written — the place
 			// is the record's own order, the read assembles the record either way.
 			const values = Object.entries(entity.values ?? {});
-			if (values.length === 0) await tx`delete from entity_values where entity_id = ${entity.id}`;
+			if (values.length === 0) await tx`delete from entity_values where workspace_id = ${ws} and entity_id = ${entity.id}`;
 			else
 				await tx`delete from entity_values
-					where entity_id = ${entity.id} and property_id <> all(${values.map(([propertyId]) => propertyId)})`;
+					where workspace_id = ${ws} and entity_id = ${entity.id} and property_id <> all(${values.map(([propertyId]) => propertyId)})`;
 			for (const [index, [propertyId, value]] of values.entries()) {
-				await tx`insert into entity_values (entity_id, property_id, position, value)
-					values (${entity.id}, ${propertyId}, ${index}, ${jsonbParameter(tx, value)})
-					on conflict (entity_id, property_id) do update set position = excluded.position, value = excluded.value`;
+				await tx`insert into entity_values (workspace_id, entity_id, property_id, position, value)
+					values (${ws}, ${entity.id}, ${propertyId}, ${index}, ${jsonbParameter(tx, value)})
+					on conflict (workspace_id, entity_id, property_id) do update set position = excluded.position, value = excluded.value`;
 			}
 			return;
 		}
 		case "board": {
 			const board = unit.after.value;
-			await tx`insert into boards (id, position, name, viewport, updated_at)
-				values (${board.id}, ${unit.after.position}, ${board.name}, ${jsonbParameter(tx, board.viewport)}, now())
-				on conflict (id) do update set
+			await tx`insert into boards (workspace_id, id, position, name, viewport, updated_at)
+				values (${ws}, ${board.id}, ${unit.after.position}, ${board.name}, ${jsonbParameter(tx, board.viewport)}, now())
+				on conflict (workspace_id, id) do update set
 					position = excluded.position, name = excluded.name, viewport = excluded.viewport, updated_at = now()`;
 			return;
 		}
 		case "card": {
 			const card = unit.after.value;
-			await tx`insert into cards (id, board_id, entity_id, position, x, y, width, height)
-				values (${card.id}, ${unit.boardId}, ${card.entityId}, ${unit.after.position}, ${card.x}, ${card.y}, ${card.width}, ${card.height})
-				on conflict (id) do update set
+			await tx`insert into cards (workspace_id, id, board_id, entity_id, position, x, y, width, height)
+				values (${ws}, ${card.id}, ${unit.boardId}, ${card.entityId}, ${unit.after.position}, ${card.x}, ${card.y}, ${card.width}, ${card.height})
+				on conflict (workspace_id, id) do update set
 					board_id = excluded.board_id, entity_id = excluded.entity_id, position = excluded.position,
 					x = excluded.x, y = excluded.y, width = excluded.width, height = excluded.height`;
 			return;
 		}
 		case "drawing": {
 			const drawing = unit.after.value;
-			await tx`insert into drawings (id, board_id, position, kind, body)
-				values (${drawing.id}, ${unit.boardId}, ${unit.after.position}, ${drawing.kind}, ${jsonbParameter(tx, drawing)})
-				on conflict (id) do update set
+			await tx`insert into drawings (workspace_id, id, board_id, position, kind, body)
+				values (${ws}, ${drawing.id}, ${unit.boardId}, ${unit.after.position}, ${drawing.kind}, ${jsonbParameter(tx, drawing)})
+				on conflict (workspace_id, id) do update set
 					board_id = excluded.board_id, position = excluded.position, kind = excluded.kind, body = excluded.body`;
 			return;
 		}
