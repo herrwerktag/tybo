@@ -28,6 +28,11 @@ main:has(.canvas-view) {
 	height: 100dvh;
 }
 
+/* An exported view (standaloneViewHtml) has no top bar: the canvas is all there is. */
+main.standalone {
+	grid-template-rows: minmax(0, 1fr);
+}
+
 .app-nav {
 	display: flex;
 	align-items: center;
