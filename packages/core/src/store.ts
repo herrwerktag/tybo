@@ -22,6 +22,7 @@ import {
 	type BoxDrawing,
 	type CanvasCard,
 	type Drawing,
+	type ImageDrawing,
 	type NewDrawing,
 	type PathDrawing,
 	type TextSize,
@@ -139,8 +140,15 @@ const isPoint = (p: unknown): p is Point => isNumber((p as Point | null)?.x) && 
 
 /** A well-formed drawing, or null. Boards saved before drawings existed have none. */
 function normalizeDrawing(raw: unknown): Drawing | null {
-	const d = raw as Partial<BoxDrawing> & Partial<Omit<PathDrawing, "kind">> & { kind?: unknown };
-	if (typeof d?.id !== "string" || typeof d.color !== "string") return null;
+	const d = raw as Partial<Omit<BoxDrawing, "kind">> &
+		Partial<Omit<PathDrawing, "kind">> &
+		Partial<Pick<ImageDrawing, "src">> & { kind?: unknown };
+	if (typeof d?.id !== "string") return null;
+	if (d.kind === "image") {
+		if (![d.x, d.y, d.width, d.height].every(isNumber) || typeof d.src !== "string" || !d.src.startsWith("data:image/")) return null;
+		return { id: d.id, kind: d.kind, x: d.x!, y: d.y!, width: d.width!, height: d.height!, src: d.src };
+	}
+	if (typeof d.color !== "string") return null;
 	if (d.kind === "rect" || d.kind === "ellipse" || d.kind === "text") {
 		if (![d.x, d.y, d.width, d.height].every(isNumber)) return null;
 		return {

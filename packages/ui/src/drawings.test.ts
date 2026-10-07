@@ -1,19 +1,23 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+	MAX_IMAGE_SIZE,
 	MIN_BOX_SIZE,
 	arrowGeometry,
 	drawingBounds,
+	imageRect,
 	moveDrawing,
 	moveEndpoint,
 	normalizeRect,
 	resizeBox,
+	resizeImage,
 	simplifyStroke,
 	strokePath,
 } from "./drawings.js";
-import type { BoxDrawing, PathDrawing } from "@bekbon/core";
+import type { BoxDrawing, ImageDrawing, PathDrawing } from "@bekbon/core";
 
 const box: BoxDrawing = { id: "b", kind: "rect", x: 100, y: 100, width: 200, height: 100, color: "#dcdcdc", text: "", textSize: "m" };
+const image: ImageDrawing = { id: "i", kind: "image", x: 100, y: 100, width: 200, height: 100, src: "data:image/png;base64," };
 const line: PathDrawing = { id: "l", kind: "line", points: [{ x: 0, y: 0 }, { x: 100, y: 50 }], color: "#4a4a4a" };
 
 test("normalizeRect spans two corners in any drag direction", () => {
@@ -22,6 +26,7 @@ test("normalizeRect spans two corners in any drag direction", () => {
 
 test("moveDrawing moves boxes and every point of paths", () => {
 	assert.deepEqual(moveDrawing(box, 5, -10), { ...box, x: 105, y: 90 });
+	assert.deepEqual(moveDrawing(image, 5, -10), { ...image, x: 105, y: 90 });
 	assert.deepEqual(moveDrawing(line, 1, 2).points, [{ x: 1, y: 2 }, { x: 101, y: 52 }]);
 });
 
@@ -40,12 +45,37 @@ test("resizeBox flips past the opposite corner and keeps a minimum size", () => 
 	assert.deepEqual([tiny.x, tiny.y, tiny.width, tiny.height], [100, 100, MIN_BOX_SIZE, MIN_BOX_SIZE]);
 });
 
+test("resizeImage keeps the aspect ratio and the opposite corner", () => {
+	const at = (i: ImageDrawing) => [i.x, i.y, i.width, i.height];
+	assert.deepEqual(at(resizeImage(image, "se", 100, 0)), [100, 100, 300, 150]);
+	assert.deepEqual(at(resizeImage(image, "se", 0, 50)), [100, 100, 300, 150]);
+	assert.deepEqual(at(resizeImage(image, "se", 100, -25)), [100, 100, 300, 150]); // the side dragged further decides
+	assert.deepEqual(at(resizeImage(image, "nw", -100, 0)), [0, 50, 300, 150]);
+	assert.deepEqual(at(resizeImage(image, "ne", -100, 0)), [100, 150, 100, 50]);
+});
+
+test("resizeImage never flips and keeps a minimum size", () => {
+	const tiny = resizeImage(image, "se", -500, -500);
+	assert.deepEqual([tiny.x, tiny.y, tiny.width, tiny.height], [100, 100, 2 * MIN_BOX_SIZE, MIN_BOX_SIZE]);
+});
+
+test("imageRect centers a new image, scaling large ones down", () => {
+	assert.deepEqual(imageRect({ x: 0, y: 0 }, 100, 50), { x: -50, y: -25, width: 100, height: 50 });
+	assert.deepEqual(imageRect({ x: 0, y: 0 }, 2 * MAX_IMAGE_SIZE, MAX_IMAGE_SIZE), {
+		x: -MAX_IMAGE_SIZE / 2,
+		y: -MAX_IMAGE_SIZE / 4,
+		width: MAX_IMAGE_SIZE,
+		height: MAX_IMAGE_SIZE / 2,
+	});
+});
+
 test("moveEndpoint moves only the chosen end", () => {
 	assert.deepEqual(moveEndpoint(line, 1, -100, 0).points, [{ x: 0, y: 0 }, { x: 0, y: 50 }]);
 });
 
 test("drawingBounds covers boxes and all path points", () => {
 	assert.deepEqual(drawingBounds(box), { x: 100, y: 100, width: 200, height: 100 });
+	assert.deepEqual(drawingBounds(image), { x: 100, y: 100, width: 200, height: 100 });
 	const pen: PathDrawing = { ...line, kind: "pen", points: [{ x: 5, y: 9 }, { x: -3, y: 4 }, { x: 8, y: 1 }] };
 	assert.deepEqual(drawingBounds(pen), { x: -3, y: 1, width: 11, height: 8 });
 });

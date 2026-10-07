@@ -912,6 +912,11 @@ button.ref-tag {
 	stroke-width: 14;
 }
 
+/* Images can't be dragged out of the page by the browser; dragging moves them. */
+.drawing-image {
+	-webkit-user-drag: none;
+}
+
 .drawing-arrowhead {
 	stroke-width: 1;
 	stroke-linejoin: round;

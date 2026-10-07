@@ -1,13 +1,16 @@
 /** Geometry for drawings on the canvas (shapes, lines, text, pen), in world coordinates. */
 
 import type { Point, Rect } from "@bekbon/core";
-import { isBox, type BoxDrawing, type Drawing, type PathDrawing } from "@bekbon/core";
+import { isBox, isImage, type Drawing, type ImageDrawing, type PathDrawing } from "@bekbon/core";
 
 /** The canvas tools: select (and move, resize, edit) or draw one kind of drawing. */
 export type Tool = "select" | "rect" | "ellipse" | "line" | "arrow" | "text" | "pen";
 
 /** Boxes never get smaller than this, so they stay visible and grabbable. */
 export const MIN_BOX_SIZE = 12;
+
+/** A new image's longer side, in world units (smaller images keep their own size). */
+export const MAX_IMAGE_SIZE = 480;
 
 export type Corner = "nw" | "ne" | "sw" | "se";
 
@@ -17,7 +20,7 @@ export function normalizeRect(a: Point, b: Point): Rect {
 }
 
 export function moveDrawing<T extends Drawing>(drawing: T, dx: number, dy: number): T {
-	if (isBox(drawing)) return { ...drawing, x: drawing.x + dx, y: drawing.y + dy };
+	if (isBox(drawing) || isImage(drawing)) return { ...drawing, x: drawing.x + dx, y: drawing.y + dy };
 	return { ...drawing, points: (drawing as PathDrawing).points.map((p) => ({ x: p.x + dx, y: p.y + dy })) };
 }
 
@@ -25,7 +28,7 @@ export function moveDrawing<T extends Drawing>(drawing: T, dx: number, dy: numbe
  * Moves one corner by (dx, dy) while the opposite corner stays put. Dragging past the opposite corner flips the
  * box; it never gets smaller than MIN_BOX_SIZE (it grows away from the fixed corner instead).
  */
-export function resizeBox(box: BoxDrawing, corner: Corner, dx: number, dy: number): BoxDrawing {
+export function resizeBox<T extends Rect>(box: T, corner: Corner, dx: number, dy: number): T {
 	const left = corner === "nw" || corner === "sw";
 	const top = corner === "nw" || corner === "ne";
 	const fixed = { x: left ? box.x + box.width : box.x, y: top ? box.y + box.height : box.y };
@@ -42,6 +45,36 @@ export function resizeBox(box: BoxDrawing, corner: Corner, dx: number, dy: numbe
 	};
 }
 
+/**
+ * Moves one corner of an image by (dx, dy) while the opposite corner stays put, keeping the aspect ratio: the
+ * side dragged further decides the size. It never flips, and neither side gets smaller than MIN_BOX_SIZE.
+ */
+export function resizeImage(image: ImageDrawing, corner: Corner, dx: number, dy: number): ImageDrawing {
+	const left = corner === "nw" || corner === "sw";
+	const top = corner === "nw" || corner === "ne";
+	const ratio = image.width / image.height;
+	const scaleX = (image.width + (left ? -dx : dx)) / image.width;
+	const scaleY = (image.height + (top ? -dy : dy)) / image.height;
+	const scale = Math.abs(scaleX - 1) >= Math.abs(scaleY - 1) ? scaleX : scaleY;
+	const width = Math.max(image.width * scale, MIN_BOX_SIZE, MIN_BOX_SIZE * ratio);
+	const height = width / ratio;
+	return {
+		...image,
+		x: left ? image.x + image.width - width : image.x,
+		y: top ? image.y + image.height - height : image.y,
+		width,
+		height,
+	};
+}
+
+/** Where a new image goes: centered on `center`, at its own size or scaled down to MAX_IMAGE_SIZE. */
+export function imageRect(center: Point, naturalWidth: number, naturalHeight: number): Rect {
+	const scale = Math.min(1, MAX_IMAGE_SIZE / Math.max(naturalWidth, naturalHeight));
+	const width = Math.max(MIN_BOX_SIZE, naturalWidth * scale);
+	const height = Math.max(MIN_BOX_SIZE, naturalHeight * scale);
+	return { x: center.x - width / 2, y: center.y - height / 2, width, height };
+}
+
 /** Moves one end of a line or arrow. */
 export function moveEndpoint(line: PathDrawing, index: 0 | 1, dx: number, dy: number): PathDrawing {
 	return { ...line, points: line.points.map((p, i) => (i === index ? { x: p.x + dx, y: p.y + dy } : p)) };
@@ -49,7 +82,7 @@ export function moveEndpoint(line: PathDrawing, index: 0 | 1, dx: number, dy: nu
 
 /** The smallest box containing the drawing. */
 export function drawingBounds(drawing: Drawing): Rect {
-	if (isBox(drawing)) return { x: drawing.x, y: drawing.y, width: drawing.width, height: drawing.height };
+	if (isBox(drawing) || isImage(drawing)) return { x: drawing.x, y: drawing.y, width: drawing.width, height: drawing.height };
 	const xs = drawing.points.map((p) => p.x);
 	const ys = drawing.points.map((p) => p.y);
 	const x = Math.min(...xs);
