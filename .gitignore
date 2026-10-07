@@ -20,6 +20,11 @@ pnpm-debug.log*
 !.env.example
 *.local
 
+# Local SQLite databases (LOCAL_DB_PATH)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
 # Test coverage
 coverage/
 
