@@ -6,6 +6,7 @@ import {
 	arrowGeometry,
 	contentBounds,
 	drawingBounds,
+	eraseStroke,
 	imageRect,
 	moveDrawing,
 	moveEndpoint,
@@ -13,6 +14,7 @@ import {
 	resizeBox,
 	resizeImage,
 	simplifyStroke,
+	streamline,
 	strokePath,
 } from "./drawings.js";
 import type { BoxDrawing, ImageDrawing, PathDrawing, SymbolDrawing } from "@bekbon/core";
@@ -90,6 +92,26 @@ test("simplifyStroke drops points that are too close, keeping both ends", () => 
 		{ x: 4.5, y: 0 },
 	];
 	assert.deepEqual(simplifyStroke(points), [{ x: 0, y: 0 }, { x: 3, y: 0 }, { x: 4.5, y: 0 }]);
+});
+
+test("streamline moves part of the way to the pointer, evening out jitter", () => {
+	assert.deepEqual(streamline({ x: 0, y: 0 }, { x: 10, y: -4 }), { x: 5, y: -2 });
+	assert.deepEqual(streamline({ x: 0, y: 0 }, { x: 10, y: 0 }, 1), { x: 10, y: 0 });
+});
+
+test("eraseStroke cuts out what the eraser passes over, keeping the stroke's own points elsewhere", () => {
+	const stroke = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }];
+	// Through the middle of the long first segment: two pieces, cut where the eraser's reach ends.
+	assert.deepEqual(eraseStroke(stroke, { x: 50, y: -20 }, { x: 50, y: 20 }, 10), [
+		[{ x: 0, y: 0 }, { x: 35, y: 0 }],
+		[{ x: 65, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }],
+	]);
+	// Rubbed over a whole end: only the rest is left.
+	assert.deepEqual(eraseStroke(stroke, { x: 100, y: 60 }, { x: 100, y: 20 }, 5), [
+		[{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 12.5 }],
+	]);
+	assert.deepEqual(eraseStroke(stroke, { x: 0, y: 0 }, { x: 100, y: 50 }, 200), []);
+	assert.equal(eraseStroke(stroke, { x: 50, y: 30 }, { x: 60, y: 30 }, 10), null);
 });
 
 test("strokePath draws straight segments, or a smoothed curve for pen strokes", () => {

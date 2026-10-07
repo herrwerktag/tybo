@@ -343,3 +343,57 @@ test("library drawings are dragged from the side panel onto the board, and alway
 	assert.equal(again.querySelectorAll(".drawings .library-picture ellipse").length, 0);
 	assert.equal(again.querySelectorAll(".drawings .library-picture rect.drawing-shape").length, 1);
 });
+
+test("the pen draws smoothed strokes in the style picked for it", async () => {
+	const { store, view } = await setup();
+	const button = (label: string) => [...view.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.ariaLabel === label || b.textContent === label)!;
+	button("Pen").click();
+	button("Highlighter").click();
+	assert.equal(button("Highlighter").ariaPressed, "true");
+
+	// A shaky horizontal stroke comes out flatter than it was drawn.
+	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;
+	const at = (type: string, x: number, y: number) =>
+		surface.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, clientX: x, clientY: y }));
+	at("pointerdown", 0, 0);
+	[10, 20, 30, 40, 50, 60].forEach((x, i) => at("pointermove", x, i % 2 === 0 ? 8 : -8));
+	at("pointerup", 60, -8);
+
+	const [stroke] = store.data.boards[0]!.drawings;
+	assert.equal(stroke?.kind === "pen" && stroke.penStyle, "highlighter");
+	const ys = stroke?.kind === "pen" ? stroke.points.slice(1).map((p) => p.y) : [];
+	assert.ok(ys.every((y) => Math.abs(y) < 8));
+	const path = view.querySelector<SVGElement>(".drawings path.drawing-stroke.pen-highlighter");
+	// In the light color itself, like all pen strokes.
+	assert.equal(path?.style.stroke, stroke?.kind === "pen" ? stroke.color : "");
+});
+
+test("the eraser rubs out the part of a pen stroke it passes over, in one change that undo brings back", async () => {
+	const { store, view } = await setup();
+	const boardId = store.data.boards[0]!.id;
+	const stroke = store.addDrawing(boardId, { kind: "pen", points: [{ x: -200, y: 0 }, { x: 200, y: 0 }], color: "#4a4a4a", penStyle: "fineliner" });
+	const line = store.addDrawing(boardId, { kind: "line", points: [{ x: -200, y: 10 }, { x: 200, y: 10 }], color: "#4a4a4a" });
+	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "e", bubbles: true }));
+
+	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;
+	const at = (type: string, x: number, y: number) =>
+		surface.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, clientX: x, clientY: y }));
+	// The world's origin, on the screen (the board is at zoom 1).
+	const origin = { x: store.data.boards[0]!.viewport.x, y: store.data.boards[0]!.viewport.y };
+	at("pointerdown", origin.x, origin.y - 30);
+	at("pointermove", origin.x, origin.y + 5);
+	assert.ok(view.querySelector(".drawings .eraser-outline"));
+	at("pointerup", origin.x, origin.y + 5);
+
+	const drawings = store.data.boards[0]!.drawings;
+	// Cut in two around x = 0, beyond the eraser's reach; both pieces keep the stroke's look. The line isn't a pen
+	// stroke: it stays.
+	assert.equal(drawings.length, 3);
+	const pieces = drawings.filter((d) => d.kind === "pen");
+	assert.deepEqual(pieces.map((d) => d.kind === "pen" && [d.points[0]!.x, d.points.at(-1)!.x, d.penStyle]), [[-200, -15, "fineliner"], [15, 200, "fineliner"]]);
+	assert.ok(drawings.some((d) => d.id === line.id));
+	assert.equal(view.querySelector(".drawings .eraser-outline"), null);
+
+	store.undo();
+	assert.deepEqual(store.data.boards[0]!.drawings.map((d) => d.id), [stroke.id, line.id]);
+});

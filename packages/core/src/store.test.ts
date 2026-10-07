@@ -833,6 +833,42 @@ test("drawings: added, replaced and removed on their own board", async () => {
 	assert.equal(store.data.boards[0]?.drawings.length, 1);
 });
 
+test("splitting drawings replaces them where they were, on their pages too, as one change", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
+	const board = store.addBoard("Story");
+	store.setStoryMode(board.id, true, "Start");
+	const page = store.data.boards.find((b) => b.id === board.id)!.pages[0]!;
+	const points = [{ x: 0, y: 0 }, { x: 5, y: 0 }];
+	const first = store.addDrawing(board.id, { kind: "pen", points, color: "#4a4a4a", penStyle: "pen" }, page.id);
+	const gone = store.addDrawing(board.id, { kind: "pen", points, color: "#4a4a4a", penStyle: "pen" }, page.id);
+	const last = store.addDrawing(board.id, { kind: "line", points, color: "#4a4a4a" }, page.id);
+	const piece = { kind: "pen", points, color: "#f9c9c9", penStyle: "fineliner" } as const;
+
+	store.splitDrawings(new Map([[first.id, [piece, piece]], [gone.id, []]]));
+	const saved = (await open(storage)).data.boards.find((b) => b.id === board.id)!;
+	assert.deepEqual(saved.drawings.map(({ id: _, ...d }) => d), [piece, piece, { kind: "line", points, color: "#4a4a4a" }]);
+	assert.equal(saved.drawings[2]?.id, last.id);
+	assert.deepEqual(saved.pages[0]?.drawingIds, saved.drawings.map((d) => d.id));
+
+	store.undo();
+	assert.deepEqual(store.data.boards.find((b) => b.id === board.id)!.drawings.map((d) => d.id), [first.id, gone.id, last.id]);
+});
+
+test("pen strokes keep their style; strokes saved without one (or an unknown one) are drawn with the regular pen", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
+	const board = firstBoard(store);
+	const points = [{ x: 0, y: 0 }, { x: 5, y: 2 }, { x: 10, y: 0 }];
+	const marker = store.addDrawing(board.id, { kind: "pen", points, color: "#f6e8a6", penStyle: "highlighter" });
+	const round = store.addDrawing(board.id, { kind: "pen", points, color: "#f6e8a6", penStyle: "roundHighlighter" });
+	store.addDrawing(board.id, { kind: "pen", points, color: "#4a4a4a" });
+	store.addDrawing(board.id, { kind: "pen", points, color: "#4a4a4a", penStyle: "crayon" as never });
+	const reopened = firstBoard(await open(storage)).drawings;
+	assert.deepEqual(reopened.slice(0, 2), [marker, round]);
+	assert.deepEqual(reopened.slice(2).map((d) => "penStyle" in d && d.penStyle), ["pen", "pen"]);
+});
+
 test("library: drawings made, named, tagged and edited there are saved; placed ones only point to them", async () => {
 	const storage = memoryStorage();
 	const store = await open(storage);

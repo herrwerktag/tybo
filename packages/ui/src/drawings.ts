@@ -3,8 +3,8 @@
 import type { Point, Rect } from "@bekbon/core";
 import { hasRect, type Drawing, type PathDrawing } from "@bekbon/core";
 
-/** The canvas tools: select (and move, resize, edit) or draw one kind of drawing. */
-export type Tool = "select" | "rect" | "ellipse" | "line" | "arrow" | "text" | "pen";
+/** The canvas tools: select (and move, resize, edit), draw one kind of drawing, or erase pen strokes. */
+export type Tool = "select" | "rect" | "ellipse" | "line" | "arrow" | "text" | "pen" | "eraser";
 
 /** Boxes never get smaller than this, so they stay visible and grabbable. */
 export const MIN_BOX_SIZE = 12;
@@ -106,6 +106,14 @@ export function contentBounds(drawings: readonly Drawing[]): Rect | null {
 	};
 }
 
+/**
+ * The next pen point: `amount` of the way from the previous point to the pointer. Following the pointer only partly
+ * evens out the hand's jitter, so freehand strokes come out smooth (lower amounts smooth more, but lag behind more).
+ */
+export function streamline(previous: Point, pointer: Point, amount = 0.5): Point {
+	return { x: previous.x + (pointer.x - previous.x) * amount, y: previous.y + (pointer.y - previous.y) * amount };
+}
+
 /** Drops pen points closer than `minDistance` to the previous kept point; the last point is always kept. */
 export function simplifyStroke(points: readonly Point[], minDistance = 2): Point[] {
 	if (points.length <= 2) return [...points];
@@ -116,6 +124,42 @@ export function simplifyStroke(points: readonly Point[], minDistance = 2): Point
 	}
 	kept.push(points[points.length - 1]!);
 	return kept;
+}
+
+/** How far the point is from the segment from `a` to `b`. */
+function distanceToSegment(p: Point, a: Point, b: Point): number {
+	const dx = b.x - a.x;
+	const dy = b.y - a.y;
+	const t = dx === 0 && dy === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
+	return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+/**
+ * What's left of a stroke after the eraser moved from `from` to `to`: the stroke split into the parts more than
+ * `radius` away from that path (parts too short to see are dropped), or null when the eraser didn't touch it.
+ */
+export function eraseStroke(points: readonly Point[], from: Point, to: Point, radius: number): Point[][] | null {
+	// Long segments get points in between, so the eraser can cut them in the middle too; only the ones where a piece
+	// ends are kept.
+	const step = radius / 2;
+	const dense = points.flatMap((p, i) => {
+		const prev = points[i - 1];
+		const n = prev ? Math.ceil(Math.hypot(p.x - prev.x, p.y - prev.y) / step) : 1;
+		return Array.from({ length: n }, (_, k) => {
+			const t = (k + 1) / n;
+			return { point: prev ? { x: prev.x + (p.x - prev.x) * t, y: prev.y + (p.y - prev.y) * t } : p, original: k === n - 1 };
+		});
+	});
+	const kept = dense.map(({ point }) => distanceToSegment(point, from, to) > radius);
+	if (kept.every(Boolean)) return null;
+	const pieces: Point[][] = [];
+	dense.forEach(({ point, original }, i) => {
+		if (!kept[i]) return;
+		const starts = !kept[i - 1];
+		if (starts) pieces.push([]);
+		if (original || starts || !kept[i + 1]) pieces[pieces.length - 1]!.push(point);
+	});
+	return pieces.filter((piece) => piece.length >= 2);
 }
 
 const round = (n: number) => Math.round(n * 10) / 10;

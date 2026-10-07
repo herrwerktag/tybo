@@ -5,6 +5,7 @@ import {
 	arrowGeometry,
 	contentBounds,
 	drawingBounds,
+	eraseStroke,
 	imageRect,
 	moveDrawing,
 	moveEndpoint,
@@ -12,6 +13,7 @@ import {
 	resizeBox,
 	resizeImage,
 	simplifyStroke,
+	streamline,
 	strokePath,
 	type Corner,
 	type Tool,
@@ -19,6 +21,7 @@ import {
 import { text } from "./i18n.js";
 import {
 	DRAWING_COLORS,
+	PEN_STYLES,
 	TEXT_SIZES,
 	hasRect,
 	isBox,
@@ -28,6 +31,8 @@ import {
 	type Drawing,
 	type LibraryDrawing,
 	type NewDrawing,
+	type PathDrawing,
+	type PenStyle,
 	type Rect,
 	type StoryPage,
 } from "@bekbon/core";
@@ -41,7 +46,13 @@ const TOOLS: readonly { tool: Tool; icon: string; key: string }[] = [
 	{ tool: "arrow", icon: "→", key: "a" },
 	{ tool: "text", icon: "T", key: "t" },
 	{ tool: "pen", icon: "✎", key: "p" },
+	{ tool: "eraser", icon: "⌫", key: "e" },
 ];
+
+/** How far around the pointer the eraser reaches, in screen pixels. */
+const ERASER_RADIUS = 10;
+/** Half a highlighter stroke's width (see .pen-highlighter in the CSS): the eraser reaches its edges, too. */
+const HIGHLIGHTER_HALF_WIDTH = 8;
 
 /** Size of a shape or text box created with a click instead of a drag. */
 const DEFAULT_SIZE = { rect: { width: 160, height: 100 }, ellipse: { width: 160, height: 100 }, text: { width: 200, height: 40 } };
@@ -102,8 +113,10 @@ function drawingShape(d: Drawing, library: readonly LibraryDrawing[], withText =
 	const [from, to] = d.points as [Point, Point];
 	const arrow = d.kind === "arrow" ? arrowGeometry(from, to) : null;
 	const path = arrow ? strokePath([from, arrow.lineEnd], false) : strokePath(d.points, d.kind === "pen");
-	const line = svgEl("path", { class: "drawing-stroke", d: path });
-	line.style.stroke = stroke;
+	const penStyle = d.kind === "pen" ? (d.penStyle ?? "pen") : null;
+	const line = svgEl("path", { class: penStyle ? `drawing-stroke pen-${penStyle}` : "drawing-stroke", d: path });
+	// Pen strokes keep the light color (lines and arrows use the darker shade).
+	line.style.stroke = penStyle ? d.color : stroke;
 	// A wide invisible copy, so thin lines are easy to click.
 	const shapes: SVGElement[] = [svgEl("path", { class: "drawing-hit", d: strokePath(d.points, d.kind === "pen") }), line];
 	if (arrow) {
@@ -209,10 +222,15 @@ export function createDrawingLayer(options: {
 	let tool: Tool = "select";
 	/** The color for new drawings: the last one picked. */
 	let color = DRAWING_COLORS.find((c) => c.name === "Gray")?.value ?? DRAWING_COLORS[0]!.value;
+	/** The style for new pen strokes: the last one picked. */
+	let penStyle: PenStyle = "pen";
 	let selectedId: string | null = null;
 	let editingId: string | null = null;
 	/** While dragging: the drawing as it looks right now, not saved yet (a new one has the id "draft"). */
 	let draft: Drawing | null = null;
+	/** While erasing: what's left so far of each pen stroke the eraser touched (not saved yet), and where it is. */
+	let erased: Map<string, Point[][]> | null = null;
+	let eraser: Point | null = null;
 
 	const drawings = (): Drawing[] => {
 		const owner = options.owner();
@@ -241,9 +259,15 @@ export function createDrawingLayer(options: {
 		// The viewer leaves out other pages' drawings; the editor shows them faded (see drawingNode).
 		const shown = drawings()
 			.filter((d) => !readOnly || onPage(d.id))
-			.map((d) => (draft?.id === d.id ? draft : d));
+			.map((d) => (draft?.id === d.id ? draft : d))
+			.flatMap((d) => erased?.get(d.id)?.map((points) => ({ ...d, points })) ?? [d]);
 		if (draft && !shown.some((d) => d.id === draft!.id)) shown.push(draft);
-		svg.replaceChildren(...shown.map(drawingNode), ...selectionOverlay(), ...(editingId ? [editor(editingId)] : []));
+		svg.replaceChildren(
+			...shown.map(drawingNode),
+			...selectionOverlay(),
+			...(editingId ? [editor(editingId)] : []),
+			...(eraser ? [svgEl("circle", { class: "eraser-outline", cx: eraser.x, cy: eraser.y, r: ERASER_RADIUS / options.zoom() })] : []),
+		);
 		renderToolbars();
 	}
 
@@ -431,6 +455,10 @@ export function createDrawingLayer(options: {
 		select(null);
 		const kind = tool;
 		const start = options.toWorld(e.clientX, e.clientY);
+		if (kind === "eraser") {
+			erase(e, start);
+			return true;
+		}
 
 		if (kind === "text") {
 			const added = add({
@@ -454,13 +482,20 @@ export function createDrawingLayer(options: {
 			if (kind === "rect" || kind === "ellipse") {
 				return { kind, ...normalizeRect(start, end), color, text: "", textSize: "m" };
 			}
-			return { kind, points: kind === "pen" ? [...pen] : [start, end], color };
+			return kind === "pen" ? { kind, points: [...pen], color, penStyle } : { kind, points: [start, end], color };
 		};
 		trackPointer(
 			e,
-			(dx, dy) => {
+			(dx, dy, event) => {
 				const end = at(dx, dy);
-				if (kind === "pen") pen.push(end);
+				if (kind === "pen") {
+					// All the pointer positions since the last event (browsers send fewer events than they track), each
+					// streamlined, so the stroke follows the hand closely but without its jitter.
+					const samples = event.getCoalescedEvents?.() ?? [];
+					for (const sample of samples.length > 0 ? samples : [event]) {
+						pen.push(streamline(pen[pen.length - 1]!, options.toWorld(sample.clientX, sample.clientY)));
+					}
+				}
 				draft = { ...shape(end), id: "draft" } as Drawing;
 				draw();
 			},
@@ -469,7 +504,8 @@ export function createDrawingLayer(options: {
 				const dragged = Math.hypot(dx, dy) >= CLICK_TOLERANCE;
 				let created: NewDrawing | null;
 				if (kind === "pen") {
-					created = dragged ? { kind, points: simplifyStroke(pen), color } : null;
+					// Simplified by screen distance, so strokes drawn zoomed in keep their detail.
+					created = dragged ? { kind, points: simplifyStroke(pen, 2 / zoom), color, penStyle } : null;
 				} else if (kind === "rect" || kind === "ellipse") {
 					const box = dragged ? normalizeRect(start, at(dx, dy)) : { ...start, ...DEFAULT_SIZE[kind] };
 					created = {
@@ -496,6 +532,51 @@ export function createDrawingLayer(options: {
 			options.captureTarget(),
 		);
 		return true;
+	}
+
+	/** Rubs out the parts of pen strokes (on the page shown) the pointer passes over; saved as one change on release. */
+	function erase(e: PointerEvent, start: Point): void {
+		const radius = ERASER_RADIUS / options.zoom();
+		const strokes = drawings().filter((d) => d.kind === "pen" && onPage(d.id)) as PathDrawing[];
+		const left = new Map<string, Point[][]>();
+		let from = start;
+		const rub = (to: Point) => {
+			for (const stroke of strokes) {
+				const reach = radius + (stroke.penStyle === "highlighter" || stroke.penStyle === "roundHighlighter" ? HIGHLIGHTER_HALF_WIDTH : 0);
+				const pieces = left.get(stroke.id) ?? [stroke.points];
+				let touched = false;
+				const next = pieces.flatMap((piece) => {
+					const rest = eraseStroke(piece, from, to, reach);
+					if (rest) touched = true;
+					return rest ?? [piece];
+				});
+				if (touched) left.set(stroke.id, next);
+			}
+			from = to;
+			erased = left;
+			eraser = to;
+			draw();
+		};
+		rub(start);
+		trackPointer(
+			e,
+			(_dx, _dy, event) => rub(options.toWorld(event.clientX, event.clientY)),
+			() => {
+				erased = null;
+				eraser = null;
+				const byId = new Map(strokes.map((s) => [s.id, s]));
+				store.splitDrawings(
+					new Map(
+						[...left].map(([id, pieces]) => {
+							const { color, penStyle } = byId.get(id)!;
+							return [id, pieces.map((points): NewDrawing => ({ kind: "pen", points, color, penStyle: penStyle ?? "pen" }))];
+						}),
+					),
+				);
+				draw(); // the eraser stays active
+			},
+			options.captureTarget(),
+		);
 	}
 
 	async function addImage(file: File, center: Point): Promise<void> {
@@ -566,7 +647,7 @@ export function createDrawingLayer(options: {
 		// Images and library drawings have no color of their own.
 		const colorless = selected !== undefined && (isImage(selected) || isSymbol(selected));
 		const current = selected && "color" in selected ? selected.color : color;
-		styleBar.hidden = tool === "select" && !selected;
+		styleBar.hidden = (tool === "select" || tool === "eraser") && !selected;
 		styleBar.replaceChildren(
 			...(colorless ? [] : DRAWING_COLORS).map(({ name, value }) => {
 				const swatch = el("button", {
@@ -597,6 +678,26 @@ export function createDrawingLayer(options: {
 							size.toUpperCase(),
 						),
 					)
+				: []),
+			// The pen's style applies to the selected stroke, or else to the next one drawn.
+			...((selected ? selected.kind === "pen" : tool === "pen")
+				? PEN_STYLES.map((style) => {
+						const current = selected?.kind === "pen" ? (selected.penStyle ?? "pen") : penStyle;
+						return el(
+							"button",
+							{
+								type: "button",
+								className: "tool-button",
+								title: `${text.penStyle}: ${text.penStyles[style]}`,
+								ariaPressed: String(style === current),
+								onclick: () => {
+									penStyle = style;
+									update((d) => (d.kind === "pen" ? { ...d, penStyle: style } : d));
+								},
+							},
+							text.penStyles[style],
+						);
+					})
 				: []),
 			...(selected && isSymbol(selected) && options.onEditSymbol
 				? [el("button", { type: "button", onclick: () => options.onEditSymbol?.(selected.libraryId) }, text.editInLibrary)]
