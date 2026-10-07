@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { canvasView } from "./canvas.js";
 import { CLICK_TOLERANCE } from "./dom.js";
-import { createStore, DATA_VERSION, type Store } from "@bekbon/core";
+import { createStore, DATA_VERSION, snapToGrid, type Store } from "@bekbon/core";
 import { memoryDataPort } from "@bekbon/core/testing";
 
 /** A board with one card for Dune (with content, so it can be resized) and one for Herbert. */
@@ -35,12 +35,13 @@ function dragBy(target: HTMLElement, dx: number, dy: number): void {
 	target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 }
 
-test("dragging a card's header moves it and saves the position; it doesn't open the details", async () => {
+test("dragging a card's header moves it onto the grid and saves the position; it doesn't open the details", async () => {
 	const { store, view, card } = await setup();
 	dragBy(cardNode(view, card.id).querySelector("header")!, 50, 30);
 
-	assert.deepEqual([savedCard(store, card.id)?.x, savedCard(store, card.id)?.y], [150, 130]);
-	assert.equal(cardNode(view, card.id).style.left, "150px");
+	// 150, 130 snaps to the nearest grid point.
+	assert.deepEqual([savedCard(store, card.id)?.x, savedCard(store, card.id)?.y], [144, 120]);
+	assert.equal(cardNode(view, card.id).style.left, "144px");
 	assert.equal(details(view).hidden, true);
 });
 
@@ -61,10 +62,10 @@ test("a click with a little jitter selects the card and shows its details withou
 	assert.equal(details(view).hidden, true);
 });
 
-test("resizing saves the new size, but never below the minimum", async () => {
+test("resizing saves the new size on the grid, but never below the minimum", async () => {
 	const { store, view, card } = await setup();
 	dragBy(cardNode(view, card.id).querySelector(".card-resize")!, 60, 40);
-	assert.deepEqual([savedCard(store, card.id)?.width, savedCard(store, card.id)?.height], [300, 200]);
+	assert.deepEqual([savedCard(store, card.id)?.width, savedCard(store, card.id)?.height], [312, 216]);
 
 	dragBy(cardNode(view, card.id).querySelector(".card-resize")!, -1000, -1000);
 	assert.deepEqual([savedCard(store, card.id)?.width, savedCard(store, card.id)?.height], [160, 80]);
@@ -183,18 +184,18 @@ test("the viewer starts with the whole board; in story mode it shows only prev/n
 	assert.equal(store.data.boards.find((b) => b.id === story.id)!.story, true);
 });
 
-test("the step description has the size saved with its page, set at its corner in the editor", async () => {
+test("the step description has the size saved with its page, set on the grid at its corner in the editor", async () => {
 	const { store, view, story } = await storyboard();
 	const box = view.querySelector<HTMLElement>(".canvas-board .page-description")!;
-	assert.deepEqual([box.style.width, box.style.height], ["384px", "112px"]);
+	assert.deepEqual([box.style.width, box.style.height], ["384px", "120px"]);
 
 	dragBy(box.querySelector<HTMLElement>(".card-resize")!, 40, -1000);
 	const size = store.data.boards.find((b) => b.id === story.id)!.pages[0]!.descriptionSize;
-	assert.deepEqual(size, { width: 424, height: 48 }); // never below the minimum
-	assert.deepEqual([box.style.width, box.style.height], ["424px", "48px"]);
+	assert.deepEqual(size, { width: 432, height: 48 }); // 424 snaps to 432; never below the minimum
+	assert.deepEqual([box.style.width, box.style.height], ["432px", "48px"]);
 });
 
-test("a step description sits on the canvas like a card: dragging its handle moves it in world coordinates", async () => {
+test("a step description sits on the canvas like a card: dragging its handle moves it on the grid in world coordinates", async () => {
 	const { store, view, story, one } = await storyboard();
 	const box = view.querySelector<HTMLElement>(".canvas-board .page-description")!;
 	assert.ok(box, "inside the panned and zoomed layer");
@@ -202,13 +203,13 @@ test("a step description sits on the canvas like a card: dragging its handle mov
 
 	dragBy(box.querySelector<HTMLElement>(".page-description-handle")!, 50, 30);
 	const after = store.data.boards.find((b) => b.id === story.id)!.pages[0]!.descriptionPosition;
-	assert.deepEqual(after, { x: before.x + 50, y: before.y + 30 });
+	assert.deepEqual(after, { x: snapToGrid(before.x + 50), y: snapToGrid(before.y + 30) });
 	assert.deepEqual([box.style.left, box.style.top], [`${after.x}px`, `${after.y}px`]);
 
 	// Grabbed again, it moves on from where it is now.
 	dragBy(box.querySelector<HTMLElement>(".page-description-handle")!, 10, -20);
 	const again = store.data.boards.find((b) => b.id === story.id)!.pages[0]!.descriptionPosition;
-	assert.deepEqual(again, { x: after.x + 10, y: after.y - 20 });
+	assert.deepEqual(again, { x: after.x, y: after.y - 24 }); // 10 right stays in place, 20 up snaps a whole cell
 });
 
 test("the Story mode button switches a board into story mode, starting with an empty step, and back", async () => {
@@ -242,7 +243,7 @@ test("× in story mode never deletes a card from the board, and Description here
 
 	store.updatePage(story.id, one.id, { descriptionPosition: { x: 5000, y: 5000 } });
 	[...view.querySelectorAll<HTMLButtonElement>(".page-bar button")].find((b) => b.textContent === "Description here")!.click();
-	assert.deepEqual(board().pages[0]!.descriptionPosition, { x: 72, y: 16 }); // the view is at the origin here
+	assert.deepEqual(board().pages[0]!.descriptionPosition, { x: 72, y: 24 }); // the view is at the origin here; 16 snaps to 24
 	assert.equal(view.querySelector<HTMLElement>(".page-description")!.style.left, "72px");
 });
 

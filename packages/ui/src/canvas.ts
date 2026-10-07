@@ -4,6 +4,7 @@ import { CLICK_TOLERANCE, el, svgEl, trackPointer, typeDot } from "./dom.js";
 import { text } from "./i18n.js";
 import {
 	DEFAULT_CARD_SIZE,
+	GRID_SIZE,
 	MIN_CARD_SIZE,
 	MIN_DESCRIPTION_SIZE,
 	descriptionInView,
@@ -13,6 +14,7 @@ import {
 	filterEntities,
 	inverseCardRows,
 	referencedIds,
+	snapToGrid,
 	type Board,
 	type CanvasCard,
 	type CardRow,
@@ -33,8 +35,6 @@ const ACTIVE_BOARD_KEY = "canvas-active-board";
 const activePageKey = (boardId: string) => `canvas-active-page:${boardId}`;
 /** How long the pan/zoom takes to move to another page, in ms. */
 const PAGE_ANIMATION = 450;
-/** Spacing of the background dot grid, in world units. */
-const GRID = 24;
 
 /**
  * The board canvas. With `readOnly` (the Viewer) it only displays: no side panel, no board editing,
@@ -133,9 +133,10 @@ export function canvasView(
 
 	function applyViewport(): void {
 		layer.style.transform = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`;
-		const grid = GRID * viewport.zoom;
+		const grid = GRID_SIZE * viewport.zoom;
 		surface.style.backgroundSize = `${grid}px ${grid}px`;
-		surface.style.backgroundPosition = `${viewport.x}px ${viewport.y}px`;
+		// Each dot is drawn in the middle of its tile: shift by half a tile, so the dots are where cards snap to.
+		surface.style.backgroundPosition = `${viewport.x - grid / 2}px ${viewport.y - grid / 2}px`;
 		zoomLabel.textContent = `${Math.round(viewport.zoom * 100)}%`;
 		if (viewport.zoom !== drawnZoom) {
 			drawnZoom = viewport.zoom;
@@ -908,8 +909,8 @@ export function canvasView(
 					// release the pointer capture, and fast mouse movements would then leave the card behind.
 					if (!dragging) node.classList.add("dragging");
 					dragging = true;
-					const x = card.x + dx / zoom;
-					const y = card.y + dy / zoom;
+					const x = snapToGrid(card.x + dx / zoom);
+					const y = snapToGrid(card.y + dy / zoom);
 					node.style.left = `${x}px`;
 					node.style.top = `${y}px`;
 					cardRects.set(card.id, { x, y, width: card.width, height: compact ? node.offsetHeight : card.height });
@@ -918,7 +919,7 @@ export function canvasView(
 				(dx, dy) => {
 					if (!dragging) return; // a click: the click handler selects the card
 					node.dataset.dragged = "true";
-					store.moveCard(card.id, card.x + dx / zoom, card.y + dy / zoom);
+					store.moveCard(card.id, snapToGrid(card.x + dx / zoom), snapToGrid(card.y + dy / zoom));
 					renderCards();
 				},
 			);
@@ -930,8 +931,8 @@ export function canvasView(
 			e.stopPropagation();
 			const { zoom } = viewport;
 			const size = (dx: number, dy: number) => ({
-				width: Math.max(MIN_CARD_SIZE.width, card.width + dx / zoom),
-				height: Math.max(MIN_CARD_SIZE.height, card.height + dy / zoom),
+				width: Math.max(MIN_CARD_SIZE.width, snapToGrid(card.width + dx / zoom)),
+				height: Math.max(MIN_CARD_SIZE.height, snapToGrid(card.height + dy / zoom)),
 			});
 			trackPointer(
 				e,
@@ -1025,8 +1026,9 @@ export function canvasView(
 			e.preventDefault();
 			const rect = surface.getBoundingClientRect();
 			const world = screenToWorld(viewport, e.clientX - rect.left, e.clientY - rect.top);
-			// Drop so the pointer ends up on the card's header.
-			store.addCard(boardId, entityId, world.x - DEFAULT_CARD_SIZE.width / 2, world.y - 16, currentPage()?.id);
+			// Drop so the pointer ends up on the card's header, on the grid.
+			const x = snapToGrid(world.x - DEFAULT_CARD_SIZE.width / 2);
+			store.addCard(boardId, entityId, x, snapToGrid(world.y - 16), currentPage()?.id);
 			renderCards();
 			renderPanel();
 		});
@@ -1147,7 +1149,7 @@ export function canvasView(
 			// From where it is saved now: `page` is the page as it was when the box was drawn, before any drag.
 			const start = currentPage()?.descriptionPosition ?? page.descriptionPosition;
 			const { zoom } = viewport;
-			const at = (dx: number, dy: number) => ({ x: Math.round(start.x + dx / zoom), y: Math.round(start.y + dy / zoom) });
+			const at = (dx: number, dy: number) => ({ x: snapToGrid(start.x + dx / zoom), y: snapToGrid(start.y + dy / zoom) });
 			trackPointer(
 				e,
 				(dx, dy) => placeDescription(at(dx, dy)),
@@ -1164,8 +1166,8 @@ export function canvasView(
 			const start = currentPage()?.descriptionSize ?? page.descriptionSize;
 			const { zoom } = viewport;
 			const size = (dx: number, dy: number) => ({
-				width: Math.round(Math.max(MIN_DESCRIPTION_SIZE.width, start.width + dx / zoom)),
-				height: Math.round(Math.max(MIN_DESCRIPTION_SIZE.height, start.height + dy / zoom)),
+				width: Math.max(MIN_DESCRIPTION_SIZE.width, snapToGrid(start.width + dx / zoom)),
+				height: Math.max(MIN_DESCRIPTION_SIZE.height, snapToGrid(start.height + dy / zoom)),
 			});
 			trackPointer(
 				e,

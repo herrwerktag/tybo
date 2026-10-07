@@ -148,12 +148,13 @@ export interface StoryPage {
  * view, clear of the drawing tools. */
 export const DESCRIPTION_OFFSET: Point = { x: 72, y: 16 };
 
-export const DEFAULT_DESCRIPTION_SIZE = { width: 384, height: 112 } as const;
+export const DEFAULT_DESCRIPTION_SIZE = { width: 384, height: 120 } as const;
 export const MIN_DESCRIPTION_SIZE = { width: 160, height: 48 } as const;
 
-/** The world position that puts a description at DESCRIPTION_OFFSET in `viewport`: in view, top left. */
+/** The grid point nearest to where a description is at DESCRIPTION_OFFSET in `viewport`: in view, top left. */
 export function descriptionInView(viewport: Viewport): Point {
-	return screenToWorld(viewport, DESCRIPTION_OFFSET.x, DESCRIPTION_OFFSET.y);
+	const { x, y } = screenToWorld(viewport, DESCRIPTION_OFFSET.x, DESCRIPTION_OFFSET.y);
+	return { x: snapToGrid(x), y: snapToGrid(y) };
 }
 
 /** A named canvas with its own cards and pan/zoom. In story mode, it is shown step by step, like a presentation. */
@@ -206,8 +207,16 @@ export function isBox(drawing: Drawing): drawing is BoxDrawing {
 }
 export type NewDrawing = Omit<BoxDrawing, "id"> | Omit<PathDrawing, "id">;
 
-export const DEFAULT_CARD_SIZE = { width: 240, height: 160 } as const;
+export const DEFAULT_CARD_SIZE = { width: 240, height: 168 } as const;
 export const MIN_CARD_SIZE = { width: 160, height: 80 } as const;
+
+/** Spacing of the board's grid, in world units: cards are placed and sized on it. */
+export const GRID_SIZE = 24;
+
+/** The nearest grid line to `value`. */
+export function snapToGrid(value: number): number {
+	return Math.round(value / GRID_SIZE) * GRID_SIZE;
+}
 
 export interface AppData {
 	types: EntityType[];

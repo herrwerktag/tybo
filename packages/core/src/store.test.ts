@@ -380,8 +380,8 @@ test("an entity can have several cards; moveCard brings a card to the front", as
 	store.moveCard(a1.id, 50, 60);
 
 	assert.deepEqual(firstBoard(store).cards, [
-		{ id: b1.id, entityId: b.id, x: 30, y: 40, width: 240, height: 160 },
-		{ id: a2.id, entityId: a.id, x: 70, y: 80, width: 240, height: 160 },
+		{ id: b1.id, entityId: b.id, x: 30, y: 40, width: 240, height: 168 },
+		{ id: a2.id, entityId: a.id, x: 70, y: 80, width: 240, height: 168 },
 		{ id: a1.id, entityId: a.id, x: 50, y: 60, width: 300, height: 200 },
 	]);
 });
@@ -528,8 +528,8 @@ test("story mode: the first page starts empty, in view; off, the pages stay for 
 	const [first] = firstBoard(store).pages;
 	assert.equal(firstBoard(store).story, true);
 	assert.deepEqual([first?.name, first?.cardIds, first?.drawingIds, first?.viewport], ["Start", [], [], { x: 9, y: 9, zoom: 1 }]);
-	// Its description at the top left of what is seen (72, 16 px in), not somewhere off screen.
-	assert.deepEqual(first?.descriptionPosition, { x: 63, y: 7 });
+	// Its description at the top left of what is seen (the grid point nearest 72, 16 px in), not somewhere off screen.
+	assert.deepEqual(first?.descriptionPosition, { x: 72, y: 0 });
 	assert.deepEqual([firstBoard(store).cards.map((c) => c.id), firstBoard(store).drawings.map((d) => d.id)], [[card.id], [line.id]]);
 	store.updatePage(board.id, first!.id, { name: "Renamed" });
 
@@ -690,7 +690,7 @@ test("storyboards saved by version 2 are boards in story mode; malformed pages a
 			id: "p",
 			name: "Step 2",
 			description: "",
-			descriptionPosition: { x: 72, y: 16 },
+			descriptionPosition: { x: 72, y: 24 },
 			descriptionSize: { width: 160, height: 500 }, // never below the minimum
 			viewport: { x: 0, y: 0, zoom: 1 },
 			cardIds: [],
