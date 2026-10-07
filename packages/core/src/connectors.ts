@@ -53,6 +53,27 @@ function sideMidpoint(r: Rect, side: Side): Point {
 	}
 }
 
+/** How far facing sides must overlap for a straight line between them, so it doesn't hug a corner. */
+const MIN_OVERLAP = 24;
+
+/**
+ * Where the line leaves `from` and enters `to`: when the facing sides overlap, both at the middle of the overlap,
+ * so the line runs straight even between cards of different sizes; otherwise at the middle of each side.
+ */
+function anchors(from: Rect, to: Rect, fromSide: Side, toSide: Side): { start: Point; end: Point } {
+	const start = sideMidpoint(from, fromSide);
+	const end = sideMidpoint(to, toSide);
+	const vertical = fromSide === "top" || fromSide === "bottom";
+	const [low, high] = vertical
+		? [Math.max(from.x, to.x), Math.min(from.x + from.width, to.x + to.width)]
+		: [Math.max(from.y, to.y), Math.min(from.y + from.height, to.y + to.height)];
+	if (high - low < MIN_OVERLAP) return { start, end };
+	const along = (low + high) / 2;
+	return vertical
+		? { start: { ...start, x: along }, end: { ...end, x: along } }
+		: { start: { ...start, y: along }, end: { ...end, y: along } };
+}
+
 /** Picks the facing sides: left/right when the cards are further apart horizontally than vertically, else top/bottom. */
 export function facingSides(from: Rect, to: Rect): { fromSide: Side; toSide: Side } {
 	const horizontalGap = Math.max(to.x - (from.x + from.width), from.x - (to.x + to.width));
@@ -79,8 +100,7 @@ const ARROW_HALF_WIDTH = 5;
 
 export function connector(from: Rect, to: Rect, withArrow = true): Connector {
 	const { fromSide, toSide } = facingSides(from, to);
-	const start = sideMidpoint(from, fromSide);
-	const end = sideMidpoint(to, toSide);
+	const { start, end } = anchors(from, to, fromSide, toSide);
 	const n1 = NORMALS[fromSide];
 	const n2 = NORMALS[toSide];
 	// With an arrow, the line stops at its base, so the line's end doesn't poke through the arrowhead.

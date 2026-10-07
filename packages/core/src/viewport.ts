@@ -5,8 +5,10 @@ export interface Viewport {
 	zoom: number;
 }
 
-export const MIN_ZOOM = 0.25;
+export const MIN_ZOOM = 0.2;
 export const MAX_ZOOM = 2;
+/** Zoom steps per 100%: the zoom settles on 10%, 20%, … */
+const ZOOM_STEPS = 10;
 
 export function defaultViewport(): Viewport {
 	return { x: 0, y: 0, zoom: 1 };
@@ -14,6 +16,19 @@ export function defaultViewport(): Viewport {
 
 export function clampZoom(zoom: number): number {
 	return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+}
+
+/** The nearest zoom step, within the limits. */
+export function snapZoom(zoom: number): number {
+	return clampZoom(Math.round(zoom * ZOOM_STEPS) / ZOOM_STEPS);
+}
+
+/** The next zoom step in (1) or out (-1) from `zoom`, within the limits; from between two steps, the next one. */
+export function stepZoom(zoom: number, direction: 1 | -1): number {
+	// A little slack, so a zoom a rounding error off a step counts as on it.
+	const steps = zoom * ZOOM_STEPS;
+	const next = direction > 0 ? Math.floor(steps + 1e-6) + 1 : Math.ceil(steps - 1e-6) - 1;
+	return clampZoom(next / ZOOM_STEPS);
 }
 
 /** Converts a point relative to the canvas element into world coordinates. */
