@@ -4,17 +4,19 @@ import {
 	MIN_BOX_SIZE,
 	arrowGeometry,
 	drawingBounds,
+	imageRect,
 	moveDrawing,
 	moveEndpoint,
 	normalizeRect,
 	resizeBox,
+	resizeImage,
 	simplifyStroke,
 	strokePath,
 	type Corner,
 	type Tool,
 } from "./drawings.js";
 import { text } from "./i18n.js";
-import { DRAWING_COLORS, TEXT_SIZES, isBox, type BoxDrawing, type Drawing, type NewDrawing, type StoryPage } from "@bekbon/core";
+import { DRAWING_COLORS, TEXT_SIZES, isBox, isImage, type BoxDrawing, type Drawing, type NewDrawing, type StoryPage } from "@bekbon/core";
 import type { Store } from "@bekbon/core";
 
 const TOOLS: readonly { tool: Tool; icon: string; key: string }[] = [
@@ -35,6 +37,8 @@ const CORNERS: readonly Corner[] = ["nw", "ne", "sw", "se"];
 /** Two presses on the same drawing within this time (ms) and distance (px) are a double-click. */
 const DOUBLE_CLICK_TIME = 400;
 const DOUBLE_CLICK_DISTANCE = 6;
+/** Pictures larger than this (in pixels, on the longer side) are scaled down before they're stored. */
+const MAX_STORED_IMAGE_PIXELS = 1600;
 
 /** Shapes are filled with a light tint of their color; outlines, lines and text use a darker shade. */
 export const fillFor = (color: string) => `color-mix(in srgb, ${color} 40%, white)`;
@@ -51,6 +55,8 @@ export interface DrawingLayer {
 	render(): void;
 	/** Handles a pointerdown on the canvas when a drawing tool is active; returns whether it did. */
 	startCreate(e: PointerEvent): boolean;
+	/** Puts an image file on the board, centered on `center` (world coordinates), and selects it. */
+	addImage(file: File, center: Point): Promise<void>;
 	deselect(): void;
 }
 
@@ -119,6 +125,13 @@ export function createDrawingLayer(options: {
 
 	function drawingNode(d: Drawing): SVGGElement {
 		const group = svgEl("g", { class: onPage(d.id) || d.id === "draft" ? "drawing" : "drawing ghost", "data-id": d.id });
+		if (isImage(d)) {
+			group.append(
+				svgEl("image", { class: "drawing-image", href: d.src, x: d.x, y: d.y, width: d.width, height: d.height, preserveAspectRatio: "none" }),
+			);
+			if (!readOnly) attachHandlers(group, d.id);
+			return group;
+		}
 		const stroke = strokeFor(d.color);
 		if (isBox(d)) {
 			const shape =
@@ -243,15 +256,17 @@ export function createDrawingLayer(options: {
 			return node;
 		};
 
-		if (isBox(selected)) {
+		if (isBox(selected) || isImage(selected)) {
 			const corner = (c: Corner): Point => ({
 				x: c.endsWith("w") ? selected.x : selected.x + selected.width,
 				y: c.startsWith("n") ? selected.y : selected.y + selected.height,
 			});
+			const resize = (c: Corner, dx: number, dy: number): Drawing =>
+				isImage(selected) ? resizeImage(selected, c, dx, dy) : resizeBox(selected, c, dx, dy);
 			return [
 				outline,
 				...CORNERS.map((c) =>
-					handle(corner(c), c === "nw" || c === "se" ? "nwse-resize" : "nesw-resize", (dx, dy) => resizeBox(selected, c, dx, dy)),
+					handle(corner(c), c === "nw" || c === "se" ? "nwse-resize" : "nesw-resize", (dx, dy) => resize(c, dx, dy)),
 				),
 			];
 		}
@@ -395,6 +410,20 @@ export function createDrawingLayer(options: {
 		return true;
 	}
 
+	async function addImage(file: File, center: Point): Promise<void> {
+		if (readOnly) return;
+		const image = await readImage(file);
+		if (!image) return;
+		const added = store.addDrawing(
+			options.boardId(),
+			{ kind: "image", ...imageRect(center, image.width, image.height), src: image.src },
+			options.page()?.id,
+		);
+		if (tool !== "select") setTool("select");
+		select(added.id);
+		draw();
+	}
+
 	/** Deletes the selected drawing — with `pageId`, only takes it off that page. */
 	function removeSelected(pageId?: string): void {
 		if (!selectedId) return;
@@ -434,10 +463,11 @@ export function createDrawingLayer(options: {
 		// while drawing or with a drawing selected, so it isn't in the way while arranging cards.
 		const selected = selectedId ? find(selectedId) : undefined;
 		const page = options.page();
-		const current = selected?.color ?? color;
+		// Images have no color of their own.
+		const current = selected && !isImage(selected) ? selected.color : color;
 		styleBar.hidden = tool === "select" && !selected;
 		styleBar.replaceChildren(
-			...DRAWING_COLORS.map(({ name, value }) => {
+			...(selected && isImage(selected) ? [] : DRAWING_COLORS).map(({ name, value }) => {
 				const swatch = el("button", {
 					type: "button",
 					className: "swatch toolbar-swatch",
@@ -446,7 +476,7 @@ export function createDrawingLayer(options: {
 					ariaPressed: String(value === current),
 					onclick: () => {
 						color = value;
-						update((d) => ({ ...d, color: value }));
+						update((d) => (isImage(d) ? d : { ...d, color: value }));
 					},
 				});
 				swatch.style.background = value;
@@ -506,10 +536,45 @@ export function createDrawingLayer(options: {
 		styleBar,
 		render,
 		startCreate,
+		addImage,
 		deselect(): void {
 			if (!selectedId) return;
 			selectedId = null;
 			draw();
 		},
 	};
+}
+
+/**
+ * An image file as a data URL with its size in pixels, or null when the browser can't read it as an image. Large
+ * pictures are scaled down to MAX_STORED_IMAGE_PIXELS first, so the board's data stays small enough to load.
+ */
+async function readImage(file: File): Promise<{ src: string; width: number; height: number } | null> {
+	const url = URL.createObjectURL(file);
+	try {
+		const image = new Image();
+		image.src = url;
+		await image.decode();
+		const { naturalWidth: width, naturalHeight: height } = image;
+		if (width === 0 || height === 0) return null;
+		const scale = Math.min(1, MAX_STORED_IMAGE_PIXELS / Math.max(width, height));
+		if (scale === 1) return { src: await dataUrl(file), width, height };
+		const canvas = el("canvas", { width: Math.round(width * scale), height: Math.round(height * scale) });
+		canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
+		// WebP keeps transparency at a fraction of PNG's size; browsers that can't write it fall back to PNG.
+		return { src: canvas.toDataURL("image/webp", 0.85), width: canvas.width, height: canvas.height };
+	} catch {
+		return null;
+	} finally {
+		URL.revokeObjectURL(url);
+	}
+}
+
+function dataUrl(file: File): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => resolve(reader.result as string);
+		reader.onerror = () => reject(reader.error);
+		reader.readAsDataURL(file);
+	});
 }

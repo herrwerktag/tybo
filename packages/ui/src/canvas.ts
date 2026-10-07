@@ -1060,14 +1060,29 @@ export function canvasView(
 		{ passive: false },
 	);
 
-	// Drop entities from the side panel (editor only).
+	/** Puts image files on the board, centered on a point (screen coordinates); several are staggered. */
+	function addImages(files: readonly File[], clientX: number, clientY: number): void {
+		const rect = surface.getBoundingClientRect();
+		const center = screenToWorld(viewport, clientX - rect.left, clientY - rect.top);
+		files.forEach((file, i) => void drawing.addImage(file, { x: center.x + i * GRID_SIZE, y: center.y + i * GRID_SIZE }));
+	}
+
+	const imageFiles = (files: FileList | undefined): File[] => [...(files ?? [])].filter((f) => f.type.startsWith("image/"));
+
+	// Drop entities from the side panel, or image files (editor only).
 	if (!readOnly) {
 		surface.addEventListener("dragover", (e) => {
-			if (!e.dataTransfer?.types.includes(ENTITY_MIME)) return;
+			if (!e.dataTransfer?.types.includes(ENTITY_MIME) && !e.dataTransfer?.types.includes("Files")) return;
 			e.preventDefault();
 			e.dataTransfer.dropEffect = "copy";
 		});
 		surface.addEventListener("drop", (e) => {
+			const images = imageFiles(e.dataTransfer?.files);
+			if (images.length > 0) {
+				e.preventDefault();
+				addImages(images, e.clientX, e.clientY);
+				return;
+			}
 			const entityId = e.dataTransfer?.getData(ENTITY_MIME);
 			if (!entityId) return;
 			e.preventDefault();
@@ -1080,6 +1095,19 @@ export function canvasView(
 			renderPanel();
 		});
 	}
+
+	// Ctrl/⌘ + V with an image on the clipboard puts it in the middle of the view (the listener removes itself
+	// once this view is gone). Pasting into a text field stays the text field's.
+	function onPaste(e: ClipboardEvent): void {
+		if (!view.isConnected) return document.removeEventListener("paste", onPaste);
+		if ((e.target as Element).closest?.("input, select, textarea, [contenteditable]")) return;
+		const images = imageFiles(e.clipboardData?.files);
+		if (images.length === 0) return;
+		e.preventDefault();
+		const rect = surface.getBoundingClientRect();
+		addImages(images, rect.left + rect.width / 2, rect.top + rect.height / 2);
+	}
+	if (!readOnly) document.addEventListener("paste", onPaste);
 
 	/** Story mode only: bottom center. The viewer only steps back and forth; the editor also names, adds and
 	 * deletes pages. */

@@ -199,13 +199,29 @@ export interface PathDrawing {
 	color: string;
 }
 
-export type Drawing = BoxDrawing | PathDrawing;
+/** A picture pasted or dropped onto the board; it keeps its aspect ratio when resized. */
+export interface ImageDrawing {
+	id: string;
+	kind: "image";
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	/** The picture itself, as a data URL (`data:image/…`). */
+	src: string;
+}
 
-/** Rectangles, ellipses and text boxes (as opposed to lines, arrows and pen strokes). */
+export type Drawing = BoxDrawing | PathDrawing | ImageDrawing;
+
+/** Rectangles, ellipses and text boxes (as opposed to lines, arrows, pen strokes and images). */
 export function isBox(drawing: Drawing): drawing is BoxDrawing {
 	return drawing.kind === "rect" || drawing.kind === "ellipse" || drawing.kind === "text";
 }
-export type NewDrawing = Omit<BoxDrawing, "id"> | Omit<PathDrawing, "id">;
+
+export function isImage(drawing: Drawing): drawing is ImageDrawing {
+	return drawing.kind === "image";
+}
+export type NewDrawing = Omit<BoxDrawing, "id"> | Omit<PathDrawing, "id"> | Omit<ImageDrawing, "id">;
 
 export const DEFAULT_CARD_SIZE = { width: 240, height: 168 } as const;
 export const MIN_CARD_SIZE = { width: 160, height: 80 } as const;
