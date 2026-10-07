@@ -804,9 +804,9 @@ button.ref-tag {
 	color: var(--muted);
 }
 
-/* A card with nothing below the name: the header is the whole card. */
-.canvas-card header:last-child {
-	border-bottom: none;
+/* A card with nothing below the name: the header is the whole card (the resize handle may still follow it). */
+.canvas-card header:not(:has(+ .card-body)) {
+	box-shadow: none;
 }
 
 /* The card being dragged stays above the others (see the card drag in canvas.ts). */
@@ -1262,10 +1262,17 @@ button.ref-tag {
 	cursor: default;
 }
 
-/* The colored bar (type label and ×), then the name across the full width. */
+/*
+ * The colored bar (type label and ×), then the name across the full width.
+ *
+ * A card's parts add up to whole grid steps (24), so a card as tall as its contents ends on the grid without
+ * empty space: the 1px top border and the 23px bar make 24, each line of the name 24 (with 12 + 11 around it,
+ * plus the 1px bottom border), each property row 24 (with 12 above and below). The line under the header is a
+ * shadow, so it takes no room.
+ */
 .canvas-card header {
 	display: grid;
-	border-bottom: 1px solid var(--border);
+	box-shadow: 0 1px 0 var(--border);
 	cursor: move;
 	user-select: none;
 	touch-action: none;
@@ -1276,7 +1283,8 @@ button.ref-tag {
 	align-items: center;
 	justify-content: space-between;
 	gap: 0.5rem;
-	padding: 0.2rem 0.35rem 0.2rem 0.75rem;
+	height: 23px;
+	padding: 0 0.35rem 0 0.75rem;
 	background: var(--surface-inset);
 	/* Inside the card's 1px border and 6px corners. */
 	border-radius: 5px 5px 0 0;
@@ -1294,8 +1302,8 @@ button.ref-tag {
 }
 
 .card-title {
-	padding: 0.4rem 0.75rem 0.5rem;
-	line-height: 1.3;
+	padding: 12px 0.75rem 11px;
+	line-height: 24px;
 	overflow-wrap: anywhere;
 	display: -webkit-box;
 	-webkit-box-orient: vertical;
@@ -1319,6 +1327,7 @@ button.ref-tag {
 
 .card-body {
 	overflow: auto;
+	container: card-body / inline-size;
 }
 
 /* Label column, value column. */
@@ -1326,12 +1335,12 @@ button.ref-tag {
 .card-props {
 	display: grid;
 	grid-template-columns: fit-content(40%) minmax(0, 1fr);
-	gap: 0.35rem 1rem;
+	gap: 0 1rem;
 	align-items: start;
-	padding: 0.6rem 0.75rem;
+	padding: 12px 0.75rem;
 	font-size: 0.875rem;
-	/* One line height for labels, text values and tags, so every row has the same rhythm. */
-	line-height: 1.375rem;
+	/* One grid step per line for labels, text values and tags, so every row has the same rhythm. */
+	line-height: 24px;
 }
 
 .card-props dt {
@@ -1351,6 +1360,38 @@ button.ref-tag {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 0.25rem;
+}
+
+/* On cards, tags keep to one line of the grid (20px with 2px above and below), cut off with … like text values;
+   a reference's full name is in its preview. */
+.card-props .prop-chips {
+	row-gap: 0;
+}
+
+.card-props :is(.chip, .ref-tag) {
+	margin: 2px 0;
+	line-height: 20px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* On narrow cards each label goes above its value as a small caption, so neither has to be cut off or squeezed.
+   Caption (16) and value (24) are apart from the next pair by 8, and 16 above and below make whole grid steps. */
+@container card-body (width < 20rem) {
+	.card-props {
+		grid-template-columns: minmax(0, 1fr);
+		padding-block: 16px;
+	}
+
+	.card-props dt {
+		font-size: 0.75rem;
+		line-height: 16px;
+	}
+
+	.card-props dd + dt {
+		margin-top: 8px;
+	}
 }
 
 /* Options and references share one tag shape: grey for an option, the target type's color for a reference. */
@@ -1398,6 +1439,11 @@ button.ref-tag {
 	touch-action: none;
 	border-bottom-right-radius: 6px;
 	background: linear-gradient(135deg, transparent 50%, var(--border-strong) 50%);
+}
+
+/* A card without content is as tall as what it shows: only its width can be changed. */
+.canvas-card.compact .card-resize {
+	cursor: ew-resize;
 }
 
 .canvas-toolbar {

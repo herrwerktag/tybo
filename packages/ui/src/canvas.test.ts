@@ -71,6 +71,25 @@ test("resizing saves the new size on the grid, but never below the minimum", asy
 	assert.deepEqual([savedCard(store, card.id)?.width, savedCard(store, card.id)?.height], [160, 80]);
 });
 
+test("a card without content can only be made wider or narrower; it is as tall as what it shows, rounded up to the grid", async () => {
+	const { store, view, card } = await setup();
+	const herbert = store.data.boards[0]!.cards.find((c) => c.id !== card.id)!;
+	const node = cardNode(view, herbert.id);
+	assert.ok(node.classList.contains("compact"));
+	// happy-dom has no layout: what it shows is 100 tall, unless a height is set.
+	Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+		configurable: true,
+		get(this: HTMLElement) {
+			return this.style.height ? parseFloat(this.style.height) : 100;
+		},
+	});
+
+	dragBy(node.querySelector(".card-resize")!, 60, 40);
+	assert.deepEqual([savedCard(store, herbert.id)?.width, savedCard(store, herbert.id)?.height], [312, herbert.height]);
+	assert.equal(cardNode(view, herbert.id).style.width, "312px");
+	assert.equal(cardNode(view, herbert.id).style.height, "120px");
+});
+
 test("× takes the card off the board; the entity stays", async () => {
 	const { store, view, card, dune } = await setup();
 	cardNode(view, card.id).querySelector<HTMLButtonElement>(".card-remove")!.click();
@@ -266,4 +285,15 @@ test("◐ dims a card on this step only; the viewer shows it dimmed while steppi
 	assert.equal(cardNode(viewer, duneCard.id).classList.contains("dimmed"), false); // the whole board, nothing dimmed
 	storyButton(viewer).click();
 	assert.ok(cardNode(viewer, duneCard.id).classList.contains("dimmed"));
+});
+
+test("the zoom buttons go one 10% step in or out", async () => {
+	const { view } = await setup();
+	const zoom = view.querySelector<HTMLElement>(".canvas-zoom")!;
+	const [out, , zoomIn] = zoom.children as unknown as HTMLButtonElement[];
+	zoomIn!.click();
+	zoomIn!.click();
+	assert.equal(zoom.querySelector(".zoom-label")?.textContent, "120%");
+	out!.click();
+	assert.equal(zoom.querySelector(".zoom-label")?.textContent, "110%");
 });

@@ -26,7 +26,7 @@ import {
 import { renderMarkdown } from "./markdown.js";
 import { readPreference, writePreference } from "./preferences.js";
 import type { Store } from "@bekbon/core";
-import { defaultViewport, screenToWorld, zoomAt, type Viewport } from "@bekbon/core";
+import { defaultViewport, screenToWorld, snapZoom, stepZoom, zoomAt, type Viewport } from "@bekbon/core";
 
 const ENTITY_MIME = "application/x-entity-id";
 const PANEL_COLLAPSED_KEY = "canvas-panel-collapsed";
@@ -35,6 +35,9 @@ const ACTIVE_BOARD_KEY = "canvas-active-board";
 const activePageKey = (boardId: string) => `canvas-active-page:${boardId}`;
 /** How long the pan/zoom takes to move to another page, in ms. */
 const PAGE_ANIMATION = 450;
+/** How long scroll/pinch zooming must pause before the zoom settles on the nearest 10% step, and how long that takes, in ms. */
+const ZOOM_SETTLE_DELAY = 150;
+const ZOOM_SETTLE_ANIMATION = 120;
 
 /**
  * The board canvas. With `readOnly` (the Viewer) it only displays: no side panel, no board editing,
@@ -75,6 +78,8 @@ export function canvasView(
 
 	let viewport: Viewport = savedViewport();
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
+	/** Settles scroll/pinch zooming on a step once it pauses (see zoomSmoothly). */
+	let zoomSettleTimer: ReturnType<typeof setTimeout> | undefined;
 	let pendingSave: (() => void) | null = null;
 	let panelCollapsed = readPreference(PANEL_COLLAPSED_KEY) === "true";
 
@@ -161,6 +166,7 @@ export function canvasView(
 
 	/** Saves a scheduled viewport change right away, e.g. before switching boards. */
 	function flushViewport(): void {
+		clearTimeout(zoomSettleTimer); // not to settle the zoom of what's shown next
 		clearTimeout(saveTimer);
 		pendingSave?.();
 	}
@@ -343,8 +349,35 @@ export function canvasView(
 		saveViewportSoon();
 	}
 
-	function zoomBy(factor: number, sx = surface.clientWidth / 2, sy = surface.clientHeight / 2): void {
+	/** One 10% step in (1) or out (-1), around the canvas center. */
+	function zoomStep(direction: 1 | -1): void {
+		setViewport(zoomAt(viewport, stepZoom(viewport.zoom, direction), surface.clientWidth / 2, surface.clientHeight / 2));
+	}
+
+	/** Scroll/pinch zooming follows the gesture smoothly; once it pauses, the zoom eases to the nearest step around
+	 * the same point (at once if the user prefers less motion). */
+	function zoomSmoothly(factor: number, sx: number, sy: number): void {
 		setViewport(zoomAt(viewport, viewport.zoom * factor, sx, sy));
+		clearTimeout(zoomSettleTimer);
+		zoomSettleTimer = setTimeout(() => {
+			const from = viewport.zoom;
+			const target = snapZoom(from);
+			if (target === from) return;
+			if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+				return setViewport(zoomAt(viewport, target, sx, sy));
+			}
+			const start = performance.now();
+			const frame = (now: number) => {
+				const t = Math.min(1, (now - start) / ZOOM_SETTLE_ANIMATION);
+				const e = 1 - (1 - t) ** 2; // ease out
+				viewport = zoomAt(viewport, t < 1 ? from + (target - from) * e : target, sx, sy);
+				applyViewport();
+				if (t < 1) animation = requestAnimationFrame(frame);
+				else saveViewportSoon();
+			};
+			stopAnimation();
+			animation = requestAnimationFrame(frame);
+		}, ZOOM_SETTLE_DELAY);
 	}
 
 	// Search and type filter for the side panel; kept for this visit only.
@@ -673,16 +706,30 @@ export function canvasView(
 	}
 
 	/**
+	 * Sets a compact card's height to what its contents need, rounded up to the grid, so its bottom edge is
+	 * on the grid too. Returns that height, or 0 while the card isn't laid out. (offsetHeight ignores the zoom,
+	 * so it's in world units.)
+	 */
+	function fitCompactCard(node: HTMLElement): number {
+		node.style.height = "";
+		if (node.offsetHeight === 0) return 0;
+		const height = Math.ceil(node.offsetHeight / GRID_SIZE) * GRID_SIZE;
+		node.style.height = `${height}px`;
+		return height;
+	}
+
+	/**
 	 * Compact cards are as tall as their contents need, not their saved height, so lines must attach to the
-	 * measured height. Returns whether any height changed. (offsetHeight ignores the zoom, so it's in world units.)
+	 * fitted height. Returns whether any height changed.
 	 */
 	function measureCompactCards(): boolean {
 		let changed = false;
 		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card.compact")) {
 			const id = node.dataset.cardId ?? "";
 			const rect = cardRects.get(id);
-			if (rect && node.offsetHeight > 0 && rect.height !== node.offsetHeight) {
-				cardRects.set(id, { ...rect, height: node.offsetHeight });
+			const height = fitCompactCard(node);
+			if (rect && height > 0 && rect.height !== height) {
+				cardRects.set(id, { ...rect, height });
 				changed = true;
 			}
 		}
@@ -864,8 +911,8 @@ export function canvasView(
 			buttons: [...dimButton, ...(removeButton ? [removeButton] : [])],
 			previews: true,
 		});
-		// Without content a card fits what it shows (bar, name, maybe properties); there's nothing to resize.
-		// Only cards with content keep a saved height, so long text can be given more or less room.
+		// Without content a card is as tall as what it shows (bar, name, maybe properties), rounded up to the
+		// grid: only its width can be changed. Only cards with content keep a saved height, so long text can be given more or less room.
 		const compact = !entity.content.trim();
 		const node = el("article", { className: "canvas-card" }, header, ...(body ? [body] : []));
 		node.classList.toggle("compact", compact);
@@ -893,7 +940,7 @@ export function canvasView(
 		if (readOnly || ghost) return node;
 
 		const resize = el("div", { className: "card-resize", title: text.resize });
-		if (!compact) node.append(resize);
+		node.append(resize);
 
 		header.addEventListener("pointerdown", (e) => {
 			if (e.button !== 0 || (e.target as Element).closest("button")) return;
@@ -932,15 +979,15 @@ export function canvasView(
 			const { zoom } = viewport;
 			const size = (dx: number, dy: number) => ({
 				width: Math.max(MIN_CARD_SIZE.width, snapToGrid(card.width + dx / zoom)),
-				height: Math.max(MIN_CARD_SIZE.height, snapToGrid(card.height + dy / zoom)),
+				height: compact ? card.height : Math.max(MIN_CARD_SIZE.height, snapToGrid(card.height + dy / zoom)),
 			});
 			trackPointer(
 				e,
 				(dx, dy) => {
 					const { width, height } = size(dx, dy);
 					node.style.width = `${width}px`;
-					node.style.height = `${height}px`;
-					cardRects.set(card.id, { x: card.x, y: card.y, width, height });
+					if (!compact) node.style.height = `${height}px`;
+					cardRects.set(card.id, { x: card.x, y: card.y, width, height: compact ? fitCompactCard(node) : height });
 					drawConnectors();
 				},
 				(dx, dy) => {
@@ -1002,7 +1049,7 @@ export function canvasView(
 			const rect = surface.getBoundingClientRect();
 			if (e.ctrlKey || e.metaKey) {
 				e.preventDefault();
-				zoomBy(Math.exp(-e.deltaY * scale * 0.01), e.clientX - rect.left, e.clientY - rect.top);
+				zoomSmoothly(Math.exp(-e.deltaY * scale * 0.01), e.clientX - rect.left, e.clientY - rect.top);
 				return;
 			}
 			const body = (e.target as Element).closest(".card-body");
@@ -1184,9 +1231,9 @@ export function canvasView(
 	const zoomBar = el(
 		"div",
 		{ className: "toolbar-group canvas-zoom" },
-		el("button", { type: "button", ariaLabel: text.zoomOut, title: text.zoomOut, onclick: () => zoomBy(1 / 1.2) }, "−"),
+		el("button", { type: "button", ariaLabel: text.zoomOut, title: text.zoomOut, onclick: () => zoomStep(-1) }, "−"),
 		zoomLabel,
-		el("button", { type: "button", ariaLabel: text.zoomIn, title: text.zoomIn, onclick: () => zoomBy(1.2) }, "+"),
+		el("button", { type: "button", ariaLabel: text.zoomIn, title: text.zoomIn, onclick: () => zoomStep(1) }, "+"),
 		// The viewer resets to the board's saved view; the editor to the default.
 		el(
 			"button",
