@@ -1018,6 +1018,30 @@ button.ref-tag {
 	stroke-linejoin: round;
 }
 
+/* Pen styles: a thin fine liner, the regular pen (as lines), and a wide highlighter (flat or round tip) whose color
+   mixes with what's below it instead of covering it. */
+.drawing-stroke.pen-fineliner {
+	stroke-width: 1.25;
+}
+
+.drawing-stroke.pen-highlighter,
+.drawing-stroke.pen-roundHighlighter {
+	stroke-width: 16;
+	mix-blend-mode: multiply;
+}
+
+.drawing-stroke.pen-highlighter {
+	stroke-linecap: square;
+}
+
+/* Where the eraser reaches, while erasing. */
+.eraser-outline {
+	fill: none;
+	stroke: var(--border-strong);
+	stroke-width: 1;
+	vector-effect: non-scaling-stroke;
+}
+
 /* A wide invisible stroke so thin lines are easy to grab. */
 .drawing-hit {
 	fill: none;

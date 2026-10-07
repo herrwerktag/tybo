@@ -190,6 +190,10 @@ export interface BoxDrawing {
 	textSize: TextSize;
 }
 
+/** How a pen stroke looks: a thin fine liner, the regular pen, or a wide, see-through highlighter (flat or round tip). */
+export type PenStyle = "fineliner" | "pen" | "highlighter" | "roundHighlighter";
+export const PEN_STYLES: readonly PenStyle[] = ["fineliner", "pen", "highlighter", "roundHighlighter"];
+
 /** A line or arrow (two points) or a freehand pen stroke. */
 export interface PathDrawing {
 	id: string;
@@ -197,6 +201,8 @@ export interface PathDrawing {
 	points: Point[];
 	/** A value from DRAWING_COLORS. */
 	color: string;
+	/** Pen strokes only. */
+	penStyle?: PenStyle;
 }
 
 /** A picture pasted or dropped onto the board; it keeps its aspect ratio when resized. */

@@ -1,5 +1,5 @@
 import type { Tool } from "./drawings.js";
-import type { CardDisplay, LineArrow, PropertyKind, TextSize, ValidationError } from "@bekbon/core";
+import type { CardDisplay, LineArrow, PenStyle, PropertyKind, TextSize, ValidationError } from "@bekbon/core";
 import { readPreference, writePreference } from "./preferences.js";
 
 export type Language = "en" | "de";
@@ -233,9 +233,12 @@ const en = {
 		arrow: "Arrow",
 		text: "Text",
 		pen: "Pen",
+		eraser: "Eraser",
 	} satisfies Record<Tool, string>,
 	textSize: "Text size",
 	textSizes: { s: "small", m: "medium", l: "large" } satisfies Record<TextSize, string>,
+	penStyle: "Pen style",
+	penStyles: { fineliner: "Fine liner", pen: "Pen", highlighter: "Highlighter", roundHighlighter: "Round highlighter" } satisfies Record<PenStyle, string>,
 	deleteDrawing: "Delete drawing",
 	editInLibrary: "Edit in library",
 
@@ -477,9 +480,12 @@ const de: Messages = {
 		arrow: "Pfeil",
 		text: "Text",
 		pen: "Stift",
+		eraser: "Radierer",
 	},
 	textSize: "Textgröße",
 	textSizes: { s: "klein", m: "mittel", l: "groß" },
+	penStyle: "Stiftart",
+	penStyles: { fineliner: "Fineliner", pen: "Stift", highlighter: "Textmarker", roundHighlighter: "Runder Textmarker" },
 	deleteDrawing: "Zeichnung löschen",
 	editInLibrary: "In der Bibliothek bearbeiten",
 

@@ -55,7 +55,7 @@ export const CLICK_TOLERANCE = 3;
  */
 export function trackPointer(
 	e: PointerEvent,
-	onMove: (dx: number, dy: number) => void,
+	onMove: (dx: number, dy: number, event: PointerEvent) => void,
 	onEnd: (dx: number, dy: number) => void,
 	captureTarget: Element = e.currentTarget as Element,
 ): void {
@@ -68,7 +68,7 @@ export function trackPointer(
 	const move = (ev: Event) => {
 		dx = (ev as PointerEvent).clientX - startX;
 		dy = (ev as PointerEvent).clientY - startY;
-		onMove(dx, dy);
+		onMove(dx, dy, ev as PointerEvent);
 	};
 	const end = () => {
 		target.removeEventListener("pointermove", move);

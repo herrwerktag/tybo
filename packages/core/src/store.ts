@@ -17,6 +17,7 @@ import {
 	migrateValues,
 	nextTypeColor,
 	type AppData,
+	PEN_STYLES,
 	TEXT_SIZES,
 	isSymbol,
 	parseTags,
@@ -28,6 +29,7 @@ import {
 	type LibraryDrawing,
 	type NewDrawing,
 	type PathDrawing,
+	type PenStyle,
 	type TextSize,
 	type DraftProperty,
 	type SymbolDrawing,
@@ -177,7 +179,9 @@ function normalizeDrawing(raw: unknown): Drawing | null {
 	if (d.kind === "line" || d.kind === "arrow" || d.kind === "pen") {
 		const points = Array.isArray(d.points) ? d.points.filter(isPoint).map((p) => ({ x: p.x, y: p.y })) : [];
 		if (points.length < 2 || (d.kind !== "pen" && points.length !== 2)) return null;
-		return { id: d.id, kind: d.kind, points, color: d.color };
+		if (d.kind !== "pen") return { id: d.id, kind: d.kind, points, color: d.color };
+		const penStyle = PEN_STYLES.includes(d.penStyle as PenStyle) ? (d.penStyle as PenStyle) : "pen";
+		return { id: d.id, kind: d.kind, points, color: d.color, penStyle };
 	}
 	return null;
 }
@@ -823,6 +827,26 @@ export async function createStore(port: DataPort, workspaceId: string) {
 		removeDrawing(drawingId: string, pageId?: string): void {
 			if (updateLibraryHolding(drawingId, (item) => ({ ...item, drawings: item.drawings.filter((d) => d.id !== drawingId) }))) return;
 			updateDrawingBoard(drawingId, (b) => takeOff(b, "drawings", drawingId, pageId));
+		},
+
+		/**
+		 * Replaces each drawing named in `pieces` with its pieces, where it was (no pieces remove it), all in one change:
+		 * what the eraser leaves of pen strokes. The pieces are shown on the story mode pages the drawing was on.
+		 */
+		splitDrawings(pieces: ReadonlyMap<string, readonly NewDrawing[]>): void {
+			if (pieces.size === 0) return;
+			const added = new Map([...pieces].map(([id, list]) => [id, list.map((d) => ({ ...d, id: ulid() }) as Drawing)]));
+			const split = (drawings: Drawing[]) => drawings.flatMap((d) => added.get(d.id) ?? [d]);
+			const ids = (drawingIds: string[]) => drawingIds.flatMap((id) => added.get(id)?.map((d) => d.id) ?? [id]);
+			change({
+				...data,
+				boards: data.boards.map((b) => ({
+					...b,
+					drawings: split(b.drawings),
+					pages: b.pages.map((p) => ({ ...p, drawingIds: ids(p.drawingIds) })),
+				})),
+				library: data.library.map((item) => ({ ...item, drawings: split(item.drawings) })),
+			});
 		},
 
 		/** Adds an empty drawing to the library. */
