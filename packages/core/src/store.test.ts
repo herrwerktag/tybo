@@ -833,6 +833,95 @@ test("drawings: added, replaced and removed on their own board", async () => {
 	assert.equal(store.data.boards[0]?.drawings.length, 1);
 });
 
+test("library: drawings made, named, tagged and edited there are saved; placed ones only point to them", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
+	const star = store.addLibraryDrawing(" Star ");
+	assert.equal(star.name, "Star");
+	const line = store.addToLibraryDrawing(star.id, { kind: "line", points: [{ x: 0, y: 0 }, { x: 10, y: 0 }], color: "#4a4a4a" });
+	store.updateLibraryDrawing(star.id, { name: "Sun", tags: [" sky", "Sky", "", "shape "] });
+	store.replaceDrawing({ ...line, color: "#f9c9c9" } as typeof line);
+	const placed = store.addDrawing(firstBoard(store).id, { kind: "symbol", libraryId: star.id, x: 5, y: 5, width: 40, height: 40 });
+
+	const reopened = await open(storage);
+	assert.deepEqual(reopened.data.library, [{ id: star.id, name: "Sun", tags: ["sky", "shape"], drawings: [{ ...line, color: "#f9c9c9" }] }]);
+	assert.deepEqual(firstBoard(reopened).drawings, [placed]);
+
+	// Library drawings don't contain each other, and an empty name keeps the old one.
+	store.addToLibraryDrawing(star.id, { kind: "symbol", libraryId: star.id, x: 0, y: 0, width: 1, height: 1 });
+	store.updateLibraryDrawing(star.id, { name: "  " });
+	assert.equal(store.data.library[0]!.drawings.length, 1);
+	assert.equal(store.data.library[0]!.name, "Sun");
+
+	store.removeDrawing(line.id);
+	assert.deepEqual(store.data.library[0]!.drawings, []);
+	assert.equal(firstBoard(store).drawings.length, 1, "removing from the library drawing leaves the boards alone");
+});
+
+test("library: deleting a drawing takes it off every board and page it's placed on; undo brings both back", async () => {
+	const store = await open(memoryStorage());
+	const star = store.addLibraryDrawing("Star");
+	const moon = store.addLibraryDrawing("Moon");
+	const one = firstBoard(store);
+	store.setStoryMode(one.id, true, "Step 1");
+	const pageId = firstBoard(store).pages[0]!.id;
+	const symbol = (libraryId: string) => ({ kind: "symbol" as const, libraryId, x: 0, y: 0, width: 40, height: 40 });
+	store.addDrawing(one.id, symbol(star.id), pageId);
+	store.addDrawing(one.id, symbol(star.id));
+	const kept = store.addDrawing(one.id, symbol(moon.id), pageId);
+	const two = store.addBoard("Two");
+	store.addDrawing(two.id, symbol(star.id));
+	assert.deepEqual(store.libraryUses(star.id), { count: 3, boards: 2 });
+	assert.deepEqual(store.libraryUses(moon.id), { count: 1, boards: 1 });
+
+	store.deleteLibraryDrawing(star.id);
+	assert.deepEqual(store.data.library.map((item) => item.name), ["Moon"]);
+	assert.deepEqual(store.data.boards.map((b) => b.drawings.map((d) => d.id)), [[kept.id], []]);
+	assert.deepEqual(firstBoard(store).pages[0]!.drawingIds, [kept.id]);
+
+	store.undo();
+	assert.deepEqual(store.data.library.map((item) => item.name), ["Star", "Moon"]);
+	assert.deepEqual(store.libraryUses(star.id), { count: 3, boards: 2 });
+});
+
+test("library: data from version 3 gets an empty library; malformed library drawings and dangling placed ones are dropped", async () => {
+	const board = (drawings: unknown[]) => ({ id: "b", name: "B", cards: [], viewport: { x: 0, y: 0, zoom: 1 }, drawings });
+	const old = await open(memoryStorage({ version: 3, types: [], entities: [], boards: [board([])] }));
+	assert.deepEqual(old.data.library, []);
+
+	const saved = {
+		version: DATA_VERSION,
+		types: [],
+		entities: [],
+		boards: [
+			board([
+				{ id: "placed", kind: "symbol", libraryId: "lib", x: 0, y: 0, width: 10, height: 10 },
+				{ id: "dangling", kind: "symbol", libraryId: "gone", x: 0, y: 0, width: 10, height: 10 },
+				{ id: "no-size", kind: "symbol", libraryId: "lib", x: 0, y: 0 },
+			]),
+		],
+		library: [
+			{
+				id: "lib",
+				name: "",
+				tags: ["a", 3, "a", "b"],
+				drawings: [
+					{ id: "ok", kind: "line", points: [{ x: 0, y: 0 }, { x: 1, y: 1 }], color: "#4a4a4a" },
+					{ id: "nested", kind: "symbol", libraryId: "lib", x: 0, y: 0, width: 10, height: 10 },
+					{ id: "broken", kind: "rect" },
+				],
+			},
+			{ name: "without id" },
+			"nonsense",
+		],
+	};
+	const store = await open(memoryStorage(saved));
+	assert.deepEqual(store.data.library, [
+		{ id: "lib", name: "Drawing 1", tags: ["a", "b"], drawings: [{ id: "ok", kind: "line", points: [{ x: 0, y: 0 }, { x: 1, y: 1 }], color: "#4a4a4a" }] },
+	]);
+	assert.deepEqual(firstBoard(store).drawings.map((d) => d.id), ["placed"]);
+});
+
 test("older boards load without drawings; malformed drawings are dropped", async () => {
 	const saved = {
 		types: [],

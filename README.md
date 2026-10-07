@@ -2,8 +2,9 @@
 
 Eine Web-Anwendung zum Modellieren eigener Datentypen: Entitaetstypen mit Eigenschaften (Text, Auswahl,
 Verweis) anlegen, Entitaeten dazu erfassen und sie als Karten auf Boards anordnen. Verweise koennen als
-Linien zwischen Karten erscheinen, dazu kommen freie Zeichnungen (Rahmen, Pfade). Die Daten liegen in
-Arbeitsbereichen in Postgres.
+Linien zwischen Karten erscheinen, dazu kommen freie Zeichnungen (Rahmen, Pfade). Eigene Zeichnungen mit Namen und
+Tags liegen in der Bibliothek und werden von dort auf Boards gezogen; sie bleiben mit dem Original verbunden. Die Daten
+liegen in Arbeitsbereichen in Postgres.
 
 ## Aufbau
 

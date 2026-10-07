@@ -23,12 +23,13 @@ import type { Queries, Sql } from "./schema.js";
 const TABLES: Record<Change["kind"], string> = {
 	type: "entity_types",
 	entity: "entities",
+	library: "library_drawings",
 	board: "boards",
 	card: "cards",
 	drawing: "drawings",
 };
 
-/** Whether `raw` is a change set: an array of units, each with its `kind` (one of the five), a non-empty
+/** Whether `raw` is a change set: an array of units, each with its `kind` (one of the six), a non-empty
  * `id`, at least one of `before`/`after` (a unit can't be neither — and a new one that is already gone
  * nobody asks for), and for cards and drawings the board they stand on. What a stand holds — a type with
  * its properties, a card's numbers — is the writer's business with the database: what doesn't fit makes
@@ -162,6 +163,16 @@ async function writeUnit(tx: Queries, ws: string, unit: Change): Promise<void> {
 					values (${ws}, ${entity.id}, ${propertyId}, ${index}, ${jsonbParameter(tx, value)})
 					on conflict (workspace_id, entity_id, property_id) do update set position = excluded.position, value = excluded.value`;
 			}
+			return;
+		}
+		case "library": {
+			const item = unit.after.value;
+			await tx`insert into library_drawings (workspace_id, id, position, name, tags, drawings, updated_at)
+				values (${ws}, ${item.id}, ${unit.after.position}, ${item.name}, ${jsonbParameter(tx, item.tags)},
+					${jsonbParameter(tx, item.drawings)}, now())
+				on conflict (workspace_id, id) do update set
+					position = excluded.position, name = excluded.name, tags = excluded.tags, drawings = excluded.drawings,
+					updated_at = now()`;
 			return;
 		}
 		case "board": {

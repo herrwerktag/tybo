@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { setLanguage, text } from "./i18n.js";
 import type { AppData } from "@bekbon/core";
 import { render } from "./ui.js";
-import { createWorkspaces } from "@bekbon/core";
+import { DATA_VERSION, createWorkspaces } from "@bekbon/core";
 import { memoryDataPort } from "@bekbon/core/testing";
 import { activeWorkspacePreference } from "./preferences.js";
 
@@ -407,4 +407,58 @@ test("drawing the page again and again starts no further timers: one watch for t
 	window.dispatchEvent(new Event("hashchange"));
 	assert.equal(started.mock.callCount(), 1);
 	setLanguage("en");
+});
+
+test("the Library tab: drawings are made, named, tagged, found, drawn with the board's tools, and deleted with their places", async () => {
+	const board = {
+		id: "board",
+		name: "Board 1",
+		cards: [],
+		viewport: { x: 0, y: 0, zoom: 1 },
+		drawings: [{ id: "placed", kind: "symbol", libraryId: "star", x: 0, y: 0, width: 50, height: 50 }],
+		story: false,
+		pages: [],
+	};
+	const star = { id: "star", name: "Star", tags: [], drawings: [] };
+	const root = await startApp({ version: DATA_VERSION, types: [], entities: [], boards: [board], library: [star] }, "#library");
+	assert.equal(byText(root, ".app-nav .tab", "Library").getAttribute("aria-current"), "page");
+	assert.equal(byText(root, ".library-entry", "Star").ariaCurrent, "true");
+	assert.match(root.querySelector(".library-uses")!.textContent!, /Placed 1× on 1 board/);
+
+	byText<HTMLButtonElement>(root, "button", "New drawing").click();
+	const [name, tags] = root.querySelectorAll<HTMLInputElement>(".library-meta input");
+	assert.equal(name!.value, "Drawing 2");
+	name!.value = "Moon";
+	name!.dispatchEvent(new Event("change"));
+	tags!.value = "night, Night, sky";
+	tags!.dispatchEvent(new Event("change"));
+	assert.equal(tags!.value, "night, sky");
+
+	// The board's drawing tools: a click with the rectangle tool makes one in the library drawing.
+	byText<HTMLButtonElement>(root, ".library-canvas .drawing-tools button", "▭").click();
+	const surface = root.querySelector<HTMLElement>(".library-canvas .canvas-surface")!;
+	const at = (type: string) =>
+		surface.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, clientX: 10, clientY: 10 }));
+	at("pointerdown");
+	at("pointerup");
+
+	let saved = await readSaved();
+	assert.deepEqual(saved.library.map(({ name, tags }) => ({ name, tags })), [{ name: "Star", tags: [] }, { name: "Moon", tags: ["night", "sky"] }]);
+	assert.deepEqual(saved.library[1]!.drawings.map((d) => d.kind), ["rect"]);
+	assert.equal(root.querySelectorAll(".library-entry")[1]!.querySelectorAll(".library-picture rect.drawing-shape").length, 1, "the thumbnail follows");
+
+	const search = root.querySelector<HTMLInputElement>(".library-panel input[type=search]")!;
+	typeInto(search, "SKY");
+	assert.deepEqual([...root.querySelectorAll(".library-entry")].map((e) => e.textContent), ["Moonnight, sky"]);
+	typeInto(search, "");
+
+	// Deleting asks first, saying where it's placed; its places on boards go with it.
+	const asked: string[] = [];
+	stub({ confirm: (message) => (asked.push(message), true) });
+	byText(root, ".library-entry", "Star").click();
+	byText<HTMLButtonElement>(root, "button", "Delete from library").click();
+	assert.match(asked[0]!, /"Star".*placed 1× on 1 board/);
+	saved = await readSaved();
+	assert.deepEqual(saved.library.map((item) => item.name), ["Moon"]);
+	assert.deepEqual(saved.boards[0]!.drawings, []);
 });

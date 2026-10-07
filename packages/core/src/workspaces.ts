@@ -40,7 +40,7 @@ export function readWorkspaceFile(text: string): { name: string | null; data: un
 export type Workspaces = Awaited<ReturnType<typeof createWorkspaces>>;
 
 /** A workspace before its first save: nothing in it, not even a board. */
-const NOTHING: AppData = { types: [], entities: [], boards: [] };
+const NOTHING: AppData = { types: [], entities: [], boards: [], library: [] };
 
 /**
  * The list of workspaces and which one is active; `defaultName(n)` names the n-th workspace when no name is

@@ -5,6 +5,8 @@ import {
 	cardRows,
 	detailRows,
 	filterEntities,
+	filterLibrary,
+	parseTags,
 	inverseCardRows,
 	inverseReferences,
 	inverseRelations,
@@ -262,4 +264,21 @@ test("detailRows lists every property in order, empty ones too, then reverse ref
 
 test("snapToGrid rounds to the nearest grid line", () => {
 	assert.deepEqual([0, 11, 13, 150, -13].map(snapToGrid), [0, 0, 24, 144, -24]);
+});
+
+test("parseTags splits at commas, trims, and drops empty tags and duplicates ignoring case", () => {
+	assert.deepEqual(parseTags(" Sky, sky ,, Shape,Über "), ["Sky", "Shape", "Über"]);
+	assert.deepEqual(parseTags(""), []);
+});
+
+test("filterLibrary matches names and tags ignoring case and accents", () => {
+	const items = [
+		{ name: "Sun", tags: ["Sky"] },
+		{ name: "Tree", tags: ["Natur", "Grün"] },
+	];
+	const names = (query: string) => filterLibrary(items, query).map((item) => item.name);
+	assert.deepEqual(names(""), ["Sun", "Tree"]);
+	assert.deepEqual(names("sky"), ["Sun"]);
+	assert.deepEqual(names("grun"), ["Tree"]);
+	assert.deepEqual(names("TRE"), ["Tree"]);
 });

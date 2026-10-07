@@ -58,7 +58,7 @@ export async function readWorkspace(sql: Sql, id: string): Promise<StoredWorkspa
  * every list's order; floats come back bit for bit, the way Postgres stores and answers them.
  */
 export async function readAppData(queries: Queries, workspaceId: string): Promise<AppData> {
-	const [types, properties, entities, values, boards, cards, drawings] = await Promise.all([
+	const [types, properties, entities, values, boards, cards, drawings, library] = await Promise.all([
 		queries`select id, name, content_template, color from entity_types where workspace_id = ${workspaceId} order by position, id`,
 		queries`select id, type_id, name, kind, options, reference, card_display from properties where workspace_id = ${workspaceId} order by type_id, position, id`,
 		queries`select id, type_id, name, content, description from entities where workspace_id = ${workspaceId} order by position, id`,
@@ -66,6 +66,7 @@ export async function readAppData(queries: Queries, workspaceId: string): Promis
 		queries`select id, name, viewport, story, pages from boards where workspace_id = ${workspaceId} order by position, id`,
 		queries`select id, board_id, entity_id, x, y, width, height from cards where workspace_id = ${workspaceId} order by board_id, position, id`,
 		queries`select board_id, body from drawings where workspace_id = ${workspaceId} order by board_id, position, id`,
+		queries`select id, name, tags, drawings from library_drawings where workspace_id = ${workspaceId} order by position, id`,
 	]);
 
 	const propertiesOf = groupBy(properties, "type_id", (property) => ({
@@ -110,6 +111,7 @@ export async function readAppData(queries: Queries, workspaceId: string): Promis
 			story,
 			pages,
 		})),
+		library: library.map(({ id, name, tags, drawings }) => ({ id, name, tags: tags ?? [], drawings: drawings ?? [] })),
 	} as AppData;
 }
 

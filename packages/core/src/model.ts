@@ -211,9 +211,24 @@ export interface ImageDrawing {
 	src: string;
 }
 
-export type Drawing = BoxDrawing | PathDrawing | ImageDrawing;
+/**
+ * A drawing from the library placed on a board. It holds no copy: it always shows the library drawing as it is now,
+ * fitted into its box (keeping its aspect ratio), so changing the library drawing changes every place it's used.
+ */
+export interface SymbolDrawing {
+	id: string;
+	kind: "symbol";
+	/** The LibraryDrawing shown. */
+	libraryId: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
 
-/** Rectangles, ellipses and text boxes (as opposed to lines, arrows, pen strokes and images). */
+export type Drawing = BoxDrawing | PathDrawing | ImageDrawing | SymbolDrawing;
+
+/** Rectangles, ellipses and text boxes (as opposed to lines, arrows, pen strokes, images and library drawings). */
 export function isBox(drawing: Drawing): drawing is BoxDrawing {
 	return drawing.kind === "rect" || drawing.kind === "ellipse" || drawing.kind === "text";
 }
@@ -221,7 +236,47 @@ export function isBox(drawing: Drawing): drawing is BoxDrawing {
 export function isImage(drawing: Drawing): drawing is ImageDrawing {
 	return drawing.kind === "image";
 }
-export type NewDrawing = Omit<BoxDrawing, "id"> | Omit<PathDrawing, "id"> | Omit<ImageDrawing, "id">;
+
+export function isSymbol(drawing: Drawing): drawing is SymbolDrawing {
+	return drawing.kind === "symbol";
+}
+
+/** Drawings with a position and size: boxes, images and library drawings (as opposed to lines, arrows and pen strokes). */
+export function hasRect(drawing: Drawing): drawing is BoxDrawing | ImageDrawing | SymbolDrawing {
+	return isBox(drawing) || isImage(drawing) || isSymbol(drawing);
+}
+
+export type NewDrawing =
+	| Omit<BoxDrawing, "id">
+	| Omit<PathDrawing, "id">
+	| Omit<ImageDrawing, "id">
+	| Omit<SymbolDrawing, "id">;
+
+/**
+ * A named drawing of its own, kept in the workspace's library and placed on boards from there (as SymbolDrawings).
+ * It's made of the same shapes, lines, text, pen strokes and images as a board's drawings — never of other library
+ * drawings, so one can't end up containing itself.
+ */
+export interface LibraryDrawing {
+	id: string;
+	name: string;
+	/** For finding it in the library; trimmed, without duplicates. */
+	tags: string[];
+	/** Later ones on top; their coordinates are the drawing's own (only their bounds matter where it's placed). */
+	drawings: Drawing[];
+}
+
+/** Turns comma-separated input into tags: trimmed, without empty ones and duplicates (ignoring case). */
+export function parseTags(input: string): string[] {
+	const seen = new Set<string>();
+	return input.split(",").flatMap((raw) => {
+		const tag = raw.trim();
+		const key = tag.toLocaleLowerCase();
+		if (tag === "" || seen.has(key)) return [];
+		seen.add(key);
+		return [tag];
+	});
+}
 
 export const DEFAULT_CARD_SIZE = { width: 240, height: 168 } as const;
 export const MIN_CARD_SIZE = { width: 160, height: 80 } as const;
@@ -239,6 +294,8 @@ export interface AppData {
 	entities: Entity[];
 	/** Never empty. */
 	boards: Board[];
+	/** Drawings to place on boards, in the order they were made. */
+	library: LibraryDrawing[];
 }
 
 /** One label/value row on a canvas card. */
@@ -386,6 +443,12 @@ export function filterEntities<T extends Pick<Entity, "name" | "typeId">>(
 ): T[] {
 	const key = searchKey(query.trim());
 	return entities.filter((e) => (typeId === null || e.typeId === typeId) && searchKey(e.name).includes(key));
+}
+
+/** Library drawings whose name or one of whose tags contains `query` (ignoring case and accents). */
+export function filterLibrary<T extends Pick<LibraryDrawing, "name" | "tags">>(items: readonly T[], query: string): T[] {
+	const key = searchKey(query.trim());
+	return items.filter((item) => [item.name, ...item.tags].some((value) => searchKey(value).includes(key)));
 }
 
 /** Returns a copy of the list with the item at `from` moved to index `to`. */

@@ -29,7 +29,7 @@ function memoryApi(healthy: () => Promise<boolean> = async () => true): Api & { 
 		readWorkspace: async (id) => {
 			const workspace = workspaces.get(id);
 			if (!workspace) return null;
-			return { data: { version: workspace.dataVersion, types: [], entities: [], boards: [] }, revision: String(workspace.revision) };
+			return { data: { version: workspace.dataVersion, types: [], entities: [], boards: [], library: [] }, revision: String(workspace.revision) };
 		},
 		workspaceRevision: async (id) => {
 			const workspace = workspaces.get(id);
@@ -126,7 +126,7 @@ test("a workspace's data is answered as JSON with its revision in etag; HEAD ans
 		const got = await call(api.url, "workspaces/ws-1/data");
 		assert.equal(got.status, 200);
 		assert.equal(got.header("content-type"), "application/json; charset=utf-8");
-		assert.deepEqual(JSON.parse(got.text), { version: 1, types: [], entities: [], boards: [] });
+		assert.deepEqual(JSON.parse(got.text), { version: 1, types: [], entities: [], boards: [], library: [] });
 		assert.equal(got.header("etag"), "0");
 
 		const head = await call(api.url, "workspaces/ws-1/data", { method: "HEAD" });

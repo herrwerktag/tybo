@@ -134,6 +134,23 @@ export const MIGRATIONS: readonly Migration[] = [
 			await tx`alter table boards drop column kind`;
 		},
 	},
+	{
+		version: 4,
+		name: "the library",
+		async up(tx) {
+			// A library drawing is one row with its own drawings; boards' drawings name it in their body.
+			await tx`create table library_drawings (
+				workspace_id text not null references workspaces(id) on delete cascade,
+				id text not null,
+				position int not null,
+				name text,
+				tags jsonb,
+				drawings jsonb,
+				updated_at timestamptz not null default now(),
+				primary key (workspace_id, id)
+			)`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */

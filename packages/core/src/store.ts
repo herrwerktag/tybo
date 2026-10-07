@@ -18,15 +18,19 @@ import {
 	nextTypeColor,
 	type AppData,
 	TEXT_SIZES,
+	isSymbol,
+	parseTags,
 	type Board,
 	type BoxDrawing,
 	type CanvasCard,
 	type Drawing,
 	type ImageDrawing,
+	type LibraryDrawing,
 	type NewDrawing,
 	type PathDrawing,
 	type TextSize,
 	type DraftProperty,
+	type SymbolDrawing,
 	type Entity,
 	type EntityType,
 	type PropertyDef,
@@ -40,7 +44,7 @@ export type Store = Awaited<ReturnType<typeof createStore>>;
 const HISTORY_LIMIT = 100;
 
 /** The format of the saved data. When it changes, raise this and add the step from the old version to MIGRATIONS. */
-export const DATA_VERSION = 3;
+export const DATA_VERSION = 4;
 
 type SavedData = Record<string, unknown>;
 
@@ -64,6 +68,8 @@ export const MIGRATIONS: Readonly<Record<number, (data: SavedData) => SavedData>
 				})
 			: data.boards,
 	}),
+	// Version 4 adds the library; normalize() gives data without one an empty library.
+	3: (data) => data,
 };
 
 /** The version saved data says it's in; data without a (valid) version is from before versions existed. */
@@ -131,7 +137,7 @@ function takeOff(board: Board, list: "cards" | "drawings", id: string, pageId?: 
 }
 
 function emptyData(): AppData {
-	return { types: [], entities: [], boards: [newBoard("Board 1")] };
+	return { types: [], entities: [], boards: [newBoard("Board 1")], library: [] };
 }
 
 const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -144,6 +150,11 @@ function normalizeDrawing(raw: unknown): Drawing | null {
 		Partial<Omit<PathDrawing, "kind">> &
 		Partial<Pick<ImageDrawing, "src">> & { kind?: unknown };
 	if (typeof d?.id !== "string") return null;
+	if (d.kind === "symbol") {
+		const { libraryId } = raw as Partial<SymbolDrawing>;
+		if (![d.x, d.y, d.width, d.height].every(isNumber) || typeof libraryId !== "string") return null;
+		return { id: d.id, kind: d.kind, libraryId, x: d.x!, y: d.y!, width: d.width!, height: d.height! };
+	}
 	if (d.kind === "image") {
 		if (![d.x, d.y, d.width, d.height].every(isNumber) || typeof d.src !== "string" || !d.src.startsWith("data:image/")) return null;
 		return { id: d.id, kind: d.kind, x: d.x!, y: d.y!, width: d.width!, height: d.height!, src: d.src };
@@ -237,17 +248,43 @@ function normalizeBoards(data: AppData & { canvas?: Partial<Board> }): Board[] {
 	return boards.length > 0 ? boards : [newBoard("Board 1")];
 }
 
-/** Re-validates every entity's values against its type's current properties, e.g. dropping references to deleted entities. */
+/** The well-formed library drawings, each with only well-formed drawings — never other library drawings. */
+function normalizeLibrary(raw: unknown): LibraryDrawing[] {
+	if (!Array.isArray(raw)) return [];
+	return raw.flatMap((item: unknown, i) => {
+		if (!isObject(item) || typeof item.id !== "string") return [];
+		const tags = Array.isArray(item.tags) ? item.tags.filter((t): t is string => typeof t === "string") : [];
+		const drawings = Array.isArray(item.drawings) ? item.drawings.flatMap((d) => normalizeDrawing(d) ?? []) : [];
+		return [
+			{
+				id: item.id,
+				name: typeof item.name === "string" && item.name.trim() !== "" ? item.name : `Drawing ${i + 1}`,
+				tags: parseTags(tags.join(",")),
+				drawings: drawings.filter((d) => !isSymbol(d)),
+			},
+		];
+	});
+}
+
+/** Re-validates every entity's values against its type's current properties, e.g. dropping references to deleted entities,
+ * and drops cards of deleted entities and placed drawings whose library drawing was deleted. */
 function reconcile(data: AppData): AppData {
 	const entityTypes = entityTypeMap(data);
 	const typesById = new Map(data.types.map((t) => [t.id, t]));
+	const libraryIds = new Set(data.library.map((item) => item.id));
 	return {
 		...data,
 		entities: data.entities.map((e) => ({
 			...e,
 			values: migrateValues(e.values, typesById.get(e.typeId)?.properties ?? [], entityTypes),
 		})),
-		boards: data.boards.map((b) => prunePages({ ...b, cards: b.cards.filter((c) => entityTypes.has(c.entityId)) })),
+		boards: data.boards.map((b) =>
+			prunePages({
+				...b,
+				cards: b.cards.filter((c) => entityTypes.has(c.entityId)),
+				drawings: b.drawings.filter((d) => !isSymbol(d) || libraryIds.has(d.libraryId)),
+			}),
+		),
 	};
 }
 
@@ -307,6 +344,7 @@ function storedStand(data: AppData): AppData {
 			cards: Array.isArray(board.cards) ? board.cards : [],
 			drawings: Array.isArray(board.drawings) ? board.drawings : [],
 		})),
+		library: Array.isArray(data.library) ? data.library : [],
 	};
 }
 
@@ -322,6 +360,7 @@ function normalize(data: AppData): AppData {
 	};
 	return {
 		boards: normalizeBoards(data),
+		library: normalizeLibrary(data.library),
 		types: data.types.map((type) => ({
 			...type,
 			color: colorFor(type.color),
@@ -506,6 +545,14 @@ export async function createStore(port: DataPort, workspaceId: string) {
 	function updateDrawingBoard(drawingId: string, fn: (board: Board) => Board): void {
 		const board = data.boards.find((b) => b.drawings.some((d) => d.id === drawingId));
 		if (board) updateBoard(board.id, fn);
+	}
+
+	/** Applies fn to the library drawing made of the drawing; false when no library drawing holds it. */
+	function updateLibraryHolding(drawingId: string, fn: (item: LibraryDrawing) => LibraryDrawing): boolean {
+		const holder = data.library.find((item) => item.drawings.some((d) => d.id === drawingId));
+		if (!holder) return false;
+		change({ ...data, library: data.library.map((item) => (item.id === holder.id ? fn(item) : item)) });
+		return true;
 	}
 
 	/** Applies fn to the board holding the card (card ids are unique across boards). */
@@ -765,14 +812,68 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			return added;
 		},
 
-		/** Replaces the drawing with the same id (on whichever board it is). */
+		/** Replaces the drawing with the same id (on whichever board or library drawing it is). */
 		replaceDrawing(drawing: Drawing): void {
-			updateDrawingBoard(drawing.id, (b) => ({ ...b, drawings: b.drawings.map((d) => (d.id === drawing.id ? drawing : d)) }));
+			const replace = (drawings: Drawing[]) => drawings.map((d) => (d.id === drawing.id ? drawing : d));
+			if (updateLibraryHolding(drawing.id, (item) => ({ ...item, drawings: replace(item.drawings) }))) return;
+			updateDrawingBoard(drawing.id, (b) => ({ ...b, drawings: replace(b.drawings) }));
 		},
 
 		/** Like removeCard: with `pageId`, only off that page. */
 		removeDrawing(drawingId: string, pageId?: string): void {
+			if (updateLibraryHolding(drawingId, (item) => ({ ...item, drawings: item.drawings.filter((d) => d.id !== drawingId) }))) return;
 			updateDrawingBoard(drawingId, (b) => takeOff(b, "drawings", drawingId, pageId));
+		},
+
+		/** Adds an empty drawing to the library. */
+		addLibraryDrawing(name: string): LibraryDrawing {
+			const item: LibraryDrawing = { id: ulid(), name: name.trim() || `Drawing ${data.library.length + 1}`, tags: [], drawings: [] };
+			change({ ...data, library: [...data.library, item] });
+			return item;
+		},
+
+		/** Renames the library drawing or sets its tags; an empty name is ignored. */
+		updateLibraryDrawing(libraryId: string, patch: Partial<Pick<LibraryDrawing, "name" | "tags">>): void {
+			const name = patch.name?.trim();
+			change({
+				...data,
+				library: data.library.map((item) =>
+					item.id === libraryId
+						? { ...item, ...(name && { name }), ...(patch.tags && { tags: parseTags(patch.tags.join(",")) }) }
+						: item,
+				),
+			});
+		},
+
+		/** Deletes the library drawing, and with it every place it's used on a board (of every story mode page too). */
+		deleteLibraryDrawing(libraryId: string): void {
+			change({
+				...data,
+				library: data.library.filter((item) => item.id !== libraryId),
+				boards: data.boards.map((b) =>
+					b.drawings
+						.filter((d) => isSymbol(d) && d.libraryId === libraryId)
+						.reduce((board, d) => takeOff(board, "drawings", d.id), b),
+				),
+			});
+		},
+
+		/** Adds a shape, line, text, pen stroke or image to the library drawing. A placed library drawing is not added:
+		 * library drawings don't contain each other. */
+		addToLibraryDrawing(libraryId: string, drawing: NewDrawing): Drawing {
+			const added = { ...drawing, id: ulid() } as Drawing;
+			if (isSymbol(added)) return added;
+			change({
+				...data,
+				library: data.library.map((item) => (item.id === libraryId ? { ...item, drawings: [...item.drawings, added] } : item)),
+			});
+			return added;
+		},
+
+		/** How often the library drawing is placed on boards, and on how many boards. */
+		libraryUses(libraryId: string): { count: number; boards: number } {
+			const counts = data.boards.map((b) => b.drawings.filter((d) => isSymbol(d) && d.libraryId === libraryId).length);
+			return { count: counts.reduce((sum, n) => sum + n, 0), boards: counts.filter((n) => n > 0).length };
 		},
 
 		/** Pan and zoom are saved, but not part of the undo history. */

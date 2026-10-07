@@ -11,7 +11,8 @@ const DUNE = "01J00000000000000000000001";
 const HERBERT = "01J00000000000000000000002";
 const card = (id: string, entityId: string) => ({ id, entityId, x: 0, y: 0, width: 240, height: 160 });
 
-/** Two boards: Dune on "Reading" (with a name that would end the script element), Herbert on "Authors". */
+/** Two boards: Dune and a library drawing (a star) on "Reading" (with a name that would end the script element),
+ * Herbert on "Authors". */
 const data = {
 	types: [{ id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", properties: [] }],
 	entities: [
@@ -19,8 +20,18 @@ const data = {
 		{ id: HERBERT, typeId: "book", name: "Herbert", content: "", description: "", values: {} },
 	],
 	boards: [
-		{ id: "reading", name: "Reading & <more>", cards: [card("c1", DUNE)], viewport, drawings: [] },
+		{
+			id: "reading",
+			name: "Reading & <more>",
+			cards: [card("c1", DUNE)],
+			viewport,
+			drawings: [{ id: "d1", kind: "symbol", libraryId: "star", x: 300, y: 0, width: 50, height: 50 }],
+		},
 		{ id: "authors", name: "Authors", cards: [card("c2", HERBERT)], viewport, drawings: [] },
+	],
+	library: [
+		{ id: "star", name: "Star", tags: [], drawings: [{ id: "s1", kind: "ellipse", x: 0, y: 0, width: 20, height: 20, color: "#f6e8a6", text: "", textSize: "m" }] },
+		{ id: "moon", name: "Moon", tags: [], drawings: [] },
 	],
 } as unknown as AppData;
 
@@ -47,6 +58,7 @@ test("an exported view holds only the chosen board, its language and the script,
 	assert.equal(view.data.version, DATA_VERSION);
 	assert.deepEqual(view.data.boards.map((b: { id: string }) => b.id), ["reading"]);
 	assert.equal(view.data.entities.length, 2); // all entities, so every reference can be shown
+	assert.deepEqual(view.data.library.map((item: { id: string }) => item.id), ["star"]); // only what the board shows
 });
 
 test("an exported view shows its board read-only in its language, and a click on a card shows the details", async () => {
@@ -57,6 +69,7 @@ test("an exported view shows its board read-only in its language, and a click on
 	assert.equal(root.querySelector(".app-nav"), null);
 	assert.equal(root.querySelector(".canvas-view.read-only .canvas-panel"), null);
 	assert.ok(root.querySelector(".canvas-zoom")); // pan and zoom as in the View tab
+	assert.equal(root.querySelectorAll(".drawings .library-picture ellipse").length, 1, "the placed library drawing is drawn");
 	const cards = root.querySelectorAll<HTMLElement>(".canvas-board .canvas-card");
 	assert.deepEqual([...cards].map((c) => c.dataset.cardId), ["c1"]);
 	assert.equal(root.querySelector(".canvas-card .card-remove"), null);
