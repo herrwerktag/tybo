@@ -12,6 +12,7 @@ import {
 	moveItem,
 	nextTypeColor,
 	parseValue,
+	snapToGrid,
 	validateType,
 	type PropertyDef,
 } from "./model.js";
@@ -257,4 +258,8 @@ test("detailRows lists every property in order, empty ones too, then reverse ref
 		{ label: "status", kind: "options", values: [], entityIds: [], targetTypeId: null },
 		{ label: "author", kind: "reference", values: ["Frank"], entityIds: ["p1"], targetTypeId: "person" },
 	]);
+});
+
+test("snapToGrid rounds to the nearest grid line", () => {
+	assert.deepEqual([0, 11, 13, 150, -13].map(snapToGrid), [0, 0, 24, 144, -24]);
 });
