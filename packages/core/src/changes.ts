@@ -1,4 +1,4 @@
-import type { AppData, CanvasCard, Drawing, Entity, EntityType, StoryPage } from "./model.js";
+import type { AppData, CanvasCard, Drawing, Entity, EntityType, LibraryDrawing, StoryPage } from "./model.js";
 import type { Viewport } from "./viewport.js";
 
 /**
@@ -31,7 +31,7 @@ export interface BoardMeta {
 }
 
 /** One unit's stand: the unit itself, the way the app's data holds it, and its place in the list it belongs
- * to (the types, the entities and the boards; the cards and drawings of one board). */
+ * to (the types, the entities, the library and the boards; the cards and drawings of one board). */
 export interface UnitStand<T> {
 	value: T;
 	position: number;
@@ -42,12 +42,13 @@ export interface UnitStand<T> {
 export type Change =
 	| { kind: "type"; id: string; before: UnitStand<EntityType> | null; after: UnitStand<EntityType> | null }
 	| { kind: "entity"; id: string; before: UnitStand<Entity> | null; after: UnitStand<Entity> | null }
+	| { kind: "library"; id: string; before: UnitStand<LibraryDrawing> | null; after: UnitStand<LibraryDrawing> | null }
 	| { kind: "board"; id: string; before: UnitStand<BoardMeta> | null; after: UnitStand<BoardMeta> | null }
 	| { kind: "card"; id: string; boardId: string; before: UnitStand<CanvasCard> | null; after: UnitStand<CanvasCard> | null }
 	| { kind: "drawing"; id: string; boardId: string; before: UnitStand<Drawing> | null; after: UnitStand<Drawing> | null };
 
-/** The kinds of unit, parents before the children naming them. */
-export const CHANGE_KINDS: readonly Change["kind"][] = ["type", "entity", "board", "card", "drawing"];
+/** The kinds of unit, parents before the children naming them (a board's drawings can name library drawings). */
+export const CHANGE_KINDS: readonly Change["kind"][] = ["type", "entity", "library", "board", "card", "drawing"];
 
 /** One unit of a state: its address (kind, id, and the board a card or drawing stands on) and its stand. */
 interface Unit {
@@ -74,6 +75,7 @@ export function unitStands(data: AppData): UnitStands {
 		});
 	add("type", data.types);
 	add("entity", data.entities);
+	add("library", data.library);
 	add("board", data.boards.map(({ id, name, viewport, story, pages }): BoardMeta => ({ id, name, viewport, story, pages })));
 	for (const board of data.boards) add("card", board.cards, board.id);
 	for (const board of data.boards) add("drawing", board.drawings, board.id);

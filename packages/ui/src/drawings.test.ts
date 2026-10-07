@@ -4,6 +4,7 @@ import {
 	MAX_IMAGE_SIZE,
 	MIN_BOX_SIZE,
 	arrowGeometry,
+	contentBounds,
 	drawingBounds,
 	imageRect,
 	moveDrawing,
@@ -14,7 +15,7 @@ import {
 	simplifyStroke,
 	strokePath,
 } from "./drawings.js";
-import type { BoxDrawing, ImageDrawing, PathDrawing } from "@bekbon/core";
+import type { BoxDrawing, ImageDrawing, PathDrawing, SymbolDrawing } from "@bekbon/core";
 
 const box: BoxDrawing = { id: "b", kind: "rect", x: 100, y: 100, width: 200, height: 100, color: "#dcdcdc", text: "", textSize: "m" };
 const image: ImageDrawing = { id: "i", kind: "image", x: 100, y: 100, width: 200, height: 100, src: "data:image/png;base64," };
@@ -103,4 +104,16 @@ test("arrowGeometry ends the line at the arrowhead's base", () => {
 	const { lineEnd, head } = arrowGeometry({ x: 0, y: 0 }, { x: 100, y: 0 });
 	assert.deepEqual(lineEnd, { x: 88, y: 0 });
 	assert.equal(head, "100,0 88,6 88,-6");
+});
+
+test("placed library drawings move like boxes and resize keeping their aspect ratio, like images", () => {
+	const symbol: SymbolDrawing = { id: "s", kind: "symbol", libraryId: "lib", x: 100, y: 100, width: 200, height: 100 };
+	assert.deepEqual(moveDrawing(symbol, 5, -10), { ...symbol, x: 105, y: 90 });
+	assert.deepEqual(resizeImage(symbol, "se", 100, 0), { ...symbol, width: 300, height: 150 });
+	assert.deepEqual(drawingBounds(symbol), { x: 100, y: 100, width: 200, height: 100 });
+});
+
+test("contentBounds spans all drawings, or is null without any", () => {
+	assert.equal(contentBounds([]), null);
+	assert.deepEqual(contentBounds([box, line]), { x: 0, y: 0, width: 300, height: 200 });
 });

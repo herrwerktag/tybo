@@ -1,7 +1,7 @@
 /** Geometry for drawings on the canvas (shapes, lines, text, pen), in world coordinates. */
 
 import type { Point, Rect } from "@bekbon/core";
-import { isBox, isImage, type Drawing, type ImageDrawing, type PathDrawing } from "@bekbon/core";
+import { hasRect, type Drawing, type PathDrawing } from "@bekbon/core";
 
 /** The canvas tools: select (and move, resize, edit) or draw one kind of drawing. */
 export type Tool = "select" | "rect" | "ellipse" | "line" | "arrow" | "text" | "pen";
@@ -20,7 +20,7 @@ export function normalizeRect(a: Point, b: Point): Rect {
 }
 
 export function moveDrawing<T extends Drawing>(drawing: T, dx: number, dy: number): T {
-	if (isBox(drawing) || isImage(drawing)) return { ...drawing, x: drawing.x + dx, y: drawing.y + dy };
+	if (hasRect(drawing)) return { ...drawing, x: drawing.x + dx, y: drawing.y + dy };
 	return { ...drawing, points: (drawing as PathDrawing).points.map((p) => ({ x: p.x + dx, y: p.y + dy })) };
 }
 
@@ -46,10 +46,11 @@ export function resizeBox<T extends Rect>(box: T, corner: Corner, dx: number, dy
 }
 
 /**
- * Moves one corner of an image by (dx, dy) while the opposite corner stays put, keeping the aspect ratio: the
- * side dragged further decides the size. It never flips, and neither side gets smaller than MIN_BOX_SIZE.
+ * Moves one corner of an image (or a placed library drawing) by (dx, dy) while the opposite corner stays put, keeping
+ * the aspect ratio: the side dragged further decides the size. It never flips, and neither side gets smaller than
+ * MIN_BOX_SIZE.
  */
-export function resizeImage(image: ImageDrawing, corner: Corner, dx: number, dy: number): ImageDrawing {
+export function resizeImage<T extends Rect>(image: T, corner: Corner, dx: number, dy: number): T {
 	const left = corner === "nw" || corner === "sw";
 	const top = corner === "nw" || corner === "ne";
 	const ratio = image.width / image.height;
@@ -67,7 +68,8 @@ export function resizeImage(image: ImageDrawing, corner: Corner, dx: number, dy:
 	};
 }
 
-/** Where a new image goes: centered on `center`, at its own size or scaled down to MAX_IMAGE_SIZE. */
+/** Where a new image (or placed library drawing) goes: centered on `center`, at its own size or scaled down to
+ * MAX_IMAGE_SIZE. */
 export function imageRect(center: Point, naturalWidth: number, naturalHeight: number): Rect {
 	const scale = Math.min(1, MAX_IMAGE_SIZE / Math.max(naturalWidth, naturalHeight));
 	const width = Math.max(MIN_BOX_SIZE, naturalWidth * scale);
@@ -82,12 +84,26 @@ export function moveEndpoint(line: PathDrawing, index: 0 | 1, dx: number, dy: nu
 
 /** The smallest box containing the drawing. */
 export function drawingBounds(drawing: Drawing): Rect {
-	if (isBox(drawing) || isImage(drawing)) return { x: drawing.x, y: drawing.y, width: drawing.width, height: drawing.height };
+	if (hasRect(drawing)) return { x: drawing.x, y: drawing.y, width: drawing.width, height: drawing.height };
 	const xs = drawing.points.map((p) => p.x);
 	const ys = drawing.points.map((p) => p.y);
 	const x = Math.min(...xs);
 	const y = Math.min(...ys);
 	return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+}
+
+/** The smallest box containing all the drawings, or null when there are none. */
+export function contentBounds(drawings: readonly Drawing[]): Rect | null {
+	if (drawings.length === 0) return null;
+	const boxes = drawings.map(drawingBounds);
+	const x = Math.min(...boxes.map((b) => b.x));
+	const y = Math.min(...boxes.map((b) => b.y));
+	return {
+		x,
+		y,
+		width: Math.max(...boxes.map((b) => b.x + b.width)) - x,
+		height: Math.max(...boxes.map((b) => b.y + b.height)) - y,
+	};
 }
 
 /** Drops pen points closer than `minDistance` to the previous kept point; the last point is always kept. */

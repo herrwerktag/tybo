@@ -1,4 +1,4 @@
-import { createStore, toSaved, type AppData, type DataPort } from "@bekbon/core";
+import { createStore, isSymbol, toSaved, type AppData, type DataPort } from "@bekbon/core";
 import { canvasView } from "./canvas.js";
 import { LANGUAGES, setLanguage, type Language } from "./i18n.js";
 
@@ -11,12 +11,15 @@ const VIEW_WORKSPACE = "view";
 /**
  * A page that shows one board like the View tab, on its own: `script` (the viewer, built with its styles; see
  * apps/demo) and the data are inside, so it opens from disk, with no server. Only the board `boardId` goes in, with
- * all entity types and entities, so the details of every referenced entity can still be shown.
+ * all entity types and entities, so the details of every referenced entity can still be shown, and the library drawings
+ * placed on it.
  */
 export function standaloneViewHtml(script: string, data: AppData, boardId: string, language: Language): string {
 	const board = data.boards.find((b) => b.id === boardId);
 	if (!board) throw new Error(`there is no board "${boardId}"`);
-	const view = { language, data: toSaved({ ...data, boards: [board] }) };
+	const placed = new Set(board.drawings.flatMap((d) => (isSymbol(d) ? [d.libraryId] : [])));
+	const library = data.library.filter((item) => placed.has(item.id));
+	const view = { language, data: toSaved({ ...data, boards: [board], library }) };
 	// "<" escaped, so no text in the data can end the script element early.
 	const json = JSON.stringify(view).replace(/</g, "\\u003c");
 	return `<!doctype html>

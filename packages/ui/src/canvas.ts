@@ -1,5 +1,5 @@
 import { connector, nearest, type Rect } from "@bekbon/core";
-import { createDrawingLayer } from "./drawing-layer.js";
+import { createDrawingLayer, libraryPicture } from "./drawing-layer.js";
 import { CLICK_TOLERANCE, el, svgEl, trackPointer, typeDot } from "./dom.js";
 import { text } from "./i18n.js";
 import {
@@ -12,7 +12,9 @@ import {
 	effectiveCardDisplay,
 	detailRows,
 	filterEntities,
+	filterLibrary,
 	inverseCardRows,
+	isSymbol,
 	referencedIds,
 	snapToGrid,
 	type Board,
@@ -29,7 +31,12 @@ import type { Store } from "@bekbon/core";
 import { defaultViewport, screenToWorld, snapZoom, stepZoom, zoomAt, type Viewport } from "@bekbon/core";
 
 const ENTITY_MIME = "application/x-entity-id";
+const LIBRARY_MIME = "application/x-library-drawing-id";
 const PANEL_COLLAPSED_KEY = "canvas-panel-collapsed";
+/** What the side panel shows: entities or library drawings. */
+const PANEL_TAB_KEY = "canvas-panel-tab";
+/** The size of the library drawings' thumbnails in the side panel, in px. */
+const THUMBNAIL_SIZE = 40;
 const ACTIVE_BOARD_KEY = "canvas-active-board";
 /** The story mode page last shown in the editor, per board. */
 const activePageKey = (boardId: string) => `canvas-active-page:${boardId}`;
@@ -42,7 +49,8 @@ const ZOOM_SETTLE_ANIMATION = 120;
 /**
  * The board canvas. With `readOnly` (the Viewer) it only displays: no side panel, no board editing,
  * no moving, resizing, removing or dropping cards, and pan/zoom are never saved. With `onExportView`, the
- * viewer offers to export the current board.
+ * viewer offers to export the current board. With `onEditLibraryDrawing`, a placed library drawing can be opened
+ * in the library.
  *
  * A board in story mode is shown one page at a time, with a page bar at the bottom and the page's description over the
  * canvas. The editor also shows the cards and drawings of other pages, faded, so they can be shown here too.
@@ -53,7 +61,13 @@ export function canvasView(
 		readOnly,
 		onEditEntity,
 		onExportView,
-	}: { readOnly: boolean; onEditEntity?: (entityId: string) => void; onExportView?: (boardId: string) => void },
+		onEditLibraryDrawing,
+	}: {
+		readOnly: boolean;
+		onEditEntity?: (entityId: string) => void;
+		onExportView?: (boardId: string) => void;
+		onEditLibraryDrawing?: (libraryId: string) => void;
+	},
 ): HTMLElement {
 	let boardId = readPreference(ACTIVE_BOARD_KEY) ?? "";
 	const currentBoard = (): Board => store.data.boards.find((b) => b.id === boardId) ?? store.data.boards[0]!;
@@ -119,7 +133,7 @@ export function canvasView(
 	const drawing = createDrawingLayer({
 		store,
 		readOnly,
-		boardId: () => boardId,
+		owner: () => ({ boardId }),
 		page: currentPage,
 		zoom: () => viewport.zoom,
 		toWorld: (clientX, clientY) => {
@@ -132,6 +146,7 @@ export function canvasView(
 			if (drawingId) select(null);
 		},
 		onToolChange: (tool) => surface.classList.toggle("drawing-tool", tool !== "select"),
+		...(onEditLibraryDrawing && { onEditSymbol: onEditLibraryDrawing }),
 	});
 	/** The zoom the drawings' selection handles were last drawn for (they keep their screen size). */
 	let drawnZoom = viewport.zoom;
@@ -383,10 +398,12 @@ export function canvasView(
 	// Search and type filter for the side panel; kept for this visit only.
 	let panelQuery = "";
 	let panelTypeId: string | null = null;
-	/** The entity list below the panel's controls; re-rendered on its own, so typing in the search keeps focus. */
+	let libraryQuery = "";
+	let panelTab: "entities" | "library" = readPreference(PANEL_TAB_KEY) === "library" ? "library" : "entities";
+	/** The list below the panel's controls; re-rendered on its own, so typing in the search keeps focus. */
 	const panelList = el("div", { className: "panel-list" });
 
-	/** Builds the panel once (header, hint, search, type filter); the list itself is drawn by renderPanel. */
+	/** Builds the panel once (header with the tabs, hint, filters); the list itself is drawn by renderPanel. */
 	function buildPanel(): void {
 		const toggle = el(
 			"button",
@@ -420,16 +437,80 @@ export function canvasView(
 			el("option", { value: "" }, text.allTypes),
 			...store.data.types.map((t) => el("option", { value: t.id }, t.name)),
 		);
+		const entityFilters = el("div", { className: "panel-filters" }, search, typeFilter);
+		const librarySearch = el("input", {
+			type: "search",
+			placeholder: text.searchLibrary,
+			ariaLabel: text.searchLibrary,
+			oninput: () => {
+				libraryQuery = librarySearch.value;
+				renderPanel();
+			},
+		});
+		const libraryFilters = el("div", { className: "panel-filters" }, librarySearch);
+		const tab = (id: typeof panelTab, label: string) =>
+			el("button", { type: "button", className: "panel-tab", ariaPressed: String(panelTab === id), onclick: () => showTab(id) }, label);
+		const tabs = el("div", { className: "panel-tabs", role: "group", ariaLabel: text.sidePanelContent });
+		function showTab(id: typeof panelTab): void {
+			panelTab = id;
+			writePreference(PANEL_TAB_KEY, id);
+			tabs.replaceChildren(tab("entities", text.entities), tab("library", text.libraryDrawings));
+			entityFilters.hidden = id !== "entities";
+			libraryFilters.hidden = id !== "library";
+			renderPanel();
+		}
+		showTab(panelTab);
 		panel.replaceChildren(
-			el("div", { className: "panel-header" }, el("h2", {}, text.entities), toggle),
+			el("div", { className: "panel-header" }, tabs, toggle),
 			el("p", { className: "muted" }, text.dragOntoCanvas),
-			el("div", { className: "panel-filters" }, search, typeFilter),
+			entityFilters,
+			libraryFilters,
 			panelList,
+		);
+	}
+
+	/** The library drawings in the side panel, each with a thumbnail, to drag onto the board. */
+	function renderLibraryPanel(): void {
+		const placed = new Map<string, number>();
+		for (const d of currentBoard().drawings) {
+			if (isSymbol(d) && onPage(d.id)) placed.set(d.libraryId, (placed.get(d.libraryId) ?? 0) + 1);
+		}
+		const matches = filterLibrary(store.data.library, libraryQuery);
+		const empty = store.data.library.length === 0 ? text.noLibraryYet : text.noLibraryMatches;
+		panelList.replaceChildren(
+			...(matches.length === 0 ? [el("p", { className: "muted" }, empty)] : []),
+			el(
+				"ul",
+				{ className: "panel-group" },
+				...matches.map((item) => {
+					const count = placed.get(item.id) ?? 0;
+					const li = el(
+						"li",
+						{ className: count > 0 ? "panel-item library-item placed" : "panel-item library-item", draggable: true },
+						libraryPicture(item.drawings, { x: 0, y: 0, width: THUMBNAIL_SIZE, height: THUMBNAIL_SIZE }),
+						el(
+							"span",
+							{ className: "library-item-text" },
+							el("span", {}, item.name),
+							...(item.tags.length > 0 ? [el("span", { className: "panel-item-note muted" }, item.tags.join(", "))] : []),
+							...(count > 0 ? [el("span", { className: "panel-item-note muted" }, text.onCanvas(count))] : []),
+						),
+					);
+					li.dataset.libraryId = item.id;
+					li.addEventListener("dragstart", (e) => {
+						if (!e.dataTransfer) return;
+						e.dataTransfer.setData(LIBRARY_MIME, item.id);
+						e.dataTransfer.effectAllowed = "copy";
+					});
+					return li;
+				}),
+			),
 		);
 	}
 
 	function renderPanel(): void {
 		if (readOnly) return; // no side panel in the viewer
+		if (panelTab === "library") return renderLibraryPanel();
 		const cardCounts = new Map<string, number>();
 		for (const card of currentBoard().cards.filter((c) => onPage(c.id))) cardCounts.set(card.entityId, (cardCounts.get(card.entityId) ?? 0) + 1);
 		const matches = filterEntities(store.data.entities, { query: panelQuery, typeId: panelTypeId });
@@ -1069,10 +1150,10 @@ export function canvasView(
 
 	const imageFiles = (files: FileList | undefined): File[] => [...(files ?? [])].filter((f) => f.type.startsWith("image/"));
 
-	// Drop entities from the side panel, or image files (editor only).
+	// Drop entities or library drawings from the side panel, or image files (editor only).
 	if (!readOnly) {
 		surface.addEventListener("dragover", (e) => {
-			if (!e.dataTransfer?.types.includes(ENTITY_MIME) && !e.dataTransfer?.types.includes("Files")) return;
+			if (!e.dataTransfer || ![ENTITY_MIME, LIBRARY_MIME, "Files"].some((type) => e.dataTransfer!.types.includes(type))) return;
 			e.preventDefault();
 			e.dataTransfer.dropEffect = "copy";
 		});
@@ -1083,11 +1164,18 @@ export function canvasView(
 				addImages(images, e.clientX, e.clientY);
 				return;
 			}
+			const rect = surface.getBoundingClientRect();
+			const world = screenToWorld(viewport, e.clientX - rect.left, e.clientY - rect.top);
+			const libraryId = e.dataTransfer?.getData(LIBRARY_MIME);
+			if (libraryId) {
+				e.preventDefault();
+				drawing.addSymbol(libraryId, world);
+				renderPanel();
+				return;
+			}
 			const entityId = e.dataTransfer?.getData(ENTITY_MIME);
 			if (!entityId) return;
 			e.preventDefault();
-			const rect = surface.getBoundingClientRect();
-			const world = screenToWorld(viewport, e.clientX - rect.left, e.clientY - rect.top);
 			// Drop so the pointer ends up on the card's header, on the grid.
 			const x = snapToGrid(world.x - DEFAULT_CARD_SIZE.width / 2);
 			store.addCard(boardId, entityId, x, snapToGrid(world.y - 16), currentPage()?.id);

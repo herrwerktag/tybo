@@ -4,7 +4,8 @@ import { changesBetween, jsonEqual, type Change } from "./changes.js";
 import type { AppData, CanvasCard, Drawing, Entity, EntityType } from "./model.js";
 
 /** A state to build stands from: one type with a text property, two entities, one board with two cards and
- * one drawing — enough of every unit to change, add and delete one each without touching another. */
+ * one drawing, and one library drawing — enough of every unit to change, add and delete one each without touching
+ * another. */
 function state(): AppData {
 	const type: EntityType = {
 		id: "type-person",
@@ -44,6 +45,7 @@ function state(): AppData {
 				pages: [],
 			},
 		],
+		library: [{ id: "lib-star", name: "Stern", tags: ["Form"], drawings: [{ ...drawing, id: "lib-line" }] }],
 	};
 }
 
@@ -170,4 +172,27 @@ test("a story mode page shown or hidden is a change of the board alone, never of
 	after.boards[0]!.pages[0]!.cardIds.push("card-bob");
 
 	assert.deepEqual(outline(changesBetween(before, after)), ["board:board-1"]);
+});
+
+test("a library drawing is one unit with its drawings; editing it never touches the boards it's placed on", () => {
+	const before = state();
+	before.boards[0]!.drawings.push({ id: "draw-star", kind: "symbol", libraryId: "lib-star", x: 0, y: 0, width: 50, height: 50 });
+	const after = structuredClone(before);
+	const star = after.library[0]!;
+	star.drawings = [...star.drawings, { id: "lib-arrow", kind: "arrow", points: [{ x: 0, y: 0 }, { x: 5, y: 5 }], color: "#4a4a4a" }];
+	star.tags = ["Form", "Himmel"];
+
+	const changes = changesBetween(before, after);
+	assert.deepEqual(outline(changes), ["library:lib-star"]);
+	const [libraryChange] = changes as [Extract<Change, { kind: "library" }>];
+	assert.deepEqual(libraryChange.after!.value.drawings.map((d) => d.id), ["lib-line", "lib-arrow"]);
+});
+
+test("library drawings come before the boards whose drawings name them", () => {
+	const before = state();
+	const after = structuredClone(before);
+	after.library.push({ id: "lib-moon", name: "Mond", tags: [], drawings: [] });
+	after.boards[0]!.drawings.push({ id: "draw-moon", kind: "symbol", libraryId: "lib-moon", x: 0, y: 0, width: 50, height: 50 });
+
+	assert.deepEqual(outline(changesBetween(before, after)), ["library:lib-moon", "drawing:draw-moon:board-1"]);
 });

@@ -24,6 +24,7 @@ import {
 	type ValidationError,
 } from "@bekbon/core";
 import { canvasView } from "./canvas.js";
+import { libraryView, selectLibraryDrawing } from "./library.js";
 import { downloadFile, el, safeFileName, typeDot } from "./dom.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
 import { standaloneViewHtml } from "./standalone.js";
@@ -59,8 +60,9 @@ type MenuName = "settings" | "workspace";
 
 const PROPERTY_MIME = "application/x-property-index";
 
-/** The page shown, from the URL hash: entity types, entities, board editing (boards) or read-only boards (view). */
-type Route = "types" | "entities" | "boards" | "view";
+/** The page shown, from the URL hash: entity types, entities, board editing (boards), the library of drawings, or
+ * read-only boards (view). */
+type Route = "types" | "entities" | "boards" | "library" | "view";
 
 /** Entities is the default page, so old links (e.g. "#data") still land there; "#canvas" and "#viewer" are the
  * board pages' former names. */
@@ -68,7 +70,7 @@ function routeFromHash(hash: string): Route {
 	const route = hash.slice(1);
 	if (route === "canvas") return "boards";
 	if (route === "viewer") return "view";
-	return route === "types" || route === "boards" || route === "view" ? route : "entities";
+	return route === "types" || route === "boards" || route === "library" || route === "view" ? route : "entities";
 }
 
 /** How often to look, in the background, for a stand of the open workspace that someone else saved in between:
@@ -294,7 +296,9 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 			el("header", {}, navBar(route), ...(entitiesTab ? [subNav(route)] : []), banner),
 			entitiesTab
 				? el("div", { className: "data-view" }, route === "types" ? typesSection() : entitiesSection())
-				: canvasView(store, {
+				: route === "library"
+					? libraryView(store)
+					: canvasView(store, {
 						readOnly: route === "view",
 						...(viewScript ? { onExportView: (boardId: string) => exportView(viewScript, boardId) } : {}),
 						// The details panel's Edit button: open the entity in the Entities page's form.
@@ -305,6 +309,10 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 							state.editingEntityId = entityId;
 							state.focusForm = "entity";
 							location.hash = "#entities";
+						},
+						onEditLibraryDrawing: (libraryId) => {
+							selectLibraryDrawing(libraryId);
+							location.hash = "#library";
 						},
 					}),
 		);
@@ -328,6 +336,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 			{ className: "app-nav" },
 			tab("entities", text.tabEntities, route === "entities" || route === "types"),
 			tab("boards", text.tabBoards),
+			tab("library", text.tabLibrary),
 			tab("view", text.tabView),
 			el("div", { className: "nav-menus" }, historyButtons, workspaceMenu(), settingsMenu()),
 		);

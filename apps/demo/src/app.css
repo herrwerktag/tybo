@@ -23,8 +23,8 @@ main {
 	grid-template-rows: auto minmax(0, 1fr);
 }
 
-/* The canvas fills the screen instead of growing the page. */
-main:has(.canvas-view) {
+/* The canvas (and the library's drawing area) fills the screen instead of growing the page. */
+main:has(.canvas-view, .library-view) {
 	height: 100dvh;
 }
 
@@ -553,6 +553,36 @@ th {
 	line-height: 1.4;
 }
 
+/* Entities or library drawings in the side panel: two buttons joined into one. */
+.panel-tabs {
+	display: flex;
+}
+
+.panel-tab {
+	padding: 0.2rem 0.6rem;
+}
+
+.panel-tab:first-child {
+	border-top-right-radius: 0;
+	border-bottom-right-radius: 0;
+}
+
+.panel-tab:last-child {
+	margin-left: -1px;
+	border-top-left-radius: 0;
+	border-bottom-left-radius: 0;
+}
+
+.panel-tab[aria-pressed="true"] {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: #fff;
+}
+
+.panel-tab[aria-pressed="true"]:hover:not(:disabled) {
+	background: #444;
+}
+
 /* Narrow screens: side panel above, canvas, details below. */
 @media (max-width: 40rem) {
 	.canvas-view {
@@ -609,6 +639,11 @@ td.inverse {
 	gap: 0.4rem;
 }
 
+/* Only the filters of the side panel's tab shown. */
+.panel-filters[hidden] {
+	display: none;
+}
+
 .panel-filters :is(input, select) {
 	width: 100%;
 }
@@ -639,6 +674,84 @@ td.inverse {
 
 .panel-item-note {
 	font-size: 0.85em;
+}
+
+/* Library drawings in a list: thumbnail, then name and tags. */
+.library-item,
+.library-entry {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.library-item-text {
+	display: grid;
+	gap: 0.1rem;
+	min-width: 0;
+}
+
+.library-item .library-picture,
+.library-entry .library-picture {
+	flex: none;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+}
+
+/* The Library tab: its drawings on the left, the one chosen in an editor on the right. */
+.library-view {
+	display: flex;
+	min-height: 0;
+}
+
+.library-list {
+	display: grid;
+	gap: 0.25rem;
+}
+
+.library-entry {
+	width: 100%;
+	padding: 0.35rem 0.5rem;
+	text-align: left;
+	overflow-wrap: anywhere;
+}
+
+.library-entry[aria-current="true"] {
+	background: var(--highlight);
+	border-color: var(--focus);
+}
+
+.library-editor {
+	flex: 1 1 0;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	min-height: 0;
+}
+
+.library-meta {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: end;
+	gap: 0.5rem 1rem;
+	padding: 0.75rem 1rem;
+	background: var(--surface);
+	border-bottom: 1px solid var(--border);
+}
+
+.library-uses {
+	flex: 1 1 12rem;
+	font-size: 0.875rem;
+}
+
+.library-empty {
+	padding: 1rem;
+}
+
+@media (max-width: 40rem) {
+	.library-view {
+		flex-direction: column;
+	}
 }
 
 .canvas-main {
@@ -910,6 +1023,21 @@ button.ref-tag {
 	fill: none;
 	stroke: transparent;
 	stroke-width: 14;
+}
+
+/* A placed library drawing: its box catches the pointer; one without content shows as a dashed outline. */
+.drawing-symbol-box {
+	fill: transparent;
+}
+
+.drawing-symbol-box.empty {
+	stroke: var(--border-strong);
+	stroke-width: 1.5;
+	stroke-dasharray: 6 4;
+}
+
+.drawings .library-picture {
+	overflow: visible;
 }
 
 /* Images can't be dragged out of the page by the browser; dragging moves them. */

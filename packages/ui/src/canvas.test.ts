@@ -297,3 +297,49 @@ test("the zoom buttons go one 10% step in or out", async () => {
 	out!.click();
 	assert.equal(zoom.querySelector(".zoom-label")?.textContent, "110%");
 });
+
+/** A drag from the side panel dropped on `target` at (x, y), carrying `data` (happy-dom's DragEvent leaves out the
+ * dataTransfer, so it's put on the event). */
+function drop(target: Element, data: Record<string, string>, x = 200, y = 150): void {
+	const transfer = new DataTransfer();
+	for (const [type, value] of Object.entries(data)) transfer.setData(type, value);
+	const event = new MouseEvent("drop", { bubbles: true, cancelable: true, clientX: x, clientY: y });
+	Object.defineProperty(event, "dataTransfer", { value: transfer });
+	target.dispatchEvent(event);
+}
+
+test("library drawings are dragged from the side panel onto the board, and always drawn as they are in the library", async () => {
+	freshDom();
+	const store = await createStore(memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } }).port, "ws");
+	const star = store.addLibraryDrawing("Star");
+	store.updateLibraryDrawing(star.id, { tags: ["sky"] });
+	const circle = store.addToLibraryDrawing(star.id, { kind: "ellipse", x: 0, y: 0, width: 80, height: 40, color: "#f6e8a6", text: "", textSize: "m" });
+	const edits: string[] = [];
+	const view = canvasView(store, { readOnly: false, onEditLibraryDrawing: (id) => edits.push(id) });
+	document.body.append(view);
+
+	[...view.querySelectorAll<HTMLButtonElement>(".panel-tab")].find((b) => b.textContent === "Drawings")!.click();
+	const item = view.querySelector<HTMLElement>(".library-item")!;
+	assert.equal(item.dataset.libraryId, star.id);
+	assert.match(item.textContent ?? "", /Star.*sky/);
+
+	drop(view.querySelector(".canvas-surface")!, { "application/x-library-drawing-id": star.id });
+	const [placed] = store.data.boards[0]!.drawings;
+	assert.equal(placed?.kind, "symbol");
+	assert.equal(placed?.kind === "symbol" && placed.libraryId, star.id);
+	// Its content's size, with a little room around it.
+	assert.deepEqual(placed?.kind === "symbol" && [placed.width, placed.height], [96, 56]);
+	assert.equal(view.querySelectorAll(".drawings .library-picture ellipse").length, 1);
+	assert.match(view.querySelector(".library-item")!.textContent ?? "", /On canvas/);
+
+	// Selected right away: its style bar opens it in the library.
+	[...view.querySelectorAll<HTMLButtonElement>(".drawing-style button")].find((b) => b.textContent === "Edit in library")!.click();
+	assert.deepEqual(edits, [star.id]);
+
+	// Changed in the library, the board shows the change: it holds no copy.
+	store.replaceDrawing({ ...circle, kind: "rect" } as typeof circle);
+	const again = canvasView(store, { readOnly: true });
+	document.body.append(again);
+	assert.equal(again.querySelectorAll(".drawings .library-picture ellipse").length, 0);
+	assert.equal(again.querySelectorAll(".drawings .library-picture rect.drawing-shape").length, 1);
+});

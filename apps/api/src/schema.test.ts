@@ -7,7 +7,7 @@ import { MIGRATIONS, migrateSchema } from "./schema.js";
 const url = process.env.TEST_DATABASE_URL;
 
 /** Every table of the schema. */
-const ALL_TABLES = ["schema_migrations", "workspaces", "entity_types", "properties", "entities", "entity_values", "boards", "cards", "drawings"];
+const ALL_TABLES = ["schema_migrations", "workspaces", "entity_types", "properties", "entities", "entity_values", "boards", "cards", "drawings", "library_drawings"];
 
 /** Takes the test database back to before any schema: none of its tables there. */
 async function wipe(sql: postgres.Sql<{}>): Promise<void> {
@@ -29,7 +29,7 @@ test("an empty database gets the whole schema, and a second run has nothing left
 	try {
 		await wipe(sql);
 		assert.deepEqual(await migrateSchema(sql), MIGRATIONS.map((m) => m.version));
-		assert.deepEqual(await tables(sql), ["boards", "cards", "drawings", "entities", "entity_types", "entity_values", "properties", "schema_migrations", "workspaces"]);
+		assert.deepEqual(await tables(sql), ["boards", "cards", "drawings", "entities", "entity_types", "entity_values", "library_drawings", "properties", "schema_migrations", "workspaces"]);
 		assert.deepEqual(await migrateSchema(sql), []);
 	} finally {
 		await sql.end({ timeout: 5 });
