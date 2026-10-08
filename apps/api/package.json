@@ -1,5 +1,5 @@
 {
-	"name": "@bekbon/api",
+	"name": "@tybo/api",
 	"version": "1.0.0",
 	"description": "HTTP interface over the stored texts, kept in Postgres",
 	"license": "ISC",
@@ -13,7 +13,7 @@
 		"build": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@bekbon/core": "workspace:*",
+		"@tybo/core": "workspace:*",
 		"postgres": "^3.4.5"
 	},
 	"devDependencies": {

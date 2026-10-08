@@ -1,9 +1,9 @@
-import { createStore, isSymbol, toSaved, type AppData, type DataPort } from "@bekbon/core";
+import { createStore, isSymbol, toSaved, type AppData, type DataPort } from "@tybo/core";
 import { canvasView } from "./canvas.js";
 import { LANGUAGES, setLanguage, type Language } from "./i18n.js";
 
 /** The id of the script element in an exported view that holds its board, language and data. */
-const VIEW_DATA_ID = "bekbon-view";
+const VIEW_DATA_ID = "tybo-view";
 
 /** The workspace id the exported view's store reads its data under. */
 const VIEW_WORKSPACE = "view";

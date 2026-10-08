@@ -1,4 +1,4 @@
-# bekbon
+# tybo
 
 Eine Web-Anwendung zum Modellieren eigener Datentypen: Entitaetstypen mit Eigenschaften (Text, Auswahl,
 Verweis) anlegen, Entitaeten dazu erfassen und sie als Karten auf Boards anordnen. Verweise koennen als
@@ -12,10 +12,10 @@ pnpm-Monorepo mit TypeScript:
 
 | Paket | Inhalt |
 | --- | --- |
-| `packages/core` (`@bekbon/core`) | Datenmodell, Validierung, Arbeitsbereiche, Aenderungen, Speicher-Port (ohne DOM) |
-| `packages/ui` (`@bekbon/ui`) | Oberflaeche: Formulare, Canvas, Zeichnungen, Texte (i18n) |
-| `apps/api` (`@bekbon/api`) | HTTP-API ueber Postgres oder SQLite, Schema-Migrationen beim Start |
-| `apps/demo` (`@bekbon/demo`) | Die Anwendung im Browser (Vite), spricht nur mit der API |
+| `packages/core` (`@tybo/core`) | Datenmodell, Validierung, Arbeitsbereiche, Aenderungen, Speicher-Port (ohne DOM) |
+| `packages/ui` (`@tybo/ui`) | Oberflaeche: Formulare, Canvas, Zeichnungen, Texte (i18n) |
+| `apps/api` (`@tybo/api`) | HTTP-API ueber Postgres oder SQLite, Schema-Migrationen beim Start |
+| `apps/demo` (`@tybo/demo`) | Die Anwendung im Browser (Vite), spricht nur mit der API |
 
 ## Voraussetzungen
 
@@ -59,7 +59,7 @@ Bricht die API mit `EADDRINUSE` ab, laeuft auf Port 3001 schon ein Server (z. B.
 `lsof -iTCP:3001 -sTCP:LISTEN` zeigt ihn, oder die API mit `PORT=…` auf einen anderen Port legen (dann
 auch `VITE_API_URL` anpassen).
 
-Einzeln: `pnpm --filter @bekbon/api start` bzw. `pnpm --filter @bekbon/demo dev`.
+Einzeln: `pnpm --filter @tybo/api start` bzw. `pnpm --filter @tybo/demo dev`.
 
 ## Pruefen
 

@@ -30,7 +30,7 @@ try {
 const server = createApp(storage);
 const port = portFromEnv(process.env.PORT);
 server.listen(port, () => {
-	console.log(`The bekbon API is listening on port ${port}.`);
+	console.log(`The tybo API is listening on port ${port}.`);
 });
 
 function stop(signal: string): void {

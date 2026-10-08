@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { changesBetween, type AppData } from "@bekbon/core";
+import { changesBetween, type AppData } from "@tybo/core";
 import { sqliteStorage } from "./sqlite.js";
 import { call, startApp } from "./test-server.js";
 
@@ -40,7 +40,7 @@ const empty = (): AppData => ({ types: [], entities: [], boards: [], library: []
 
 /** A storage on a fresh file of its own; close() closes it and removes the file. */
 async function fresh() {
-	const dir = mkdtempSync(join(tmpdir(), "bekbon-sqlite-"));
+	const dir = mkdtempSync(join(tmpdir(), "tybo-sqlite-"));
 	const path = join(dir, "test.sqlite");
 	const storage = sqliteStorage(path);
 	return {

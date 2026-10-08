@@ -1,6 +1,6 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
-import type { AppData, Change, SavedChanges } from "@bekbon/core";
-import { CHANGE_KINDS, unitStands, untouched } from "@bekbon/core";
+import type { AppData, Change, SavedChanges } from "@tybo/core";
+import { CHANGE_KINDS, unitStands, untouched } from "@tybo/core";
 import { assembleAppData, type StoredWorkspace } from "./data.js";
 import type { Api } from "./http.js";
 

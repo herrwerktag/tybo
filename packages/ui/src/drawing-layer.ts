@@ -1,4 +1,4 @@
-import type { Point } from "@bekbon/core";
+import type { Point } from "@tybo/core";
 import { CLICK_TOLERANCE, el, svgEl, trackPointer } from "./dom.js";
 import {
 	MIN_BOX_SIZE,
@@ -35,8 +35,8 @@ import {
 	type PenStyle,
 	type Rect,
 	type StoryPage,
-} from "@bekbon/core";
-import type { Store } from "@bekbon/core";
+} from "@tybo/core";
+import type { Store } from "@tybo/core";
 
 const TOOLS: readonly { tool: Tool; icon: string; key: string }[] = [
 	{ tool: "select", icon: "↖", key: "v" },

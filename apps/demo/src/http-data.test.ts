@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Change } from "@bekbon/core";
+import type { Change } from "@tybo/core";
 import { httpData } from "./http-data.js";
 
 /** One request the port made to the API. */

@@ -1,7 +1,7 @@
 {
-	"name": "@bekbon/demo",
+	"name": "@tybo/demo",
 	"version": "1.0.0",
-	"description": "The bekbon application",
+	"description": "The tybo application",
 	"license": "ISC",
 	"private": true,
 	"type": "module",
@@ -12,8 +12,8 @@
 		"test": "tsx --test src/*.test.ts"
 	},
 	"dependencies": {
-		"@bekbon/core": "workspace:*",
-		"@bekbon/ui": "workspace:*"
+		"@tybo/core": "workspace:*",
+		"@tybo/ui": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/node": "^26.6.3",

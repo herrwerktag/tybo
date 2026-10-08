@@ -22,14 +22,14 @@ import {
 	type PropertyKind,
 	type PropertyValue,
 	type ValidationError,
-} from "@bekbon/core";
+} from "@tybo/core";
 import { canvasView } from "./canvas.js";
 import { libraryView, selectLibraryDrawing } from "./library.js";
 import { downloadFile, el, safeFileName, typeDot } from "./dom.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
 import { standaloneViewHtml } from "./standalone.js";
-import type { Store } from "@bekbon/core";
-import { exportWorkspace, readWorkspaceFile, type Workspaces } from "@bekbon/core";
+import type { Store } from "@tybo/core";
+import { exportWorkspace, readWorkspaceFile, type Workspaces } from "@tybo/core";
 
 interface UiState {
 	editingTypeId: string | null;

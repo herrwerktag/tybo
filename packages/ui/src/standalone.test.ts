@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { language, setLanguage } from "./i18n.js";
 import { renderStandaloneView, standaloneViewHtml } from "./standalone.js";
-import { DATA_VERSION, type AppData } from "@bekbon/core";
+import { DATA_VERSION, type AppData } from "@tybo/core";
 
 const viewport = { x: 0, y: 0, zoom: 1 };
 /** Entity ids are ULIDs; others are given new ones on load. */
@@ -52,7 +52,7 @@ test("an exported view holds only the chosen board, its language and the script,
 	assert.match(html, /<script>run\(\);<\/script>/);
 	// One </script> for each of the two script elements: the entity's name doesn't end one early.
 	assert.equal(html.match(/<\/script>/g)?.length, 2);
-	const json = /<script type="application\/json" id="bekbon-view">(.*)<\/script>\n/.exec(html)![1]!;
+	const json = /<script type="application\/json" id="tybo-view">(.*)<\/script>\n/.exec(html)![1]!;
 	const view = JSON.parse(json);
 	assert.equal(view.language, "de");
 	assert.equal(view.data.version, DATA_VERSION);

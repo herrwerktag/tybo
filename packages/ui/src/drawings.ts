@@ -1,7 +1,7 @@
 /** Geometry for drawings on the canvas (shapes, lines, text, pen), in world coordinates. */
 
-import type { Point, Rect } from "@bekbon/core";
-import { hasRect, type Drawing, type PathDrawing } from "@bekbon/core";
+import type { Point, Rect } from "@tybo/core";
+import { hasRect, type Drawing, type PathDrawing } from "@tybo/core";
 
 /** The canvas tools: select (and move, resize, edit), draw one kind of drawing, or erase pen strokes. */
 export type Tool = "select" | "rect" | "ellipse" | "line" | "arrow" | "text" | "pen" | "eraser";

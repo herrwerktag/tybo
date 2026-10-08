@@ -1,4 +1,4 @@
-import { clampZoom, filterLibrary, GRID_SIZE, parseTags, screenToWorld, stepZoom, zoomAt, type LibraryDrawing, type Store, type Viewport } from "@bekbon/core";
+import { clampZoom, filterLibrary, GRID_SIZE, parseTags, screenToWorld, stepZoom, zoomAt, type LibraryDrawing, type Store, type Viewport } from "@tybo/core";
 import { CLICK_TOLERANCE, el, trackPointer } from "./dom.js";
 import { createDrawingLayer, libraryPicture } from "./drawing-layer.js";
 import { contentBounds } from "./drawings.js";

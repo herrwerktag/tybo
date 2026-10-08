@@ -1,4 +1,4 @@
-import type { Change, DataPort, SavedChanges, WorkspaceInfo } from "@bekbon/core";
+import type { Change, DataPort, SavedChanges, WorkspaceInfo } from "@tybo/core";
 
 /**
  * The browser app's port into the storage API (apps/api), which keeps the workspaces and their data in

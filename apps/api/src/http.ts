@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { Change, SavedChanges, WorkspaceInfo } from "@bekbon/core";
+import type { Change, SavedChanges, WorkspaceInfo } from "@tybo/core";
 import { parseChanges } from "./changes.js";
 import type { StoredWorkspace } from "./data.js";
 

@@ -1,7 +1,7 @@
 {
-	"name": "@bekbon/core",
+	"name": "@tybo/core",
 	"version": "1.0.0",
-	"description": "Dynamic types and data storage for bekbon",
+	"description": "Dynamic types and data storage for tybo",
 	"license": "ISC",
 	"private": true,
 	"type": "module",

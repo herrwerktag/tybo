@@ -17,7 +17,7 @@ import {
 	streamline,
 	strokePath,
 } from "./drawings.js";
-import type { BoxDrawing, ImageDrawing, PathDrawing, SymbolDrawing } from "@bekbon/core";
+import type { BoxDrawing, ImageDrawing, PathDrawing, SymbolDrawing } from "@tybo/core";
 
 const box: BoxDrawing = { id: "b", kind: "rect", x: 100, y: 100, width: 200, height: 100, color: "#dcdcdc", text: "", textSize: "m" };
 const image: ImageDrawing = { id: "i", kind: "image", x: 100, y: 100, width: 200, height: 100, src: "data:image/png;base64," };

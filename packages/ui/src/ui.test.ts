@@ -2,10 +2,10 @@ import { freshDom } from "./test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setLanguage, text } from "./i18n.js";
-import type { AppData } from "@bekbon/core";
+import type { AppData } from "@tybo/core";
 import { render } from "./ui.js";
-import { DATA_VERSION, createWorkspaces } from "@bekbon/core";
-import { memoryDataPort } from "@bekbon/core/testing";
+import { DATA_VERSION, createWorkspaces } from "@tybo/core";
+import { memoryDataPort } from "@tybo/core/testing";
 import { activeWorkspacePreference } from "./preferences.js";
 
 /** Lets work started by a click or an event finish first (the stores open and save through the async port). */

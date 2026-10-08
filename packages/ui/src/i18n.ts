@@ -1,5 +1,5 @@
 import type { Tool } from "./drawings.js";
-import type { CardDisplay, LineArrow, PenStyle, PropertyKind, TextSize, ValidationError } from "@bekbon/core";
+import type { CardDisplay, LineArrow, PenStyle, PropertyKind, TextSize, ValidationError } from "@tybo/core";
 import { readPreference, writePreference } from "./preferences.js";
 
 export type Language = "en" | "de";
