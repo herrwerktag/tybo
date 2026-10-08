@@ -36,6 +36,7 @@ import {
 	type Entity,
 	type EntityType,
 	type PropertyDef,
+	type ReferenceDef,
 	type PropertyValue,
 	type StoryPage,
 } from "./model.js";
@@ -298,6 +299,21 @@ function cardDisplayFor(prop: PropertyDef, showOnCard: unknown): PropertyDef["ca
 	return showOnCard === false ? "hidden" : "list";
 }
 
+/** Fills in a reference's defaults, and reads the single `typeId` saved before it could target several types. */
+function normalizeReference({ typeId, ...reference }: ReferenceDef & { typeId?: unknown }): ReferenceDef {
+	return {
+		...reference,
+		typeIds: Array.isArray(reference.typeIds)
+			? reference.typeIds.filter((id) => typeof id === "string")
+			: typeof typeId === "string"
+				? [typeId]
+				: [],
+		arrow: LINE_ARROWS.includes(reference.arrow) ? reference.arrow : "to",
+		lineLabel: typeof reference.lineLabel === "string" ? reference.lineLabel : "",
+		inverseLabel: typeof reference.inverseLabel === "string" ? reference.inverseLabel : "",
+	};
+}
+
 const isColor = (v: unknown): v is string => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -373,14 +389,7 @@ function normalize(data: AppData): AppData {
 				...prop,
 				kind: PROPERTY_KINDS.includes(prop.kind) ? prop.kind : "text",
 				options: Array.isArray(prop.options) ? prop.options : [],
-				reference: prop.reference
-					? {
-							...prop.reference,
-							arrow: LINE_ARROWS.includes(prop.reference.arrow) ? prop.reference.arrow : "to",
-							lineLabel: typeof prop.reference.lineLabel === "string" ? prop.reference.lineLabel : "",
-							inverseLabel: typeof prop.reference.inverseLabel === "string" ? prop.reference.inverseLabel : "",
-						}
-					: null,
+				reference: prop.reference ? normalizeReference(prop.reference) : null,
 				cardDisplay: cardDisplayFor(prop, showOnCard),
 			})),
 		})),
@@ -958,7 +967,7 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			return data.types
 				.filter((t) => t.id !== typeId)
 				.flatMap((t) =>
-					t.properties.filter((p) => p.reference?.typeId === typeId).map((p) => `${t.name}.${p.name}`),
+					t.properties.filter((p) => p.reference?.typeIds.includes(typeId)).map((p) => `${t.name}.${p.name}`),
 				);
 		},
 	};

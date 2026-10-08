@@ -10,6 +10,7 @@ import {
 	descriptionInView,
 	cardRows,
 	effectiveCardDisplay,
+	entityTypeMap,
 	detailRows,
 	filterEntities,
 	filterLibrary,
@@ -637,6 +638,7 @@ export function canvasView(
 		const types = new Map(store.data.types.map((t) => [t.id, t]));
 		const type = types.get(entity.typeId);
 		const entityNames = new Map(store.data.entities.map((e) => [e.id, e.name]));
+		const entityTypes = entityTypeMap(store.data);
 
 		const bar = el(
 			"div",
@@ -672,13 +674,13 @@ export function canvasView(
 			if (row.values.length === 0) return el("dd", { className: "muted" }, "—");
 			if (row.kind === "text") return el("dd", { className: "details-text" }, ...row.values);
 			if (row.kind === "options") return el("dd", { className: "prop-chips" }, ...row.values.map((v) => el("span", { className: "chip" }, v)));
-			// References: tags in the target type's color; clicking one shows that entity's details.
-			const color = types.get(row.targetTypeId ?? "")?.color;
+			// References: tags in the color of the entity's type; clicking one shows that entity's details.
 			return el(
 				"dd",
 				{ className: "prop-chips" },
 				...row.values.map((name, i) => {
 					const tag = el("button", { type: "button", className: "ref-tag", onclick: () => selectEntity(row.entityIds[i]!) }, name);
+					const color = types.get(entityTypes.get(row.entityIds[i]!) ?? "")?.color;
 					if (color) tag.style.background = color;
 					return tag;
 				}),
@@ -753,9 +755,9 @@ export function canvasView(
 			const targetCards = (entityId: string) => (cardsByEntity.get(entityId) ?? []).filter((c) => c.id !== card.id);
 			for (const prop of type?.properties ?? []) {
 				if (effectiveCardDisplay(prop) !== "line") continue;
-				const color = types.get(prop.reference?.typeId ?? "")?.color ?? "";
 				for (const id of referencedIds(prop, entity.values[prop.id])) {
 					const targets = targetCards(id);
+					const color = types.get(entities.get(id)?.typeId ?? "")?.color ?? "";
 					if (targets.length > 0) {
 						links.push({
 							fromCardId: card.id,
@@ -850,7 +852,7 @@ export function canvasView(
 	}
 
 	/**
-	 * Label/value rows: text as plain text, options as a grey chip, references as tags in the target type's color.
+	 * Label/value rows: text as plain text, options as a grey chip, references as tags in their entity's type color.
 	 * With `previews`, hovering or focusing a reference tag shows that entity's card.
 	 */
 	function propertyList(rows: CardRow[], previews: boolean): HTMLElement {
@@ -858,7 +860,6 @@ export function canvasView(
 			"dl",
 			{ className: "card-props" },
 			...rows.flatMap((row) => {
-				const color = store.data.types.find((t) => t.id === row.targetTypeId)?.color;
 				const value =
 					row.kind === "text"
 						? el("dd", { className: "prop-text", title: row.values.join("") }, ...row.values)
@@ -869,8 +870,10 @@ export function canvasView(
 									if (row.kind !== "reference") return el("span", { className: "chip" }, v);
 									// Same color as the top bar of the card it points to.
 									const tag = el("span", { className: "ref-tag" }, v);
-									if (color) tag.style.background = color;
 									const entityId = row.entityIds[i];
+									const typeId = store.data.entities.find((e) => e.id === entityId)?.typeId;
+									const color = store.data.types.find((t) => t.id === typeId)?.color;
+									if (color) tag.style.background = color;
 									if (previews && entityId) attachPreview(tag, entityId);
 									return tag;
 								}),

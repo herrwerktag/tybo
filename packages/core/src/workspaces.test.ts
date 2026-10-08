@@ -122,7 +122,7 @@ test("a new workspace can start with copies of entity types, keeping their ids",
 				name: "author",
 				kind: "reference",
 				options: [],
-				reference: { typeId: person.id, multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" },
+				reference: { typeIds: [person.id], multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" },
 				cardDisplay: "list",
 			},
 		],
@@ -136,7 +136,7 @@ test("a new workspace can start with copies of entity types, keeping their ids",
 		copy.data.types.map((t) => t.id),
 		[person.id, book.id],
 	);
-	assert.equal(copy.data.types[1]?.properties[0]?.reference?.typeId, person.id);
+	assert.deepEqual(copy.data.types[1]?.properties[0]?.reference?.typeIds, [person.id]);
 	assert.deepEqual(copy.data.entities, []);
 	assert.equal(copy.data.boards.length, 1);
 	assert.deepEqual(copy.data.boards[0]?.cards, []);
