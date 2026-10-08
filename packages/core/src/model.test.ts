@@ -68,8 +68,8 @@ test("migrateValues: text to options keeps values that match an option", () => {
 	assert.deepEqual(migrateValues({ t: "Emma" }, [asOptions], noEntities), { t: null });
 });
 
-const author: PropertyDef = { id: "a", name: "author", kind: "reference", options: [], reference: { typeId: "person", multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" };
-const tags: PropertyDef = { id: "g", name: "tags", kind: "reference", options: [], reference: { typeId: "tag", multiple: true, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" };
+const author: PropertyDef = { id: "a", name: "author", kind: "reference", options: [], reference: { typeIds: ["person"], multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" };
+const tags: PropertyDef = { id: "g", name: "tags", kind: "reference", options: [], reference: { typeIds: ["tag"], multiple: true, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" };
 const entityTypes = new Map([
 	["p1", "person"],
 	["p2", "person"],
@@ -90,19 +90,25 @@ test("parseValue: multiple reference filters and dedupes; empty is null", () => 
 	assert.equal(parseValue(tags, ["p1"], entityTypes), null);
 });
 
+test("parseValue: a reference to several types keeps entities of any of them", () => {
+	const subject: PropertyDef = { ...tags, reference: { ...tags.reference!, typeIds: ["person", "tag"] } };
+	assert.deepEqual(parseValue(subject, ["p1", "t1", "gone"], entityTypes), ["p1", "t1"]);
+	assert.equal(parseValue({ ...author, reference: { ...author.reference!, typeIds: ["person", "tag"] } }, "t2", entityTypes), "t2");
+});
+
 test("parseValue: a list is not a valid text value", () => {
 	assert.equal(parseValue(title, ["a"]), null);
 });
 
 test("migrateValues: single and multiple references convert into each other", () => {
-	const asMultiple: PropertyDef = { ...author, reference: { typeId: "person", multiple: true, arrow: "to", lineLabel: "", inverseLabel: "" } };
+	const asMultiple: PropertyDef = { ...author, reference: { typeIds: ["person"], multiple: true, arrow: "to", lineLabel: "", inverseLabel: "" } };
 	assert.deepEqual(migrateValues({ a: "p1" }, [asMultiple], entityTypes), { a: ["p1"] });
-	const asSingle: PropertyDef = { ...tags, reference: { typeId: "tag", multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" } };
+	const asSingle: PropertyDef = { ...tags, reference: { typeIds: ["tag"], multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" } };
 	assert.deepEqual(migrateValues({ g: ["t2", "t1"] }, [asSingle], entityTypes), { g: "t2" });
 });
 
 test("migrateValues: changing the target type clears references", () => {
-	const toTag: PropertyDef = { ...author, reference: { typeId: "tag", multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" } };
+	const toTag: PropertyDef = { ...author, reference: { typeIds: ["tag"], multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" } };
 	assert.deepEqual(migrateValues({ a: "p1" }, [toTag], entityTypes), { a: null });
 });
 
@@ -110,6 +116,10 @@ test("validateType: a reference needs an existing target type", () => {
 	assert.deepEqual(validateType("Book", [author], new Set(["person"])), []);
 	assert.ok(validateType("Book", [author], noTypes).length > 0);
 	assert.ok(validateType("Book", [{ ...author, reference: null }], new Set(["person"])).length > 0);
+	const targets = (typeIds: string[]): PropertyDef => ({ ...author, reference: { ...author.reference!, typeIds } });
+	assert.deepEqual(validateType("Book", [targets(["person", "tag"])], new Set(["person", "tag"])), []);
+	assert.ok(validateType("Book", [targets([])], new Set(["person"])).length > 0);
+	assert.ok(validateType("Book", [targets(["person", "gone"])], new Set(["person"])).length > 0);
 });
 
 test("nextTypeColor picks the first unused palette color, then repeats", () => {
@@ -147,9 +157,9 @@ test("cardRows lists visible properties with a value, in order, with reference n
 		values: { t: "Dune", h: "secret", s: null, a: "p1", g: ["t1", "gone", "t2"] },
 	};
 	assert.deepEqual(cardRows(type, entity, names), [
-		{ label: "title", kind: "text", values: ["Dune"], entityIds: [], targetTypeId: null },
-		{ label: "author", kind: "reference", values: ["Frank"], entityIds: ["p1"], targetTypeId: "person" },
-		{ label: "tags", kind: "reference", values: ["Sci-fi", "Classic"], entityIds: ["t1", "t2"], targetTypeId: "tag" },
+		{ label: "title", kind: "text", values: ["Dune"], entityIds: [] },
+		{ label: "author", kind: "reference", values: ["Frank"], entityIds: ["p1"] },
+		{ label: "tags", kind: "reference", values: ["Sci-fi", "Classic"], entityIds: ["t1", "t2"] },
 	]);
 	assert.deepEqual(cardRows(type, { ...entity, values: { a: "gone" } }, names), []);
 });
@@ -163,7 +173,7 @@ test("cardRows: line references are left out while their card is linked, listed 
 	]);
 	const entity = { id: "e", typeId: "book", name: "Dune", content: "", description: "", values: { g: ["t1", "t2"] } };
 	assert.deepEqual(cardRows(type, entity, names, (id) => id === "t1"), [
-		{ label: "tags", kind: "reference", values: ["Classic"], entityIds: ["t2"], targetTypeId: "tag" },
+		{ label: "tags", kind: "reference", values: ["Classic"], entityIds: ["t2"] },
 	]);
 	assert.deepEqual(cardRows(type, entity, names, () => true), []);
 	// Without board information nothing is linked, so everything is listed.
@@ -204,7 +214,7 @@ test("inverse references: who points at an entity, only for properties with an i
 		name,
 		kind: "reference",
 		options: [],
-		reference: { typeId: "role", multiple: false, arrow: "to", lineLabel: "", inverseLabel },
+		reference: { typeIds: ["role"], multiple: false, arrow: "to", lineLabel: "", inverseLabel },
 		cardDisplay: "list",
 	});
 	const responsible = ref("resp", "responsible", "responsible for");
@@ -232,7 +242,7 @@ test("inverse references: who points at an entity, only for properties with an i
 		[["responsible for", ["a1", "a2"]]],
 	);
 	assert.deepEqual(inverseCardRows(data, role, names), [
-		{ label: "responsible for", kind: "reference", values: ["Build", "Ship"], entityIds: ["a1", "a2"], targetTypeId: "activity" },
+		{ label: "responsible for", kind: "reference", values: ["Build", "Ship"], entityIds: ["a1", "a2"] },
 	]);
 
 	// Drawn as a line: activities already connected on the board are left out of the row.
@@ -242,6 +252,11 @@ test("inverse references: who points at an entity, only for properties with an i
 	};
 	assert.deepEqual(inverseCardRows(asLine, role, names, (id) => id === "a1")[0]?.values, ["Ship"]);
 	assert.deepEqual(inverseCardRows(asLine, role, names, () => true), []);
+
+	// A reference to several types shows its inverse label on each of them.
+	const toBoth = [types[0]!, { ...types[1]!, properties: [{ ...responsible, reference: { ...responsible.reference!, typeIds: ["role", "activity"] } }] }];
+	assert.deepEqual(inverseRelations(toBoth, "role").map((r) => r.prop.id), ["resp"]);
+	assert.deepEqual(inverseRelations(toBoth, "activity").map((r) => r.prop.id), ["resp"]);
 });
 
 test("detailRows lists every property in order, empty ones too, then reverse references", () => {
@@ -255,10 +270,10 @@ test("detailRows lists every property in order, empty ones too, then reverse ref
 		["p1", "Frank"],
 	]);
 	assert.deepEqual(detailRows({ types, entities: [dune] }, dune, names), [
-		{ label: "title", kind: "text", values: ["Dune"], entityIds: [], targetTypeId: null },
-		{ label: "internal", kind: "text", values: ["secret"], entityIds: [], targetTypeId: null },
-		{ label: "status", kind: "options", values: [], entityIds: [], targetTypeId: null },
-		{ label: "author", kind: "reference", values: ["Frank"], entityIds: ["p1"], targetTypeId: "person" },
+		{ label: "title", kind: "text", values: ["Dune"], entityIds: [] },
+		{ label: "internal", kind: "text", values: ["secret"], entityIds: [] },
+		{ label: "status", kind: "options", values: [], entityIds: [] },
+		{ label: "author", kind: "reference", values: ["Frank"], entityIds: ["p1"] },
 	]);
 });
 

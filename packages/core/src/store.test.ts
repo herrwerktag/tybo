@@ -284,8 +284,8 @@ async function referenceSetup() {
 	const person = store.addType("Person", [], "");
 	const tag = store.addType("Tag", [], "");
 	const book = store.addType("Book", [
-		{ name: "author", kind: "reference", options: [], reference: { typeId: person.id, multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" },
-		{ name: "tags", kind: "reference", options: [], reference: { typeId: tag.id, multiple: true, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" },
+		{ name: "author", kind: "reference", options: [], reference: { typeIds: [person.id], multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" },
+		{ name: "tags", kind: "reference", options: [], reference: { typeIds: [tag.id], multiple: true, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" },
 	], "");
 	const [author, tags] = [book.properties[0]!, book.properties[1]!];
 	const frank = store.addEntity(person.id, "Frank", "", {});
@@ -312,7 +312,7 @@ test("deleting an entity removes it from single and multiple references", async 
 test("typeReferrers lists other types' reference properties, not self-references", async () => {
 	const { store, person, tag, book } = await referenceSetup();
 	store.updateType(person.id, "Person", [
-		{ name: "friend", kind: "reference", options: [], reference: { typeId: person.id, multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" },
+		{ name: "friend", kind: "reference", options: [], reference: { typeIds: [person.id], multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" },
 	], "");
 	assert.deepEqual(store.typeReferrers(person.id), ["Book.author"]);
 	assert.deepEqual(store.typeReferrers(tag.id), ["Book.tags"]);
@@ -321,7 +321,7 @@ test("typeReferrers lists other types' reference properties, not self-references
 
 test("updateType: changing a reference's target type clears its values", async () => {
 	const { store, tag, book, author, tags, dune } = await referenceSetup();
-	store.updateType(book.id, "Book", [{ ...author, reference: { typeId: tag.id, multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" } }, tags], "");
+	store.updateType(book.id, "Book", [{ ...author, reference: { typeIds: [tag.id], multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" } }, tags], "");
 	assert.equal(store.data.entities.find((e) => e.id === dune.id)?.values[author.id], null);
 });
 
@@ -330,7 +330,7 @@ test("reference values persist across store instances", async () => {
 	const store = await open(storage);
 	const tag = store.addType("Tag", [], "");
 	const book = store.addType("Book", [
-		{ name: "tags", kind: "reference", options: [], reference: { typeId: tag.id, multiple: true, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" },
+		{ name: "tags", kind: "reference", options: [], reference: { typeIds: [tag.id], multiple: true, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" },
 	], "");
 	const scifi = store.addEntity(tag.id, "Sci-fi", "", {});
 	const dune = store.addEntity(book.id, "Dune", "", { [book.properties[0]!.id]: [scifi.id] });
@@ -768,7 +768,7 @@ test("references get arrow, line label and inverse label defaults; labels are tr
 	};
 	const store = await open(memoryStorage(old));
 	const author = store.data.types[1]!.properties[0]!;
-	assert.deepEqual(author.reference, { typeId: "p", multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" });
+	assert.deepEqual(author.reference, { typeIds: ["p"], multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" });
 
 	store.updateType(
 		"b",
@@ -777,7 +777,7 @@ test("references get arrow, line label and inverse label defaults; labels are tr
 		"",
 	);
 	assert.deepEqual(store.data.types[1]!.properties[0]!.reference, {
-		typeId: "p",
+		typeIds: ["p"],
 		multiple: false,
 		arrow: "from",
 		lineLabel: "wrote",

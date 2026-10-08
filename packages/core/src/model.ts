@@ -6,8 +6,8 @@ export type PropertyKind = "text" | "options" | "reference";
 export const PROPERTY_KINDS: readonly PropertyKind[] = ["text", "options", "reference"];
 
 export interface ReferenceDef {
-	/** The entity type whose entities can be picked. */
-	typeId: string;
+	/** The entity types whose entities can be picked (e.g. both Event and State can trigger an Activity). */
+	typeIds: string[];
 	/** Whether several entities can be picked instead of one. */
 	multiple: boolean;
 	/** Where the arrowhead goes when drawn as a line: at the referenced card, at this card, or nowhere. */
@@ -25,8 +25,8 @@ export type LineArrow = "to" | "from" | "none";
 
 export const LINE_ARROWS: readonly LineArrow[] = ["to", "from", "none"];
 
-export function newReference(typeId: string): ReferenceDef {
-	return { typeId, multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" };
+export function newReference(typeIds: string[]): ReferenceDef {
+	return { typeIds, multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" };
 }
 
 export interface PropertyDef {
@@ -312,8 +312,6 @@ export interface CardRow {
 	values: string[];
 	/** For references: the entity ids, in the same order as `values`; empty for other kinds. */
 	entityIds: string[];
-	/** For references: the type the entities belong to (for its color). */
-	targetTypeId: string | null;
 }
 
 /** The ids of the entities a property value references (empty for other kinds or no value). */
@@ -341,7 +339,7 @@ export function cardRows(
 		const entityIds = prop.kind === "reference" ? raw.filter((id) => entityNames.has(id)) : [];
 		const values = prop.kind === "reference" ? entityIds.map((id) => entityNames.get(id)!) : raw;
 		if (values.length === 0) return [];
-		return [{ label: prop.name, kind: prop.kind, values, entityIds, targetTypeId: prop.reference?.typeId ?? null }];
+		return [{ label: prop.name, kind: prop.kind, values, entityIds }];
 	});
 }
 
@@ -363,7 +361,7 @@ export function inverseRelations(
 	return types.flatMap((sourceType) =>
 		sourceType.properties.flatMap((prop) => {
 			const label = prop.reference?.inverseLabel.trim() ?? "";
-			if (prop.kind !== "reference" || label === "" || prop.reference?.typeId !== targetTypeId) return [];
+			if (prop.kind !== "reference" || label === "" || !prop.reference?.typeIds.includes(targetTypeId)) return [];
 			return [{ label, prop, sourceTypeId: sourceType.id }];
 		}),
 	);
@@ -395,7 +393,7 @@ export function inverseCardRows(
 	entityNames: ReadonlyMap<string, string>,
 	isLinked: (entityId: string) => boolean = () => false,
 ): CardRow[] {
-	return inverseReferences(data, entity).flatMap(({ label, prop, sourceTypeId, entityIds }) => {
+	return inverseReferences(data, entity).flatMap(({ label, prop, entityIds }) => {
 		const shown = entityIds.filter(
 			(id) => entityNames.has(id) && !(effectiveCardDisplay(prop) === "line" && isLinked(id)),
 		);
@@ -406,7 +404,6 @@ export function inverseCardRows(
 				kind: "reference" as const,
 				values: shown.map((id) => entityNames.get(id)!),
 				entityIds: shown,
-				targetTypeId: sourceTypeId,
 			},
 		];
 	});
@@ -431,7 +428,6 @@ export function detailRows(
 			kind: prop.kind,
 			values: prop.kind === "reference" ? entityIds.map((id) => entityNames.get(id)!) : raw,
 			entityIds,
-			targetTypeId: prop.reference?.typeId ?? null,
 		};
 	});
 	return [...own, ...inverseCardRows(data, entity, entityNames)];
@@ -472,7 +468,7 @@ export function entityTypeMap(data: AppData): Map<string, string> {
 
 /**
  * Turns form input or a stored value into a valid value for the property; empty or invalid input becomes null.
- * References keep only ids of existing entities of the target type (per `entityTypes`, entity id → type id).
+ * References keep only ids of existing entities of the target types (per `entityTypes`, entity id → type id).
  */
 export function parseValue(
 	prop: Pick<PropertyDef, "kind" | "options" | "reference">,
@@ -480,8 +476,10 @@ export function parseValue(
 	entityTypes: ReadonlyMap<string, string> = new Map(),
 ): PropertyValue {
 	if (prop.kind === "reference") {
-		const target = prop.reference?.typeId;
-		const ids = [...new Set(typeof raw === "string" ? [raw] : raw)].filter((id) => entityTypes.get(id) === target);
+		const targets = prop.reference?.typeIds ?? [];
+		const ids = [...new Set(typeof raw === "string" ? [raw] : raw)].filter((id) =>
+			targets.includes(entityTypes.get(id) ?? ""),
+		);
 		if (prop.reference?.multiple) return ids.length > 0 ? ids : null;
 		return ids[0] ?? null;
 	}
@@ -527,7 +525,8 @@ export function validateType(
 			if (options.some((o) => o === "")) errors.push({ code: "emptyOption", label });
 			if (new Set(options).size !== options.length) errors.push({ code: "duplicateOptions", label });
 		}
-		if (prop.kind === "reference" && !typeIds.has(prop.reference?.typeId ?? "")) {
+		const targets = prop.reference?.typeIds ?? [];
+		if (prop.kind === "reference" && (targets.length === 0 || !targets.every((id) => typeIds.has(id)))) {
 			errors.push({ code: "referenceTypeRequired", label });
 		}
 	}

@@ -94,7 +94,7 @@ function countChangedValues(entities: Entity[], props: DraftProperty[], entityTy
 function describeProperty(p: PropertyDef, types: EntityType[]): string {
 	if (p.kind === "options") return `${p.name}: ${p.options.join(" / ")}`;
 	if (p.kind === "reference") {
-		const target = types.find((t) => t.id === p.reference?.typeId)?.name ?? "?";
+		const target = (p.reference?.typeIds ?? []).map((id) => types.find((t) => t.id === id)?.name ?? "?").join(" / ") || "?";
 		// No-break spaces keep "→ Target (multiple)" together; a long line wraps after the property name.
 		const suffix = p.reference?.multiple ? `\u00a0${text.multipleSuffix}` : "";
 		return `${p.name} →\u00a0${target}${suffix}`;
@@ -562,7 +562,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 					prop.kind = kindSelect.value as PropertyKind;
 					prop.cardDisplay = effectiveCardDisplay(prop);
 					if (prop.kind === "reference" && !prop.reference) {
-						prop.reference = newReference(store.data.types[0]?.id ?? "");
+						prop.reference = newReference(store.data.types.slice(0, 1).map((t) => t.id));
 					}
 					rerender();
 				},
@@ -696,16 +696,27 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 					{ className: "property-settings" },
 					setting(
 						text.references,
-						el(
-							"select",
-							{
-								onchange: (e) => {
-									reference.typeId = (e.target as HTMLSelectElement).value;
-								},
-							},
-							...(store.data.types.length === 0 ? [el("option", { value: "" }, text.noTypesOption)] : []),
-							...store.data.types.map((t) => el("option", { value: t.id, selected: t.id === reference.typeId }, t.name)),
-						),
+						store.data.types.length === 0
+							? el("span", { className: "muted" }, text.noTypesOption)
+							: el(
+									"div",
+									{ className: "checklist" },
+									...store.data.types.map((t) =>
+										el(
+											"label",
+											{},
+											el("input", {
+												type: "checkbox",
+												checked: reference.typeIds.includes(t.id),
+												onchange: (e) => {
+													const others = reference.typeIds.filter((id) => id !== t.id);
+													reference.typeIds = (e.target as HTMLInputElement).checked ? [...others, t.id] : others;
+												},
+											}),
+											` ${t.name}`,
+										),
+									),
+								),
 					),
 					el(
 						"label",
@@ -1118,11 +1129,14 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 	): { prop: PropertyDef; element: HTMLElement; read: () => string | string[] } {
 		const label = el("span", {}, prop.name);
 		if (prop.kind === "reference") {
-			const targetType = store.data.types.find((t) => t.id === prop.reference?.typeId);
-			const targets = store.data.entities.filter((e) => e.typeId === targetType?.id);
+			const targetTypes = store.data.types.filter((t) => prop.reference?.typeIds.includes(t.id));
+			const targets = store.data.entities.filter((e) => targetTypes.some((t) => t.id === e.typeId));
+			// With several target types, each entity says which one it is.
+			const targetName = (e: Entity) =>
+				targetTypes.length > 1 ? `${e.name} (${targetTypes.find((t) => t.id === e.typeId)!.name})` : e.name;
 			const selected = new Set(current === null ? [] : typeof current === "string" ? [current] : current);
 			if (targets.length === 0) {
-				const note = el("span", { className: "muted" }, text.noEntitiesOfType(targetType?.name ?? ""));
+				const note = el("span", { className: "muted" }, text.noEntitiesOfType(targetTypes.map((t) => t.name).join(" / ")));
 				return { prop, element: el("div", { className: "field" }, label, note), read: () => [] };
 			}
 			if (prop.reference?.multiple) {
@@ -1130,7 +1144,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 				const list = el(
 					"div",
 					{ className: "checklist" },
-					...boxes.map((box, i) => el("label", {}, box, ` ${targets[i]!.name}`)),
+					...boxes.map((box, i) => el("label", {}, box, ` ${targetName(targets[i]!)}`)),
 				);
 				return {
 					prop,
@@ -1142,7 +1156,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 				"select",
 				{},
 				el("option", { value: "" }, "—"),
-				...targets.map((t) => el("option", { value: t.id, selected: selected.has(t.id) }, t.name)),
+				...targets.map((t) => el("option", { value: t.id, selected: selected.has(t.id) }, targetName(t))),
 			);
 			return { prop, element: el("label", { className: "field" }, label, select), read: () => select.value };
 		}
