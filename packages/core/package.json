@@ -2,7 +2,7 @@
 	"name": "@tybo/core",
 	"version": "1.0.0",
 	"description": "Dynamic types and data storage for tybo",
-	"license": "ISC",
+	"license": "MIT",
 	"private": true,
 	"type": "module",
 	"exports": {

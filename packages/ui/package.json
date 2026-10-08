@@ -2,7 +2,7 @@
 	"name": "@tybo/ui",
 	"version": "1.0.0",
 	"description": "User interface of tybo",
-	"license": "ISC",
+	"license": "MIT",
 	"private": true,
 	"type": "module",
 	"exports": {
