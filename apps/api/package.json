@@ -2,7 +2,7 @@
 	"name": "@tybo/api",
 	"version": "1.0.0",
 	"description": "HTTP interface over the stored texts, kept in Postgres",
-	"license": "ISC",
+	"license": "MIT",
 	"private": true,
 	"type": "module",
 	"scripts": {

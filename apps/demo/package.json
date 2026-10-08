@@ -2,7 +2,7 @@
 	"name": "@tybo/demo",
 	"version": "1.0.0",
 	"description": "The tybo application",
-	"license": "ISC",
+	"license": "MIT",
 	"private": true,
 	"type": "module",
 	"scripts": {
