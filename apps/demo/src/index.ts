@@ -1,7 +1,7 @@
-import { createWorkspaces } from "@bekbon/core";
+import { createWorkspaces } from "@tybo/core";
 import { httpData } from "./http-data.js";
 import viewScript from "virtual:standalone-view";
-import { activeWorkspacePreference, render, renderServerUnreachable, text } from "@bekbon/ui";
+import { activeWorkspacePreference, render, renderServerUnreachable, text } from "@tybo/ui";
 
 const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("#app element not found");

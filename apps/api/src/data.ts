@@ -1,4 +1,4 @@
-import type { AppData, Drawing, WorkspaceInfo } from "@bekbon/core";
+import type { AppData, Drawing, WorkspaceInfo } from "@tybo/core";
 import type { Queries, Sql } from "./schema.js";
 
 /** A workspace's data as a read answers it: its rows put together the way the app holds them, marked with

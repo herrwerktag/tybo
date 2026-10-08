@@ -1,7 +1,7 @@
 {
-	"name": "@bekbon/ui",
+	"name": "@tybo/ui",
 	"version": "1.0.0",
-	"description": "User interface of bekbon",
+	"description": "User interface of tybo",
 	"license": "ISC",
 	"private": true,
 	"type": "module",
@@ -14,7 +14,7 @@
 		"build": "tsc --noEmit -p tsconfig.app.json"
 	},
 	"dependencies": {
-		"@bekbon/core": "workspace:*"
+		"@tybo/core": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/node": "^26.6.3",

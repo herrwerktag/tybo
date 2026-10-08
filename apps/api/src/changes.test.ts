@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { test } from "node:test";
-import { changesBetween, type AppData, type Change } from "@bekbon/core";
+import { changesBetween, type AppData, type Change } from "@tybo/core";
 import { readWorkspace } from "./data.js";
 import { postgresStorage } from "./postgres.js";
 import { call, startApp } from "./test-server.js";

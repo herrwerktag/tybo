@@ -22,7 +22,7 @@ function standaloneView(): Plugin {
 				root: fileURLToPath(new URL(".", import.meta.url)),
 				build: {
 					write: false,
-					lib: { entry, formats: ["iife"], name: "bekbonView" },
+					lib: { entry, formats: ["iife"], name: "tyboView" },
 				},
 			});
 			const [result] = Array.isArray(output) ? output : [output];

@@ -1,5 +1,5 @@
-import type { Change, SavedChanges } from "@bekbon/core";
-import { CHANGE_KINDS, unitStands, untouched } from "@bekbon/core";
+import type { Change, SavedChanges } from "@tybo/core";
+import { CHANGE_KINDS, unitStands, untouched } from "@tybo/core";
 import { readAppData } from "./data.js";
 import type { Queries, Sql } from "./schema.js";
 

@@ -1,4 +1,4 @@
-import { connector, nearest, type Rect } from "@bekbon/core";
+import { connector, nearest, type Rect } from "@tybo/core";
 import { createDrawingLayer, libraryPicture } from "./drawing-layer.js";
 import { CLICK_TOLERANCE, el, svgEl, trackPointer, typeDot } from "./dom.js";
 import { text } from "./i18n.js";
@@ -24,11 +24,11 @@ import {
 	type EntityType,
 	type LineArrow,
 	type StoryPage,
-} from "@bekbon/core";
+} from "@tybo/core";
 import { renderMarkdown } from "./markdown.js";
 import { readPreference, writePreference } from "./preferences.js";
-import type { Store } from "@bekbon/core";
-import { defaultViewport, screenToWorld, snapZoom, stepZoom, zoomAt, type Viewport } from "@bekbon/core";
+import type { Store } from "@tybo/core";
+import { defaultViewport, screenToWorld, snapZoom, stepZoom, zoomAt, type Viewport } from "@tybo/core";
 
 const ENTITY_MIME = "application/x-entity-id";
 const LIBRARY_MIME = "application/x-library-drawing-id";

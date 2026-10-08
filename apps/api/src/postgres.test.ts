@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
-import { changesBetween, type AppData } from "@bekbon/core";
+import { changesBetween, type AppData } from "@tybo/core";
 import { postgresStorage } from "./postgres.js";
 import { call, startApp } from "./test-server.js";
 
