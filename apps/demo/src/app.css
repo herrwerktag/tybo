@@ -355,6 +355,26 @@ button:disabled {
 	min-height: 2.25rem;
 }
 
+.reference-type {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+}
+
+.reference-type-remove {
+	padding: 0 0.15rem;
+	border: none;
+	background: transparent;
+	color: inherit;
+	border-radius: 3px;
+	line-height: 1;
+	cursor: pointer;
+}
+
+.reference-type-remove:hover:not(:disabled) {
+	background: rgb(0 0 0 / 0.08);
+}
+
 .property-remove {
 	border: none;
 	background: transparent;

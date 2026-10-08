@@ -19,6 +19,7 @@ import {
 	type Entity,
 	type EntityType,
 	type PropertyDef,
+	type ReferenceDef,
 	type PropertyKind,
 	type PropertyValue,
 	type ValidationError,
@@ -554,6 +555,59 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 		rerender();
 	}
 
+	/** The target types of a reference as tags in their colors (× removes one), and a select adding another. */
+	function referenceTypesSetting(reference: ReferenceDef): HTMLElement {
+		const chosen = reference.typeIds.flatMap((id) => store.data.types.filter((t) => t.id === id));
+		const rest = store.data.types.filter((t) => !reference.typeIds.includes(t.id));
+		const tags = chosen.map((t) => {
+			const tag = el(
+				"span",
+				{ className: "ref-tag reference-type" },
+				t.name,
+				el(
+					"button",
+					{
+						type: "button",
+						className: "reference-type-remove",
+						title: text.removeReferenceType(t.name),
+						ariaLabel: text.removeReferenceType(t.name),
+						onclick: () => {
+							reference.typeIds = reference.typeIds.filter((id) => id !== t.id);
+							rerender();
+						},
+					},
+					"×",
+				),
+			);
+			tag.style.background = t.color;
+			return tag;
+		});
+		const add =
+			store.data.types.length === 0
+				? el("span", { className: "muted" }, text.noTypesOption)
+				: rest.length > 0
+					? el(
+							"select",
+							{
+								ariaLabel: text.addReferenceType,
+								onchange: (e) => {
+									reference.typeIds = [...reference.typeIds, (e.target as HTMLSelectElement).value];
+									rerender();
+								},
+							},
+							el("option", { value: "", selected: true, disabled: true }, text.addReferenceType),
+							...rest.map((t) => el("option", { value: t.id }, t.name)),
+						)
+					: null;
+		return el(
+			"div",
+			{ className: "field" },
+			el("span", { className: "setting-label" }, text.references),
+			...(tags.length > 0 ? [el("div", { className: "prop-chips" }, ...tags)] : []),
+			...(add ? [add] : []),
+		);
+	}
+
 	function propertyRow(prop: DraftProperty, i: number): HTMLElement {
 		const kindSelect = el(
 			"select",
@@ -562,7 +616,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 					prop.kind = kindSelect.value as PropertyKind;
 					prop.cardDisplay = effectiveCardDisplay(prop);
 					if (prop.kind === "reference" && !prop.reference) {
-						prop.reference = newReference(store.data.types.slice(0, 1).map((t) => t.id));
+						prop.reference = newReference([]);
 					}
 					rerender();
 				},
@@ -694,30 +748,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 				el(
 					"div",
 					{ className: "property-settings" },
-					setting(
-						text.references,
-						store.data.types.length === 0
-							? el("span", { className: "muted" }, text.noTypesOption)
-							: el(
-									"div",
-									{ className: "checklist" },
-									...store.data.types.map((t) =>
-										el(
-											"label",
-											{},
-											el("input", {
-												type: "checkbox",
-												checked: reference.typeIds.includes(t.id),
-												onchange: (e) => {
-													const others = reference.typeIds.filter((id) => id !== t.id);
-													reference.typeIds = (e.target as HTMLInputElement).checked ? [...others, t.id] : others;
-												},
-											}),
-											` ${t.name}`,
-										),
-									),
-								),
-					),
+					referenceTypesSetting(reference),
 					el(
 						"label",
 						{ className: "checkbox-setting" },
