@@ -181,6 +181,42 @@ test("the forms for a new type and a new entity are hidden until asked for, and 
 	assert.equal(root.querySelector<HTMLInputElement>("#entity-form input")?.value, "Dune");
 });
 
+test("a reference allowing several values shows them as tags: × removes one, the select adds another", async () => {
+	const members = { id: "members", name: "members", kind: "reference", options: [], reference: { typeIds: ["person"], multiple: true }, cardDisplay: "list" };
+	const root = await startApp({
+		types: [
+			{ id: "team", name: "Team", color: "#c8ebbf", contentTemplate: "", properties: [members] },
+			{ id: "person", name: "Person", color: "#c4dafa", contentTemplate: "", properties: [] },
+		],
+		entities: [
+			{ id: "01J00000000000000000000000", typeId: "team", name: "Core", content: "", description: "", values: { members: ["01J00000000000000000000001"] } },
+			{ id: "01J00000000000000000000001", typeId: "person", name: "Ada", content: "", description: "", values: {} },
+			{ id: "01J00000000000000000000002", typeId: "person", name: "Bob", content: "", description: "", values: {} },
+		],
+		boards: [],
+	});
+	byText(byText(root, "td", "Core").closest("tr")!, "button", text.edit).click();
+	const form = root.querySelector<HTMLFormElement>("#entity-form")!;
+	const tags = () => [...form.querySelectorAll(".reference-type")].map((t) => t.firstChild?.textContent);
+	assert.deepEqual(tags(), ["Ada"]);
+
+	const nameInput = form.querySelector<HTMLInputElement>("input")!;
+	nameInput.value = "Core team";
+	const add = form.querySelector<HTMLSelectElement>(".reference-values select")!;
+	add.value = "01J00000000000000000000002";
+	add.dispatchEvent(new Event("change"));
+	assert.deepEqual(tags(), ["Ada", "Bob"]);
+	assert.equal(form.querySelector(".reference-values select"), null); // nobody left to add
+	byText(form, "button", "×").click();
+	assert.deepEqual(tags(), ["Bob"]);
+	assert.equal(nameInput.value, "Core team"); // only the field was drawn again
+
+	byText(form, "button", text.save).click();
+	const [core] = (await readSaved()).entities;
+	assert.equal(core?.name, "Core team");
+	assert.deepEqual(core?.values.members, ["01J00000000000000000000002"]);
+});
+
 test("an invalid type shows its problems and isn't saved", async () => {
 	const root = await startApp(undefined, "#types");
 	byText(root, "button", text.createNewType).click();
