@@ -1202,16 +1202,61 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 				return { prop, element: el("div", { className: "field" }, label, note), read: () => [] };
 			}
 			if (prop.reference?.multiple) {
-				const boxes = targets.map((t) => el("input", { type: "checkbox", value: t.id, checked: selected.has(t.id) }));
-				const list = el(
-					"div",
-					{ className: "checklist" },
-					...boxes.map((box, i) => el("label", {}, box, ` ${targetName(targets[i]!)}`)),
-				);
+				// Like the target types in the type form: tags in their type's color (× removes one), and a select
+				// adding another. Only this field is redrawn, so the rest of the form keeps what was typed.
+				let chosen = targets.filter((t) => selected.has(t.id));
+				const box = el("div", { className: "reference-values" });
+				const draw = () => {
+					const tags = chosen.map((t) => {
+						const tag = el(
+							"span",
+							{ className: "ref-tag reference-type" },
+							targetName(t),
+							el(
+								"button",
+								{
+									type: "button",
+									className: "reference-type-remove",
+									title: text.removeReference(t.name),
+									ariaLabel: text.removeReference(t.name),
+									onclick: () => {
+										chosen = chosen.filter((c) => c !== t);
+										draw();
+									},
+								},
+								"×",
+							),
+						);
+						tag.style.background = store.data.types.find((type) => type.id === t.typeId)?.color ?? "";
+						return tag;
+					});
+					const rest = targets.filter((t) => !chosen.includes(t));
+					const add =
+						rest.length > 0
+							? el(
+									"select",
+									{
+										ariaLabel: text.addReference,
+										onchange: (e) => {
+											const id = (e.target as HTMLSelectElement).value;
+											chosen = [...chosen, rest.find((t) => t.id === id)!];
+											draw();
+										},
+									},
+									el("option", { value: "", selected: true, disabled: true }, text.addReference),
+									...rest.map((t) => el("option", { value: t.id }, targetName(t))),
+								)
+							: null;
+					box.replaceChildren(
+						...(tags.length > 0 ? [el("div", { className: "prop-chips" }, ...tags)] : []),
+						...(add ? [add] : []),
+					);
+				};
+				draw();
 				return {
 					prop,
-					element: el("div", { className: "field" }, label, list),
-					read: () => boxes.filter((b) => b.checked).map((b) => b.value),
+					element: el("div", { className: "field" }, label, box),
+					read: () => chosen.map((t) => t.id),
 				};
 			}
 			const select = el(

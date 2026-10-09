@@ -465,7 +465,7 @@ td.handle-cell {
 	overflow-wrap: anywhere;
 }
 
-.checklist {
+.reference-values {
 	display: grid;
 	gap: 0.25rem;
 }
