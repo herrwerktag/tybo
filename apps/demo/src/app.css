@@ -971,8 +971,14 @@ button.ref-tag {
 	overflow: hidden;
 	cursor: grab;
 	touch-action: none;
+	/* Panning and dragging must not select the text of cards and drawings; only the editors stay selectable. */
+	user-select: none;
 	background-color: var(--surface-inset);
 	background-image: radial-gradient(circle, var(--border-strong) 1px, transparent 1px);
+}
+
+.canvas-surface :is(input, textarea) {
+	user-select: text;
 }
 
 .canvas-surface.panning {
