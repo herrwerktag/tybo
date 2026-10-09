@@ -1109,8 +1109,8 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 
 	function entityForm(type: EntityType, editing: Entity | undefined): HTMLFormElement {
 		const nameInput = el("input", { required: true, pattern: ".*\\S.*", value: editing?.name ?? "" });
-		const contentInput = el("textarea", { rows: 6, value: editing ? editing.content : type.contentTemplate });
-		const descriptionInput = el("textarea", { rows: 10, value: editing?.description ?? "" });
+		const contentInput = el("textarea", { rows: 6, value: editing?.content ?? "" });
+		const descriptionInput = el("textarea", { rows: 10, value: editing ? editing.description : type.contentTemplate });
 		const fields = type.properties.map((prop) => propertyField(prop, editing?.values[prop.id] ?? null));
 
 		return el(
