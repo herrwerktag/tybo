@@ -1009,6 +1009,7 @@ button.ref-tag {
 	left: 0;
 	top: 0;
 	width: 1px;
+	max-width: none; /* not squeezed to the zero-width layer by the reset, or nothing is drawn */
 	height: 1px;
 	overflow: visible;
 	pointer-events: none;
@@ -1388,6 +1389,7 @@ button.ref-tag {
 	left: 0;
 	top: 0;
 	width: 1px;
+	max-width: none; /* see .drawings */
 	height: 1px;
 	overflow: visible;
 	pointer-events: none;
