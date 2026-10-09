@@ -107,6 +107,8 @@ const en = {
 	// Property cards in the type form
 	dragToReorder: "Drag to reorder, or use the arrow keys",
 	moveProperty: (label: string) => `Move property ${label}; use the arrow keys`,
+	moveType: (name: string) => `Move type ${name}; use the arrow keys`,
+	moveEntity: (name: string) => `Move ${name}; use the arrow keys`,
 	propertyName: "Property name",
 	removeProperty: "Remove property",
 	removePropertyNamed: (label: string) => `Remove property ${label}`,
@@ -360,6 +362,8 @@ const de: Messages = {
 
 	dragToReorder: "Ziehen zum Umsortieren, oder die Pfeiltasten verwenden",
 	moveProperty: (label) => `Eigenschaft ${label} verschieben; Pfeiltasten verwenden`,
+	moveType: (name) => `Typ ${name} verschieben; Pfeiltasten verwenden`,
+	moveEntity: (name) => `${name} verschieben; Pfeiltasten verwenden`,
 	propertyName: "Name der Eigenschaft",
 	removeProperty: "Eigenschaft entfernen",
 	removePropertyNamed: (label) => `Eigenschaft ${label} entfernen`,

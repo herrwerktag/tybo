@@ -46,8 +46,9 @@ interface UiState {
 	creatingEntity: boolean;
 	/** Form to scroll into view and focus after the next render (set when Edit is clicked). */
 	focusForm: "type" | "entity" | null;
-	/** Drag handle to focus after the next render, so keyboard reordering keeps focus on the moved property. */
-	focusHandle: number | null;
+	/** Drag handle (its `data-focus-key`) to focus after the next render, so keyboard reordering keeps focus on the
+	 * moved item. */
+	focusHandle: string | null;
 	/** The open top-bar menu, if any (kept across re-renders, e.g. a language change). */
 	openMenu: MenuName | null;
 	/** Whether a background look saw a newer stand of the open workspace than this page holds (someone else
@@ -60,6 +61,8 @@ interface UiState {
 type MenuName = "settings" | "workspace";
 
 const PROPERTY_MIME = "application/x-property-index";
+const TYPE_MIME = "application/x-type-index";
+const ENTITY_MIME = "application/x-entity-index";
 
 /** The page shown, from the URL hash: entity types, entities, board editing (boards), the library of drawings, or
  * read-only boards (view). */
@@ -111,6 +114,72 @@ function setting(label: string, control: HTMLElement): HTMLElement {
 /** A thrown value as text for the user. */
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+/** A ⠿ button for reorderable(); `focusKey` finds it again after a re-render (see UiState.focusHandle). */
+function dragHandle(label: string, focusKey: string): HTMLButtonElement {
+	const handle = el("button", { type: "button", className: "drag-handle", title: text.dragToReorder, ariaLabel: label }, "⠿");
+	handle.dataset.focusKey = focusKey;
+	return handle;
+}
+
+/**
+ * Lets `item`, at `index` of `count` in its list, be dragged by `handle` to another place in that list (`mime` keeps
+ * drags from landing in another list), or moved up and down with the arrow keys while the handle has focus.
+ * `move(from, to)` gets the item's index and the one it should end up at.
+ */
+function reorderable(
+	item: HTMLElement,
+	handle: HTMLElement,
+	{ index, count, mime, move }: { index: number; count: number; mime: string; move: (from: number, to: number) => void },
+): void {
+	handle.addEventListener("keydown", (e) => {
+		if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+		e.preventDefault();
+		const to = e.key === "ArrowUp" ? index - 1 : index + 1;
+		if (to >= 0 && to < count) move(index, to);
+	});
+	// Only the handle makes the item draggable, so text in it stays selectable.
+	handle.addEventListener("pointerdown", () => {
+		item.draggable = true;
+	});
+	// A click without a drag: stop the item being draggable again (a real drag ends in dragend).
+	handle.addEventListener("pointerup", () => {
+		item.draggable = false;
+	});
+	const clearDropMarker = () => item.classList.remove("drop-before", "drop-after");
+	const dropsBefore = (e: DragEvent) => {
+		const rect = item.getBoundingClientRect();
+		return e.clientY < rect.top + rect.height / 2;
+	};
+	item.addEventListener("dragstart", (e) => {
+		e.dataTransfer?.setData(mime, String(index));
+		if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+		item.classList.add("dragging");
+	});
+	item.addEventListener("dragend", () => {
+		item.draggable = false;
+		item.classList.remove("dragging");
+	});
+	item.addEventListener("dragover", (e) => {
+		if (!e.dataTransfer?.types.includes(mime)) return;
+		e.preventDefault();
+		e.dataTransfer.dropEffect = "move";
+		const before = dropsBefore(e);
+		item.classList.toggle("drop-before", before);
+		item.classList.toggle("drop-after", !before);
+	});
+	item.addEventListener("dragleave", clearDropMarker);
+	item.addEventListener("drop", (e) => {
+		const from = Number(e.dataTransfer?.getData(mime));
+		clearDropMarker();
+		if (!Number.isInteger(from)) return;
+		e.preventDefault();
+		// Index among the other items, once the dragged one is taken out.
+		const target = dropsBefore(e) ? index : index + 1;
+		const to = from < target ? target - 1 : target;
+		if (to !== from) move(from, to);
+	});
 }
 
 function newDraftProperty(): DraftProperty {
@@ -318,7 +387,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 					}),
 		);
 		if (state.focusHandle !== null) {
-			root.querySelectorAll<HTMLElement>(".drag-handle")[state.focusHandle]?.focus();
+			root.querySelector<HTMLElement>(`.drag-handle[data-focus-key="${state.focusHandle}"]`)?.focus();
 			state.focusHandle = null;
 		}
 		if (state.focusForm) {
@@ -623,36 +692,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 			},
 			...PROPERTY_KINDS.map((kind) => el("option", { value: kind, selected: kind === prop.kind }, text.kinds[kind])),
 		);
-		const moveTo = (to: number) => {
-			if (to < 0 || to >= state.draftProps.length || to === i) return;
-			state.draftProps = moveItem(state.draftProps, i, to);
-			state.focusHandle = to;
-			rerender();
-		};
-		const handle = el(
-			"button",
-			{
-				type: "button",
-				className: "drag-handle",
-				title: text.dragToReorder,
-				ariaLabel: text.moveProperty(prop.name.trim() || String(i + 1)),
-				onkeydown: (e) => {
-					if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-						e.preventDefault();
-						moveTo(e.key === "ArrowUp" ? i - 1 : i + 1);
-					}
-				},
-				// Only the handle makes the card draggable, so text in its inputs stays selectable.
-				onpointerdown: () => {
-					row.draggable = true;
-				},
-				// A click without a drag: stop the card being draggable again (a real drag ends in dragend).
-				onpointerup: () => {
-					row.draggable = false;
-				},
-			},
-			"⠿",
-		);
+		const handle = dragHandle(text.moveProperty(prop.name.trim() || String(i + 1)), `property:${i}`);
 		const nameInput = el("input", {
 			placeholder: text.propertyName,
 			ariaLabel: text.propertyName,
@@ -695,38 +735,15 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 			el("div", { className: "property-head" }, handle, nameInput, removeButton),
 			el("div", { className: "property-settings" }, setting(text.settingType, kindSelect), setting(text.settingOnCard, displaySelect)),
 		);
-		const clearDropMarker = () => row.classList.remove("drop-before", "drop-after");
-		const dropsBefore = (e: DragEvent) => {
-			const rect = row.getBoundingClientRect();
-			return e.clientY < rect.top + rect.height / 2;
-		};
-		row.addEventListener("dragstart", (e) => {
-			e.dataTransfer?.setData(PROPERTY_MIME, String(i));
-			if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-			row.classList.add("dragging");
-		});
-		row.addEventListener("dragend", () => {
-			row.draggable = false;
-			row.classList.remove("dragging");
-		});
-		row.addEventListener("dragover", (e) => {
-			if (!e.dataTransfer?.types.includes(PROPERTY_MIME)) return;
-			e.preventDefault();
-			e.dataTransfer.dropEffect = "move";
-			const before = dropsBefore(e);
-			row.classList.toggle("drop-before", before);
-			row.classList.toggle("drop-after", !before);
-		});
-		row.addEventListener("dragleave", clearDropMarker);
-		row.addEventListener("drop", (e) => {
-			const from = Number(e.dataTransfer?.getData(PROPERTY_MIME));
-			clearDropMarker();
-			if (!Number.isInteger(from)) return;
-			e.preventDefault();
-			// Index among the other properties, once the dragged one is taken out.
-			const target = dropsBefore(e) ? i : i + 1;
-			state.draftProps = moveItem(state.draftProps, from, from < target ? target - 1 : target);
-			rerender();
+		reorderable(row, handle, {
+			index: i,
+			count: state.draftProps.length,
+			mime: PROPERTY_MIME,
+			move: (from, to) => {
+				state.draftProps = moveItem(state.draftProps, from, to);
+				state.focusHandle = `property:${to}`;
+				rerender();
+			},
 		});
 		if (prop.kind === "options") {
 			row.append(
@@ -941,11 +958,13 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 		const list = el(
 			"ul",
 			{ className: "type-list" },
-			...store.data.types.map((type) =>
-				el(
+			...store.data.types.map((type, i) => {
+				const handle = dragHandle(text.moveType(type.name), `type:${type.id}`);
+				const item = el(
 					"li",
 					{ className: type.id === state.editingTypeId ? "type-item current" : "type-item" },
 					// Name and buttons on top; the properties below, one per line, across the full width.
+					handle,
 					el("strong", { className: "type-name" }, typeDot(type.color), type.name),
 					type.properties.length > 0
 						? el(
@@ -999,8 +1018,20 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 							text.delete,
 						),
 					),
-				),
-			),
+				);
+				reorderable(item, handle, {
+					index: i,
+					count: store.data.types.length,
+					mime: TYPE_MIME,
+					move: (from, to) => {
+						const moved = store.data.types[from]!.id;
+						store.moveType(moved, to);
+						state.focusHandle = `type:${moved}`;
+						rerender();
+					},
+				});
+				return item;
+			}),
 		);
 
 		const createButton = el(
@@ -1229,6 +1260,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 				el(
 					"tr",
 					{},
+					el("th", {}),
 					el("th", {}, text.id),
 					el("th", {}, text.name),
 					...type.properties.map((p) => el("th", {}, p.name)),
@@ -1241,10 +1273,12 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 			el(
 				"tbody",
 				{},
-				...entities.map((entity) =>
-					el(
+				...entities.map((entity, i) => {
+					const handle = dragHandle(text.moveEntity(entity.name), `entity:${entity.id}`);
+					const row = el(
 						"tr",
 						{},
+						el("td", { className: "handle-cell" }, handle),
 						el("td", { className: "mono nowrap", title: entity.id }, `…${entity.id.slice(-8)}`),
 						el("td", {}, entity.name),
 						...type.properties.map((p) => el("td", {}, format(p, entity.values[p.id]))),
@@ -1284,8 +1318,20 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 								),
 							),
 						),
-					),
-				),
+					);
+					reorderable(row, handle, {
+						index: i,
+						count: entities.length,
+						mime: ENTITY_MIME,
+						move: (from, to) => {
+							const moved = entities[from]!.id;
+							store.moveEntity(moved, to);
+							state.focusHandle = `entity:${moved}`;
+							rerender();
+						},
+					});
+					return row;
+				}),
 			),
 		);
 		return el("div", { className: "table-wrap" }, table);
