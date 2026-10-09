@@ -87,12 +87,6 @@ laufen immer, jeweils auf einer eigenen temporaeren Datei.
 Beim Schreiben gewinnt die letzte Aenderung; bei einer Kollision mit einem neueren Stand gibt es eine
 Warnung, nichts wird still verworfen.
 
-## Agent-Workflow
-
-`.forgejo/workflows/agent-issue.yml`: Ein Forgejo-Issue mit dem Label `agent` wird vom Pi Coding Agent
-bearbeitet. Nur wenn `pnpm check` danach gruen ist, entsteht ein Pull Request; das Ergebnis kommt als
-Kommentar ins Issue. Aenderungen des Agents an `.forgejo/` werden verworfen.
-
 ## Lizenz
 
 MIT, siehe [LICENSE](LICENSE).
