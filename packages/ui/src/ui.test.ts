@@ -128,6 +128,41 @@ test("Entities is the default page; its subnav switches between entity types and
 	assert.equal(root.querySelector(".app-nav .current")?.textContent, text.tabBoards);
 });
 
+
+test("types and entities are reordered with their drag handles' arrow keys; focus stays on the moved one", async () => {
+	const root = await startApp({
+		...library,
+		types: [...library.types, { id: "film", name: "Film", color: "#c8ebbf", contentTemplate: "", properties: [] }],
+		entities: [
+			...library.entities,
+			{ id: "01J00000000000000000000001", typeId: "book", name: "Emma", content: "", description: "", values: {} },
+		],
+	}, "#types");
+	const press = (handle: HTMLElement, key: string) => handle.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+
+	press(root.querySelectorAll<HTMLElement>(".type-item .drag-handle")[1]!, "ArrowUp");
+	assert.deepEqual([...root.querySelectorAll(".type-name")].map((n) => n.textContent), ["Film", "Book"]);
+	assert.equal((document.activeElement as HTMLElement).dataset.focusKey, "type:film");
+	press(document.activeElement as HTMLElement, "ArrowUp"); // already first: nothing changes
+	assert.deepEqual((await readSaved()).types.map((t) => t.id), ["film", "book"]);
+
+	goTo("#entities");
+	const select = root.querySelector<HTMLSelectElement>(".section-header select")!;
+	select.value = "book";
+	select.dispatchEvent(new Event("change"));
+	press(root.querySelector<HTMLElement>("tbody .drag-handle")!, "ArrowDown");
+	assert.deepEqual([...root.querySelectorAll("tbody tr")].map((tr) => tr.children[2]?.textContent), ["Emma", "Dune"]);
+	assert.equal((document.activeElement as HTMLElement).dataset.focusKey, "entity:01J00000000000000000000000");
+	assert.deepEqual((await readSaved()).entities.map((e) => e.name), ["Emma", "Dune"]);
+
+	// Dropped on Dune's row (its lower half: the test page has no layout), the dragged Emma goes after it.
+	const dataTransfer = new DataTransfer();
+	dataTransfer.setData("application/x-entity-index", "0");
+	const drop = new DragEvent("drop", { bubbles: true, cancelable: true });
+	Object.defineProperty(drop, "dataTransfer", { value: dataTransfer }); // happy-dom leaves it out of the init
+	root.querySelectorAll("tbody tr")[1]!.dispatchEvent(drop);
+	assert.deepEqual((await readSaved()).entities.map((e) => e.name), ["Dune", "Emma"]);
+});
 test("the forms for a new type and a new entity are hidden until asked for, and Cancel hides them again", async () => {
 	const root = await startApp(library, "#types");
 	assert.equal(root.querySelector("#type-form"), null);

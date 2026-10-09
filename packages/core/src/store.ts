@@ -15,6 +15,7 @@ import {
 	effectiveCardDisplay,
 	entityTypeMap,
 	migrateValues,
+	moveItem,
 	nextTypeColor,
 	type AppData,
 	PEN_STYLES,
@@ -667,6 +668,13 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			);
 		},
 
+		/** Moves the type to index `to` in the list of types. */
+		moveType(typeId: string, to: number): void {
+			const from = data.types.findIndex((t) => t.id === typeId);
+			if (from < 0) return;
+			change({ ...data, types: moveItem(data.types, from, to) });
+		},
+
 		addEntity(
 			typeId: string,
 			name: string,
@@ -693,6 +701,16 @@ export async function createStore(port: DataPort, workspaceId: string) {
 					e.id === entityId ? { ...e, name: name.trim(), content, description: description ?? e.description, values } : e,
 				),
 			});
+		},
+
+		/** Moves the entity to index `to` among the entities of its type; other types' entities keep their places. */
+		moveEntity(entityId: string, to: number): void {
+			const entity = data.entities.find((e) => e.id === entityId);
+			if (!entity) return;
+			const ofType = data.entities.filter((e) => e.typeId === entity.typeId);
+			const reordered = moveItem(ofType, ofType.indexOf(entity), to);
+			let next = 0;
+			change({ ...data, entities: data.entities.map((e) => (e.typeId === entity.typeId ? reordered[next++]! : e)) });
 		},
 
 		deleteEntity(entityId: string): void {

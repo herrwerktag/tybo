@@ -310,17 +310,25 @@ button:disabled {
 	touch-action: none;
 }
 
-.property.dragging {
+:is(.property, .type-item, tr).dragging {
 	opacity: 0.5;
 }
 
-/* Where a dragged property will land. */
-.property.drop-before {
+/* Where a dragged property, type or entity will land (on a table row, its cells draw the line). */
+:is(.property, .type-item).drop-before,
+tr.drop-before > td {
 	box-shadow: 0 -3px 0 var(--focus);
 }
 
-.property.drop-after {
+:is(.property, .type-item).drop-after,
+tr.drop-after > td {
 	box-shadow: 0 3px 0 var(--focus);
+}
+
+/* The entity table's drag handles: a narrow column of their own. */
+td.handle-cell {
+	width: 1px;
+	padding: 0.15rem 0;
 }
 
 /* Property cards in the type form: compact controls, laid out in a fixed structure. */
@@ -419,10 +427,10 @@ button:disabled {
 
 .type-item {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) auto;
+	grid-template-columns: auto minmax(0, 1fr) auto;
 	grid-template-areas:
-		"name actions"
-		"summary summary";
+		"handle name actions"
+		"summary summary summary";
 	align-items: center;
 	gap: 0.35rem 0.5rem;
 	padding: 0.5rem 0.75rem;
@@ -433,6 +441,11 @@ button:disabled {
 .type-item.current {
 	background: var(--highlight);
 	border-color: var(--focus);
+}
+
+.type-item > .drag-handle {
+	grid-area: handle;
+	margin-inline-start: -0.35rem;
 }
 
 .type-name {

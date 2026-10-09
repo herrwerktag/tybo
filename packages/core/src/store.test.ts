@@ -121,6 +121,35 @@ test("deleteType removes its entities only", async () => {
 	);
 });
 
+test("moveType and moveEntity reorder; entities move among their type's only, and the order is saved", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
+	const book = store.addType("Book", [], "");
+	const film = store.addType("Film", [], "");
+	const a = store.addEntity(book.id, "A", "", {});
+	const x = store.addEntity(film.id, "X", "", {});
+	const b = store.addEntity(book.id, "B", "", {});
+	const c = store.addEntity(book.id, "C", "", {});
+
+	store.moveType(film.id, 0);
+	assert.deepEqual(store.data.types.map((t) => t.name), ["Film", "Book"]);
+
+	// C goes first among the books; the film X keeps its place in the list.
+	store.moveEntity(c.id, 0);
+	assert.deepEqual(store.data.entities.map((e) => e.name), ["C", "X", "A", "B"]);
+	store.moveEntity(c.id, 2);
+	assert.deepEqual(store.data.entities.map((e) => e.name), ["A", "X", "B", "C"]);
+	store.moveEntity(a.id, 1);
+	assert.deepEqual(store.data.entities.map((e) => e.id), [b.id, x.id, a.id, c.id]);
+
+	const reloaded = await open(storage);
+	assert.deepEqual(reloaded.data.types.map((t) => t.name), ["Film", "Book"]);
+	assert.deepEqual(reloaded.data.entities.map((e) => e.name), ["B", "X", "A", "C"]);
+
+	assert.ok(store.undo());
+	assert.deepEqual(store.data.entities.map((e) => e.name), ["A", "X", "B", "C"]);
+});
+
 test("loads data saved with the old number/boolean/date kinds as text", async () => {
 	const old = {
 		types: [{ id: "b", name: "Book", properties: [{ id: "p", name: "pages", kind: "number" }] }],
