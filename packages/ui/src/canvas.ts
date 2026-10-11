@@ -96,7 +96,11 @@ export function canvasView(
 	/** Settles scroll/pinch zooming on a step once it pauses (see zoomSmoothly). */
 	let zoomSettleTimer: ReturnType<typeof setTimeout> | undefined;
 	let pendingSave: (() => void) | null = null;
-	let panelCollapsed = readPreference(PANEL_COLLAPSED_KEY) === "true";
+	// Until opened or closed here, the panel starts collapsed on narrow screens, where it would leave the canvas
+	// little room.
+	const panelPreference = readPreference(PANEL_COLLAPSED_KEY);
+	let panelCollapsed =
+		panelPreference === null ? !!window.matchMedia?.("(max-width: 40rem)").matches : panelPreference === "true";
 
 	const view = el("div", {
 		className: readOnly ? "canvas-view read-only" : panelCollapsed ? "canvas-view panel-collapsed" : "canvas-view",
@@ -1344,9 +1348,24 @@ export function canvasView(
 		description.replaceChildren(handle, input, resize);
 	}
 
+	// Narrow screens only (see CSS): shows the controls kept out of the way there, so the canvas has room.
+	const moreButton = el(
+		"button",
+		{
+			type: "button",
+			className: "canvas-more",
+			title: text.moreControls,
+			ariaLabel: text.moreControls,
+			ariaExpanded: "false",
+			onclick: () => {
+				moreButton.ariaExpanded = String(view.classList.toggle("show-more"));
+			},
+		},
+		"⋯",
+	);
 	// Each control group has its own place: boards top right, drawing tools on the left edge with their style
 	// bar at the bottom left (see CSS), zoom bottom right.
-	const toolbar = el("div", { className: "canvas-toolbar" }, el("div", { className: "toolbar-group" }, boardControls));
+	const toolbar = el("div", { className: "canvas-toolbar" }, el("div", { className: "toolbar-group" }, boardControls, moreButton));
 	const zoomBar = el(
 		"div",
 		{ className: "toolbar-group canvas-zoom" },
