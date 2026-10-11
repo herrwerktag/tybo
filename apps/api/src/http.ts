@@ -1,4 +1,6 @@
+import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { extname, join, normalize } from "node:path";
 import type { Change, SavedChanges, WorkspaceInfo } from "@tybo/core";
 import { parseChanges } from "./changes.js";
 import type { StoredWorkspace } from "./data.js";
@@ -17,6 +19,10 @@ export function portFromEnv(value: string | undefined): number {
  * its own origin. CORS_ORIGIN says otherwise; the default fits the development setup, where the demo
  * runs on its usual Vite port. */
 export const DEFAULT_CORS_ORIGIN = "http://localhost:5173";
+
+/** The folder the built demo is served from when CLIENT_DIR doesn't say otherwise. Empty means the API
+ * answers only its own routes, the way it does in development, where Vite serves the demo itself. */
+export const DEFAULT_CLIENT_DIR = process.env.CLIENT_DIR ?? "";
 
 /** What createApp needs besides the routing: the workspaces and their data, and whether their storage answers. */
 export interface Api {
@@ -63,13 +69,53 @@ export interface Api {
  * preflight included, says them — without that, the browser keeps the answers from the demo, and it can't
  * even see a 404 or a 503, let alone act on it.
  */
-export function createApp(api: Api, allowedOrigin: string = process.env.CORS_ORIGIN || DEFAULT_CORS_ORIGIN): Server {
+export function createApp(
+	api: Api,
+	allowedOrigin: string = process.env.CORS_ORIGIN || DEFAULT_CORS_ORIGIN,
+	clientDir: string = DEFAULT_CLIENT_DIR,
+): Server {
 	return createServer((req, res) => {
 		allowCrossOrigin(res, allowedOrigin);
 		// The preflight is answered where it's asked, before any route: 204, saying nothing yet.
 		if (req.method === "OPTIONS") return sendEmpty(res, 204);
-		void reply(req, res, api);
+		void reply(req, res, api, clientDir);
 	});
+}
+
+/** The types the built demo is served as; anything else goes out as a byte stream. */
+const CONTENT_TYPES: Record<string, string> = {
+	".html": "text/html; charset=utf-8",
+	".js": "text/javascript; charset=utf-8",
+	".css": "text/css; charset=utf-8",
+	".svg": "image/svg+xml",
+	".png": "image/png",
+	".ico": "image/x-icon",
+	".json": "application/json",
+	".woff2": "font/woff2",
+};
+
+/** The built demo from `clientDir`. A GET/HEAD of a file that is there answers it; every other path is
+ * answered with index.html, because the demo routes in the browser. Only without a clientDir does the
+ * API answer its own routes alone (development, where Vite serves the demo) — then a 404 here. */
+async function serveClient(res: ServerResponse, clientDir: string, pathname: string, head: boolean): Promise<void> {
+	if (clientDir === "") return sendEmpty(res, 404);
+	const requested = pathname === "/" ? "/index.html" : pathname;
+	const inside = normalize(requested).replace(/^(\.\.[/\\])+/, "");
+	let file = join(clientDir, inside);
+	let content: Buffer;
+	try {
+		content = await readFile(file);
+	} catch {
+		// Nothing of that name: the demo itself, so its own routing can take over.
+		file = join(clientDir, "index.html");
+		try {
+			content = await readFile(file);
+		} catch {
+			return sendEmpty(res, 404);
+		}
+	}
+	res.writeHead(200, { "content-type": CONTENT_TYPES[extname(file)] ?? "application/octet-stream" });
+	res.end(head ? undefined : content);
 }
 
 /** The headers the browser's cross-origin rules ask for: whose origin may call (which ways, sending what),
@@ -82,7 +128,7 @@ function allowCrossOrigin(res: ServerResponse, origin: string): void {
 	res.setHeader("access-control-expose-headers", "ETag");
 }
 
-async function reply(req: IncomingMessage, res: ServerResponse, api: Api): Promise<void> {
+async function reply(req: IncomingMessage, res: ServerResponse, api: Api, clientDir: string): Promise<void> {
 	const url = new URL(req.url ?? "/", "http://localhost");
 	try {
 		const method = req.method ?? "GET";
@@ -91,7 +137,11 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api): Promi
 			return (await api.healthy()) ? sendText(res, 200, "ok") : sendEmpty(res, 503);
 		}
 		const route = routeOf(url.pathname);
-		if (!route) return sendEmpty(res, 404);
+		if (!route) {
+			// Not one of the API's own paths: hand it to the demo, which routes in the browser itself.
+			if (method === "GET" || method === "HEAD") return await serveClient(res, clientDir, url.pathname, method === "HEAD");
+			return sendEmpty(res, 404);
+		}
 
 		if (route.id === null) {
 			switch (method) {

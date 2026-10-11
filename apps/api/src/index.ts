@@ -27,7 +27,7 @@ try {
 	process.exit(1);
 }
 
-const server = createApp(storage);
+const server = createApp(storage, undefined, process.env.CLIENT_DIR ?? "");
 const port = portFromEnv(process.env.PORT);
 server.listen(port, () => {
 	console.log(`The tybo API is listening on port ${port}.`);
