@@ -114,6 +114,55 @@ main.standalone {
 	white-space: nowrap;
 }
 
+/* Narrow screens: two rows. The workspace on the left with undo, redo and settings on the right, then the tabs
+   sharing the width. The menus' panels span the screen below the top bar instead of hanging off its left edge. */
+@media (max-width: 40rem) {
+	.app-nav {
+		position: relative;
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		padding-inline: 0.5rem;
+	}
+
+	.app-nav > .tab {
+		grid-row: 2;
+		padding-inline: 0.25rem;
+		text-align: center;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.nav-menus {
+		grid-column: 1 / -1;
+		margin-left: 0;
+	}
+
+	.nav-menus > .menu:has(> #workspace-menu) {
+		order: -1;
+		margin-right: auto;
+	}
+
+	.nav-menus .menu-button {
+		padding-inline: 0.5rem;
+	}
+
+	.menu {
+		position: static;
+	}
+
+	.menu-panel {
+		left: 0.5rem;
+		right: 0.5rem;
+		top: calc(100% + 0.25rem);
+		min-width: 0;
+	}
+
+	.workspace-name {
+		max-width: 8rem;
+	}
+}
+
 .workspace-list {
 	display: grid;
 	gap: 0.15rem;
@@ -540,6 +589,100 @@ th {
 	white-space: nowrap;
 }
 
+/* Narrow screens: less padding around the pages, the heading on a line of its own with the controls sharing the
+   line below, and each entity as a card instead of a table row too wide to see whole: the handle and name on top,
+   then every value with its column's name above it (data-label, set in entityTable), the ID, and the buttons. */
+@media (max-width: 40rem) {
+	.data-view {
+		padding: 0.75rem 0.5rem;
+		gap: 0.75rem;
+	}
+
+	section {
+		padding: 1rem;
+	}
+
+	.data-view .section-header > h2 {
+		flex-basis: 100%;
+	}
+
+	.data-view .section-header > :not(h2) {
+		flex: 1 1 auto;
+	}
+
+	.entity-table,
+	.entity-table :is(tbody, tr, td) {
+		display: block;
+	}
+
+	.entity-table thead {
+		display: none;
+	}
+
+	.entity-table tr {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		gap: 0.5rem;
+		align-items: start;
+		padding: 0.75rem 0;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.entity-table td {
+		grid-column: 2;
+		padding: 0;
+		border: none;
+		overflow-wrap: anywhere;
+	}
+
+	.entity-table td::before {
+		content: attr(data-label);
+		display: block;
+		font-family: system-ui, sans-serif; /* not the ID's monospace */
+		font-size: 0.8125rem;
+		color: var(--muted);
+	}
+
+	.entity-table td:is(.handle-cell, :nth-child(3), :last-child)::before {
+		content: none;
+	}
+
+	.entity-table td.handle-cell {
+		grid-column: 1;
+		grid-row: 1;
+		width: auto;
+	}
+
+	.entity-table td:nth-child(3) {
+		grid-column: 2;
+		grid-row: 1;
+		font-weight: 600;
+	}
+
+	.entity-table td:last-child {
+		order: 2;
+	}
+
+	.entity-table td:nth-child(2) {
+		order: 1;
+		font-size: 0.8125rem;
+		color: var(--muted);
+	}
+
+	/* Where a dragged entity will land: on the card, not on each of its values. */
+	.entity-table tr:is(.drop-before, .drop-after) > td {
+		box-shadow: none;
+	}
+
+	.entity-table tr.drop-before {
+		box-shadow: 0 -3px 0 var(--focus);
+	}
+
+	.entity-table tr.drop-after {
+		box-shadow: 0 3px 0 var(--focus);
+	}
+}
+
 /* Canvas view */
 
 /* Side panel | canvas | details panel. Flex, so each side can come and go (collapsed, viewer, nothing selected). */
@@ -623,8 +766,7 @@ th {
 	}
 
 	.canvas-panel {
-		flex-basis: auto;
-		max-height: 30dvh;
+		flex-basis: 30dvh;
 		border-right: none;
 		border-bottom: 1px solid var(--border);
 	}
@@ -633,6 +775,19 @@ th {
 		flex-basis: 45dvh;
 		border-left: none;
 		border-top: 1px solid var(--border);
+	}
+
+	/* With the side panel open, a selected card's details take its place: there's no room for both, and the canvas
+	   keeps its size and place instead of shrinking to a strip between them. */
+	.canvas-view:not(.panel-collapsed):has(> .details-panel:not([hidden])) > .canvas-panel {
+		display: none;
+	}
+
+	.canvas-view:not(.panel-collapsed, .read-only) > .details-panel {
+		order: -1;
+		flex-basis: 30dvh;
+		border-top: none;
+		border-bottom: 1px solid var(--border);
 	}
 }
 
@@ -1279,6 +1434,135 @@ button.ref-tag {
 @media (max-width: 60rem) {
 	.story-mode .canvas-zoom {
 		bottom: 3.75rem;
+	}
+}
+
+/* The button showing the controls kept out of the way on narrow screens; wider ones show them all. */
+.canvas-more {
+	display: none;
+}
+
+/* Narrow screens: too little room for the control groups to float side by side, and how tall each gets depends
+   on how it wraps. So they're laid out in a grid over the canvas: boards (and the drawing tools) at the top; the
+   drawing style, then pages and zoom side by side at the bottom. Only what's needed to look around is shown:
+   the board, the step and the zoom. The rest (editing the board and its steps, the drawing tools, resetting the
+   view) waits behind ⋯ (.show-more), so the canvas keeps its room. */
+@media (max-width: 40rem) {
+	.canvas-main {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+		grid-template-areas:
+			"top top"
+			"tools tools"
+			". ."
+			"style style"
+			"pages zoom";
+		column-gap: 0.5rem;
+		padding: 0.5rem;
+	}
+
+	.show-more .canvas-main {
+		grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+		grid-template-areas:
+			"top top"
+			"tools tools"
+			". ."
+			"style style"
+			"zoom zoom"
+			"pages pages";
+	}
+
+	.canvas-main > :is(.canvas-toolbar, .drawing-tools, .drawing-style, .canvas-zoom, .page-bar) {
+		position: relative;
+		z-index: 1;
+		inset: auto;
+		transform: none;
+		max-width: 100%;
+		flex-wrap: wrap;
+	}
+
+	.canvas-main > .canvas-toolbar {
+		grid-area: top;
+	}
+
+	.canvas-main > .drawing-tools {
+		grid-area: tools;
+		flex-direction: row;
+		margin-top: 0.5rem;
+	}
+
+	.canvas-main > .drawing-style {
+		grid-area: style;
+		margin-bottom: 0.5rem;
+	}
+
+	.canvas-main > .canvas-zoom {
+		grid-area: zoom;
+	}
+
+	.show-more .canvas-main > .canvas-zoom {
+		margin-bottom: 0.5rem;
+	}
+
+	.canvas-main > .page-bar {
+		grid-area: pages;
+	}
+
+	.canvas-main > .panel-open {
+		top: 0.5rem;
+		left: 0.5rem;
+	}
+
+	/* Leave room for the panel's open button on the left. */
+	.panel-collapsed .canvas-main > .canvas-toolbar {
+		margin-left: 2.75rem;
+	}
+
+	.canvas-more {
+		display: block;
+		flex: none;
+	}
+
+	/* Kept out of the way until ⋯; the viewer keeps its story mode toggle at hand. */
+	.canvas-view:not(.show-more)
+		:is(
+			.board-controls > :not(select),
+			.drawing-tools,
+			.page-bar > :is(input.page-name, .page-copy, button:nth-child(n + 5)),
+			.canvas-zoom > button:last-child
+		) {
+		display: none;
+	}
+
+	.canvas-view.read-only:not(.show-more) .board-controls > .tool-button {
+		display: inline-block;
+	}
+
+	/* The controls fill each line of their group, so the groups read as tidy bars; ⋯ stays top right. */
+	.canvas-toolbar > .toolbar-group {
+		flex: 1 1 auto;
+		align-items: flex-start;
+	}
+
+	.canvas-toolbar .board-controls {
+		flex: 1 1 0;
+		min-width: 0;
+		flex-wrap: wrap;
+	}
+
+	.canvas-main > :is(.drawing-tools, .canvas-zoom, .page-bar) > :not(.page-counter, .zoom-label),
+	.canvas-toolbar .board-controls > * {
+		flex: 1 1 auto;
+	}
+
+	.canvas-toolbar .board-controls select {
+		max-width: none;
+	}
+
+	.page-bar input.page-name {
+		width: 6rem;
+		min-width: 0;
 	}
 }
 

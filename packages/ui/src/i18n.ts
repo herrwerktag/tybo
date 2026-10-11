@@ -175,6 +175,7 @@ const en = {
 	// Canvas
 	showEntities: "Show entities and drawings",
 	hideEntities: "Hide entities and drawings",
+	moreControls: "More controls",
 	dragOntoCanvas: "Drag onto the canvas.",
 	noEntitiesYet: "No entities yet. Create some in the Data view.",
 	onCanvas: (count: number) => (count > 1 ? `On canvas ×${count}` : "On canvas"),
@@ -431,6 +432,7 @@ const de: Messages = {
 
 	showEntities: "Entitäten und Zeichnungen einblenden",
 	hideEntities: "Entitäten und Zeichnungen ausblenden",
+	moreControls: "Weitere Bedienelemente",
 	dragOntoCanvas: "Auf den Canvas ziehen.",
 	noEntitiesYet: "Noch keine Entitäten. Lege welche in der Datenansicht an.",
 	onCanvas: (count) => (count > 1 ? `${count}× auf dem Canvas` : "Auf dem Canvas"),

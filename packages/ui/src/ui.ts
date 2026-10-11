@@ -1298,7 +1298,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 
 		const table = el(
 			"table",
-			{},
+			{ className: "entity-table" },
 			el(
 				"thead",
 				{},
@@ -1379,6 +1379,11 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 				}),
 			),
 		);
+		// Narrow screens show each row as a card (see CSS), with its column's name above every value.
+		const labels = [...table.querySelectorAll("th")].map((th) => th.textContent ?? "");
+		for (const row of table.querySelectorAll("tbody tr")) {
+			for (const [i, cell] of [...row.querySelectorAll("td")].entries()) cell.dataset.label = labels[i] ?? "";
+		}
 		return el("div", { className: "table-wrap" }, table);
 	}
 
