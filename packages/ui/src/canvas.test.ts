@@ -397,3 +397,31 @@ test("the eraser rubs out the part of a pen stroke it passes over, in one change
 	store.undo();
 	assert.deepEqual(store.data.boards[0]!.drawings.map((d) => d.id), [stroke.id, line.id]);
 });
+
+test("a mouse wheel notch zooms in or out by about 10% around the pointer", async () => {
+	const { view } = await setup();
+	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;
+	surface.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaMode: 1, deltaY: -3 }));
+	assert.equal(view.querySelector(".zoom-label")?.textContent, "110%");
+});
+
+test("the side panel's width can be changed with its handle and is remembered; a double-click resets it", async () => {
+	const { view } = await setup();
+	const panel = view.querySelector<HTMLElement>(".canvas-panel")!;
+	const handle = panel.nextElementSibling as HTMLElement;
+	assert.ok(handle.classList.contains("resize-handle"));
+	handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+	assert.equal(panel.style.getPropertyValue("--panel-width"), "192px", "clamped to the 12rem minimum");
+	assert.equal(localStorage.getItem("canvas-panel-width"), "192px");
+	handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+	assert.equal(panel.style.getPropertyValue("--panel-width"), "");
+});
+
+test("the drawing tools fold down to the current tool, and stay folded", async () => {
+	const { store, view } = await setup();
+	const tools = view.querySelector<HTMLElement>(".drawing-tools")!;
+	tools.querySelector<HTMLButtonElement>(".tools-toggle")!.click();
+	assert.ok(tools.classList.contains("collapsed"));
+	const again = canvasView(store, { readOnly: false });
+	assert.ok(again.querySelector(".drawing-tools")!.classList.contains("collapsed"));
+});

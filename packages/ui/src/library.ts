@@ -1,5 +1,6 @@
 import { clampZoom, filterLibrary, GRID_SIZE, parseTags, screenToWorld, stepZoom, zoomAt, type LibraryDrawing, type Store, type Viewport } from "@tybo/core";
-import { CLICK_TOLERANCE, el, trackPointer } from "./dom.js";
+import { CLICK_TOLERANCE, el, resizeHandle, trackPointer, wheelGesture } from "./dom.js";
+import { PANEL_WIDTH_KEY } from "./canvas.js";
 import { createDrawingLayer, libraryPicture } from "./drawing-layer.js";
 import { contentBounds } from "./drawings.js";
 import { text } from "./i18n.js";
@@ -186,17 +187,17 @@ export function libraryView(store: Store): HTMLElement {
 			);
 		});
 
-		// Scroll pans; Ctrl/⌘ + scroll (and trackpad pinch) zooms around the pointer.
+		// A mouse wheel zooms around the pointer, as does a trackpad pinch; two-finger scrolling pans (see wheelGesture).
 		surface.addEventListener(
 			"wheel",
 			(e) => {
 				e.preventDefault();
-				const scale = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : 1;
-				const rect = surface.getBoundingClientRect();
-				if (e.ctrlKey || e.metaKey) {
-					setViewport(zoomAt(viewport, viewport.zoom * Math.exp(-e.deltaY * scale * 0.01), e.clientX - rect.left, e.clientY - rect.top));
+				const gesture = wheelGesture(e);
+				if ("zoom" in gesture) {
+					const rect = surface.getBoundingClientRect();
+					setViewport(zoomAt(viewport, viewport.zoom * gesture.zoom, e.clientX - rect.left, e.clientY - rect.top));
 				} else {
-					setViewport({ ...viewport, x: viewport.x - e.deltaX * scale, y: viewport.y - e.deltaY * scale });
+					setViewport({ ...viewport, x: viewport.x - gesture.pan.dx, y: viewport.y - gesture.pan.dy });
 				}
 			},
 			{ passive: false },
@@ -275,15 +276,14 @@ export function libraryView(store: Store): HTMLElement {
 
 	renderList();
 	renderEditor();
-	view.append(
-		el(
-			"aside",
-			{ className: "canvas-panel library-panel" },
-			el("div", { className: "panel-header" }, el("h2", {}, text.library), add),
-			el("div", { className: "panel-filters" }, search),
-			list,
-		),
-		editor,
+	const panel = el(
+		"aside",
+		{ className: "canvas-panel library-panel" },
+		el("div", { className: "panel-header" }, el("h2", {}, text.library), add),
+		el("div", { className: "panel-filters" }, search),
+		list,
 	);
+	// The same width as the board's side panel.
+	view.append(panel, resizeHandle(panel, { key: PANEL_WIDTH_KEY, side: "left", min: 12, max: 32 }), editor);
 	return view;
 }

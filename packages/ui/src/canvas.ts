@@ -1,6 +1,6 @@
 import { connector, nearest, type Rect } from "@tybo/core";
 import { createDrawingLayer, libraryPicture } from "./drawing-layer.js";
-import { CLICK_TOLERANCE, el, svgEl, trackPointer, typeDot } from "./dom.js";
+import { CLICK_TOLERANCE, el, resizeHandle, svgEl, trackPointer, typeDot, wheelGesture } from "./dom.js";
 import { text } from "./i18n.js";
 import {
 	DEFAULT_CARD_SIZE,
@@ -34,6 +34,9 @@ import { defaultViewport, screenToWorld, snapZoom, stepZoom, zoomAt, type Viewpo
 const ENTITY_MIME = "application/x-entity-id";
 const LIBRARY_MIME = "application/x-library-drawing-id";
 const PANEL_COLLAPSED_KEY = "canvas-panel-collapsed";
+/** The widths of the side panel and the details panel, if changed by dragging. */
+export const PANEL_WIDTH_KEY = "canvas-panel-width";
+const DETAILS_WIDTH_KEY = "details-panel-width";
 /** What the side panel shows: entities or library drawings. */
 const PANEL_TAB_KEY = "canvas-panel-tab";
 /** The size of the library drawings' thumbnails in the side panel, in px. */
@@ -1129,21 +1132,21 @@ export function canvasView(
 		);
 	});
 
-	// Scroll pans; Ctrl/⌘ + scroll (and trackpad pinch) zooms around the pointer.
+	// A mouse wheel zooms around the pointer, as does a trackpad pinch; two-finger scrolling pans (see wheelGesture).
 	surface.addEventListener(
 		"wheel",
 		(e) => {
-			const scale = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : 1;
-			const rect = surface.getBoundingClientRect();
-			if (e.ctrlKey || e.metaKey) {
+			const gesture = wheelGesture(e);
+			if ("zoom" in gesture) {
 				e.preventDefault();
-				zoomSmoothly(Math.exp(-e.deltaY * scale * 0.01), e.clientX - rect.left, e.clientY - rect.top);
+				const rect = surface.getBoundingClientRect();
+				zoomSmoothly(gesture.zoom, e.clientX - rect.left, e.clientY - rect.top);
 				return;
 			}
 			const body = (e.target as Element).closest(".card-body");
 			if (body && body.scrollHeight > body.clientHeight) return; // let long card bodies scroll
 			e.preventDefault();
-			setViewport({ ...viewport, x: viewport.x - e.deltaX * scale, y: viewport.y - e.deltaY * scale });
+			setViewport({ ...viewport, x: viewport.x - gesture.pan.dx, y: viewport.y - gesture.pan.dy });
 		},
 		{ passive: false },
 	);
@@ -1395,6 +1398,10 @@ export function canvasView(
 		zoomBar,
 		preview,
 	);
-	view.append(...(readOnly ? [] : [panel]), canvasMain, details);
+	// Drag handles for the widths of the side panel and the details (hidden along with them, see CSS).
+	const panelHandle = resizeHandle(panel, { key: PANEL_WIDTH_KEY, side: "left", min: 12, max: 32 });
+	const detailsHandle = resizeHandle(details, { key: DETAILS_WIDTH_KEY, side: "right", min: 16, max: 40 });
+	detailsHandle.classList.add("details-resize");
+	view.append(...(readOnly ? [] : [panel, panelHandle]), canvasMain, detailsHandle, details);
 	return view;
 }

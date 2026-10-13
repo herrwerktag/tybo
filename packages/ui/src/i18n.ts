@@ -175,6 +175,7 @@ const en = {
 	// Canvas
 	showEntities: "Show entities and drawings",
 	hideEntities: "Hide entities and drawings",
+	resizePanel: "Drag to change the width; double-click to reset",
 	moreControls: "More controls",
 	dragOntoCanvas: "Drag onto the canvas.",
 	noEntitiesYet: "No entities yet. Create some in the Data view.",
@@ -231,6 +232,8 @@ const en = {
 
 	// Drawing tools
 	drawingTools: "Drawing tools",
+	showDrawingTools: "Show all drawing tools",
+	hideDrawingTools: "Fold the drawing tools",
 	drawingStyle: "Drawing style",
 	tools: {
 		select: "Select",
@@ -432,6 +435,7 @@ const de: Messages = {
 
 	showEntities: "Entitäten und Zeichnungen einblenden",
 	hideEntities: "Entitäten und Zeichnungen ausblenden",
+	resizePanel: "Ziehen ändert die Breite, Doppelklick setzt sie zurück",
 	moreControls: "Weitere Bedienelemente",
 	dragOntoCanvas: "Auf den Canvas ziehen.",
 	noEntitiesYet: "Noch keine Entitäten. Lege welche in der Datenansicht an.",
@@ -485,6 +489,8 @@ const de: Messages = {
 	showNamedOnPage: (name) => `${name} auf dieser Seite zeigen`,
 
 	drawingTools: "Zeichenwerkzeuge",
+	showDrawingTools: "Alle Zeichenwerkzeuge zeigen",
+	hideDrawingTools: "Zeichenwerkzeuge einklappen",
 	drawingStyle: "Zeichenstil",
 	tools: {
 		select: "Auswählen",
