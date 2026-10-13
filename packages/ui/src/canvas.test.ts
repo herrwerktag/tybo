@@ -1,7 +1,7 @@
 import { freshDom } from "./test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { canvasView } from "./canvas.js";
+import { canvasView, parseViewHash, viewHash } from "./canvas.js";
 import { CLICK_TOLERANCE } from "./dom.js";
 import { text } from "./i18n.js";
 import { createStore, DATA_VERSION, snapToGrid, type Store } from "@tybo/core";
@@ -109,32 +109,42 @@ test("the viewer only looks: no remove buttons, and dragging doesn't move cards"
 	assert.deepEqual([savedCard(store, card.id)?.x, savedCard(store, card.id)?.y], [100, 100]);
 });
 
-/** A board in story mode with Dune on page 1 and Herbert added on page 2 (copied from page 1), shown on page 1. */
-async function storyboard({ readOnly = false } = {}) {
+/** A board with a story: Dune on page 1, and Herbert added on page 2 (copied from page 1). The editor shows the story
+ * on page 1; the viewer (at `hash`, if `addressed`) starts as it does. */
+async function storyboard({ readOnly = false, addressed = false, hash = "" } = {}) {
 	freshDom();
 	const store = await createStore(memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } }).port, "ws");
 	const book = store.addType("Book", [], "");
 	const dune = store.addEntity(book.id, "Dune", "", {});
 	const herbert = store.addEntity(book.id, "Herbert", "", {});
-	store.setStoryMode(store.addBoard("Flow").id, true, "Start");
-	const story = store.data.boards[1]!;
+	const boardId = store.addBoard("Flow").id;
+	const story = store.addStory(boardId, "Pitch", "Start")!;
 	const one = story.pages[0]!;
-	store.updatePage(story.id, one.id, { description: "Only **Dune**" });
-	const duneCard = store.addCard(story.id, dune.id, 0, 0, one.id);
-	const two = store.addPage(story.id, one.id, "Then", true)!;
-	const herbertCard = store.addCard(story.id, herbert.id, 300, 0, two.id);
-	localStorage.setItem("canvas-active-board", story.id);
-	const view = canvasView(store, { readOnly });
+	store.updatePage(boardId, one.id, { description: "Only **Dune**" });
+	const duneCard = store.addCard(boardId, dune.id, 0, 0, one.id);
+	const two = store.addPage(boardId, one.id, "Then", true)!;
+	const herbertCard = store.addCard(boardId, herbert.id, 300, 0, two.id);
+	localStorage.setItem("canvas-active-board", boardId);
+	localStorage.setItem(`canvas-active-story:${boardId}`, story.id);
+	location.hash = hash;
+	const view = canvasView(store, { readOnly, addressed });
 	document.body.append(view);
-	return { store, view, story, one, two, duneCard, herbertCard };
+	const pages = () => store.data.boards.find((b) => b.id === boardId)!.stories[0]!.pages;
+	return { store, view, boardId, story, one, two, duneCard, herbertCard, pages };
 }
 
 const shownCards = (view: HTMLElement) =>
 	[...view.querySelectorAll<HTMLElement>(".canvas-board .canvas-card:not(.ghost)")].map((c) => c.querySelector(".card-title")?.textContent);
 const pageButton = (view: HTMLElement, label: string) => view.querySelector<HTMLButtonElement>(`.page-bar button[title="${label}"]`)!;
+/** Picks an item of the story overlay (opened by the story button) by its name. */
+function pickStory(view: HTMLElement, name: string): void {
+	view.querySelector<HTMLButtonElement>(".story-switch")!.click();
+	[...view.querySelectorAll<HTMLButtonElement>(".story-dialog .picker-option")].find((b) => b.textContent === name)!.click();
+}
 
-test("in story mode a board shows one page at a time; the page bar and arrow keys step through it", async () => {
+test("a story shows one page at a time; the page bar and arrow keys step through it", async () => {
 	const { view } = await storyboard();
+	assert.equal(view.querySelector(".story-switch .picker-name")?.textContent, "Pitch");
 	assert.deepEqual(shownCards(view), ["Dune"]);
 	// Herbert is on another page: faded, with + to show him here too.
 	assert.equal(view.querySelector(".canvas-card.ghost .card-title")?.textContent, "Herbert");
@@ -150,15 +160,14 @@ test("in story mode a board shows one page at a time; the page bar and arrow key
 	assert.deepEqual(shownCards(view), ["Dune"]);
 });
 
-test("in the story mode editor, × hides a card on this page, + shows it again, and pages are added and named", async () => {
-	const { store, view, story, two, herbertCard } = await storyboard();
-	const board = () => store.data.boards.find((b) => b.id === story.id)!;
+test("in the editor, × hides a card on this page, + shows it again, and pages are added and named", async () => {
+	const { view, two, herbertCard, pages } = await storyboard();
 
 	cardNode(view, herbertCard.id).querySelector<HTMLButtonElement>(".card-remove")!.click(); // + on the ghost
 	assert.deepEqual(shownCards(view), ["Dune", "Herbert"]);
 	cardNode(view, herbertCard.id).querySelector<HTMLButtonElement>(".card-remove")!.click(); // × again
 	assert.deepEqual(shownCards(view), ["Dune"]);
-	assert.ok(board().pages[1]!.cardIds.includes(herbertCard.id), "still on page 2");
+	assert.ok(pages()[1]!.cardIds.includes(herbertCard.id), "still on page 2");
 
 	const name = view.querySelector<HTMLInputElement>(".page-bar input.page-name")!;
 	name.value = "Begin";
@@ -166,113 +175,140 @@ test("in the story mode editor, × hides a card on this page, + shows it again, 
 	const description = view.querySelector<HTMLTextAreaElement>(".page-description textarea")!;
 	description.value = "New text";
 	description.dispatchEvent(new Event("change"));
-	assert.deepEqual([board().pages[0]!.name, board().pages[0]!.description], ["Begin", "New text"]);
+	assert.deepEqual([pages()[0]!.name, pages()[0]!.description], ["Begin", "New text"]);
 
 	// Without "Copy", the new page starts empty; it's added after the current one and shown.
 	view.querySelector<HTMLInputElement>(".page-copy input")!.checked = false;
 	[...view.querySelectorAll<HTMLButtonElement>(".page-bar button")].find((b) => b.textContent === "+ Page")!.click();
-	assert.deepEqual(board().pages.map((p) => p.name), ["Begin", "Step 3", two.name]);
+	assert.deepEqual(pages().map((p) => p.name), ["Begin", "Step 3", two.name]);
 	assert.deepEqual(shownCards(view), []);
 	assert.equal(view.querySelector(".page-counter")?.textContent, "2 / 3");
 });
 
-const storyButton = (view: HTMLElement) =>
-	[...view.querySelectorAll<HTMLButtonElement>(".board-controls button")].find((b) => b.textContent === "Story mode")!;
+test("the editor's story overlay shows the whole board or a story, and creates, renames and deletes stories", async () => {
+	const { store, view, boardId, duneCard } = await storyboard();
+	pickStory(view, "Whole board");
+	assert.equal(view.querySelector<HTMLElement>(".page-bar")!.hidden, true);
+	assert.deepEqual(shownCards(view), ["Dune", "Herbert"]);
+	assert.equal(localStorage.getItem(`canvas-active-story:${boardId}`), "", "remembered");
 
-test("the viewer starts with the whole board; in story mode it shows only prev/next, the step name and the description", async () => {
-	const { store, view, story } = await storyboard({ readOnly: true });
+	view.querySelector<HTMLButtonElement>(".story-switch")!.click();
+	const dialog = view.querySelector<HTMLDialogElement>(".story-dialog")!;
+	dialog.querySelector<HTMLInputElement>(".picker-new input")!.value = "Demo";
+	dialog.querySelector<HTMLFormElement>(".picker-new")!.requestSubmit();
+	const board = () => store.data.boards.find((b) => b.id === boardId)!;
+	assert.deepEqual(board().stories.map((s) => s.name), ["Pitch", "Demo"]);
+	assert.equal(view.querySelector(".story-switch .picker-name")?.textContent, "Demo");
+	assert.equal(view.querySelectorAll(".canvas-board .canvas-card:not(.ghost)").length, 0, "its first step shows nothing yet");
+	assert.ok(board().cards.some((c) => c.id === duneCard.id), "still on the board, faded");
+
+	view.querySelector<HTMLButtonElement>(".story-switch")!.click();
+	const rowOf = (name: string) => [...dialog.querySelectorAll("li")].find((li) => li.querySelector(".picker-option")?.textContent === name)!;
+	assert.equal(rowOf("Whole board").querySelectorAll("button").length, 1, "the whole board can't be renamed or deleted");
+	[...rowOf("Demo").querySelectorAll("button")].find((b) => b.textContent === "Rename")!.click();
+	dialog.querySelector<HTMLInputElement>(".picker-rename input")!.value = "Tour";
+	dialog.querySelector<HTMLFormElement>(".picker-rename")!.requestSubmit();
+	assert.equal(view.querySelector(".story-switch .picker-name")?.textContent, "Tour");
+
+	Object.assign(globalThis, { confirm: () => true });
+	[...rowOf("Tour").querySelectorAll("button")].find((b) => b.textContent === "Delete")!.click();
+	assert.deepEqual(board().stories.map((s) => s.name), ["Pitch"]);
+	assert.equal(view.querySelector(".story-switch .picker-name")?.textContent, "Whole board", "back to the whole board");
+	assert.equal(view.querySelector<HTMLElement>(".page-bar")!.hidden, true);
+});
+
+test("the viewer starts with the whole board; a story is picked, stepped through, left and resumed where it was left", async () => {
+	const { view } = await storyboard({ readOnly: true });
 	assert.deepEqual(shownCards(view), ["Dune", "Herbert"]);
 	assert.equal(view.querySelector<HTMLElement>(".page-bar")!.hidden, true);
 	assert.equal(view.querySelector<HTMLElement>(".page-description")!.hidden, true);
+	assert.equal(view.querySelector(".story-switch .picker-name")?.textContent, "Stories");
 
-	storyButton(view).click();
-	assert.equal(storyButton(view).ariaPressed, "true");
+	pickStory(view, "Pitch");
 	assert.deepEqual(shownCards(view), ["Dune"]);
 	assert.equal(view.querySelector(".canvas-card.ghost"), null);
 	assert.equal(view.querySelector(".page-bar input"), null);
-	assert.equal(view.querySelectorAll(".page-bar button").length, 2);
 	assert.equal(view.querySelector(".page-bar .page-name")?.textContent, "Start");
 	assert.equal(view.querySelector(".page-description strong")?.textContent, "Dune");
+	assert.equal(view.querySelector(".story-dialog .picker-new"), null, "nothing to edit in the viewer");
 
 	pageButton(view, "Next step").click();
 	assert.equal(view.querySelector(".page-bar .page-name")?.textContent, "Then");
 	assert.equal(view.querySelector<HTMLElement>(".page-description")!.hidden, true); // no description on this page
 
-	// Back to the whole board; nothing about it is saved.
-	storyButton(view).click();
+	[...view.querySelectorAll<HTMLButtonElement>(".page-bar button")].find((b) => b.textContent === "← Board")!.click();
 	assert.deepEqual(shownCards(view), ["Dune", "Herbert"]);
-	assert.equal(store.data.boards.find((b) => b.id === story.id)!.story, true);
+	assert.equal(view.querySelector<HTMLElement>(".page-bar")!.hidden, true);
+	pickStory(view, "Pitch");
+	assert.equal(view.querySelector(".page-bar .page-name")?.textContent, "Then", "where it was left");
+});
+
+test("an addressed viewer shows the board, story and step its address names, and keeps the address up to date", async () => {
+	const { store, boardId, story, one, two } = await storyboard({ readOnly: true });
+	assert.deepEqual(parseViewHash("#boards"), {});
+	const target = viewHash({ boardId, storyId: story.id, pageId: two.id });
+	assert.equal(target, `#view/${boardId}/${story.id}/${two.id}`);
+	assert.deepEqual(parseViewHash(target), { boardId, storyId: story.id, pageId: two.id });
+
+	location.hash = target;
+	const viewer = canvasView(store, { readOnly: true, addressed: true });
+	document.body.replaceChildren(viewer);
+	assert.equal(viewer.querySelector(".page-bar .page-name")?.textContent, "Then");
+
+	pageButton(viewer, "Previous step").click();
+	assert.equal(location.hash, viewHash({ boardId, storyId: story.id, pageId: one.id }));
+	const entries = history.length;
+	[...viewer.querySelectorAll<HTMLButtonElement>(".page-bar button")].find((b) => b.textContent === "← Board")!.click();
+	assert.equal(location.hash, `#view/${boardId}`);
+	assert.equal(history.length, entries + 1, "leaving the story is a step of its own in the history");
 });
 
 test("the step description has the size saved with its page, set on the grid at its corner in the editor", async () => {
-	const { store, view, story } = await storyboard();
+	const { view, pages } = await storyboard();
 	const box = view.querySelector<HTMLElement>(".canvas-board .page-description")!;
 	assert.deepEqual([box.style.width, box.style.height], ["384px", "120px"]);
 
 	dragBy(box.querySelector<HTMLElement>(".card-resize")!, 40, -1000);
-	const size = store.data.boards.find((b) => b.id === story.id)!.pages[0]!.descriptionSize;
-	assert.deepEqual(size, { width: 432, height: 48 }); // 424 snaps to 432; never below the minimum
+	assert.deepEqual(pages()[0]!.descriptionSize, { width: 432, height: 48 }); // 424 snaps to 432; never below the minimum
 	assert.deepEqual([box.style.width, box.style.height], ["432px", "48px"]);
 });
 
 test("a step description sits on the canvas like a card: dragging its handle moves it on the grid in world coordinates", async () => {
-	const { store, view, story, one } = await storyboard();
+	const { view, one, pages } = await storyboard();
 	const box = view.querySelector<HTMLElement>(".canvas-board .page-description")!;
 	assert.ok(box, "inside the panned and zoomed layer");
 	const before = one.descriptionPosition;
 
 	dragBy(box.querySelector<HTMLElement>(".page-description-handle")!, 50, 30);
-	const after = store.data.boards.find((b) => b.id === story.id)!.pages[0]!.descriptionPosition;
+	const after = pages()[0]!.descriptionPosition;
 	assert.deepEqual(after, { x: snapToGrid(before.x + 50), y: snapToGrid(before.y + 30) });
 	assert.deepEqual([box.style.left, box.style.top], [`${after.x}px`, `${after.y}px`]);
 
 	// Grabbed again, it moves on from where it is now.
 	dragBy(box.querySelector<HTMLElement>(".page-description-handle")!, 10, -20);
-	const again = store.data.boards.find((b) => b.id === story.id)!.pages[0]!.descriptionPosition;
-	assert.deepEqual(again, { x: after.x, y: after.y - 24 }); // 10 right stays in place, 20 up snaps a whole cell
+	assert.deepEqual(pages()[0]!.descriptionPosition, { x: after.x, y: after.y - 24 }); // 10 right stays in place, 20 up snaps a whole cell
 });
 
-test("the Story mode button switches a board into story mode, starting with an empty step, and back", async () => {
-	const { store, view, card } = await setup();
-	const toggle = [...view.querySelectorAll<HTMLButtonElement>(".board-controls button")].find((b) => b.textContent === "Story mode")!;
-	assert.equal(toggle.ariaPressed, "false");
-	assert.equal(view.querySelector<HTMLElement>(".page-bar")!.hidden, true);
-
-	toggle.click();
-	assert.equal(store.data.boards[0]!.story, true);
-	assert.equal(view.querySelector<HTMLElement>(".page-bar")!.hidden, false);
-	assert.equal(view.querySelectorAll(".canvas-board .canvas-card:not(.ghost)").length, 0); // the first step shows nothing yet
-	assert.deepEqual(store.data.boards[0]!.pages[0]!.cardIds, []);
-	assert.ok(store.data.boards[0]!.cards.some((c) => c.id === card.id)); // still on the board, faded
-	assert.ok(view.querySelector<HTMLElement>(".canvas-board .page-description")!.hidden === false);
-
-	[...view.querySelectorAll<HTMLButtonElement>(".board-controls button")].find((b) => b.textContent === "Story mode")!.click();
-	assert.equal(store.data.boards[0]!.story, false);
-	assert.equal(view.querySelector<HTMLElement>(".page-bar")!.hidden, true);
-	assert.equal(store.data.boards[0]!.pages.length, 1, "the steps are kept");
-});
-
-test("× in story mode never deletes a card from the board, and Description here brings the description into view", async () => {
-	const { store, view, story, one, duneCard } = await storyboard();
-	const board = () => store.data.boards.find((b) => b.id === story.id)!;
+test("× in a story never deletes a card from the board, and Description here brings the description into view", async () => {
+	const { store, view, boardId, one, duneCard, pages } = await storyboard();
+	const board = () => store.data.boards.find((b) => b.id === boardId)!;
 	// Off page 1 by ×, and off page 2 as well: on no page at all.
 	cardNode(view, duneCard.id).querySelector<HTMLButtonElement>(".card-remove")!.click();
-	store.removeCard(duneCard.id, board().pages[1]!.id);
+	store.removeCard(duneCard.id, pages()[1]!.id);
 	assert.ok(board().cards.some((c) => c.id === duneCard.id), "still on the board");
 	assert.ok(cardNode(view, duneCard.id).classList.contains("ghost"));
 
-	store.updatePage(story.id, one.id, { descriptionPosition: { x: 5000, y: 5000 } });
+	store.updatePage(boardId, one.id, { descriptionPosition: { x: 5000, y: 5000 } });
 	[...view.querySelectorAll<HTMLButtonElement>(".page-bar button")].find((b) => b.textContent === "Description here")!.click();
-	assert.deepEqual(board().pages[0]!.descriptionPosition, { x: 72, y: 24 }); // the view is at the origin here; 16 snaps to 24
+	assert.deepEqual(pages()[0]!.descriptionPosition, { x: 72, y: 24 }); // the view is at the origin here; 16 snaps to 24
 	assert.equal(view.querySelector<HTMLElement>(".page-description")!.style.left, "72px");
 });
 
 test("◐ dims a card on this step only; the viewer shows it dimmed while stepping through", async () => {
-	const { store, view, story, duneCard } = await storyboard();
+	const { store, view, duneCard, pages } = await storyboard();
 	const dim = () => cardNode(view, duneCard.id).querySelector<HTMLButtonElement>(".card-dim")!;
 	assert.equal(dim().ariaPressed, "false");
 	dim().click();
-	const pages = () => store.data.boards.find((b) => b.id === story.id)!.pages;
 	assert.deepEqual(pages()[0]!.dimmedCardIds, [duneCard.id]);
 	assert.deepEqual(pages()[1]!.dimmedCardIds, []); // only this step
 	assert.ok(cardNode(view, duneCard.id).classList.contains("dimmed"));
@@ -284,7 +320,7 @@ test("◐ dims a card on this step only; the viewer shows it dimmed while steppi
 	document.body.replaceChildren(viewer);
 	assert.equal(viewer.querySelector(".card-dim"), null);
 	assert.equal(cardNode(viewer, duneCard.id).classList.contains("dimmed"), false); // the whole board, nothing dimmed
-	storyButton(viewer).click();
+	pickStory(viewer, "Pitch");
 	assert.ok(cardNode(viewer, duneCard.id).classList.contains("dimmed"));
 });
 
@@ -435,23 +471,23 @@ function openBoards(view: HTMLElement): HTMLDialogElement {
 	return dialog;
 }
 const boardOption = (dialog: HTMLElement, name: string) =>
-	[...dialog.querySelectorAll<HTMLButtonElement>(".board-option")].find((b) => b.textContent === name)!;
+	[...dialog.querySelectorAll<HTMLButtonElement>(".picker-option")].find((b) => b.textContent === name)!;
 
 test("the boards overlay creates a board and switches to it, and switches back by clicking a board", async () => {
 	const { store, view } = await setup();
-	assert.equal(view.querySelector(".board-name")?.textContent, "Board 1");
+	assert.equal(view.querySelector(".board-switch .picker-name")?.textContent, "Board 1");
 	let dialog = openBoards(view);
-	dialog.querySelector<HTMLInputElement>(".board-new input")!.value = "Planning";
-	dialog.querySelector<HTMLFormElement>(".board-new")!.requestSubmit();
+	dialog.querySelector<HTMLInputElement>(".picker-new input")!.value = "Planning";
+	dialog.querySelector<HTMLFormElement>(".picker-new")!.requestSubmit();
 	assert.ok(!dialog.open);
 	assert.deepEqual(store.data.boards.map((b) => b.name), ["Board 1", "Planning"]);
-	assert.equal(view.querySelector(".board-name")?.textContent, "Planning");
+	assert.equal(view.querySelector(".board-switch .picker-name")?.textContent, "Planning");
 	assert.equal(view.querySelectorAll(".canvas-card[data-card-id]").length, 0, "the new board is empty");
 
 	dialog = openBoards(view);
 	assert.equal(boardOption(dialog, "Planning").getAttribute("aria-current"), "true");
 	boardOption(dialog, "Board 1").click();
-	assert.equal(view.querySelector(".board-name")?.textContent, "Board 1");
+	assert.equal(view.querySelector(".board-switch .picker-name")?.textContent, "Board 1");
 	assert.equal(view.querySelectorAll(".canvas-card[data-card-id]").length, 2);
 });
 
@@ -460,15 +496,15 @@ test("a board is renamed in place in the overlay; Escape keeps the old name", as
 	const dialog = openBoards(view);
 	const rename = () => [...dialog.querySelectorAll<HTMLButtonElement>("li button")].find((b) => b.textContent === "Rename")!.click();
 	rename();
-	const input = dialog.querySelector<HTMLInputElement>(".board-rename input")!;
+	const input = dialog.querySelector<HTMLInputElement>(".picker-rename input")!;
 	input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
-	assert.equal(dialog.querySelector(".board-rename"), null);
+	assert.equal(dialog.querySelector(".picker-rename"), null);
 	rename();
-	dialog.querySelector<HTMLInputElement>(".board-rename input")!.value = "Roadmap";
-	dialog.querySelector<HTMLFormElement>(".board-rename")!.requestSubmit();
+	dialog.querySelector<HTMLInputElement>(".picker-rename input")!.value = "Roadmap";
+	dialog.querySelector<HTMLFormElement>(".picker-rename")!.requestSubmit();
 	assert.equal(store.data.boards[0]!.name, "Roadmap");
 	assert.ok(boardOption(dialog, "Roadmap"));
-	assert.equal(view.querySelector(".board-name")?.textContent, "Roadmap");
+	assert.equal(view.querySelector(".board-switch .picker-name")?.textContent, "Roadmap");
 });
 
 test("deleting the last board leaves only a button creating the first one", async () => {
@@ -490,8 +526,8 @@ test("deleting the last board leaves only a button creating the first one", asyn
 test("in the viewer, the boards overlay only switches boards", async () => {
 	const { view } = await setup({ readOnly: true });
 	const dialog = openBoards(view);
-	assert.equal(dialog.querySelector(".board-new"), null);
-	assert.deepEqual([...dialog.querySelectorAll("li button")].map((b) => b.className), ["board-option"]);
+	assert.equal(dialog.querySelector(".picker-new"), null);
+	assert.deepEqual([...dialog.querySelectorAll("li button")].map((b) => b.className), ["picker-option"]);
 });
 
 /** Presses `button` on `target` at (x, y) (with Shift or not), moves to (x + dx, y + dy) and releases there. */

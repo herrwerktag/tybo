@@ -70,13 +70,13 @@ const ENTITY_MIME = "application/x-entity-index";
 const ENTITIES_TAG_KEY = "entities-tag";
 
 /** The page shown, from the URL hash: entity types, entities, board editing (boards), the library of drawings, or
- * read-only boards (view). */
+ * read-only boards (view, maybe followed by the board, story and step shown: see parseViewHash). */
 type Route = "types" | "entities" | "boards" | "library" | "view";
 
 /** Entities is the default page, so old links (e.g. "#data") still land there; "#canvas" and "#viewer" are the
  * board pages' former names. */
 function routeFromHash(hash: string): Route {
-	const route = hash.slice(1);
+	const route = hash.slice(1).split("/")[0];
 	if (route === "canvas") return "boards";
 	if (route === "viewer") return "view";
 	return route === "types" || route === "boards" || route === "library" || route === "view" ? route : "entities";
@@ -375,6 +375,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 					? libraryView(store)
 					: canvasView(store, {
 						readOnly: route === "view",
+						addressed: true,
 						...(viewScript ? { onExportView: (boardId: string) => exportView(viewScript, boardId) } : {}),
 						// The details panel's Edit button: open the entity in the Entities page's form.
 						onEditEntity: (entityId) => {

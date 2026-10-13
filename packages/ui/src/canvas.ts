@@ -29,10 +29,11 @@ import {
 	type Entity,
 	type EntityType,
 	type LineArrow,
+	type Story,
 	type StoryPage,
 } from "@tybo/core";
 import { renderMarkdown } from "./markdown.js";
-import { readPreference, writePreference } from "./preferences.js";
+import { readPreference, readSession, writePreference, writeSession } from "./preferences.js";
 import type { Store } from "@tybo/core";
 import { defaultViewport, screenToWorld, snapZoom, stepZoom, zoomAt, type Viewport } from "@tybo/core";
 
@@ -49,16 +50,40 @@ const PANEL_TAG_KEY = "canvas-panel-tag";
 /** The size of the library drawings' thumbnails in the side panel, in px. */
 const THUMBNAIL_SIZE = 40;
 const ACTIVE_BOARD_KEY = "canvas-active-board";
-/** The story mode page last shown in the editor, per board. */
-const activePageKey = (boardId: string) => `canvas-active-page:${boardId}`;
+/** The story last shown in the editor, per board (empty: the whole board). */
+const activeStoryKey = (boardId: string) => `canvas-active-story:${boardId}`;
+/** The page last shown in the editor, per story. (A board's steps from before became a story with the board's id, so
+ * the key then is the one the board used.) */
+const activePageKey = (storyId: string) => `canvas-active-page:${storyId}`;
+/** The step the viewer was on in a story, for this browser tab (sessionStorage): coming back to the story goes on there. */
+const storyStepKey = (storyId: string) => `story-step:${storyId}`;
 /** How long the pan/zoom takes to move to another page, in ms. */
 const PAGE_ANIMATION = 450;
 /** How long scroll/pinch zooming must pause before the zoom settles on the nearest 10% step, and how long that takes, in ms. */
 const ZOOM_SETTLE_DELAY = 150;
 const ZOOM_SETTLE_ANIMATION = 120;
 
+/** What a viewer address names: `#view/<board>/<story>/<page>`, the latter parts optional. */
+export interface ViewTarget {
+	boardId?: string;
+	storyId?: string;
+	pageId?: string;
+}
+
+export function parseViewHash(hash: string): ViewTarget {
+	const [route, boardId, storyId, pageId] = hash.replace(/^#/, "").split("/").map(decodeURIComponent);
+	if (route !== "view") return {};
+	return { ...(boardId && { boardId }), ...(storyId && { storyId }), ...(pageId && { pageId }) };
+}
+
+export function viewHash({ boardId, storyId, pageId }: ViewTarget): string {
+	return ["#view", boardId, storyId, pageId].filter((part) => part !== undefined).map((part, i) => (i === 0 ? part : encodeURIComponent(part!))).join("/");
+}
+
 interface CanvasOptions {
 	readOnly: boolean;
+	/** Viewer only: the address (location.hash) names the board, story and step shown, and follows them. */
+	addressed?: boolean;
 	onEditEntity?: (entityId: string) => void;
 	onExportView?: (boardId: string) => void;
 	onEditLibraryDrawing?: (libraryId: string) => void;
@@ -92,28 +117,38 @@ function firstBoardView(store: Store, options: CanvasOptions): HTMLElement {
  * viewer offers to export the current board. With `onEditLibraryDrawing`, a placed library drawing can be opened
  * in the library.
  *
- * A board in story mode is shown one page at a time, with a page bar at the bottom and the page's description over the
- * canvas. The editor also shows the cards and drawings of other pages, faded, so they can be shown here too.
+ * A board can have stories. A story is shown one page at a time, with a page bar at the bottom and the page's
+ * description over the canvas; the editor also shows the cards and drawings of other pages, faded, so they can be
+ * shown here too. The viewer always starts with the whole board (unless its address names a story), and picking a
+ * story steps through it; coming back to a story goes on at the step it was left at in this browser tab.
  */
 export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	if (store.data.boards.length === 0) return firstBoardView(store, options);
 	const { readOnly, onEditEntity, onExportView, onEditLibraryDrawing } = options;
-	let boardId = readPreference(ACTIVE_BOARD_KEY) ?? "";
+	const addressed = readOnly && options.addressed === true;
+	const target = addressed ? parseViewHash(location.hash) : {};
+	let boardId = target.boardId ?? readPreference(ACTIVE_BOARD_KEY) ?? "";
 	const currentBoard = (): Board => store.data.boards.find((b) => b.id === boardId) ?? store.data.boards[0]!;
 	boardId = currentBoard().id;
 
-	/** The page shown, in story mode; the viewer always starts on the first. */
-	let pageId = readOnly ? "" : (readPreference(activePageKey(boardId)) ?? "");
-	/** In the viewer, whether a board in story mode is shown step by step: it starts as the whole board, and its
-	 * Story mode button switches (not saved). The editor always shows the steps of a board in story mode. */
-	let presenting = false;
+	/** The story shown step by step, or null for the whole board: in the editor the one last shown on the board; the
+	 * viewer starts with the whole board, unless its address names a story. */
+	let storyId: string | null = readOnly ? (target.storyId ?? null) : readPreference(activeStoryKey(boardId)) || null;
+	/** The page shown of the story (its first, if it has no such page). */
+	let pageId = target.pageId ?? savedPageId();
+	const currentStory = (): Story | null => currentBoard().stories.find((s) => s.id === storyId) ?? null;
 	const currentPage = (): StoryPage | null => {
-		const { story, pages } = currentBoard();
-		return story && (presenting || !readOnly) ? (pages.find((p) => p.id === pageId) ?? pages[0] ?? null) : null;
+		const story = currentStory();
+		return story ? (story.pages.find((p) => p.id === pageId) ?? story.pages[0] ?? null) : null;
 	};
-	/** The pan/zoom saved for what's shown: the page's in story mode, else the board's. */
+	/** Where the story was left: in the editor for good, in the viewer for this browser tab. */
+	function savedPageId(): string {
+		if (!storyId) return "";
+		return (readOnly ? readSession(storyStepKey(storyId)) : readPreference(activePageKey(storyId))) ?? "";
+	}
+	/** The pan/zoom saved for what's shown: the page's in a story, else the board's. */
 	const savedViewport = (): Viewport => ({ ...(currentPage()?.viewport ?? currentBoard().viewport) });
-	/** Whether a card or drawing is shown on the current page (everything is, outside story mode). */
+	/** Whether a card or drawing is shown on the current page (everything is, outside a story). */
 	const onPage = (id: string): boolean => {
 		const page = currentPage();
 		return !page || page.cardIds.includes(id) || page.drawingIds.includes(id);
@@ -229,11 +264,27 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 
 	function switchBoard(id: string): void {
 		flushViewport();
-		stopAnimation();
-		if (id !== boardId) presenting = false;
 		boardId = id;
 		writePreference(ACTIVE_BOARD_KEY, id);
-		pageId = readOnly ? "" : (readPreference(activePageKey(id)) ?? "");
+		storyId = readOnly ? null : readPreference(activeStoryKey(id)) || null;
+		pageId = savedPageId();
+		show();
+		address("replace");
+	}
+
+	/** Shows a story step by step (where it was left), or the whole board (null). */
+	function showStory(id: string | null): void {
+		flushViewport();
+		storyId = id;
+		if (!readOnly) writePreference(activeStoryKey(boardId), id ?? "");
+		pageId = savedPageId();
+		show();
+		address("push");
+	}
+
+	/** Shows the board, story and page now chosen, with their pan/zoom. */
+	function show(): void {
+		stopAnimation();
 		view.classList.toggle("story-mode", currentPage() !== null);
 		viewport = savedViewport();
 		group = null;
@@ -246,12 +297,23 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		renderDescription();
 	}
 
-	/** Shows another page in story mode: what it shows fades in, and the pan/zoom moves to the page's. */
+	/** In an addressed viewer, puts what's shown into the address: a new history entry when entering or leaving a
+	 * story (so Back leaves the story, not one step), else in place of the current one. */
+	function address(how: "push" | "replace"): void {
+		if (!addressed) return;
+		const hash = viewHash({ boardId, ...(currentStory() && { storyId: storyId!, pageId: currentPage()!.id }) });
+		if (hash === location.hash) return;
+		if (how === "push") history.pushState(null, "", hash);
+		else history.replaceState(null, "", hash);
+	}
+
+	/** Shows another page of the story: what it shows fades in, and the pan/zoom moves to the page's. */
 	function goToPage(id: string): void {
 		flushViewport();
 		const before = new Set(currentPage()?.cardIds);
 		pageId = id;
-		if (!readOnly) writePreference(activePageKey(boardId), id);
+		if (storyId && readOnly) writeSession(storyStepKey(storyId), id);
+		else if (storyId) writePreference(activePageKey(storyId), id);
 		appearing = new Set(currentPage()?.cardIds.filter((cardId) => !before.has(cardId)));
 		group = null;
 		drawing.deselect();
@@ -260,13 +322,14 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		renderPageBar();
 		renderDescription();
 		animateViewport(savedViewport());
+		address("replace");
 	}
 
 	/** The page `step` pages before (negative) or after the current one, if there is one. */
 	function stepPage(step: number): void {
-		const { pages } = currentBoard();
+		const pages = currentStory()?.pages ?? [];
 		const next = pages[pages.findIndex((p) => p.id === currentPage()?.id) + step];
-		if (next && currentPage()) goToPage(next.id);
+		if (next) goToPage(next.id);
 	}
 
 	let animation = 0;
@@ -344,78 +407,40 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		);
 	}
 
-	/** Opens the overlay listing the boards, to switch to another (and in the editor, to create, rename or delete). */
-	const boardButton = el("button", {
-		type: "button",
-		className: "board-switch",
-		title: text.changeBoard,
-		ariaHasPopup: "dialog",
-		onclick: () => {
-			renderBoardDialog();
-			boardDialog.showModal();
-		},
-	});
-	const boardDialog = canvasDialog("board-dialog", text.tabBoards);
-
-	function renderBoardControls(): void {
-		boardButton.replaceChildren(el("span", { className: "board-name" }, currentBoard().name), el("span", { ariaHidden: "true" }, "▾"));
-		// The viewer only switches boards, and maybe exports the current one.
-		if (readOnly) {
-			const exportButton = el("button", { type: "button", title: text.exportView, onclick: () => onExportView?.(boardId) }, text.exportButton);
-			// A board with steps: shown whole, or step by step from its first step.
-			const presentButton = el(
-				"button",
-				{
-					type: "button",
-					className: "tool-button",
-					title: text.presentHint,
-					ariaPressed: String(presenting),
-					onclick: () => {
-						presenting = !presenting;
-						switchBoard(boardId);
-					},
-				},
-				text.storyMode,
-			);
-			return boardControls.replaceChildren(
-				boardButton,
-				...(currentBoard().story ? [presentButton] : []),
-				...(onExportView ? [exportButton] : []),
-			);
-		}
-		boardControls.replaceChildren(
-			boardButton,
-			el("button", { type: "button", title: text.newEntityHint, onclick: openNewEntity }, text.newEntityButton),
-			// Shows the board step by step, like a presentation; switched off, its steps stay for next time.
-			el(
-				"button",
-				{
-					type: "button",
-					className: "tool-button",
-					title: text.storyModeHint,
-					ariaPressed: String(currentBoard().story),
-					onclick: () => {
-						flushViewport();
-						store.setStoryMode(boardId, !currentBoard().story, text.defaultPageName(1));
-						switchBoard(boardId);
-					},
-				},
-				text.storyMode,
-			),
-		);
+	/**
+	 * A picker overlay (boards, stories): its items, the current one marked; clicking one picks it. In the editor
+	 * (with `editing`), each can be renamed in place (unless `fixed`) and deleted, and a form below adds one.
+	 */
+	interface Picker {
+		dialog: HTMLDialogElement;
+		title: string;
+		items: readonly { id: string; name: string; fixed?: boolean }[];
+		currentId: string;
+		/** The item shown with a name field instead, if any. */
+		renamingId: string | null;
+		pick(id: string): void;
+		/** Draws the overlay again (with an item being renamed). */
+		rerender(renamingId?: string | null): void;
+		editing?: {
+			renameTitle: string;
+			deleteTitle: string;
+			rename(id: string, name: string): void;
+			remove(id: string): void;
+			newTitle: string;
+			newName: string;
+			add(name: string): void;
+		};
 	}
 
-	/** The overlay's content: the boards (one of them maybe being renamed), and in the editor a form for a new one. */
-	function renderBoardDialog(renamingId: string | null = null): void {
-		const boards = store.data.boards;
-		const rows = boards.map((board) => {
-			if (board.id === renamingId) {
-				const input = el("input", { value: board.name, ariaLabel: text.renameBoard, required: true });
+	function renderPicker({ dialog, title, items, currentId, renamingId, pick, rerender, editing }: Picker): void {
+		const rows = items.map((item) => {
+			if (editing && item.id === renamingId) {
+				const input = el("input", { value: item.name, ariaLabel: editing.renameTitle, required: true });
 				// Escape leaves the name as it was, instead of closing the overlay.
 				input.addEventListener("keydown", (e) => {
 					if (e.key !== "Escape") return;
 					e.preventDefault();
-					renderBoardDialog();
+					rerender();
 				});
 				requestAnimationFrame(() => input.select());
 				return el(
@@ -424,17 +449,16 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 					el(
 						"form",
 						{
-							className: "board-rename",
+							className: "picker-rename",
 							onsubmit: (e: SubmitEvent) => {
 								e.preventDefault();
-								store.renameBoard(board.id, input.value);
-								renderBoardControls();
-								renderBoardDialog();
+								editing.rename(item.id, input.value);
+								rerender();
 							},
 						},
 						input,
 						el("button", { type: "submit", className: "primary" }, text.save),
-						el("button", { type: "button", onclick: () => renderBoardDialog() }, text.cancel),
+						el("button", { type: "button", onclick: () => rerender() }, text.cancel),
 					),
 				);
 			}
@@ -442,46 +466,145 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				"button",
 				{
 					type: "button",
-					className: "board-option",
+					className: "picker-option",
 					onclick: () => {
-						boardDialog.close();
-						if (board.id !== boardId) switchBoard(board.id);
+						dialog.close();
+						if (item.id !== currentId) pick(item.id);
 					},
 				},
-				board.name,
+				item.name,
 			);
-			if (board.id === boardId) option.setAttribute("aria-current", "true");
-			if (readOnly) return el("li", {}, option);
+			if (item.id === currentId) option.setAttribute("aria-current", "true");
+			if (!editing || item.fixed) return el("li", {}, option);
 			return el(
 				"li",
 				{},
 				option,
-				el("button", { type: "button", title: text.renameBoard, onclick: () => renderBoardDialog(board.id) }, text.renameButton),
-				el("button", { type: "button", title: text.deleteBoard, onclick: () => deleteBoard(board.id) }, text.delete),
+				el("button", { type: "button", title: editing.renameTitle, onclick: () => rerender(item.id) }, text.renameButton),
+				el("button", { type: "button", title: editing.deleteTitle, onclick: () => editing.remove(item.id) }, text.delete),
 			);
 		});
 
-		const nameInput = el("input", { ariaLabel: text.name, value: text.defaultBoardName(boards.length + 1), required: true });
+		const nameInput = el("input", { ariaLabel: text.name, value: editing?.newName ?? "", required: true });
 		const newForm = el(
 			"form",
 			{
-				className: "board-new",
+				className: "picker-new",
 				onsubmit: (e: SubmitEvent) => {
 					e.preventDefault();
-					const board = store.addBoard(nameInput.value);
-					boardDialog.close();
-					switchBoard(board.id);
+					dialog.close();
+					editing?.add(nameInput.value);
 				},
 			},
-			el("h3", {}, text.newBoard),
+			el("h3", {}, editing?.newTitle ?? ""),
 			nameInput,
 			el("button", { type: "submit", className: "primary" }, text.create),
 		);
+		dialog.replaceChildren(dialogHeader(dialog, title), el("ul", { className: "picker-list" }, ...rows), ...(editing ? [newForm] : []));
+	}
 
-		boardDialog.replaceChildren(
-			dialogHeader(boardDialog, text.tabBoards),
-			el("ul", { className: "board-list" }, ...rows),
-			...(readOnly ? [] : [newForm]),
+	/** A button showing what's current, opening a picker overlay. */
+	const pickerButton = (className: string, title: string, open: () => void) =>
+		el("button", { type: "button", className: `picker-switch ${className}`, title, ariaHasPopup: "dialog", onclick: open });
+	const pickerLabel = (name: string) => [el("span", { className: "picker-name" }, name), el("span", { ariaHidden: "true" }, "▾")];
+
+	/** The boards: switch to another (and in the editor, create, rename or delete). */
+	const boardDialog = canvasDialog("board-dialog", text.tabBoards);
+	const boardButton = pickerButton("board-switch", text.changeBoard, () => {
+		renderBoardDialog();
+		boardDialog.showModal();
+	});
+
+	function renderBoardDialog(renamingId: string | null = null): void {
+		const boards = store.data.boards;
+		renderPicker({
+			dialog: boardDialog,
+			title: text.tabBoards,
+			items: boards,
+			currentId: boardId,
+			renamingId,
+			pick: switchBoard,
+			rerender: renderBoardDialog,
+			...(!readOnly && {
+				editing: {
+					renameTitle: text.renameBoard,
+					deleteTitle: text.deleteBoard,
+					rename: (id, name) => {
+						store.renameBoard(id, name);
+						renderBoardControls();
+					},
+					remove: deleteBoard,
+					newTitle: text.newBoard,
+					newName: text.defaultBoardName(boards.length + 1),
+					add: (name) => switchBoard(store.addBoard(name).id),
+				},
+			}),
+		});
+	}
+
+	/** The board's stories, or the whole board: show one (and in the editor, create, rename or delete). */
+	const storyDialog = canvasDialog("story-dialog", text.stories);
+	const storyButton = pickerButton("story-switch", text.changeStory, () => {
+		renderStoryDialog();
+		storyDialog.showModal();
+	});
+
+	function renderStoryDialog(renamingId: string | null = null): void {
+		const { stories } = currentBoard();
+		renderPicker({
+			dialog: storyDialog,
+			title: text.stories,
+			items: [{ id: "", name: text.wholeBoard, fixed: true }, ...stories],
+			currentId: storyId ?? "",
+			renamingId,
+			pick: (id) => showStory(id || null),
+			rerender: renderStoryDialog,
+			...(!readOnly && {
+				editing: {
+					renameTitle: text.renameStory,
+					deleteTitle: text.deleteStory,
+					rename: (id, name) => {
+						store.renameStory(boardId, id, name);
+						renderBoardControls();
+					},
+					remove: deleteStory,
+					newTitle: text.newStory,
+					newName: text.defaultStoryName(stories.length + 1),
+					add: (name) => {
+						const story = store.addStory(boardId, name, text.defaultPageName(1));
+						if (story) showStory(story.id);
+					},
+				},
+			}),
+		});
+	}
+
+	/** Deletes a story (after asking); the cards and drawings it showed stay on the board. */
+	function deleteStory(id: string): void {
+		const story = currentBoard().stories.find((s) => s.id === id);
+		if (!story || !confirm(text.confirmDeleteStory(story.name, story.pages.length))) return;
+		flushViewport();
+		store.removeStory(boardId, id);
+		if (id === storyId) showStory(null);
+		else renderBoardControls();
+		renderStoryDialog();
+	}
+
+	function renderBoardControls(): void {
+		boardButton.replaceChildren(...pickerLabel(currentBoard().name));
+		// The viewer offers the stories only if there are any; outside one, the button invites to pick one.
+		const story = currentStory();
+		storyButton.replaceChildren(...pickerLabel(story?.name ?? (readOnly ? text.stories : text.wholeBoard)));
+		const hasStories = currentBoard().stories.length > 0;
+		// The viewer only switches boards and stories, and maybe exports the current board.
+		if (readOnly) {
+			const exportButton = el("button", { type: "button", title: text.exportView, onclick: () => onExportView?.(boardId) }, text.exportButton);
+			return boardControls.replaceChildren(boardButton, ...(hasStories ? [storyButton] : []), ...(onExportView ? [exportButton] : []));
+		}
+		boardControls.replaceChildren(
+			boardButton,
+			storyButton,
+			el("button", { type: "button", title: text.newEntityHint, onclick: openNewEntity }, text.newEntityButton),
 		);
 	}
 
@@ -929,7 +1052,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 							"button",
 							{
 								type: "button",
-								className: "board-option",
+								className: "picker-option",
 								onclick: () => done(store.linkEntity(cardId, link, other.id, currentPage()?.id) ?? undefined),
 							},
 							other.name,
@@ -1669,15 +1792,15 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	}
 	if (!readOnly) document.addEventListener("paste", onPaste);
 
-	/** Story mode only: bottom center. The viewer only steps back and forth; the editor also names, adds and
-	 * deletes pages. */
+	/** In a story only: bottom center. The viewer only steps back and forth (or back to the board); the editor also
+	 * names, adds and deletes pages. */
 	const pageBar = el("div", { className: "toolbar-group page-bar", role: "navigation", ariaLabel: text.pages });
 
 	function renderPageBar(): void {
 		const page = currentPage();
 		pageBar.hidden = !page;
 		if (!page) return void pageBar.replaceChildren();
-		const { pages } = currentBoard();
+		const pages = currentStory()!.pages;
 		const index = pages.findIndex((p) => p.id === page.id);
 		const counter = el("span", { className: "page-counter muted" }, `${index + 1} / ${pages.length}`);
 		const prev = el(
@@ -1690,7 +1813,10 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			{ type: "button", ariaLabel: text.nextPage, title: text.nextPage, disabled: index === pages.length - 1, onclick: () => stepPage(1) },
 			"›",
 		);
-		if (readOnly) return pageBar.replaceChildren(prev, el("strong", { className: "page-name" }, page.name), counter, next);
+		if (readOnly) {
+			const back = el("button", { type: "button", title: text.backToBoardHint, onclick: () => showStory(null) }, text.backToBoard);
+			return pageBar.replaceChildren(back, prev, el("strong", { className: "page-name" }, page.name), counter, next);
+		}
 
 		const name = el("input", {
 			className: "page-name",
@@ -1860,6 +1986,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		zoomBar,
 		preview,
 		boardDialog,
+		storyDialog,
 		connectDialog,
 		newEntityDialog,
 	);

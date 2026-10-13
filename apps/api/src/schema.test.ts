@@ -57,3 +57,33 @@ test("a step that fails leaves the schema exactly as it was — none of the run 
 		await sql.end({ timeout: 5 });
 	}
 });
+
+test("step 6: a board's steps from before become one story, with the board's id", { skip: !url }, async () => {
+	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
+	try {
+		await wipe(sql);
+		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 6));
+		await sql`insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 4)`;
+		const board = (id: string, position: number, story: boolean | null, pages: unknown) =>
+			sql`insert into boards (workspace_id, id, position, name, story, pages)
+				values ('ws', ${id}, ${position}, ${id}, ${story}, ${pages === null ? null : sql.json(pages as never)})`;
+		await board("on", 0, true, [{ id: "p1", name: "Eins" }]);
+		await board("off", 1, false, [{ id: "p2", name: "Zwei" }]);
+		await board("none", 2, false, []);
+		await board("null", 3, null, null);
+
+		assert.deepEqual(await migrateSchema(sql), [6]);
+		const rows = await sql`select id, stories from boards order by position`;
+		assert.deepEqual(
+			rows.map((row) => [row.id, row.stories]),
+			[
+				["on", [{ id: "on", name: "Story 1", pages: [{ id: "p1", name: "Eins" }] }]],
+				["off", [{ id: "off", name: "Story 1", pages: [{ id: "p2", name: "Zwei" }] }]],
+				["none", []],
+				["null", []],
+			],
+		);
+	} finally {
+		await sql.end({ timeout: 5 });
+	}
+});
