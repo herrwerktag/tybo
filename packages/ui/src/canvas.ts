@@ -8,8 +8,10 @@ import {
 	GRID_SIZE,
 	MIN_CARD_SIZE,
 	MIN_DESCRIPTION_SIZE,
+	FRAME_ASPECT,
 	MIN_FRAME_SIZE,
 	descriptionInView,
+	frameInside,
 	cardRows,
 	effectiveCardDisplay,
 	entityTypeMap,
@@ -675,7 +677,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				newTitle: text.newFrame,
 				newName: text.defaultFrameName(frames.length + 1),
 				add: (name) => {
-					store.addFrame(boardId, name, visibleRect(viewport, surface.clientWidth, surface.clientHeight), page);
+					store.addFrame(boardId, name, seenFrame(), page);
 					framesChanged();
 				},
 			},
@@ -686,6 +688,17 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		renderBoardControls();
 		renderFrames();
 	}
+
+	/** The frame of what is seen now: the largest one in a frame's shape inside the canvas. */
+	const seenFrame = (): Rect => frameInside(visibleRect(viewport, surface.clientWidth, surface.clientHeight));
+
+	/** Editor: sets the frame of what's shown (the step's, which may be the board's, or outside a story the board's)
+	 * to what is seen now; steps sharing it are seen anew too. */
+	const frameFromViewButton = el(
+		"button",
+		{ type: "button", className: "frame-from-view", title: text.frameFromViewHint, onclick: () => saveFrame(currentFrame(), seenFrame()) },
+		text.frameFromView,
+	);
 
 	function renderBoardControls(): void {
 		boardButton.replaceChildren(...pickerLabel(currentBoard().name));
@@ -704,6 +717,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			storyButton,
 			// Outside a story, the whole board is always seen in its own frame.
 			...(story ? [frameButton] : []),
+			frameFromViewButton,
 			el("button", { type: "button", title: text.newEntityHint, onclick: openNewEntity }, text.newEntityButton),
 		);
 	}
@@ -2059,8 +2073,9 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 
 	/** Moves or resizes a frame: the board's own (id "") or a step frame. */
 	function saveFrame(frame: ViewFrame, rect: Rect): void {
-		if (frame.id === "") store.setViewFrame(boardId, rect);
-		else store.updateFrame(boardId, frame.id, rect);
+		const { x, y, width, height } = rect;
+		if (frame.id === "") store.setViewFrame(boardId, { x, y, width, height });
+		else store.updateFrame(boardId, frame.id, { x, y, width, height });
 		renderFrames();
 	}
 
@@ -2087,10 +2102,12 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			if (e.button !== 0) return;
 			e.preventDefault();
 			const { zoom } = viewport;
-			const size = (dx: number, dy: number) => ({
-				width: Math.max(MIN_FRAME_SIZE.width, snapToGrid(frame.width + dx / zoom)),
-				height: Math.max(MIN_FRAME_SIZE.height, snapToGrid(frame.height + dy / zoom)),
-			});
+			// It keeps a frame's shape: the width follows the pointer across or (if moved more that way) down, on the grid.
+			const size = (dx: number, dy: number) => {
+				const along = Math.abs(dx) >= Math.abs(dy * FRAME_ASPECT) ? dx : dy * FRAME_ASPECT;
+				const width = Math.max(MIN_FRAME_SIZE.width, snapToGrid(frame.width + along / zoom));
+				return { width, height: width / FRAME_ASPECT };
+			};
 			trackPointer(
 				e,
 				(dx, dy) => placeFrame(node, { ...frame, ...size(dx, dy) }),

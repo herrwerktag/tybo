@@ -7,7 +7,7 @@ import {
 	DEFAULT_CARD_SIZE,
 	DEFAULT_DESCRIPTION_SIZE,
 	MIN_DESCRIPTION_SIZE,
-	MIN_FRAME_SIZE,
+	frameShape,
 	descriptionInView,
 	MIN_CARD_SIZE,
 	CARD_DISPLAYS,
@@ -163,11 +163,6 @@ function withCard(board: Board, card: CanvasCard, pageId?: string): Board {
 /** The board with the page `pageId` seen in the frame `frameId` (null: the board's frame). */
 function withFrame(board: Board, frameId: string | null, pageId: string): Board {
 	return mapPages(board, (p) => (p.id === pageId ? { ...p, frameId } : p));
-}
-
-/** The rectangle at least MIN_FRAME_SIZE. */
-function frameSize<R extends Rect>(rect: R): R {
-	return { ...rect, width: Math.max(MIN_FRAME_SIZE.width, rect.width), height: Math.max(MIN_FRAME_SIZE.height, rect.height) };
 }
 
 /** How two entities get linked, seen from one of them: through which reference property, held by which side. */
@@ -326,13 +321,13 @@ function normalizeStory(
  * much, from the top left corner of their view, and a new board's frame is that large. */
 export const REFERENCE_SCREEN = { width: 1280, height: 720 } as const;
 
-/** A well-formed frame, at least MIN_FRAME_SIZE, or null. */
+/** A well-formed frame, in a frame's shape (see frameShape), or null. */
 function normalizeFrame(raw: unknown, fallbackName: string): ViewFrame | null {
 	if (!isObject(raw) || typeof raw.id !== "string" || ![raw.x, raw.y, raw.width, raw.height].every(isNumber)) return null;
 	return {
 		id: raw.id,
 		name: typeof raw.name === "string" && raw.name.trim() !== "" ? raw.name : fallbackName,
-		...frameSize({ x: raw.x as number, y: raw.y as number, width: raw.width as number, height: raw.height as number }),
+		...frameShape({ x: raw.x as number, y: raw.y as number, width: raw.width as number, height: raw.height as number }),
 	};
 }
 
@@ -402,7 +397,7 @@ function normalizeBoard(
 		cards,
 		viewport,
 		// A board saved without its frame (before frames) gets one of its pan/zoom: the viewer showed the board so.
-		viewFrame: frameSize(
+		viewFrame: frameShape(
 			isObject(board?.viewFrame) && [board.viewFrame.x, board.viewFrame.y, board.viewFrame.width, board.viewFrame.height].every(isNumber)
 				? { x: board.viewFrame.x, y: board.viewFrame.y, width: board.viewFrame.width, height: board.viewFrame.height }
 				: visibleRect(viewport, REFERENCE_SCREEN.width, REFERENCE_SCREEN.height),
@@ -1181,35 +1176,27 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			save();
 		},
 
-		/** Adds a frame showing `rect` (at least MIN_FRAME_SIZE) and lets the page `pageId` be seen in it; one change. */
+		/** Adds a frame showing `rect`, in a frame's shape (see frameShape), and lets the page `pageId` be seen in it; one
+		 * change. */
 		addFrame(boardId: string, name: string, rect: Rect, pageId: string): ViewFrame | null {
 			const board = data.boards.find((b) => b.id === boardId);
 			if (!board) return null;
 			const frame: ViewFrame = {
 				id: ulid(),
 				name: name.trim() || `Frame ${board.frames.length + 1}`,
-				...frameSize({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }),
+				...frameShape({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }),
 			};
 			updateBoard(boardId, (b) => withFrame({ ...b, frames: [...b.frames, frame] }, frame.id, pageId));
 			return frame;
 		},
 
-		/** Renames, moves or resizes a frame; an empty name is ignored, the size kept at least MIN_FRAME_SIZE. */
+		/** Renames, moves or resizes a frame; an empty name is ignored, the frame keeps a frame's shape (its height
+		 * follows the width, see frameShape). */
 		updateFrame(boardId: string, frameId: string, patch: Partial<Omit<ViewFrame, "id">>): void {
 			const name = patch.name?.trim();
 			updateBoard(boardId, (b) => ({
 				...b,
-				frames: b.frames.map((f) =>
-					f.id === frameId
-						? {
-								...f,
-								...patch,
-								name: name || f.name,
-								width: Math.max(MIN_FRAME_SIZE.width, patch.width ?? f.width),
-								height: Math.max(MIN_FRAME_SIZE.height, patch.height ?? f.height),
-							}
-						: f,
-				),
+				frames: b.frames.map((f) => (f.id === frameId ? frameShape({ ...f, ...patch, name: name || f.name }) : f)),
 			}));
 		},
 
@@ -1225,9 +1212,9 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			updateBoard(boardId, (b) => (frameId === null || b.frames.some((f) => f.id === frameId) ? withFrame(b, frameId, pageId) : b));
 		},
 
-		/** Moves or resizes the board's own frame, kept at least MIN_FRAME_SIZE. */
+		/** Moves or resizes the board's own frame, in a frame's shape (see frameShape). */
 		setViewFrame(boardId: string, rect: Rect): void {
-			updateBoard(boardId, (b) => ({ ...b, viewFrame: frameSize({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }) }));
+			updateBoard(boardId, (b) => ({ ...b, viewFrame: frameShape({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }) }));
 		},
 
 		get history(): { canUndo: boolean; canRedo: boolean } {

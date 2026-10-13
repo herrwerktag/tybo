@@ -820,13 +820,13 @@ test("frames: steps are seen in one or in the board's own; frames can be changed
 	const tiny = store.addFrame(story.id, "", { x: 0, y: 0, width: 5, height: 5 }, page.id)!;
 	assert.deepEqual(board().frames, [
 		{ id: wide.id, name: "Wide", x: 10, y: 20, width: 800, height: 450 },
-		{ id: tiny.id, name: "Frame 2", x: 0, y: 0, width: 192, height: 120 }, // never below the minimum
+		{ id: tiny.id, name: "Frame 2", x: 0, y: 0, width: 192, height: 108 }, // never below the minimum, in a screen's shape
 	]);
 	assert.equal(board().stories[0]!.pages[0]!.frameId, tiny.id);
 	store.setFrame(story.id, wide.id, page.id);
 
-	store.updateFrame(story.id, wide.id, { name: " ", x: 30, width: 10 });
-	assert.deepEqual(board().frames[0], { id: wide.id, name: "Wide", x: 30, y: 20, width: 192, height: 450 });
+	store.updateFrame(story.id, wide.id, { name: " ", x: 30, width: 320, height: 1000 });
+	assert.deepEqual(board().frames[0], { id: wide.id, name: "Wide", x: 30, y: 20, width: 320, height: 180 }, "the height follows the width");
 	store.undo();
 	assert.equal(board().frames[0]?.x, 10);
 
@@ -835,9 +835,9 @@ test("frames: steps are seen in one or in the board's own; frames can be changed
 	store.setFrame(story.id, null, page.id);
 	assert.equal(board().stories[0]!.pages[0]!.frameId, null);
 
-	// The board's own frame is moved and resized, never below the minimum.
+	// The board's own frame is moved and resized, likewise.
 	store.setViewFrame(story.id, { x: -48, y: 24, width: 10, height: 600 });
-	assert.deepEqual(board().viewFrame, { x: -48, y: 24, width: 192, height: 600 });
+	assert.deepEqual(board().viewFrame, { x: -48, y: 24, width: 192, height: 108 });
 	assert.deepEqual((await open(storage)).data.boards[1], board());
 
 	// Deleting a frame: its steps are seen in the board's frame.
