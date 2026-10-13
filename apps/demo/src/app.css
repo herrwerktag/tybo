@@ -1560,7 +1560,7 @@ button.ref-tag {
 	/* Kept out of the way until ⋯; the viewer keeps its story mode toggle at hand. */
 	.canvas-view:not(.show-more)
 		:is(
-			.board-controls > :not(select),
+			.board-controls > :not(.board-switch),
 			.drawing-tools,
 			.page-bar > :is(input.page-name, .page-copy, button:nth-child(n + 5)),
 			.canvas-zoom > button:last-child
@@ -1589,7 +1589,7 @@ button.ref-tag {
 		flex: 1 1 auto;
 	}
 
-	.canvas-toolbar .board-controls select {
+	.canvas-toolbar .board-switch {
 		max-width: none;
 	}
 
@@ -1995,8 +1995,112 @@ button.ref-tag {
 	gap: 0.25rem;
 }
 
-.board-controls select {
-	max-width: 12rem;
+/* The current board's name, opening the boards overlay. */
+.board-switch {
+	display: inline-flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.4rem;
+	max-width: 28rem;
+}
+
+.board-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* The boards overlay: switch to a board; in the editor also create, rename and delete them. */
+.board-dialog {
+	/* Centered on the screen (the reset takes away the browser's margin: auto). */
+	margin: auto;
+	width: min(26rem, calc(100vw - 2rem));
+	max-height: calc(100dvh - 4rem);
+	padding: 1rem;
+	background: var(--surface);
+	color: inherit;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	box-shadow: 0 6px 20px rgb(0 0 0 / 0.12);
+}
+
+.board-dialog[open] {
+	display: grid;
+	gap: 0.75rem;
+}
+
+.board-dialog::backdrop {
+	background: rgb(0 0 0 / 0.25);
+}
+
+.board-dialog header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.board-dialog h2 {
+	font-size: 1rem;
+}
+
+.board-dialog h3 {
+	font-size: 0.9rem;
+}
+
+.board-list {
+	display: grid;
+	gap: 0.25rem;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	overflow-y: auto;
+}
+
+.board-list li,
+.board-rename {
+	display: flex;
+	gap: 0.25rem;
+}
+
+/* Like the workspace menu's options. */
+.board-option {
+	flex: 1;
+	min-width: 0;
+	text-align: left;
+	border: none;
+	background: transparent;
+	padding: 0.35rem 0.5rem;
+	overflow-wrap: anywhere;
+}
+
+.board-option[aria-current="true"],
+.board-option[aria-current="true"]:hover:not(:disabled) {
+	background: var(--highlight);
+	font-weight: 600;
+}
+
+.board-rename input {
+	flex: 1;
+	min-width: 0;
+}
+
+.board-new {
+	display: grid;
+	gap: 0.5rem;
+	padding-top: 0.75rem;
+	border-top: 1px solid var(--border);
+}
+
+.board-new button {
+	justify-self: start;
+}
+
+/* Without any board: just the button creating the first, in the middle. */
+.first-board {
+	display: grid;
+	place-content: center;
+	justify-items: center;
+	gap: 0.75rem;
 }
 
 .zoom-label {

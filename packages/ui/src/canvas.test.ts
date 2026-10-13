@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { canvasView } from "./canvas.js";
 import { CLICK_TOLERANCE } from "./dom.js";
+import { text } from "./i18n.js";
 import { createStore, DATA_VERSION, snapToGrid, type Store } from "@tybo/core";
 import { memoryDataPort } from "@tybo/core/testing";
 
@@ -424,4 +425,71 @@ test("the drawing tools fold down to the current tool, and stay folded", async (
 	assert.ok(tools.classList.contains("collapsed"));
 	const again = canvasView(store, { readOnly: false });
 	assert.ok(again.querySelector(".drawing-tools")!.classList.contains("collapsed"));
+});
+
+/** Opens the boards overlay with the Change board button, which shows the current board's name. */
+function openBoards(view: HTMLElement): HTMLDialogElement {
+	view.querySelector<HTMLButtonElement>(".board-switch")!.click();
+	const dialog = view.querySelector<HTMLDialogElement>(".board-dialog")!;
+	assert.ok(dialog.open);
+	return dialog;
+}
+const boardOption = (dialog: HTMLElement, name: string) =>
+	[...dialog.querySelectorAll<HTMLButtonElement>(".board-option")].find((b) => b.textContent === name)!;
+
+test("the boards overlay creates a board and switches to it, and switches back by clicking a board", async () => {
+	const { store, view } = await setup();
+	assert.equal(view.querySelector(".board-name")?.textContent, "Board 1");
+	let dialog = openBoards(view);
+	dialog.querySelector<HTMLInputElement>(".board-new input")!.value = "Planning";
+	dialog.querySelector<HTMLFormElement>(".board-new")!.requestSubmit();
+	assert.ok(!dialog.open);
+	assert.deepEqual(store.data.boards.map((b) => b.name), ["Board 1", "Planning"]);
+	assert.equal(view.querySelector(".board-name")?.textContent, "Planning");
+	assert.equal(view.querySelectorAll(".canvas-card[data-card-id]").length, 0, "the new board is empty");
+
+	dialog = openBoards(view);
+	assert.equal(boardOption(dialog, "Planning").getAttribute("aria-current"), "true");
+	boardOption(dialog, "Board 1").click();
+	assert.equal(view.querySelector(".board-name")?.textContent, "Board 1");
+	assert.equal(view.querySelectorAll(".canvas-card[data-card-id]").length, 2);
+});
+
+test("a board is renamed in place in the overlay; Escape keeps the old name", async () => {
+	const { store, view } = await setup();
+	const dialog = openBoards(view);
+	const rename = () => [...dialog.querySelectorAll<HTMLButtonElement>("li button")].find((b) => b.textContent === "Rename")!.click();
+	rename();
+	const input = dialog.querySelector<HTMLInputElement>(".board-rename input")!;
+	input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+	assert.equal(dialog.querySelector(".board-rename"), null);
+	rename();
+	dialog.querySelector<HTMLInputElement>(".board-rename input")!.value = "Roadmap";
+	dialog.querySelector<HTMLFormElement>(".board-rename")!.requestSubmit();
+	assert.equal(store.data.boards[0]!.name, "Roadmap");
+	assert.ok(boardOption(dialog, "Roadmap"));
+	assert.equal(view.querySelector(".board-name")?.textContent, "Roadmap");
+});
+
+test("deleting the last board leaves only a button creating the first one", async () => {
+	const { store, view } = await setup();
+	const questions: string[] = [];
+	Object.assign(globalThis, { confirm: (message: string) => (questions.push(message), true) });
+	const dialog = openBoards(view);
+	[...dialog.querySelectorAll<HTMLButtonElement>("li button")].find((b) => b.textContent === "Delete")!.click();
+	assert.deepEqual(questions, [text.confirmDeleteBoard("Board 1", 2)]);
+	assert.equal(store.data.boards.length, 0);
+	const first = document.querySelector<HTMLButtonElement>(".first-board button")!;
+	assert.equal(first.textContent, "Create first board");
+	first.click();
+	assert.deepEqual(store.data.boards.map((b) => b.name), ["Board 1"]);
+	assert.ok(document.querySelector(".canvas-view"));
+	assert.equal(document.querySelector(".first-board"), null);
+});
+
+test("in the viewer, the boards overlay only switches boards", async () => {
+	const { view } = await setup({ readOnly: true });
+	const dialog = openBoards(view);
+	assert.equal(dialog.querySelector(".board-new"), null);
+	assert.deepEqual([...dialog.querySelectorAll("li button")].map((b) => b.className), ["board-option"]);
 });

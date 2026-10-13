@@ -298,7 +298,7 @@ export function snapToGrid(value: number): number {
 export interface AppData {
 	types: EntityType[];
 	entities: Entity[];
-	/** Never empty. */
+	/** Empty once the last board was deleted (a new workspace starts with one). */
 	boards: Board[];
 	/** Drawings to place on boards, in the order they were made. */
 	library: LibraryDrawing[];

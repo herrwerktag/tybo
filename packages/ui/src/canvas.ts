@@ -50,6 +50,35 @@ const PAGE_ANIMATION = 450;
 const ZOOM_SETTLE_DELAY = 150;
 const ZOOM_SETTLE_ANIMATION = 120;
 
+interface CanvasOptions {
+	readOnly: boolean;
+	onEditEntity?: (entityId: string) => void;
+	onExportView?: (boardId: string) => void;
+	onEditLibraryDrawing?: (libraryId: string) => void;
+}
+
+/** Instead of the canvas while there's no board: a button that creates the first one and opens it. */
+function firstBoardView(store: Store, options: CanvasOptions): HTMLElement {
+	const view: HTMLElement = el(
+		"section",
+		{ className: "first-board" },
+		el("p", {}, text.noBoardsYet),
+		el(
+			"button",
+			{
+				type: "button",
+				className: "primary",
+				onclick: () => {
+					writePreference(ACTIVE_BOARD_KEY, store.addBoard(text.defaultBoardName(1)).id);
+					view.replaceWith(canvasView(store, options));
+				},
+			},
+			text.createFirstBoard,
+		),
+	);
+	return view;
+}
+
 /**
  * The board canvas. With `readOnly` (the Viewer) it only displays: no side panel, no board editing,
  * no moving, resizing, removing or dropping cards, and pan/zoom are never saved. With `onExportView`, the
@@ -59,20 +88,9 @@ const ZOOM_SETTLE_ANIMATION = 120;
  * A board in story mode is shown one page at a time, with a page bar at the bottom and the page's description over the
  * canvas. The editor also shows the cards and drawings of other pages, faded, so they can be shown here too.
  */
-export function canvasView(
-	store: Store,
-	{
-		readOnly,
-		onEditEntity,
-		onExportView,
-		onEditLibraryDrawing,
-	}: {
-		readOnly: boolean;
-		onEditEntity?: (entityId: string) => void;
-		onExportView?: (boardId: string) => void;
-		onEditLibraryDrawing?: (libraryId: string) => void;
-	},
-): HTMLElement {
+export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
+	if (store.data.boards.length === 0) return firstBoardView(store, options);
+	const { readOnly, onEditEntity, onExportView, onEditLibraryDrawing } = options;
 	let boardId = readPreference(ACTIVE_BOARD_KEY) ?? "";
 	const currentBoard = (): Board => store.data.boards.find((b) => b.id === boardId) ?? store.data.boards[0]!;
 	boardId = currentBoard().id;
@@ -270,13 +288,29 @@ export function canvasView(
 
 	const boardControls = el("div", { className: "board-controls" });
 
+	/** Opens the overlay listing the boards, to switch to another (and in the editor, to create, rename or delete). */
+	const boardButton = el("button", {
+		type: "button",
+		className: "board-switch",
+		title: text.changeBoard,
+		ariaHasPopup: "dialog",
+		onclick: () => {
+			renderBoardDialog();
+			boardDialog.showModal();
+		},
+	});
+	const boardDialog = el("dialog", {
+		className: "board-dialog",
+		ariaLabel: text.tabBoards,
+		// A click on the backdrop (outside the box) closes it. (No expression body: an on… handler returning false
+		// would cancel every click inside, submits included.)
+		onclick: (e: MouseEvent) => {
+			if (e.target === boardDialog) boardDialog.close();
+		},
+	});
+
 	function renderBoardControls(): void {
-		const boards = store.data.boards;
-		const select = el(
-			"select",
-			{ ariaLabel: text.board, onchange: () => switchBoard(select.value) },
-			...boards.map((b) => el("option", { value: b.id, selected: b.id === boardId }, b.name)),
-		);
+		boardButton.replaceChildren(el("span", { className: "board-name" }, currentBoard().name), el("span", { ariaHidden: "true" }, "▾"));
 		// The viewer only switches boards, and maybe exports the current one.
 		if (readOnly) {
 			const exportButton = el("button", { type: "button", title: text.exportView, onclick: () => onExportView?.(boardId) }, text.exportButton);
@@ -296,56 +330,13 @@ export function canvasView(
 				text.storyMode,
 			);
 			return boardControls.replaceChildren(
-				select,
+				boardButton,
 				...(currentBoard().story ? [presentButton] : []),
 				...(onExportView ? [exportButton] : []),
 			);
 		}
 		boardControls.replaceChildren(
-			select,
-			el(
-				"button",
-				{
-					type: "button",
-					title: text.newBoard,
-					onclick: () => {
-						const name = prompt(text.newBoardPrompt, text.defaultBoardName(boards.length + 1));
-						if (name !== null) switchBoard(store.addBoard(name).id);
-					},
-				},
-				text.newBoardButton,
-			),
-			el(
-				"button",
-				{
-					type: "button",
-					title: text.renameBoard,
-					onclick: () => {
-						const name = prompt(text.renameBoard, currentBoard().name);
-						if (name === null) return;
-						store.renameBoard(boardId, name);
-						renderBoardControls();
-					},
-				},
-				text.renameButton,
-			),
-			el(
-				"button",
-				{
-					type: "button",
-					disabled: boards.length <= 1,
-					title: boards.length <= 1 ? text.lastBoard : text.deleteBoard,
-					onclick: () => {
-						const board = currentBoard();
-						const cards = board.cards.length;
-						if (!confirm(text.confirmDeleteBoard(board.name, cards))) return;
-						flushViewport();
-						store.deleteBoard(board.id);
-						switchBoard(store.data.boards[0]!.id);
-					},
-				},
-				text.delete,
-			),
+			boardButton,
 			// Shows the board step by step, like a presentation; switched off, its steps stay for next time.
 			el(
 				"button",
@@ -363,6 +354,106 @@ export function canvasView(
 				text.storyMode,
 			),
 		);
+	}
+
+	/** The overlay's content: the boards (one of them maybe being renamed), and in the editor a form for a new one. */
+	function renderBoardDialog(renamingId: string | null = null): void {
+		const boards = store.data.boards;
+		const rows = boards.map((board) => {
+			if (board.id === renamingId) {
+				const input = el("input", { value: board.name, ariaLabel: text.renameBoard, required: true });
+				// Escape leaves the name as it was, instead of closing the overlay.
+				input.addEventListener("keydown", (e) => {
+					if (e.key !== "Escape") return;
+					e.preventDefault();
+					renderBoardDialog();
+				});
+				requestAnimationFrame(() => input.select());
+				return el(
+					"li",
+					{},
+					el(
+						"form",
+						{
+							className: "board-rename",
+							onsubmit: (e: SubmitEvent) => {
+								e.preventDefault();
+								store.renameBoard(board.id, input.value);
+								renderBoardControls();
+								renderBoardDialog();
+							},
+						},
+						input,
+						el("button", { type: "submit", className: "primary" }, text.save),
+						el("button", { type: "button", onclick: () => renderBoardDialog() }, text.cancel),
+					),
+				);
+			}
+			const option = el(
+				"button",
+				{
+					type: "button",
+					className: "board-option",
+					onclick: () => {
+						boardDialog.close();
+						if (board.id !== boardId) switchBoard(board.id);
+					},
+				},
+				board.name,
+			);
+			if (board.id === boardId) option.setAttribute("aria-current", "true");
+			if (readOnly) return el("li", {}, option);
+			return el(
+				"li",
+				{},
+				option,
+				el("button", { type: "button", title: text.renameBoard, onclick: () => renderBoardDialog(board.id) }, text.renameButton),
+				el("button", { type: "button", title: text.deleteBoard, onclick: () => deleteBoard(board.id) }, text.delete),
+			);
+		});
+
+		const nameInput = el("input", { ariaLabel: text.name, value: text.defaultBoardName(boards.length + 1), required: true });
+		const newForm = el(
+			"form",
+			{
+				className: "board-new",
+				onsubmit: (e: SubmitEvent) => {
+					e.preventDefault();
+					const board = store.addBoard(nameInput.value);
+					boardDialog.close();
+					switchBoard(board.id);
+				},
+			},
+			el("h3", {}, text.newBoard),
+			nameInput,
+			el("button", { type: "submit", className: "primary" }, text.create),
+		);
+
+		boardDialog.replaceChildren(
+			el(
+				"header",
+				{},
+				el("h2", {}, text.tabBoards),
+				el("button", { type: "button", className: "card-remove", title: text.close, ariaLabel: text.close, onclick: () => boardDialog.close() }, "×"),
+			),
+			el("ul", { className: "board-list" }, ...rows),
+			...(readOnly ? [] : [newForm]),
+		);
+	}
+
+	/** Deletes a board (after asking); without any left, the canvas makes way for the button creating the first. */
+	function deleteBoard(id: string): void {
+		const board = store.data.boards.find((b) => b.id === id);
+		if (!board || !confirm(text.confirmDeleteBoard(board.name, board.cards.length))) return;
+		flushViewport();
+		store.deleteBoard(id);
+		if (store.data.boards.length === 0) {
+			boardDialog.close();
+			view.replaceWith(canvasView(store, options));
+			return;
+		}
+		if (id === boardId) switchBoard(store.data.boards[0]!.id);
+		renderBoardDialog();
 	}
 
 	function setViewport(next: Viewport): void {
@@ -1397,6 +1488,7 @@ export function canvasView(
 		pageBar,
 		zoomBar,
 		preview,
+		boardDialog,
 	);
 	// Drag handles for the widths of the side panel and the details (hidden along with them, see CSS).
 	const panelHandle = resizeHandle(panel, { key: PANEL_WIDTH_KEY, side: "left", min: 12, max: 32 });

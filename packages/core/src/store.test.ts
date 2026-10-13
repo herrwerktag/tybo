@@ -483,8 +483,9 @@ test("the single canvas saved before boards existed becomes Board 1; its cards g
 	assert.equal(card?.x, 1);
 });
 
-test("boards can be added, renamed and deleted, but never the last one", async () => {
-	const store = await open(memoryStorage());
+test("boards can be added, renamed and deleted, even the last one", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
 	const first = firstBoard(store);
 	const second = store.addBoard(" Planning ");
 	assert.equal(second.name, "Planning");
@@ -500,8 +501,15 @@ test("boards can be added, renamed and deleted, but never the last one", async (
 		store.data.boards.map((b) => b.id),
 		[first.id],
 	);
+	store.addEntity(store.addType("Book", [], "").id, "Dune", "", {});
 	store.deleteBoard(first.id);
-	assert.equal(store.data.boards.length, 1);
+	assert.deepEqual(store.data.boards, []);
+	assert.deepEqual((await open(storage)).data.boards, [], "no new first board once there are entities");
+});
+
+test("a new workspace starts with a first board, also when it got copies of entity types", async () => {
+	const store = await open(memoryStorage({ version: DATA_VERSION, types: [{ id: "b", name: "Book", properties: [] }], entities: [], boards: [] }));
+	assert.deepEqual(store.data.boards.map((b) => b.name), ["Board 1"]);
 });
 
 test("each board has its own cards and viewport; card changes stay on their board", async () => {

@@ -247,11 +247,16 @@ function normalizeBoard(board: Partial<Board> | undefined, fallbackName: string)
 	return normalized.story && pages.length === 0 ? { ...normalized, pages: [newPage("Step 1", { ...normalized.viewport })] } : normalized;
 }
 
-/** Reads the boards, including the single `canvas` saved by the version before boards existed. */
+/**
+ * Reads the boards, including the single `canvas` saved by the version before boards existed. A workspace with
+ * no entities or library drawings yet (a new one, maybe with copied types) gets a first board; otherwise there may
+ * be none, once the last one was deleted.
+ */
 function normalizeBoards(data: AppData & { canvas?: Partial<Board> }): Board[] {
 	const raw: Partial<Board>[] = Array.isArray(data.boards) ? data.boards : data.canvas ? [data.canvas] : [];
 	const boards = raw.map((b, i) => normalizeBoard(b, `Board ${i + 1}`));
-	return boards.length > 0 ? boards : [newBoard("Board 1")];
+	const fresh = data.entities.length === 0 && !(Array.isArray(data.library) && data.library.length > 0);
+	return boards.length > 0 || !fresh ? boards : [newBoard("Board 1")];
 }
 
 /** The well-formed library drawings, each with only well-formed drawings — never other library drawings. */
@@ -728,9 +733,8 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			updateBoard(boardId, (b) => ({ ...b, name: name.trim() }));
 		},
 
-		/** Deletes a board and its cards (never the entities). The last board can't be deleted. */
+		/** Deletes a board and its cards (never the entities), even the last one. */
 		deleteBoard(boardId: string): void {
-			if (data.boards.length <= 1) return;
 			change({ ...data, boards: data.boards.filter((b) => b.id !== boardId) });
 		},
 
