@@ -493,3 +493,74 @@ test("in the viewer, the boards overlay only switches boards", async () => {
 	assert.equal(dialog.querySelector(".board-new"), null);
 	assert.deepEqual([...dialog.querySelectorAll("li button")].map((b) => b.className), ["board-option"]);
 });
+
+/** Presses `button` on `target` at (x, y) (with Shift or not), moves to (x + dx, y + dy) and releases there. */
+function press(target: Element, x: number, y: number, dx: number, dy: number, { button = 0, shiftKey = false } = {}): void {
+	const at = (type: string, px: number, py: number) =>
+		target.dispatchEvent(
+			new PointerEvent(type, { bubbles: true, cancelable: true, button, shiftKey, pointerId: 1, pointerType: "mouse", clientX: px, clientY: py }),
+		);
+	at("pointerdown", x, y);
+	at("pointermove", x + dx, y + dy);
+	at("pointerup", x + dx, y + dy);
+}
+const shiftClick = (target: Element) => target.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+const selectedCards = (view: HTMLElement) =>
+	[...view.querySelectorAll<HTMLElement>(".canvas-card.selected[data-card-id]")].map((n) => n.dataset.cardId);
+
+test("Shift+click selects several cards; dragging one moves them all in one undo step, without details", async () => {
+	const { store, view, card } = await setup();
+	const other = store.data.boards[0]!.cards.find((c) => c.id !== card.id)!;
+	cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	assert.equal(details(view).hidden, false);
+	shiftClick(cardNode(view, other.id).querySelector("header")!);
+	assert.deepEqual(selectedCards(view), [card.id, other.id]);
+	assert.equal(details(view).hidden, true, "no details for several cards");
+
+	dragBy(cardNode(view, other.id).querySelector("header")!, 50, 30);
+	assert.deepEqual([savedCard(store, card.id), savedCard(store, other.id)].map((c) => [c?.x, c?.y]), [[148, 124], [448, 124]]);
+	assert.deepEqual(selectedCards(view), [card.id, other.id], "still both selected");
+	store.undo();
+	assert.deepEqual([savedCard(store, card.id), savedCard(store, other.id)].map((c) => [c?.x, c?.y]), [[100, 100], [400, 100]]);
+
+	shiftClick(cardNode(view, other.id).querySelector("header")!);
+	assert.deepEqual(selectedCards(view), [card.id], "Shift+click again takes one out; one left is selected as usual");
+	assert.equal(details(view).hidden, false);
+});
+
+test("dragging on the empty board frames cards and drawings to select them; a click there clears the selection", async () => {
+	const { store, view, card } = await setup();
+	const boardId = store.data.boards[0]!.id;
+	const box = store.addDrawing(boardId, { kind: "rect", x: 120, y: 300, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
+	store.addDrawing(boardId, { kind: "rect", x: 900, y: 900, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
+	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;
+	const { x, y } = store.data.boards[0]!.viewport; // where the world's origin is on the screen (zoom 1)
+
+	press(surface, x + 50, y + 50, 150, 300); // touches Dune's card (100, 100) and the box, not Herbert's card (400, 100)
+	assert.deepEqual(selectedCards(view), [card.id]);
+	assert.equal(view.querySelectorAll(".drawings .selection-outline").length, 1, "the framed drawing is outlined");
+	assert.equal(details(view).hidden, true);
+
+	dragBy(cardNode(view, card.id).querySelector("header")!, 48, 0); // the box goes along
+	assert.deepEqual([savedCard(store, card.id)?.x, store.data.boards[0]!.drawings.find((d) => d.id === box.id)], [148, { ...box, x: 168 }]);
+
+	press(surface, x + 10, y + 10, 0, 0);
+	assert.deepEqual(selectedCards(view), []);
+	assert.equal(view.querySelectorAll(".drawings .selection-outline").length, 0);
+});
+
+test("the middle button pans instead of selecting; Escape clears a selection", async () => {
+	const { store, view } = await setup();
+	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;
+	const layer = view.querySelector<HTMLElement>(".canvas-board")!;
+	const before = layer.style.transform;
+	press(surface, 10, 10, 40, 20, { button: 1 });
+	assert.notEqual(layer.style.transform, before);
+	assert.equal(view.querySelector<HTMLElement>(".marquee")!.hidden, true);
+
+	const { x, y } = store.data.boards[0]!.viewport;
+	press(surface, x - 1000, y - 1000, 3000, 3000);
+	assert.equal(selectedCards(view).length, 2);
+	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+	assert.deepEqual(selectedCards(view), []);
+});

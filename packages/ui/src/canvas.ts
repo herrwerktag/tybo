@@ -1,5 +1,6 @@
 import { connector, nearest, type Rect } from "@tybo/core";
 import { createDrawingLayer, libraryPicture } from "./drawing-layer.js";
+import { drawingBounds } from "./drawings.js";
 import { CLICK_TOLERANCE, el, resizeHandle, svgEl, trackPointer, typeDot, wheelGesture } from "./dom.js";
 import { text } from "./i18n.js";
 import {
@@ -155,6 +156,10 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	const surface = el("div", { className: "canvas-surface" }, layer);
 	const zoomLabel = el("span", { className: "zoom-label" });
 
+	/** Two or more cards and drawings selected together, to move at once (Shift+click, or a frame dragged around
+	 * them); meanwhile neither the details nor a drawing's handles are shown. */
+	let group: { cardIds: Set<string>; drawingIds: Set<string> } | null = null;
+
 	// Shapes, lines, text and pen strokes: below the connector lines and cards.
 	const drawing = createDrawingLayer({
 		store,
@@ -170,6 +175,11 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		// A card and a drawing are never selected at the same time.
 		onSelect: (drawingId) => {
 			if (drawingId) select(null);
+		},
+		group: () => group?.drawingIds ?? new Set(),
+		onGroupPress: (e, drawingId) => {
+			if (e.shiftKey) toggleSelected("drawingIds", drawingId);
+			else dragGroup(e, { drawingId });
 		},
 		onToolChange: (tool) => surface.classList.toggle("drawing-tool", tool !== "select"),
 		...(onEditLibraryDrawing && { onEditSymbol: onEditLibraryDrawing }),
@@ -221,6 +231,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		pageId = readOnly ? "" : (readPreference(activePageKey(id)) ?? "");
 		view.classList.toggle("story-mode", currentPage() !== null);
 		viewport = savedViewport();
+		group = null;
 		drawing.deselect();
 		applyViewport();
 		renderBoardControls();
@@ -237,6 +248,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		pageId = id;
 		if (!readOnly) writePreference(activePageKey(boardId), id);
 		appearing = new Set(currentPage()?.cardIds.filter((cardId) => !before.has(cardId)));
+		group = null;
 		drawing.deselect();
 		renderPanel();
 		renderCards();
@@ -711,12 +723,101 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	details.hidden = true;
 
 	function select(entityId: string | null, cardId: string | null = null): void {
+		const hadGroup = group !== null;
+		group = null;
 		selected = entityId ? { entityId, cardId } : null;
 		if (entityId) drawing.deselect();
-		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card")) {
-			node.classList.toggle("selected", cardId !== null && node.dataset.cardId === cardId);
-		}
+		markSelectedCards();
+		if (hadGroup) drawing.render(); // without the group's outlines
 		renderDetails();
+	}
+
+	const isCardSelected = (cardId: string): boolean => (group ? group.cardIds.has(cardId) : selected?.cardId === cardId);
+
+	function markSelectedCards(): void {
+		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card[data-card-id]")) {
+			node.classList.toggle("selected", isCardSelected(node.dataset.cardId!));
+		}
+	}
+
+	/** What's selected on the board: the group, or the one card or drawing (copies, to change). */
+	function selection(): { cardIds: Set<string>; drawingIds: Set<string> } {
+		if (group) return { cardIds: new Set(group.cardIds), drawingIds: new Set(group.drawingIds) };
+		const drawingId = drawing.selected();
+		return { cardIds: new Set(selected?.cardId ? [selected.cardId] : []), drawingIds: new Set(drawingId ? [drawingId] : []) };
+	}
+
+	/** Selects these cards and drawings: two or more as a group, one as usual (with its details or handles). */
+	function setSelection(cardIds: Set<string>, drawingIds: Set<string>): void {
+		if (cardIds.size + drawingIds.size >= 2) {
+			select(null);
+			drawing.deselect();
+			group = { cardIds, drawingIds };
+			markSelectedCards();
+			drawing.render();
+		} else if (cardIds.size === 1) {
+			const card = currentBoard().cards.find((c) => cardIds.has(c.id));
+			select(card?.entityId ?? null, card?.id ?? null);
+		} else if (drawingIds.size === 1) {
+			select(null);
+			drawing.select([...drawingIds][0]!);
+		} else {
+			select(null);
+			drawing.deselect();
+		}
+	}
+
+	/** Shift+click: adds a card or drawing to the selection, or takes it out. */
+	function toggleSelected(kind: "cardIds" | "drawingIds", id: string): void {
+		const current = selection();
+		if (!current[kind].delete(id)) current[kind].add(id);
+		setSelection(current.cardIds, current.drawingIds);
+	}
+
+	/**
+	 * Moves the group along with the pointer from a press on one of its cards or drawings, snapped to the grid like a
+	 * single card, in one change. A click without moving selects just what was pressed (a card's own click handler
+	 * does that for cards).
+	 */
+	function dragGroup(e: PointerEvent, pressed: { cardNode: HTMLElement } | { drawingId: string }): void {
+		if (!group) return;
+		const { cardIds, drawingIds } = group;
+		const { zoom } = viewport;
+		const board = currentBoard();
+		const cards = board.cards.filter((c) => cardIds.has(c.id));
+		const offset = (dx: number, dy: number) => ({ x: snapToGrid(dx / zoom), y: snapToGrid(dy / zoom) });
+		let moving = false;
+		trackPointer(
+			e,
+			(dx, dy) => {
+				if (!moving && Math.hypot(dx, dy) < CLICK_TOLERANCE) return;
+				moving = true;
+				const o = offset(dx, dy);
+				for (const card of cards) {
+					const node = layer.querySelector<HTMLElement>(`.canvas-card[data-card-id="${card.id}"]`);
+					if (!node) continue;
+					node.classList.add("dragging");
+					node.style.left = `${card.x + o.x}px`;
+					node.style.top = `${card.y + o.y}px`;
+					const height = node.classList.contains("compact") ? node.offsetHeight : card.height;
+					cardRects.set(card.id, { x: card.x + o.x, y: card.y + o.y, width: card.width, height });
+				}
+				drawing.previewMove(drawingIds, o.x, o.y);
+				drawConnectors();
+			},
+			(dx, dy) => {
+				drawing.previewMove(null);
+				if (!moving) {
+					if ("drawingId" in pressed) setSelection(new Set(), new Set([pressed.drawingId]));
+					return;
+				}
+				if ("cardNode" in pressed) pressed.cardNode.dataset.dragged = "true";
+				const o = offset(dx, dy);
+				store.moveItems(board.id, [...cardIds], [...drawingIds], o.x, o.y);
+				renderCards();
+			},
+			surface,
+		);
 	}
 
 	/** Shows another entity's details, selecting its card if it's on this board. */
@@ -810,7 +911,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	function onKeyDown(e: KeyboardEvent): void {
 		if (!view.isConnected) return document.removeEventListener("keydown", onKeyDown);
 		if ((e.target as Element).closest("input, select, textarea")) return;
-		if (e.key === "Escape" && selected) select(null);
+		if (e.key === "Escape" && (selected || group)) select(null);
 		if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !e.ctrlKey && !e.metaKey && !e.altKey && currentPage()) {
 			e.preventDefault();
 			stepPage(e.key === "ArrowLeft" ? -1 : 1);
@@ -1098,7 +1199,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		const compact = !entity.content.trim();
 		const node = el("article", { className: "canvas-card" }, header, ...(body ? [body] : []));
 		node.classList.toggle("compact", compact);
-		node.classList.toggle("selected", selected?.cardId === card.id);
+		node.classList.toggle("selected", isCardSelected(card.id));
 		node.classList.toggle("ghost", ghost);
 		node.classList.toggle("dimmed", dimmed);
 		node.classList.toggle("appear", appearing.has(card.id));
@@ -1110,7 +1211,10 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				delete node.dataset.dragged;
 				return;
 			}
-			if (!(e.target as Element).closest("button, .ref-tag, .card-resize")) select(entity.id, card.id);
+			if ((e.target as Element).closest("button, .ref-tag, .card-resize")) return;
+			// Shift+click adds the card to the selection or takes it out (not in the viewer, nor other pages' cards).
+			if (e.shiftKey && !readOnly && !ghost) toggleSelected("cardIds", card.id);
+			else select(entity.id, card.id);
 		});
 		Object.assign(node.style, {
 			left: `${card.x}px`,
@@ -1125,8 +1229,9 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		node.append(resize);
 
 		header.addEventListener("pointerdown", (e) => {
-			if (e.button !== 0 || (e.target as Element).closest("button")) return;
+			if (e.button !== 0 || e.shiftKey || (e.target as Element).closest("button")) return; // Shift: a click (see above)
 			e.preventDefault();
+			if (group?.cardIds.has(card.id)) return dragGroup(e, { cardNode: node });
 			const { zoom } = viewport;
 			let dragging = false;
 			trackPointer(
@@ -1183,6 +1288,35 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		return node;
 	}
 
+	/** Whether Space is held: dragging then pans, wherever it starts. */
+	let spaceHeld = false;
+	function onSpace(e: KeyboardEvent): void {
+		if (!view.isConnected) {
+			document.removeEventListener("keydown", onSpace);
+			document.removeEventListener("keyup", onSpace);
+			return;
+		}
+		if (e.key !== " " || (e.target as Element).closest?.("input, select, textarea, [contenteditable]")) return;
+		e.preventDefault(); // no scrolling, nor pressing a focused button
+		spaceHeld = e.type === "keydown";
+		surface.classList.toggle("space-pan", spaceHeld);
+	}
+	document.addEventListener("keydown", onSpace);
+	document.addEventListener("keyup", onSpace);
+
+	// The middle button, or Space + drag, pans from anywhere on the canvas: in the capture phase, registered first,
+	// so it wins over cards, drawings and drawing tools.
+	surface.addEventListener(
+		"pointerdown",
+		(e) => {
+			if (e.button !== 1 && !(e.button === 0 && spaceHeld)) return;
+			e.preventDefault();
+			e.stopPropagation();
+			pan(e);
+		},
+		{ capture: true },
+	);
+
 	// With a drawing tool active, pressing anywhere on the canvas except on a card starts a new drawing
 	// (in the capture phase, so it wins over panning and selecting).
 	if (!readOnly) {
@@ -1199,9 +1333,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	surface.addEventListener("pointerdown", hidePreview, { capture: true });
 	surface.addEventListener("wheel", hidePreview, { capture: true, passive: true });
 
-	// Pan by dragging the empty background.
-	surface.addEventListener("pointerdown", (e) => {
-		if (e.button !== 0 || (e.target !== surface && e.target !== layer)) return;
+	/** Pans the board along with the pointer from this press; a click without moving clears the selection. */
+	function pan(e: PointerEvent): void {
 		stopAnimation();
 		const start = viewport;
 		surface.classList.add("panning");
@@ -1214,13 +1347,70 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			(dx, dy) => {
 				surface.classList.remove("panning");
 				saveViewportSoon();
-				// A click on the empty canvas (no real pan) closes the details and deselects any drawing.
-				if (Math.hypot(dx, dy) < CLICK_TOLERANCE) {
+				if (Math.hypot(dx, dy) < CLICK_TOLERANCE && e.button === 0) {
 					select(null);
 					drawing.deselect();
 				}
 			},
+			surface,
 		);
+	}
+
+	/** The frame being dragged around cards and drawings to select them, in screen coordinates. */
+	const marquee = el("div", { className: "marquee", hidden: true });
+	surface.append(marquee);
+	const touches = (a: Rect, b: Rect): boolean =>
+		a.x <= b.x + b.width && b.x <= a.x + a.width && a.y <= b.y + b.height && b.y <= a.y + a.height;
+
+	/**
+	 * Drags a frame from this press: the cards and drawings of the page shown that it touches get selected (with
+	 * Shift, added to the selection). A click without moving clears the selection.
+	 */
+	function frameSelect(e: PointerEvent): void {
+		const area = surface.getBoundingClientRect();
+		const start = { x: e.clientX - area.left, y: e.clientY - area.top };
+		const adding = e.shiftKey;
+		const frame = (dx: number, dy: number): Rect => ({
+			x: Math.min(start.x, start.x + dx),
+			y: Math.min(start.y, start.y + dy),
+			width: Math.abs(dx),
+			height: Math.abs(dy),
+		});
+		trackPointer(
+			e,
+			(dx, dy) => {
+				if (marquee.hidden && Math.hypot(dx, dy) < CLICK_TOLERANCE) return;
+				const f = frame(dx, dy);
+				marquee.hidden = false;
+				Object.assign(marquee.style, { left: `${f.x}px`, top: `${f.y}px`, width: `${f.width}px`, height: `${f.height}px` });
+			},
+			(dx, dy) => {
+				const framed = !marquee.hidden;
+				marquee.hidden = true;
+				if (!framed) {
+					if (!adding) setSelection(new Set(), new Set());
+					return;
+				}
+				const f = frame(dx, dy);
+				const from = screenToWorld(viewport, f.x, f.y);
+				const to = screenToWorld(viewport, f.x + f.width, f.y + f.height);
+				const world = { x: from.x, y: from.y, width: to.x - from.x, height: to.y - from.y };
+				const board = currentBoard();
+				const { cardIds, drawingIds } = adding ? selection() : { cardIds: new Set<string>(), drawingIds: new Set<string>() };
+				for (const c of board.cards) if (onPage(c.id) && touches(world, cardRects.get(c.id) ?? c)) cardIds.add(c.id);
+				for (const d of board.drawings) if (onPage(d.id) && touches(world, drawingBounds(d))) drawingIds.add(d.id);
+				setSelection(cardIds, drawingIds);
+			},
+			surface,
+		);
+	}
+
+	// Dragging the empty background frames cards and drawings to select them. Touch, and the viewer (which has
+	// nothing to select), pan instead.
+	surface.addEventListener("pointerdown", (e) => {
+		if (e.button !== 0 || (e.target !== surface && e.target !== layer)) return;
+		if (readOnly || e.pointerType === "touch") pan(e);
+		else frameSelect(e);
 	});
 
 	// A mouse wheel zooms around the pointer, as does a trackpad pinch; two-finger scrolling pans (see wheelGesture).

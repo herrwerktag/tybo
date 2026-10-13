@@ -1157,7 +1157,6 @@ button.ref-tag {
 	position: absolute;
 	inset: 0;
 	overflow: hidden;
-	cursor: grab;
 	touch-action: none;
 	/* Panning and dragging must not select the text of cards and drawings; only the editors stay selectable. */
 	user-select: none;
@@ -1169,8 +1168,27 @@ button.ref-tag {
 	user-select: text;
 }
 
+/* The viewer pans by dragging; the editor with Space held (dragging the background frames a selection). */
+.read-only .canvas-surface,
+.canvas-surface.space-pan {
+	cursor: grab;
+}
+
 .canvas-surface.panning {
 	cursor: grabbing;
+}
+
+/* The frame dragged around cards and drawings to select them. */
+.marquee {
+	position: absolute;
+	z-index: 1;
+	border: 1px solid var(--focus);
+	background: rgb(59 111 224 / 0.08);
+	pointer-events: none;
+}
+
+.marquee[hidden] {
+	display: none;
 }
 
 .canvas-board {
