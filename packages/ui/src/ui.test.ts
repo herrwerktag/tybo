@@ -94,16 +94,19 @@ test("a type with a property, then an entity of it, can be created through the f
 	goTo("#entities");
 	byText(root, "button", text.createNewEntity).click();
 	const entityForm = root.querySelector<HTMLFormElement>("#entity-form")!;
-	const [nameInput, authorInput] = entityForm.querySelectorAll<HTMLInputElement>("label.field input");
+	const [nameInput, authorInput, tagsInput] = entityForm.querySelectorAll<HTMLInputElement>("label.field input");
 	nameInput!.value = " Dune ";
 	authorInput!.value = "Herbert";
+	tagsInput!.value = "Classic, sci-fi, classic,";
 	byText(entityForm, "button", text.create).click();
 
 	assert.ok(byText(root, "td", "Dune"));
 	assert.ok(byText(root, "td", "Herbert"));
+	assert.ok(byText(root, "td", "Classic, sci-fi"));
 	const [dune] = (await readSaved()).entities;
 	assert.equal(dune?.name, "Dune");
 	assert.equal(dune?.values[book!.properties[0]!.id], "Herbert");
+	assert.deepEqual(dune?.tags, ["Classic", "sci-fi"]);
 	assert.equal(root.querySelector("#entity-form"), null);
 });
 
@@ -532,4 +535,60 @@ test("the Library tab: drawings are made, named, tagged, found, drawn with the b
 	saved = await readSaved();
 	assert.deepEqual(saved.library.map((item) => item.name), ["Moon"]);
 	assert.deepEqual(saved.boards[0]!.drawings, []);
+});
+
+/** Book entities in two sets: Dune and Emma tagged "Classic", Foundation untagged; and a board. */
+const tagged = {
+	...library,
+	boards: [{ id: "01J0000000000000000000000B", name: "Board 1" }],
+	entities: [
+		{ ...library.entities[0]!, tags: ["Classic"] },
+		{ id: "01J00000000000000000000001", typeId: "book", name: "Foundation", content: "", description: "", tags: [], values: {} },
+		{ id: "01J00000000000000000000002", typeId: "book", name: "Emma", content: "", description: "", tags: ["classic", "Romance"], values: {} },
+	],
+};
+/** The tag filter select in `scope`, if there is one. */
+const tagSelectIn = (scope: ParentNode | null) =>
+	[...(scope?.querySelectorAll<HTMLSelectElement>("select") ?? [])].find((s) => s.ariaLabel === text.filterByTag) ?? null;
+const rowNames = (root: HTMLElement) => [...root.querySelectorAll("tbody tr")].map((tr) => tr.children[2]?.textContent);
+const choose = (select: HTMLSelectElement, value: string) => {
+	select.value = value;
+	select.dispatchEvent(new Event("change"));
+};
+
+test("the Entities page filters by tag, remembers it, tags new entities with it, and reorders among all of the type", async () => {
+	const root = await startApp(tagged, "#entities");
+	const tagSelect = () => tagSelectIn(root.querySelector(".section-header"))!;
+	assert.deepEqual([...tagSelect().options].map((o) => o.textContent), [text.allTags, "Classic", "Romance"]);
+	choose(tagSelect(), "Classic");
+	assert.deepEqual(rowNames(root), ["Dune", "Emma"]);
+
+	// Emma moves above Dune, so before Foundation too, which the filter hides.
+	root.querySelectorAll<HTMLElement>("tbody .drag-handle")[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+	assert.deepEqual((await readSaved()).entities.map((e) => e.name), ["Emma", "Dune", "Foundation"]);
+
+	byText(root, "button", text.createNewEntity).click();
+	const tagsInput = [...root.querySelectorAll<HTMLInputElement>("#entity-form label.field input")].at(-1)!;
+	// Emma comes first now: the tag is spelled as on her, and the filter still shows the set.
+	assert.equal(tagsInput.value, "classic", "a new entity starts in the set shown");
+	assert.deepEqual(rowNames(root), ["Emma", "Dune"]);
+
+	goTo("#types");
+	goTo("#entities");
+	assert.equal(tagSelect().value, "classic", "remembered");
+});
+
+test("the board's side panel filters entities by tag", async () => {
+	const root = await startApp(tagged, "#boards");
+	const panelNames = () => [...root.querySelectorAll(".panel-list .panel-item")].map((n) => n.textContent?.trim());
+	assert.equal(panelNames().length, 3);
+	choose(tagSelectIn(root.querySelector(".panel-filters"))!, "Romance");
+	assert.deepEqual(panelNames(), ["Emma"]);
+});
+
+test("without tags in use there's no tag filter", async () => {
+	const root = await startApp(library, "#entities");
+	assert.equal(tagSelectIn(root), null);
+	goTo("#boards");
+	assert.equal(tagSelectIn(root), null);
 });

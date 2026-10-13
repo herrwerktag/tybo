@@ -414,7 +414,8 @@ function normalize(data: AppData): AppData {
 					: (propIds.map((id) => values[id]).find((v) => typeof v === "string") ?? "Untitled");
 			const content = typeof entity.content === "string" ? entity.content : "";
 			const description = typeof entity.description === "string" ? entity.description : "";
-			return { ...entity, id: isUlid(entity.id) ? entity.id : ulid(), name, content, description, values };
+			const tags = Array.isArray(entity.tags) ? parseTags(entity.tags.filter((t) => typeof t === "string").join(",")) : [];
+			return { ...entity, id: isUlid(entity.id) ? entity.id : ulid(), name, content, description, tags, values };
 		}),
 	};
 }
@@ -687,24 +688,35 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			content: string,
 			values: Record<string, PropertyValue>,
 			description = "",
+			tags: readonly string[] = [],
 		): Entity {
-			const entity: Entity = { id: ulid(), typeId, name: name.trim(), content, description, values };
+			const entity: Entity = { id: ulid(), typeId, name: name.trim(), content, description, tags: parseTags(tags.join(",")), values };
 			change({ ...data, entities: [...data.entities, entity] });
 			return entity;
 		},
 
-		/** Without a description, the entity keeps its current one. */
+		/** Without a description or tags, the entity keeps its current ones. */
 		updateEntity(
 			entityId: string,
 			name: string,
 			content: string,
 			values: Record<string, PropertyValue>,
 			description?: string,
+			tags?: readonly string[],
 		): void {
 			change({
 				...data,
 				entities: data.entities.map((e) =>
-					e.id === entityId ? { ...e, name: name.trim(), content, description: description ?? e.description, values } : e,
+					e.id === entityId
+						? {
+								...e,
+								name: name.trim(),
+								content,
+								description: description ?? e.description,
+								tags: tags ? parseTags(tags.join(",")) : e.tags,
+								values,
+							}
+						: e,
 				),
 			});
 		},

@@ -23,7 +23,7 @@ function sample(): AppData {
 				color: "#c4dafa",
 			},
 		],
-		entities: [{ id: "ent-1", typeId: "type-1", name: "Ada", content: "", description: "", values: { "prop-1": "hier" } }],
+		entities: [{ id: "ent-1", typeId: "type-1", name: "Ada", content: "", description: "", tags: ["Analytik", "Pionierin"], values: { "prop-1": "hier" } }],
 		boards: [
 			{
 				id: "board-1",

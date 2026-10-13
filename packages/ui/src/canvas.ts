@@ -1,7 +1,7 @@
 import { connector, nearest, type Rect } from "@tybo/core";
 import { createDrawingLayer, libraryPicture } from "./drawing-layer.js";
 import { drawingBounds } from "./drawings.js";
-import { CLICK_TOLERANCE, el, resizeHandle, svgEl, trackPointer, typeDot, wheelGesture } from "./dom.js";
+import { CLICK_TOLERANCE, el, resizeHandle, svgEl, tagFilter, trackPointer, typeDot, wheelGesture } from "./dom.js";
 import { text } from "./i18n.js";
 import {
 	DEFAULT_CARD_SIZE,
@@ -13,6 +13,7 @@ import {
 	effectiveCardDisplay,
 	entityTypeMap,
 	detailRows,
+	entityTags,
 	filterEntities,
 	filterLibrary,
 	inverseCardRows,
@@ -40,6 +41,8 @@ export const PANEL_WIDTH_KEY = "canvas-panel-width";
 const DETAILS_WIDTH_KEY = "details-panel-width";
 /** What the side panel shows: entities or library drawings. */
 const PANEL_TAB_KEY = "canvas-panel-tab";
+/** The tag the side panel's entities are filtered by, if any. */
+const PANEL_TAG_KEY = "canvas-panel-tag";
 /** The size of the library drawings' thumbnails in the side panel, in px. */
 const THUMBNAIL_SIZE = 40;
 const ACTIVE_BOARD_KEY = "canvas-active-board";
@@ -506,9 +509,10 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		}, ZOOM_SETTLE_DELAY);
 	}
 
-	// Search and type filter for the side panel; kept for this visit only.
+	// Search and type filter for the side panel, kept for this visit only; the tag filter is remembered (see buildPanel).
 	let panelQuery = "";
 	let panelTypeId: string | null = null;
+	let panelTag: string | null = null;
 	let libraryQuery = "";
 	let panelTab: "entities" | "library" = readPreference(PANEL_TAB_KEY) === "library" ? "library" : "entities";
 	/** The list below the panel's controls; re-rendered on its own, so typing in the search keeps focus. */
@@ -548,7 +552,14 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			el("option", { value: "" }, text.allTypes),
 			...store.data.types.map((t) => el("option", { value: t.id }, t.name)),
 		);
-		const entityFilters = el("div", { className: "panel-filters" }, search, typeFilter);
+		// Only with tags in use: filters by a set of entities that belong together (e.g. one project's).
+		const tags = entityTags(store.data.entities);
+		const byTag = tagFilter(tags, PANEL_TAG_KEY, (tag) => {
+			panelTag = tag;
+			renderPanel();
+		});
+		panelTag = byTag.tag;
+		const entityFilters = el("div", { className: "panel-filters" }, search, typeFilter, ...(tags.length > 0 ? [byTag.select] : []));
 		const librarySearch = el("input", {
 			type: "search",
 			placeholder: text.searchLibrary,
@@ -624,7 +635,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		if (panelTab === "library") return renderLibraryPanel();
 		const cardCounts = new Map<string, number>();
 		for (const card of currentBoard().cards.filter((c) => onPage(c.id))) cardCounts.set(card.entityId, (cardCounts.get(card.entityId) ?? 0) + 1);
-		const matches = filterEntities(store.data.entities, { query: panelQuery, typeId: panelTypeId });
+		const matches = filterEntities(store.data.entities, { query: panelQuery, typeId: panelTypeId, tag: panelTag });
 		const groups = store.data.types
 			.map((type) => ({ type, entities: matches.filter((e) => e.typeId === type.id) }))
 			.filter((g) => g.entities.length > 0);

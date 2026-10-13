@@ -151,6 +151,14 @@ export const MIGRATIONS: readonly Migration[] = [
 			)`;
 		},
 	},
+	{
+		version: 5,
+		name: "entity tags",
+		async up(tx) {
+			// Null in rows from before: the app reads those entities as without tags.
+			await tx`alter table entities add column tags jsonb`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */

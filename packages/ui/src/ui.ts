@@ -4,13 +4,16 @@ import {
 	PROPERTY_KINDS,
 	TYPE_COLORS,
 	effectiveCardDisplay,
+	entityTags,
 	entityTypeMap,
+	filterEntities,
 	inverseReferences,
 	inverseRelations,
 	migrateValues,
 	moveItem,
 	newReference,
 	nextTypeColor,
+	parseTags,
 	parseValue,
 	validateType,
 	type CardDisplay,
@@ -26,7 +29,7 @@ import {
 } from "@tybo/core";
 import { canvasView } from "./canvas.js";
 import { libraryView, selectLibraryDrawing } from "./library.js";
-import { downloadFile, el, safeFileName, typeDot } from "./dom.js";
+import { downloadFile, el, safeFileName, tagFilter, typeDot } from "./dom.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
 import { standaloneViewHtml } from "./standalone.js";
 import type { Store } from "@tybo/core";
@@ -63,6 +66,8 @@ type MenuName = "settings" | "workspace";
 const PROPERTY_MIME = "application/x-property-index";
 const TYPE_MIME = "application/x-type-index";
 const ENTITY_MIME = "application/x-entity-index";
+/** The tag the Entities page is filtered by, if any. */
+const ENTITIES_TAG_KEY = "entities-tag";
 
 /** The page shown, from the URL hash: entity types, entities, board editing (boards), the library of drawings, or
  * read-only boards (view). */
@@ -1081,8 +1086,12 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 			...store.data.types.map((t) => el("option", { value: t.id, selected: t.id === type.id }, t.name)),
 		);
 
-		const entities = store.data.entities.filter((e) => e.typeId === type.id);
-		const editing = entities.find((e) => e.id === state.editingEntityId);
+		// Only with tags in use: shows one set of entities that belong together (e.g. one project's).
+		const tags = entityTags(store.data.entities);
+		const byTag = tagFilter(tags, ENTITIES_TAG_KEY, () => rerender());
+		const ofType = store.data.entities.filter((e) => e.typeId === type.id);
+		const entities = filterEntities(ofType, { query: "", typeId: null, tag: byTag.tag });
+		const editing = ofType.find((e) => e.id === state.editingEntityId);
 
 		const formOpen = editing !== undefined || state.creatingEntity;
 		const createButton = el(
@@ -1099,16 +1108,25 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 			text.createNewEntity,
 		);
 
-		header.append(typeSelect, ...(formOpen ? [] : [createButton]));
+		header.append(
+			el("div", { className: "section-filters" }, typeSelect, ...(tags.length > 0 ? [byTag.select] : [])),
+			...(formOpen ? [] : [createButton]),
+		);
+		const empty = byTag.tag && ofType.length > 0 ? text.noEntitiesWithTag(type.name, byTag.tag) : text.noEntitiesOfType(type.name);
 		section.append(
-			...(formOpen ? [entityForm(type, editing)] : []),
-			entities.length > 0 ? entityTable(type, entities) : el("p", { className: "muted" }, text.noEntitiesOfType(type.name)),
+			...(formOpen ? [entityForm(type, editing, byTag.tag)] : []),
+			entities.length > 0 ? entityTable(type, entities, ofType) : el("p", { className: "muted" }, empty),
 		);
 		return section;
 	}
 
-	function entityForm(type: EntityType, editing: Entity | undefined): HTMLFormElement {
+	/** The form for a new entity (tagged like the filter shows, `filterTag`) or for editing one. */
+	function entityForm(type: EntityType, editing: Entity | undefined, filterTag: string | null): HTMLFormElement {
 		const nameInput = el("input", { required: true, pattern: ".*\\S.*", value: editing?.name ?? "" });
+		const tagsInput = el("input", {
+			value: (editing ? editing.tags : filterTag ? [filterTag] : []).join(", "),
+			placeholder: text.tagsHint,
+		});
 		const contentInput = el("textarea", { rows: 6, value: editing?.content ?? "" });
 		const descriptionInput = el("textarea", { rows: 10, value: editing ? editing.description : type.contentTemplate });
 		const fields = type.properties.map((prop) => propertyField(prop, editing?.values[prop.id] ?? null));
@@ -1126,10 +1144,11 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 					for (const { prop, read } of fields) {
 						values[prop.id] = parseValue(prop, read(), entityTypes);
 					}
+					const tags = parseTags(tagsInput.value);
 					if (editing) {
-						store.updateEntity(editing.id, name, contentInput.value, values, descriptionInput.value);
+						store.updateEntity(editing.id, name, contentInput.value, values, descriptionInput.value, tags);
 					} else {
-						store.addEntity(type.id, name, contentInput.value, values, descriptionInput.value);
+						store.addEntity(type.id, name, contentInput.value, values, descriptionInput.value, tags);
 					}
 					state.editingEntityId = null;
 					state.creatingEntity = false;
@@ -1143,6 +1162,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 			el("label", { className: "field" }, el("span", {}, text.name), nameInput),
 			...fields.map((f) => f.element),
 			...(editing ? inverseFields(editing) : []),
+			el("label", { className: "field" }, el("span", {}, text.tags), tagsInput),
 			el("label", { className: "field wide" }, el("span", {}, text.content), contentInput),
 			el("label", { className: "field wide" }, el("span", {}, text.description), descriptionInput),
 			el(
@@ -1280,7 +1300,8 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 		return { prop, element: el("label", { className: "field" }, label, input), read: () => input.value };
 	}
 
-	function entityTable(type: EntityType, entities: Entity[]): HTMLElement {
+	/** The entities shown (maybe filtered by a tag) of all those of the type, `ofType`, in which they're reordered. */
+	function entityTable(type: EntityType, entities: Entity[], ofType: Entity[]): HTMLElement {
 		const names = new Map(store.data.entities.map((e) => [e.id, e.name]));
 		const format = (p: PropertyDef, value: PropertyValue | undefined): string => {
 			if (value === null || value === undefined) return "—";
@@ -1312,6 +1333,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 					...inverseColumns.map((c) =>
 						el("th", { className: "inverse", title: text.setOn(sourceTypeName(c.sourceTypeId), c.prop.name) }, c.label),
 					),
+					el("th", {}, text.tags),
 					el("th", {}),
 				),
 			),
@@ -1328,6 +1350,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 						el("td", {}, entity.name),
 						...type.properties.map((p) => el("td", {}, format(p, entity.values[p.id]))),
 						...inverseColumns.map((c) => el("td", { className: "inverse" }, inverseCell(entity, c.prop.id))),
+						el("td", {}, entity.tags.length > 0 ? entity.tags.join(", ") : "—"),
 						el(
 							"td",
 							{},
@@ -1368,9 +1391,10 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 						index: i,
 						count: entities.length,
 						mime: ENTITY_MIME,
+						// To the place of the entity it's dropped at, among all of the type (also those filtered out).
 						move: (from, to) => {
 							const moved = entities[from]!.id;
-							store.moveEntity(moved, to);
+							store.moveEntity(moved, ofType.findIndex((e) => e.id === entities[to]!.id));
 							state.focusHandle = `entity:${moved}`;
 							rerender();
 						},

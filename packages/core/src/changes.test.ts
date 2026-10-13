@@ -20,6 +20,7 @@ function state(): AppData {
 		name: id,
 		content: "",
 		description: "",
+		tags: [],
 		values: note === null ? {} : { "p-note": note },
 	});
 	const card = (id: string, entityId: string, x: number, y: number): CanvasCard => ({
@@ -117,6 +118,7 @@ test("a new unit has no before; a deleted one has no after; both say what was th
 		name: "Chef",
 		content: "",
 		description: "",
+		tags: [],
 		values: { "p-note": "kocht" },
 	};
 	after.entities = [...after.entities, added];
