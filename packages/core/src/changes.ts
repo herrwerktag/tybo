@@ -1,4 +1,5 @@
 import type { AppData, CanvasCard, Drawing, Entity, EntityType, LibraryDrawing, Story, ViewFrame } from "./model.js";
+import type { Rect } from "./connectors.js";
 import type { Viewport } from "./viewport.js";
 
 /**
@@ -20,14 +21,14 @@ export function jsonEqual(a: unknown, b: unknown): boolean {
 	return false;
 }
 
-/** A board itself — `name`, `viewport`, its frames and its stories, without its cards and drawings. The
+/** A board itself — `name`, `viewport`, its own frame, the steps' frames and its stories, without its cards and drawings. The
  * two are units of their own, so someone panning a board and someone moving a card never address the same one. */
 export interface BoardMeta {
 	id: string;
 	name: string;
 	viewport: Viewport;
+	viewFrame: Rect;
 	frames: ViewFrame[];
-	viewFrameId: string | null;
 	stories: Story[];
 }
 
@@ -79,7 +80,7 @@ export function unitStands(data: AppData): UnitStands {
 	add("library", data.library);
 	add(
 		"board",
-		data.boards.map(({ id, name, viewport, frames, viewFrameId, stories }): BoardMeta => ({ id, name, viewport, frames, viewFrameId, stories })),
+		data.boards.map(({ id, name, viewport, viewFrame, frames, stories }): BoardMeta => ({ id, name, viewport, viewFrame, frames, stories })),
 	);
 	for (const board of data.boards) add("card", board.cards, board.id);
 	for (const board of data.boards) add("drawing", board.drawings, board.id);

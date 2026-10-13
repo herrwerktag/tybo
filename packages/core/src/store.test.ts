@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TYPE_COLORS, type AppData, type DraftProperty } from "./model.js";
 import { memoryDataPort } from "./memory-port.js";
-import { DATA_VERSION, LEGACY_SCREEN, MIGRATIONS, createStore, migrate, type Store } from "./store.js";
+import { DATA_VERSION, REFERENCE_SCREEN, MIGRATIONS, createStore, migrate, type Store } from "./store.js";
 import { isUlid } from "./ulid.js";
 
 /** Lets background saves finish and report how they went (a failed save flips `problems.saveFailed` only then). */
@@ -34,8 +34,8 @@ function assertEmpty(data: AppData) {
 		name: "Board 1",
 		cards: [],
 		viewport: { x: 0, y: 0, zoom: 1 },
+		viewFrame: { x: 0, y: 0, ...REFERENCE_SCREEN },
 		frames: [],
-		viewFrameId: null,
 		drawings: [],
 		stories: [],
 	});
@@ -808,39 +808,42 @@ test("a page can show its cards dimmed; copied pages keep that, and a card going
 	assert.deepEqual(page(1).dimmedCardIds, []);
 });
 
-test("frames: pages and the board are seen in one, which can be changed and deleted, each one undo step", async () => {
+test("frames: steps are seen in one or in the board's own; frames can be changed and deleted, each one undo step", async () => {
 	const storage = memoryStorage();
 	const store = await open(storage);
 	const story = storyBoard(store, "Flow");
 	const page = story.pages[0]!;
 	const board = () => store.data.boards[1]!;
+	assert.equal(page.frameId, null, "a new story starts in the board's frame");
 
 	const wide = store.addFrame(story.id, " Wide ", { x: 10, y: 20, width: 800, height: 450 }, page.id)!;
-	const tiny = store.addFrame(story.id, "", { x: 0, y: 0, width: 5, height: 5 })!;
+	const tiny = store.addFrame(story.id, "", { x: 0, y: 0, width: 5, height: 5 }, page.id)!;
 	assert.deepEqual(board().frames, [
 		{ id: wide.id, name: "Wide", x: 10, y: 20, width: 800, height: 450 },
 		{ id: tiny.id, name: "Frame 2", x: 0, y: 0, width: 192, height: 120 }, // never below the minimum
 	]);
-	assert.deepEqual([board().stories[0]!.pages[0]!.frameId, board().viewFrameId], [wide.id, tiny.id]);
+	assert.equal(board().stories[0]!.pages[0]!.frameId, tiny.id);
+	store.setFrame(story.id, wide.id, page.id);
 
 	store.updateFrame(story.id, wide.id, { name: " ", x: 30, width: 10 });
 	assert.deepEqual(board().frames[0], { id: wide.id, name: "Wide", x: 30, y: 20, width: 192, height: 450 });
 	store.undo();
 	assert.equal(board().frames[0]?.x, 10);
 
-	store.setFrame(story.id, tiny.id, page.id);
 	store.setFrame(story.id, "unknown", page.id); // not one of the board's: nothing changes
-	store.setFrame(story.id, null);
-	assert.deepEqual([board().stories[0]!.pages[0]!.frameId, board().viewFrameId], [tiny.id, null]);
+	assert.equal(board().stories[0]!.pages[0]!.frameId, wide.id);
+	store.setFrame(story.id, null, page.id);
+	assert.equal(board().stories[0]!.pages[0]!.frameId, null);
+
+	// The board's own frame is moved and resized, never below the minimum.
+	store.setViewFrame(story.id, { x: -48, y: 24, width: 10, height: 600 });
+	assert.deepEqual(board().viewFrame, { x: -48, y: 24, width: 192, height: 600 });
 	assert.deepEqual((await open(storage)).data.boards[1], board());
 
-	// A new story starts in the board's frame.
-	store.setFrame(story.id, wide.id);
-	assert.equal(store.addStory(story.id, "Two", "A")?.pages[0]?.frameId, wide.id);
-
+	// Deleting a frame: its steps are seen in the board's frame.
+	store.setFrame(story.id, wide.id, page.id);
 	store.removeFrame(story.id, wide.id);
-	assert.deepEqual(board().frames.map((f) => f.id), [tiny.id]);
-	assert.deepEqual([board().viewFrameId, board().stories[1]!.pages[0]!.frameId, board().stories[0]!.pages[0]!.frameId], [null, null, tiny.id]);
+	assert.deepEqual([board().frames.map((f) => f.id), board().stories[0]!.pages[0]!.frameId], [[tiny.id], null]);
 });
 
 test("undo keeps the board's pan and zoom", async () => {
@@ -876,16 +879,17 @@ test("version 5 steps' pan and zoom become frames, shared by steps seen alike, t
 	};
 	const store = await open(memoryStorage(saved));
 	const [board, framed] = store.data.boards;
-	const { width, height } = LEGACY_SCREEN;
+	const { width, height } = REFERENCE_SCREEN;
 	assert.deepEqual(board?.frames, [
 		{ id: "p1", name: "Intro", x: 50, y: -25, width: width / 2, height: height / 2 },
 		{ id: "p3", name: "Frame 2", x: 0, y: 0, width, height },
 	]);
 	assert.deepEqual(board?.stories.map((s) => s.pages.map((p) => p.frameId)), [["p1", "p1"], ["p3"]]);
-	assert.equal(board?.viewFrameId, null);
+	// The board's own frame shows what its pan/zoom did (the viewer showed the board so).
+	assert.deepEqual(board?.viewFrame, { x: 0, y: 0, width, height });
 	assert.equal("viewport" in board!.stories[0]!.pages[0]!, false);
 	assert.deepEqual((await open(memoryStorage(saved))).data.boards[0], board);
-	// A board saved with frames is read as it is: steps naming no frame of it are seen in none.
+	// A board saved with frames is read as it is: steps naming no frame of it are seen in the board's.
 	assert.deepEqual([framed?.frames, framed?.stories[0]?.pages[0]?.frameId], [[], null]);
 });
 

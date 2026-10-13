@@ -38,7 +38,7 @@ function state(): AppData {
 				],
 				viewport: { x: 0, y: 0, zoom: 1 },
 				frames: [{ id: "frame-1", name: "Weit", x: -10.5, y: 20, width: 640, height: 360.25 }],
-				viewFrameId: "frame-1",
+				viewFrame: { x: 0.5, y: -24, width: 960, height: 540 },
 				drawings: [
 					{ id: "draw-line", kind: "line", points: [{ x: 0, y: 0 }, { x: 5.5, y: 5.25 }], color: "#4a4a4a" },
 					{ id: "draw-star", kind: "symbol", libraryId: "lib-star", x: 40, y: 40.5, width: 96, height: 48 },

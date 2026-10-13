@@ -127,7 +127,7 @@ export interface CanvasCard {
 
 /**
  * A part of the board to look at, in world coordinates: the viewer fits it into the screen, whatever its size. Story
- * steps (and the board itself, in the viewer) show one; several steps can share one, so they're seen alike.
+ * steps show one; several steps can share one, so they're seen alike. (The board's own frame is apart: Board.viewFrame.)
  */
 export interface ViewFrame {
 	id: string;
@@ -154,7 +154,7 @@ export interface StoryPage {
 	descriptionPosition: Point;
 	/** The description box's size in world units, the same in the editor and the viewer. */
 	descriptionSize: { width: number; height: number };
-	/** One of the board's frames; null: the viewer fits what the page shows. */
+	/** One of the board's frames; null: the board's own frame (Board.viewFrame). */
 	frameId: string | null;
 	cardIds: string[];
 	drawingIds: string[];
@@ -192,10 +192,11 @@ export interface Board {
 	cards: CanvasCard[];
 	/** The editor's pan/zoom of the board, in and outside its stories; the viewer shows frames instead. */
 	viewport: Viewport;
-	/** In the order they were made. */
+	/** The board's own frame, always there: the viewer shows the whole board in it, and the steps without a frame
+	 * of their own. At least MIN_FRAME_SIZE. */
+	viewFrame: Rect;
+	/** The steps' frames, in the order they were made. */
 	frames: ViewFrame[];
-	/** The frame the viewer shows the whole board in; null: it fits everything on the board. */
-	viewFrameId: string | null;
 	/** Shapes, lines, text and pen strokes, drawn behind the cards; later ones on top. */
 	drawings: Drawing[];
 	/** In the order they were made. */

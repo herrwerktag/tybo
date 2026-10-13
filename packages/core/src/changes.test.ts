@@ -41,8 +41,8 @@ function state(): AppData {
 				name: "Übersicht",
 				cards: [card("card-ada", "ent-ada", 10, 20), card("card-bob", "ent-bob", 330, 40)],
 				viewport: { x: 0, y: 0, zoom: 1 },
+				viewFrame: { x: 0, y: 0, width: 1280, height: 720 },
 				frames: [],
-				viewFrameId: null,
 				drawings: [drawing],
 				stories: [],
 			},
@@ -153,7 +153,7 @@ test("a type is one unit with its properties; a board is one without its cards a
 	assert.deepEqual(outline(changes), ["type:type-person", "board:board-1"]);
 	const [typeChange, boardChange] = changes as [Extract<Change, { kind: "type" }>, Extract<Change, { kind: "board" }>];
 	assert.deepEqual(typeChange.after!.value.properties.map((p) => p.id), ["p-note", "p-status"]);
-	const meta = { frames: [], viewFrameId: null, stories: [] };
+	const meta = { viewFrame: { x: 0, y: 0, width: 1280, height: 720 }, frames: [], stories: [] };
 	assert.deepEqual(boardChange.after!.value, { id: "board-1", name: "Unbenannt", viewport: { x: 12, y: 34, zoom: 0.5 }, ...meta });
 	assert.deepEqual(boardChange.before!.value, { id: "board-1", name: "Übersicht", viewport: { x: 0, y: 0, zoom: 1 }, ...meta });
 });

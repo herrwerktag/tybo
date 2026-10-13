@@ -1,6 +1,6 @@
 import { connector, nearest, type Rect } from "@tybo/core";
 import { createDrawingLayer, libraryPicture } from "./drawing-layer.js";
-import { drawingBounds, unionBounds } from "./drawings.js";
+import { drawingBounds } from "./drawings.js";
 import { CLICK_TOLERANCE, el, resizeHandle, svgEl, tagFilter, trackPointer, typeDot, wheelGesture } from "./dom.js";
 import { text } from "./i18n.js";
 import {
@@ -64,7 +64,7 @@ const PAGE_ANIMATION = 450;
 /** How long scroll/pinch zooming must pause before the zoom settles on the nearest 10% step, and how long that takes, in ms. */
 const ZOOM_SETTLE_DELAY = 150;
 const ZOOM_SETTLE_ANIMATION = 120;
-/** Room (screen px) around what the viewer fits into the screen without a frame, and around a frame the editor goes to. */
+/** Room (screen px) around a frame the editor goes to. */
 const FIT_MARGIN = 48;
 
 /** What a viewer address names: `#view/<board>/<story>/<page>`, the latter parts optional. */
@@ -126,9 +126,9 @@ function firstBoardView(store: Store, options: CanvasOptions): HTMLElement {
  * shown here too. The viewer always starts with the whole board (unless its address names a story), and picking a
  * story steps through it; coming back to a story goes on at the step it was left at in this browser tab.
  *
- * The viewer shows each step, and the whole board, in its view frame, fitted into the screen (without one: all that
- * it shows). The editor keeps one pan/zoom per board, in and outside its stories: it only moves to a step's frame
- * when that differs from the step's before, and shows the board's frames as outlines to move and resize.
+ * The viewer shows the whole board in the board's frame, and each step in its own frame or else the board's, fitted
+ * into the screen. The editor keeps one pan/zoom per board, in and outside its stories: it only moves to a step's
+ * frame when that differs from the step's before, and shows the frames as outlines to move and resize.
  */
 export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	if (store.data.boards.length === 0) return firstBoardView(store, options);
@@ -154,11 +154,12 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		if (!storyId) return "";
 		return (readOnly ? readSession(storyStepKey(storyId)) : readPreference(activePageKey(storyId))) ?? "";
 	}
-	/** The frame what's shown is seen in by the viewer: the page's in a story, else the board's. */
-	const currentFrame = (): ViewFrame | null => {
-		const board = currentBoard();
-		const id = currentStory() ? currentPage()?.frameId : board.viewFrameId;
-		return board.frames.find((f) => f.id === id) ?? null;
+	/** The board's own frame, as a frame named for the board, with the id "" (no step frame has it). */
+	const boardFrame = (): ViewFrame => ({ id: "", name: text.boardFrame, ...currentBoard().viewFrame });
+	/** The frame what's shown is seen in by the viewer: the page's own, else the board's. */
+	const currentFrame = (): ViewFrame => {
+		const id = currentPage()?.frameId;
+		return currentBoard().frames.find((f) => f.id === id) ?? boardFrame();
 	};
 	/** Whether a card or drawing is shown on the current page (everything is, outside a story). */
 	const onPage = (id: string): boolean => {
@@ -213,30 +214,13 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	const surface = el("div", { className: "canvas-surface" }, layer);
 	const zoomLabel = el("span", { className: "zoom-label" });
 
-	/** What the viewer fits into the screen: the frame of what's shown, else all it shows (of a page: also its
-	 * description), with some room around; null when that's nothing. */
-	function viewedRect(): { rect: Rect; margin: number } | null {
-		const frame = currentFrame();
-		if (frame) return { rect: frame, margin: 0 };
-		const board = currentBoard();
-		const page = currentPage();
-		const rects = [
-			...board.cards.filter((c) => onPage(c.id)),
-			...board.drawings.filter((d) => onPage(d.id)).map(drawingBounds),
-			...(page && page.description.trim() !== "" ? [{ ...page.descriptionPosition, ...page.descriptionSize }] : []),
-		];
-		const rect = unionBounds(rects);
-		return rect && { rect, margin: FIT_MARGIN };
-	}
-
-	/** Where what's shown is seen from: in the viewer, fitted into the screen (see viewedRect; as it is while the
-	 * canvas isn't laid out); in the editor, the board's pan/zoom. */
+	/** Where what's shown is seen from: in the viewer, its frame fitted into the screen (as it is while the canvas
+	 * isn't laid out); in the editor, the board's pan/zoom. */
 	function homeViewport(): Viewport {
 		if (!readOnly) return { ...currentBoard().viewport };
-		const viewed = viewedRect();
 		const { clientWidth: width, clientHeight: height } = surface;
 		if (width === 0 || height === 0) return viewport;
-		return viewed ? fitRect(viewed.rect, width, height, viewed.margin) : defaultViewport();
+		return fitRect(currentFrame(), width, height);
 	}
 
 	/** Two or more cards and drawings selected together, to move at once (Shift+click, or a frame dragged around
@@ -319,8 +303,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		if (!readOnly) writePreference(activeStoryKey(boardId), id ?? "");
 		pageId = savedPageId();
 		show();
-		const frame = currentFrame();
-		if (!readOnly && id && frame) goToFrame(frame);
+		if (!readOnly && id) goToFrame(currentFrame());
 		address("push");
 	}
 
@@ -356,7 +339,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	function goToPage(id: string): void {
 		flushViewport();
 		const before = new Set(currentPage()?.cardIds);
-		const frameBefore = currentFrame();
+		const frameBefore = currentFrame().id;
 		pageId = id;
 		if (storyId && readOnly) writeSession(storyStepKey(storyId), id);
 		else if (storyId) writePreference(activePageKey(storyId), id);
@@ -373,7 +356,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		if (readOnly) {
 			fitted = true;
 			animateViewport(homeViewport());
-		} else if (frame && frame.id !== frameBefore?.id) goToFrame(frame);
+		} else if (frame.id !== frameBefore) goToFrame(frame);
 		address("replace");
 	}
 
@@ -651,8 +634,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		renderStoryDialog();
 	}
 
-	/** Editor: the board's frames — the one the step (or, outside a story, the board) is seen in by the viewer, to
-	 * pick another or none, and to create one of what's seen now, rename or delete one. */
+	/** Editor, in a story: the frames — the one the step is seen in by the viewer, to pick another or the board's, and
+	 * to create one of what's seen now, rename or delete one. */
 	const frameDialog = canvasDialog("frame-dialog", text.frames);
 	const frameButton = pickerButton("frame-switch", text.changeFrame, () => {
 		renderFrameDialog();
@@ -662,17 +645,17 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	function renderFrameDialog(renamingId: string | null = null): void {
 		const { frames } = currentBoard();
 		const page = currentPage()?.id;
+		if (!page) return;
 		renderPicker({
 			dialog: frameDialog,
 			title: text.frames,
-			items: [{ id: "", name: text.noFrame, fixed: true }, ...frames],
-			currentId: currentFrame()?.id ?? "",
+			items: [{ id: "", name: text.boardFrame, fixed: true }, ...frames],
+			currentId: currentFrame().id,
 			renamingId,
 			pick: (id) => {
 				store.setFrame(boardId, id || null, page);
 				framesChanged();
-				const frame = currentFrame();
-				if (frame) goToFrame(frame);
+				goToFrame(currentFrame());
 			},
 			rerender: renderFrameDialog,
 			editing: {
@@ -715,11 +698,12 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			const exportButton = el("button", { type: "button", title: text.exportView, onclick: () => onExportView?.(boardId) }, text.exportButton);
 			return boardControls.replaceChildren(boardButton, ...(hasStories ? [storyButton] : []), ...(onExportView ? [exportButton] : []));
 		}
-		frameButton.replaceChildren(el("span", { ariaHidden: "true" }, "▭"), ...pickerLabel(currentFrame()?.name ?? text.noFrame));
+		frameButton.replaceChildren(el("span", { ariaHidden: "true" }, "▭"), ...pickerLabel(currentFrame().name));
 		boardControls.replaceChildren(
 			boardButton,
 			storyButton,
-			frameButton,
+			// Outside a story, the whole board is always seen in its own frame.
+			...(story ? [frameButton] : []),
 			el("button", { type: "button", title: text.newEntityHint, onclick: openNewEntity }, text.newEntityButton),
 		);
 	}
@@ -2057,8 +2041,9 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		description.replaceChildren(handle, input, resize);
 	}
 
-	/** Editor: the board's frames as outlines on the canvas, the one of what's shown highlighted. Each is moved by its
-	 * name (a click there goes to it) and resized at its corner, snapped to the grid; only those react to the pointer. */
+	/** Editor: the frames as outlines on the canvas — the board's, and in a story the steps' too —, the one of what's
+	 * shown highlighted. Each is moved by its name (a click there goes to it) and resized at its corner, snapped to the
+	 * grid; only those react to the pointer. */
 	const frameLayer = el("div", { className: "view-frames" });
 
 	function placeFrame(node: HTMLElement, { x, y, width, height }: { x: number; y: number; width: number; height: number }): void {
@@ -2067,12 +2052,20 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 
 	function renderFrames(): void {
 		if (readOnly) return;
-		const current = currentFrame()?.id;
-		frameLayer.replaceChildren(...currentBoard().frames.map((frame) => frameElement(frame, frame.id === current)));
+		const current = currentFrame().id;
+		const frames = [boardFrame(), ...(currentPage() ? currentBoard().frames : [])];
+		frameLayer.replaceChildren(...frames.map((frame) => frameElement(frame, frame.id === current)));
+	}
+
+	/** Moves or resizes a frame: the board's own (id "") or a step frame. */
+	function saveFrame(frame: ViewFrame, rect: Rect): void {
+		if (frame.id === "") store.setViewFrame(boardId, rect);
+		else store.updateFrame(boardId, frame.id, rect);
+		renderFrames();
 	}
 
 	function frameElement(frame: ViewFrame, current: boolean): HTMLElement {
-		const node = el("div", { className: current ? "view-frame current" : "view-frame" });
+		const node = el("div", { className: `view-frame${frame.id === "" ? " board-frame" : ""}${current ? " current" : ""}` });
 		placeFrame(node, frame);
 		const label = el("div", { className: "view-frame-label", title: text.frameHandle }, frame.name);
 		label.addEventListener("pointerdown", (e) => {
@@ -2085,8 +2078,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				(dx, dy) => placeFrame(node, { ...frame, ...at(dx, dy) }),
 				(dx, dy) => {
 					if (Math.hypot(dx, dy) < CLICK_TOLERANCE) return goToFrame(frame);
-					store.updateFrame(boardId, frame.id, at(dx, dy));
-					renderFrames();
+					saveFrame(frame, { ...frame, ...at(dx, dy) });
 				},
 			);
 		});
@@ -2102,10 +2094,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			trackPointer(
 				e,
 				(dx, dy) => placeFrame(node, { ...frame, ...size(dx, dy) }),
-				(dx, dy) => {
-					store.updateFrame(boardId, frame.id, size(dx, dy));
-					renderFrames();
-				},
+				(dx, dy) => saveFrame(frame, { ...frame, ...size(dx, dy) }),
 			);
 		});
 		node.append(label, resize);

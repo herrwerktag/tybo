@@ -1678,8 +1678,9 @@ button.ref-tag {
 	user-select: none;
 }
 
-/* The editor's view frames (see renderFrames): dashed outlines above the cards that let the pointer through, except
- * at their name (to move one, or click to go to it) and corner (to resize it). The one of what's shown stands out. */
+/* The editor's view frames (see renderFrames): outlines above the cards that let the pointer through, except at their
+ * name (to move one, or click to go to it) and corner (to resize it); the steps' dashed, the board's solid. The one of
+ * what's shown stands out. */
 .view-frames,
 .view-frame {
 	position: absolute;
@@ -1695,6 +1696,10 @@ button.ref-tag {
 	box-sizing: border-box;
 	border: 2px dashed var(--border-strong);
 	border-radius: 6px;
+}
+
+.view-frame.board-frame {
+	border-style: solid;
 }
 
 .view-frame.current {

@@ -157,6 +157,15 @@ export const SQLITE_MIGRATIONS: readonly Migration[] = [
 			db.exec("alter table boards add column frames text; alter table boards add column view_frame_id text;");
 		},
 	},
+	{
+		version: 5,
+		up(db) {
+			// As Postgres's step 8, the same way whichever form step 4 had.
+			const columns = new Set((db.prepare("pragma table_info(boards)").all() as { name: string }[]).map((c) => c.name));
+			if (!columns.has("view_frame")) db.exec("alter table boards add column view_frame text");
+			if (columns.has("view_frame_id")) db.exec("alter table boards drop column view_frame_id");
+		},
+	},
 ];
 
 /** The table holding each kind of unit, one row per unit. */
@@ -216,9 +225,10 @@ export function sqliteStorage(path: string): SqliteStorage {
 			values: all("select entity_id, property_id, value from entity_values where workspace_id = ? order by entity_id, position, property_id").map(
 				(row) => ({ ...row, value: parsed(row.value) }),
 			),
-			boards: all("select id, name, viewport, frames, view_frame_id, stories from boards where workspace_id = ? order by position, id").map((row) => ({
+			boards: all("select id, name, viewport, view_frame, frames, stories from boards where workspace_id = ? order by position, id").map((row) => ({
 				...row,
 				viewport: parsed(row.viewport),
+				view_frame: parsed(row.view_frame),
 				frames: parsed(row.frames),
 				stories: parsed(row.stories),
 			})),
@@ -313,13 +323,13 @@ export function sqliteStorage(path: string): SqliteStorage {
 			case "board": {
 				const board = unit.after.value;
 				run(
-					`insert into boards (workspace_id, id, position, name, viewport, frames, view_frame_id, stories, updated_at)
+					`insert into boards (workspace_id, id, position, name, viewport, view_frame, frames, stories, updated_at)
 					values (?, ?, ?, ?, ?, ?, ?, ?, current_timestamp)
 					on conflict (workspace_id, id) do update set
-						position = excluded.position, name = excluded.name, viewport = excluded.viewport, frames = excluded.frames,
-						view_frame_id = excluded.view_frame_id, stories = excluded.stories, updated_at = current_timestamp`,
-					ws, board.id, unit.after.position, plain(board.name), json(board.viewport), json(board.frames ?? []),
-					board.viewFrameId ?? null, json(board.stories ?? []),
+						position = excluded.position, name = excluded.name, viewport = excluded.viewport, view_frame = excluded.view_frame,
+						frames = excluded.frames, stories = excluded.stories, updated_at = current_timestamp`,
+					ws, board.id, unit.after.position, plain(board.name), json(board.viewport), json(board.viewFrame ?? null),
+					json(board.frames ?? []), json(board.stories ?? []),
 				);
 				return;
 			}
