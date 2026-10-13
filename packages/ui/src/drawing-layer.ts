@@ -19,6 +19,7 @@ import {
 	type Tool,
 } from "./drawings.js";
 import { text } from "./i18n.js";
+import { readPreference, writePreference } from "./preferences.js";
 import {
 	DRAWING_COLORS,
 	PEN_STYLES,
@@ -192,6 +193,9 @@ export interface DrawingLayer {
 	deselect(): void;
 }
 
+/** Whether the drawing tools are folded (see toolsCollapsed). */
+const TOOLS_COLLAPSED_KEY = "drawing-tools-collapsed";
+
 /**
  * Shapes, lines, text, pen strokes, images and placed library drawings on a board, or the content of a library
  * drawing: drawing them, and (unless read-only) creating, selecting, moving, resizing, recoloring, editing text and
@@ -225,6 +229,8 @@ export function createDrawingLayer(options: {
 	/** The style for new pen strokes: the last one picked. */
 	let penStyle: PenStyle = "pen";
 	let selectedId: string | null = null;
+	/** Whether the tool column is folded to the current tool, out of the way of the board; remembered. */
+	let toolsCollapsed = readPreference(TOOLS_COLLAPSED_KEY) === "true";
 	let editingId: string | null = null;
 	/** While dragging: the drawing as it looks right now, not saved yet (a new one has the id "draft"). */
 	let draft: Drawing | null = null;
@@ -622,7 +628,25 @@ export function createDrawingLayer(options: {
 
 	function renderToolbars(): void {
 		if (readOnly) return;
+		toolbar.classList.toggle("collapsed", toolsCollapsed);
 		toolbar.replaceChildren(
+			el(
+				"button",
+				{
+					type: "button",
+					className: "tool-button tools-toggle",
+					title: toolsCollapsed ? text.showDrawingTools : text.hideDrawingTools,
+					ariaLabel: toolsCollapsed ? text.showDrawingTools : text.hideDrawingTools,
+					ariaExpanded: String(!toolsCollapsed),
+					onclick: () => {
+						toolsCollapsed = !toolsCollapsed;
+						writePreference(TOOLS_COLLAPSED_KEY, String(toolsCollapsed));
+						renderToolbars();
+					},
+				},
+				toolsCollapsed ? "▾" : "▴",
+			),
+			// Folded, CSS shows only the current tool (the shortcut keys still switch tools).
 			...TOOLS.map(({ tool: t, icon, key }) => {
 				const button = el(
 					"button",

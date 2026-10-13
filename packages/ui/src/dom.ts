@@ -1,3 +1,6 @@
+import { text } from "./i18n.js";
+import { readPreference, writePreference } from "./preferences.js";
+
 /** Creates an element with the given properties and children. Strings become text nodes, so user text is never parsed as HTML. */
 export function el<K extends keyof HTMLElementTagNameMap>(
 	tag: K,
@@ -79,4 +82,87 @@ export function trackPointer(
 	target.addEventListener("pointermove", move);
 	target.addEventListener("pointerup", end);
 	target.addEventListener("pointercancel", end);
+}
+
+/** What a wheel event does on a canvas: zoom by a factor around the pointer, or pan by screen pixels. */
+export type WheelGesture = { zoom: number } | { pan: { dx: number; dy: number } };
+
+/** How much one notch of a mouse wheel zooms: about one 10% step. */
+const WHEEL_NOTCH_ZOOM = 1.1;
+
+/**
+ * Turns a wheel event into a canvas gesture. A mouse wheel zooms, one gentle step per notch, while a trackpad's
+ * two-finger scrolling pans and its pinch (sent as Ctrl + scroll) zooms along with the fingers. Shift + scroll pans
+ * sideways.
+ *
+ * Browsers don't say which device sent the event, so it's guessed: a mouse wheel scrolls by lines, or by whole
+ * notches (`wheelDeltaY` a multiple of 120, which trackpads report as -3 × deltaY), never sideways.
+ */
+export function wheelGesture(
+	e: Pick<WheelEvent, "deltaMode" | "deltaX" | "deltaY" | "ctrlKey" | "metaKey" | "shiftKey"> & { wheelDeltaY?: number },
+): WheelGesture {
+	const scale = e.deltaMode === 1 ? 16 : 1; // DOM_DELTA_LINE
+	const dx = e.deltaX * scale;
+	const dy = e.deltaY * scale;
+	if (e.shiftKey && !e.ctrlKey && !e.metaKey) return { pan: { dx: dx === 0 ? dy : dx, dy: 0 } };
+	const notches = e.wheelDeltaY !== undefined && e.wheelDeltaY !== 0 && e.wheelDeltaY % 120 === 0;
+	const trackpadRatio = e.wheelDeltaY !== undefined && Math.abs(e.wheelDeltaY + 3 * e.deltaY) < 1;
+	const mouseWheel = e.deltaX === 0 && e.deltaY !== 0 && (e.deltaMode === 1 || (notches && !trackpadRatio));
+	if (mouseWheel) return { zoom: WHEEL_NOTCH_ZOOM ** -Math.sign(dy) };
+	if (e.ctrlKey || e.metaKey) return { zoom: Math.exp(-dy * 0.01) };
+	return { pan: { dx, dy } };
+}
+
+/**
+ * A handle beside a side panel that changes the panel's width: dragged, or with the arrow keys when focused; a
+ * double-click goes back to the default width from the CSS. The width is remembered under `key` and applied as the
+ * panel's `--panel-width`, clamped to `min`…`max` (in rem). `side` is the side of the handle the panel is on.
+ */
+export function resizeHandle(
+	panel: HTMLElement,
+	{ key, side, min, max }: { key: string; side: "left" | "right"; min: number; max: number },
+): HTMLElement {
+	const rem = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+	const apply = (width: number | null) => {
+		if (width === null) panel.style.removeProperty("--panel-width");
+		else panel.style.setProperty("--panel-width", `${Math.round(Math.min(max * rem(), Math.max(min * rem(), width)))}px`);
+	};
+	const resize = (width: number | null) => {
+		apply(width);
+		writePreference(key, panel.style.getPropertyValue("--panel-width"));
+	};
+	const saved = parseFloat(readPreference(key) ?? "");
+	if (saved > 0) apply(saved);
+
+	const direction = side === "left" ? 1 : -1;
+	return el("div", {
+		className: "resize-handle",
+		role: "separator",
+		tabIndex: 0,
+		ariaOrientation: "vertical",
+		title: text.resizePanel,
+		ariaLabel: text.resizePanel,
+		onpointerdown: (e: PointerEvent) => {
+			if (e.button !== 0) return;
+			e.preventDefault();
+			const start = panel.getBoundingClientRect().width;
+			const handle = e.currentTarget as HTMLElement;
+			handle.classList.add("dragging");
+			trackPointer(
+				e,
+				(dx) => apply(start + direction * dx),
+				() => {
+					handle.classList.remove("dragging");
+					resize(panel.getBoundingClientRect().width);
+				},
+			);
+		},
+		ondblclick: () => resize(null),
+		onkeydown: (e: KeyboardEvent) => {
+			const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+			if (step === 0) return;
+			e.preventDefault();
+			resize(panel.getBoundingClientRect().width + direction * step * rem());
+		},
+	});
 }

@@ -717,6 +717,33 @@ th {
 	display: block;
 }
 
+/* Drag handles for the side panels' widths: a thin strip over the panel's border, gone along with the panel. */
+.resize-handle {
+	position: relative;
+	z-index: 2;
+	flex: 0 0 6px;
+	margin-inline: -3px;
+	cursor: col-resize;
+	touch-action: none;
+}
+
+.resize-handle:is(:hover, :focus-visible, .dragging) {
+	background: var(--focus);
+	outline: none;
+}
+
+.panel-collapsed > .resize-handle:not(.details-resize),
+.canvas-view:has(> .details-panel[hidden]) > .details-resize {
+	display: none;
+}
+
+/* Folded drawing tools: only the fold button and the current tool are left (narrow screens have the ⋯ button). */
+@media not (max-width: 40rem) {
+	.drawing-tools.collapsed > .tool-button:not(.tools-toggle, [aria-pressed="true"]) {
+		display: none;
+	}
+}
+
 .panel-header {
 	display: flex;
 	align-items: center;
@@ -765,6 +792,12 @@ th {
 		flex-direction: column;
 	}
 
+	/* Stacked panels keep their own heights. */
+	.resize-handle,
+	.tools-toggle {
+		display: none;
+	}
+
 	.canvas-panel {
 		flex-basis: 30dvh;
 		border-right: none;
@@ -792,7 +825,7 @@ th {
 }
 
 .canvas-panel {
-	flex: 0 0 16rem;
+	flex: 0 0 var(--panel-width, 16rem);
 	display: grid;
 	align-content: start;
 	gap: 0.75rem;
@@ -952,7 +985,7 @@ td.inverse {
 
 /* Details of the selected card: description first, then every property, content and the ID. */
 .details-panel {
-	flex: 0 0 22rem;
+	flex: 0 0 var(--panel-width, 22rem);
 	display: flex;
 	flex-direction: column;
 	min-height: 0;
