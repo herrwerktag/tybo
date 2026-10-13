@@ -134,6 +134,22 @@ export const SQLITE_MIGRATIONS: readonly Migration[] = [
 			db.exec("alter table entities add column tags text");
 		},
 	},
+	{
+		version: 3,
+		up(db) {
+			// As Postgres's step 6: a board's steps become one story, with the board's id.
+			db.exec(`
+				alter table boards add column stories text;
+				update boards set stories = case
+					when coalesce(json_array_length(pages), 0) > 0 or story = 1
+						then json_array(json_object('id', id, 'name', 'Story 1', 'pages', json(coalesce(pages, '[]'))))
+					else '[]'
+				end;
+				alter table boards drop column story;
+				alter table boards drop column pages;
+			`);
+		},
+	},
 ];
 
 /** The table holding each kind of unit, one row per unit. */
@@ -193,11 +209,10 @@ export function sqliteStorage(path: string): SqliteStorage {
 			values: all("select entity_id, property_id, value from entity_values where workspace_id = ? order by entity_id, position, property_id").map(
 				(row) => ({ ...row, value: parsed(row.value) }),
 			),
-			boards: all("select id, name, viewport, story, pages from boards where workspace_id = ? order by position, id").map((row) => ({
+			boards: all("select id, name, viewport, stories from boards where workspace_id = ? order by position, id").map((row) => ({
 				...row,
 				viewport: parsed(row.viewport),
-				story: row.story === null ? null : Boolean(row.story),
-				pages: parsed(row.pages),
+				stories: parsed(row.stories),
 			})),
 			cards: all("select id, board_id, entity_id, x, y, width, height from cards where workspace_id = ? order by board_id, position, id"),
 			drawings: all("select board_id, body from drawings where workspace_id = ? order by board_id, position, id").map((row) => ({
@@ -290,13 +305,12 @@ export function sqliteStorage(path: string): SqliteStorage {
 			case "board": {
 				const board = unit.after.value;
 				run(
-					`insert into boards (workspace_id, id, position, name, viewport, story, pages, updated_at)
-					values (?, ?, ?, ?, ?, ?, ?, current_timestamp)
+					`insert into boards (workspace_id, id, position, name, viewport, stories, updated_at)
+					values (?, ?, ?, ?, ?, ?, current_timestamp)
 					on conflict (workspace_id, id) do update set
-						position = excluded.position, name = excluded.name, viewport = excluded.viewport, story = excluded.story,
-						pages = excluded.pages, updated_at = current_timestamp`,
-					ws, board.id, unit.after.position, plain(board.name), json(board.viewport),
-					board.story === null || board.story === undefined ? null : board.story ? 1 : 0, json(board.pages),
+						position = excluded.position, name = excluded.name, viewport = excluded.viewport,
+						stories = excluded.stories, updated_at = current_timestamp`,
+					ws, board.id, unit.after.position, plain(board.name), json(board.viewport), json(board.stories ?? []),
 				);
 				return;
 			}

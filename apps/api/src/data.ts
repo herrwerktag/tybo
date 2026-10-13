@@ -63,7 +63,7 @@ export async function readAppData(queries: Queries, workspaceId: string): Promis
 		queries`select id, type_id, name, kind, options, reference, card_display from properties where workspace_id = ${workspaceId} order by type_id, position, id`,
 		queries`select id, type_id, name, content, description, tags from entities where workspace_id = ${workspaceId} order by position, id`,
 		queries`select entity_id, property_id, value from entity_values where workspace_id = ${workspaceId} order by entity_id, position, property_id`,
-		queries`select id, name, viewport, story, pages from boards where workspace_id = ${workspaceId} order by position, id`,
+		queries`select id, name, viewport, stories from boards where workspace_id = ${workspaceId} order by position, id`,
 		queries`select id, board_id, entity_id, x, y, width, height from cards where workspace_id = ${workspaceId} order by board_id, position, id`,
 		queries`select board_id, body from drawings where workspace_id = ${workspaceId} order by board_id, position, id`,
 		queries`select id, name, tags, drawings from library_drawings where workspace_id = ${workspaceId} order by position, id`,
@@ -120,14 +120,13 @@ export function assembleAppData({ types, properties, entities, values, boards, c
 			tags: tags ?? [],
 			values: valuesOf.get(id) ?? {},
 		})),
-		boards: boards.map(({ id, name, viewport, story, pages }) => ({
+		boards: boards.map(({ id, name, viewport, stories }) => ({
 			id,
 			name,
 			cards: cardsOf.get(id) ?? [],
 			viewport,
 			drawings: drawingsOf.get(id) ?? [],
-			story,
-			pages,
+			stories: stories ?? [],
 		})),
 		library: library.map(({ id, name, tags, drawings }) => ({ id, name, tags: tags ?? [], drawings: drawings ?? [] })),
 	} as AppData;

@@ -16,6 +16,23 @@ export function writePreference(key: string, value: string): void {
 	}
 }
 
+/** Like readPreference, for this browser tab only (sessionStorage): gone once the tab is closed. */
+export function readSession(key: string): string | null {
+	try {
+		return sessionStorage.getItem(key);
+	} catch {
+		return null;
+	}
+}
+
+export function writeSession(key: string, value: string): void {
+	try {
+		sessionStorage.setItem(key, value);
+	} catch {
+		// Storage blocked: the step just isn't remembered.
+	}
+}
+
 /** Which workspace this browser opens — a view of the data, like the active board, so it's remembered here. */
 export const activeWorkspacePreference = {
 	read: () => readPreference("active-workspace"),

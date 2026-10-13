@@ -159,6 +159,21 @@ export const MIGRATIONS: readonly Migration[] = [
 			await tx`alter table entities add column tags jsonb`;
 		},
 	},
+	{
+		version: 6,
+		name: "several stories per board",
+		async up(tx) {
+			// A board's steps (kept also while its story mode was off) become one story, with the board's id — the
+			// app reads boards saved before the same way.
+			await tx`alter table boards add column stories jsonb`;
+			await tx`update boards set stories = case
+				when (jsonb_typeof(pages) = 'array' and jsonb_array_length(pages) > 0) or coalesce(story, false)
+					then jsonb_build_array(jsonb_build_object('id', id, 'name', 'Story 1', 'pages', coalesce(pages, '[]'::jsonb)))
+				else '[]'::jsonb
+			end`;
+			await tx`alter table boards drop column story, drop column pages`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */

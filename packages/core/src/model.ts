@@ -126,8 +126,8 @@ export interface CanvasCard {
 }
 
 /**
- * One step of a board in story mode: which of the board's cards and drawings it shows (they keep one position on all
- * pages), with its own pan/zoom and a description placed over the canvas.
+ * One step of a story: which of the board's cards and drawings it shows (they keep one position on all pages), with
+ * its own pan/zoom and a description placed over the canvas.
  */
 export interface StoryPage {
 	id: string;
@@ -159,20 +159,37 @@ export function descriptionInView(viewport: Viewport): Point {
 	return { x: snapToGrid(x), y: snapToGrid(y) };
 }
 
-/** A named canvas with its own cards and pan/zoom. In story mode, it is shown step by step, like a presentation. */
+/** A way through a board, shown step by step like a presentation: each step (page) shows some of its cards and
+ * drawings. A board can have several. */
+export interface Story {
+	id: string;
+	name: string;
+	/** In order; never empty. Page ids are unique across all stories of the board. */
+	pages: StoryPage[];
+}
+
+/** A named canvas with its own cards and pan/zoom, and stories through it. */
 export interface Board {
 	id: string;
 	name: string;
 	/** Later cards are drawn on top. */
 	cards: CanvasCard[];
-	/** The pan/zoom of the board; in story mode, its pages have their own. */
+	/** The pan/zoom of the board; its stories' pages have their own. */
 	viewport: Viewport;
 	/** Shapes, lines, text and pen strokes, drawn behind the cards; later ones on top. */
 	drawings: Drawing[];
-	/** Whether the board is shown step by step (its pages); off, it shows everything at once. */
-	story: boolean;
-	/** The steps of story mode, in order: never empty while it's on, and kept while it's off. */
-	pages: StoryPage[];
+	/** In the order they were made. */
+	stories: Story[];
+}
+
+/** All pages of all the board's stories. */
+export function boardPages(board: Pick<Board, "stories">): StoryPage[] {
+	return board.stories.flatMap((s) => s.pages);
+}
+
+/** The board with `fn` applied to every page of every story. */
+export function mapPages<B extends Pick<Board, "stories">>(board: B, fn: (page: StoryPage) => StoryPage): B {
+	return { ...board, stories: board.stories.map((s) => ({ ...s, pages: s.pages.map(fn) })) };
 }
 
 export type TextSize = "s" | "m" | "l";

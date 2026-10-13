@@ -1586,7 +1586,7 @@ button.ref-tag {
 	/* Kept out of the way until ⋯; the viewer keeps its story mode toggle at hand. */
 	.canvas-view:not(.show-more)
 		:is(
-			.board-controls > :not(.board-switch),
+			.board-controls > :not(.picker-switch),
 			.drawing-tools,
 			.page-bar > :is(input.page-name, .page-copy, button:nth-child(n + 5)),
 			.canvas-zoom > button:last-child
@@ -1594,9 +1594,6 @@ button.ref-tag {
 		display: none;
 	}
 
-	.canvas-view.read-only:not(.show-more) .board-controls > .tool-button {
-		display: inline-block;
-	}
 
 	/* The controls fill each line of their group, so the groups read as tidy bars; ⋯ stays top right. */
 	.canvas-toolbar > .toolbar-group {
@@ -1615,7 +1612,7 @@ button.ref-tag {
 		flex: 1 1 auto;
 	}
 
-	.canvas-toolbar .board-switch {
+	.canvas-toolbar .picker-switch {
 		max-width: none;
 	}
 
@@ -2021,8 +2018,8 @@ button.ref-tag {
 	gap: 0.25rem;
 }
 
-/* The current board's name, opening the boards overlay. */
-.board-switch {
+/* The current board's or story's name, opening the overlay to pick another. */
+.picker-switch {
 	display: inline-flex;
 	align-items: center;
 	justify-content: space-between;
@@ -2030,14 +2027,14 @@ button.ref-tag {
 	max-width: 28rem;
 }
 
-.board-name {
+.picker-name {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
-/* Overlays over the canvas: the boards (switch; in the editor also create, rename and delete), connecting an
-   entity with another, a new entity. */
+/* Overlays over the canvas: the boards and the stories (pick one; in the editor also create, rename and delete),
+   connecting an entity with another, a new entity. */
 .canvas-dialog {
 	/* Centered on the screen (the reset takes away the browser's margin: auto). */
 	margin: auto;
@@ -2074,7 +2071,7 @@ button.ref-tag {
 	font-size: 0.9rem;
 }
 
-.board-list,
+.picker-list,
 .connect-list {
 	display: grid;
 	gap: 0.25rem;
@@ -2084,15 +2081,15 @@ button.ref-tag {
 	overflow-y: auto;
 }
 
-.board-list li,
+.picker-list li,
 .connect-list li,
-.board-rename {
+.picker-rename {
 	display: flex;
 	gap: 0.25rem;
 }
 
 /* Like the workspace menu's options. */
-.board-option {
+.picker-option {
 	flex: 1;
 	min-width: 0;
 	text-align: left;
@@ -2102,25 +2099,25 @@ button.ref-tag {
 	overflow-wrap: anywhere;
 }
 
-.board-option[aria-current="true"],
-.board-option[aria-current="true"]:hover:not(:disabled) {
+.picker-option[aria-current="true"],
+.picker-option[aria-current="true"]:hover:not(:disabled) {
 	background: var(--highlight);
 	font-weight: 600;
 }
 
-.board-rename input {
+.picker-rename input {
 	flex: 1;
 	min-width: 0;
 }
 
-.board-new {
+.picker-new {
 	display: grid;
 	gap: 0.5rem;
 	padding-top: 0.75rem;
 	border-top: 1px solid var(--border);
 }
 
-.board-new button {
+.picker-new button {
 	justify-self: start;
 }
 
