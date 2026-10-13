@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TYPE_COLORS, type AppData, type DraftProperty } from "./model.js";
 import { memoryDataPort } from "./memory-port.js";
-import { DATA_VERSION, MIGRATIONS, createStore, migrate, type Store } from "./store.js";
+import { DATA_VERSION, LEGACY_SCREEN, MIGRATIONS, createStore, migrate, type Store } from "./store.js";
 import { isUlid } from "./ulid.js";
 
 /** Lets background saves finish and report how they went (a failed save flips `problems.saveFailed` only then). */
@@ -29,7 +29,16 @@ function assertEmpty(data: AppData) {
 	assert.deepEqual(data.types, []);
 	assert.deepEqual(data.entities, []);
 	assert.equal(data.boards.length, 1);
-	assert.deepEqual({ ...data.boards[0], id: "" }, { id: "", name: "Board 1", cards: [], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [], stories: [] });
+	assert.deepEqual({ ...data.boards[0], id: "" }, {
+		id: "",
+		name: "Board 1",
+		cards: [],
+		viewport: { x: 0, y: 0, zoom: 1 },
+		frames: [],
+		viewFrameId: null,
+		drawings: [],
+		stories: [],
+	});
 }
 
 /** The first board, which a fresh store always has. */
@@ -670,7 +679,7 @@ test("a board has stories: each starts with an empty page, in view; they can be 
 	const story = store.addStory(board.id, " Pitch ", "Start")!;
 	const [first] = story.pages;
 	assert.equal(story.name, "Pitch");
-	assert.deepEqual([first?.name, first?.cardIds, first?.drawingIds, first?.viewport], ["Start", [], [], { x: 9, y: 9, zoom: 1 }]);
+	assert.deepEqual([first?.name, first?.cardIds, first?.drawingIds, first?.frameId], ["Start", [], [], null]);
 	// Its description at the top left of what is seen (the grid point nearest 72, 16 px in), not somewhere off screen.
 	assert.deepEqual(first?.descriptionPosition, { x: 72, y: 0 });
 	assert.deepEqual([firstBoard(store).cards.map((c) => c.id), firstBoard(store).drawings.map((d) => d.id)], [[card.id], [line.id]]);
@@ -708,7 +717,7 @@ test("pages are added after the current one, copying it on request", async () =>
 
 	const card = store.addCard(story.id, a.id, 0, 0, first!.id);
 	store.updatePage(story.id, first!.id, { description: "**Begin**", descriptionPosition: { x: 300, y: 40 }, descriptionSize: { width: 200, height: 90 } });
-	store.setPageViewport(story.id, first!.id, { x: 7, y: 8, zoom: 1.5 });
+	const frame = store.addFrame(story.id, "Wide", { x: 0, y: 0, width: 800, height: 450 }, first!.id)!;
 
 	const empty = store.addPage(story.id, first!.id, " Empty ", false)!;
 	const copied = store.addPage(story.id, first!.id, "Copied", true)!;
@@ -719,8 +728,8 @@ test("pages are added after the current one, copying it on request", async () =>
 	);
 	assert.deepEqual(empty.cardIds, []);
 	assert.deepEqual(copied.cardIds, [card.id]);
-	// Both start where the page before was looked at, with the description in the same place (but no text).
-	assert.deepEqual(empty.viewport, { x: 7, y: 8, zoom: 1.5 });
+	// Both are seen in the frame of the page before, with the description in the same place (but no text).
+	assert.deepEqual([empty.frameId, copied.frameId], [frame.id, frame.id]);
 	assert.deepEqual([copied.descriptionPosition, copied.descriptionSize], [{ x: 300, y: 40 }, { width: 200, height: 90 }]);
 	assert.equal(copied.description, "");
 });
@@ -799,16 +808,85 @@ test("a page can show its cards dimmed; copied pages keep that, and a card going
 	assert.deepEqual(page(1).dimmedCardIds, []);
 });
 
-test("undo keeps the pages' pan and zoom", async () => {
-	const store = await open(memoryStorage());
+test("frames: pages and the board are seen in one, which can be changed and deleted, each one undo step", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
 	const story = storyBoard(store, "Flow");
 	const page = story.pages[0]!;
-	store.updatePage(story.id, page.id, { name: "Renamed" });
-	store.setPageViewport(story.id, page.id, { x: 3, y: 4, zoom: 1 });
+	const board = () => store.data.boards[1]!;
+
+	const wide = store.addFrame(story.id, " Wide ", { x: 10, y: 20, width: 800, height: 450 }, page.id)!;
+	const tiny = store.addFrame(story.id, "", { x: 0, y: 0, width: 5, height: 5 })!;
+	assert.deepEqual(board().frames, [
+		{ id: wide.id, name: "Wide", x: 10, y: 20, width: 800, height: 450 },
+		{ id: tiny.id, name: "Frame 2", x: 0, y: 0, width: 192, height: 120 }, // never below the minimum
+	]);
+	assert.deepEqual([board().stories[0]!.pages[0]!.frameId, board().viewFrameId], [wide.id, tiny.id]);
+
+	store.updateFrame(story.id, wide.id, { name: " ", x: 30, width: 10 });
+	assert.deepEqual(board().frames[0], { id: wide.id, name: "Wide", x: 30, y: 20, width: 192, height: 450 });
 	store.undo();
-	const restored = store.data.boards[1]!.stories[0]!.pages[0]!;
-	assert.equal(restored.name, page.name);
-	assert.deepEqual(restored.viewport, { x: 3, y: 4, zoom: 1 });
+	assert.equal(board().frames[0]?.x, 10);
+
+	store.setFrame(story.id, tiny.id, page.id);
+	store.setFrame(story.id, "unknown", page.id); // not one of the board's: nothing changes
+	store.setFrame(story.id, null);
+	assert.deepEqual([board().stories[0]!.pages[0]!.frameId, board().viewFrameId], [tiny.id, null]);
+	assert.deepEqual((await open(storage)).data.boards[1], board());
+
+	// A new story starts in the board's frame.
+	store.setFrame(story.id, wide.id);
+	assert.equal(store.addStory(story.id, "Two", "A")?.pages[0]?.frameId, wide.id);
+
+	store.removeFrame(story.id, wide.id);
+	assert.deepEqual(board().frames.map((f) => f.id), [tiny.id]);
+	assert.deepEqual([board().viewFrameId, board().stories[1]!.pages[0]!.frameId, board().stories[0]!.pages[0]!.frameId], [null, null, tiny.id]);
+});
+
+test("undo keeps the board's pan and zoom", async () => {
+	const store = await open(memoryStorage());
+	const story = storyBoard(store, "Flow");
+	store.updatePage(story.id, story.pages[0]!.id, { name: "Renamed" });
+	store.setViewport(story.id, { x: 3, y: 4, zoom: 1 });
+	store.undo();
+	assert.equal(store.data.boards[1]!.stories[0]!.pages[0]!.name, story.pages[0]!.name);
+	assert.deepEqual(store.data.boards[1]!.viewport, { x: 3, y: 4, zoom: 1 });
+});
+
+test("version 5 steps' pan and zoom become frames, shared by steps seen alike, the same on every read", async () => {
+	const page = (id: string, viewport: unknown, name?: string) => ({ id, ...(name && { name }), viewport, cardIds: [] });
+	const saved = {
+		version: 5,
+		types: [],
+		entities: [],
+		boards: [
+			{
+				id: "b",
+				name: "Flow",
+				cards: [],
+				viewport: { x: 0, y: 0, zoom: 1 },
+				drawings: [],
+				stories: [
+					{ id: "s1", name: "One", pages: [page("p1", { x: -100, y: 50, zoom: 2 }, "Intro"), page("p2", { x: -100, y: 50, zoom: 2 })] },
+					{ id: "s2", name: "Two", pages: [page("p3", null)] },
+				],
+			},
+			{ id: "c", name: "Framed", cards: [], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [], frames: [], stories: [{ id: "s3", name: "S", pages: [page("p4", { x: 5, y: 5, zoom: 1 })] }] },
+		],
+	};
+	const store = await open(memoryStorage(saved));
+	const [board, framed] = store.data.boards;
+	const { width, height } = LEGACY_SCREEN;
+	assert.deepEqual(board?.frames, [
+		{ id: "p1", name: "Intro", x: 50, y: -25, width: width / 2, height: height / 2 },
+		{ id: "p3", name: "Frame 2", x: 0, y: 0, width, height },
+	]);
+	assert.deepEqual(board?.stories.map((s) => s.pages.map((p) => p.frameId)), [["p1", "p1"], ["p3"]]);
+	assert.equal(board?.viewFrameId, null);
+	assert.equal("viewport" in board!.stories[0]!.pages[0]!, false);
+	assert.deepEqual((await open(memoryStorage(saved))).data.boards[0], board);
+	// A board saved with frames is read as it is: steps naming no frame of it are seen in none.
+	assert.deepEqual([framed?.frames, framed?.stories[0]?.pages[0]?.frameId], [[], null]);
 });
 
 test("storyboards saved by version 2 get a story; malformed pages are dropped or completed", async () => {
@@ -855,7 +933,7 @@ test("storyboards saved by version 2 get a story; malformed pages are dropped or
 					description: "",
 					descriptionPosition: { x: 72, y: 24 },
 					descriptionSize: { width: 160, height: 500 }, // never below the minimum
-					viewport: { x: 0, y: 0, zoom: 1 },
+					frameId: "p",
 					cardIds: [],
 					drawingIds: [],
 					dimmedCardIds: [],

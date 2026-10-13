@@ -58,7 +58,7 @@ test("a step that fails leaves the schema exactly as it was — none of the run 
 	}
 });
 
-test("step 6: a board's steps from before become one story, with the board's id", { skip: !url }, async () => {
+test("steps 6 and 7: a board's steps from before become one story, with the board's id; its frames stay null", { skip: !url }, async () => {
 	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
 	try {
 		await wipe(sql);
@@ -72,8 +72,10 @@ test("step 6: a board's steps from before become one story, with the board's id"
 		await board("none", 2, false, []);
 		await board("null", 3, null, null);
 
-		assert.deepEqual(await migrateSchema(sql), [6]);
+		assert.deepEqual(await migrateSchema(sql), [6, 7]);
 		const rows = await sql`select id, stories from boards order by position`;
+		// Step 7 leaves the frames null: the app makes them of the steps' pan/zoom.
+		assert.deepEqual([...(await sql`select distinct frames, view_frame_id from boards`)], [{ frames: null, view_frame_id: null }]);
 		assert.deepEqual(
 			rows.map((row) => [row.id, row.stories]),
 			[

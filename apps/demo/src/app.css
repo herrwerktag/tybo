@@ -1678,6 +1678,58 @@ button.ref-tag {
 	user-select: none;
 }
 
+/* The editor's view frames (see renderFrames): dashed outlines above the cards that let the pointer through, except
+ * at their name (to move one, or click to go to it) and corner (to resize it). The one of what's shown stands out. */
+.view-frames,
+.view-frame {
+	position: absolute;
+	pointer-events: none;
+}
+
+.view-frames {
+	left: 0;
+	top: 0;
+}
+
+.view-frame {
+	box-sizing: border-box;
+	border: 2px dashed var(--border-strong);
+	border-radius: 6px;
+}
+
+.view-frame.current {
+	border-color: var(--focus);
+}
+
+.view-frame-label {
+	position: absolute;
+	bottom: 100%;
+	left: -2px;
+	max-width: 100%;
+	padding: 0.1rem 0.5rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 0.8rem;
+	color: var(--muted);
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 6px 6px 0 0;
+	cursor: move;
+	touch-action: none;
+	user-select: none;
+	pointer-events: auto;
+}
+
+.view-frame.current .view-frame-label {
+	color: inherit;
+	border-color: var(--focus);
+}
+
+.view-frame .card-resize {
+	pointer-events: auto;
+}
+
 /* Other pages' cards and drawings, shown faded in the story mode editor so they can be shown here too. */
 .canvas-card.ghost {
 	opacity: 0.35;

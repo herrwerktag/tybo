@@ -94,8 +94,12 @@ export function drawingBounds(drawing: Drawing): Rect {
 
 /** The smallest box containing all the drawings, or null when there are none. */
 export function contentBounds(drawings: readonly Drawing[]): Rect | null {
-	if (drawings.length === 0) return null;
-	const boxes = drawings.map(drawingBounds);
+	return unionBounds(drawings.map(drawingBounds));
+}
+
+/** The smallest box containing all the boxes, or null when there are none. */
+export function unionBounds(boxes: readonly Rect[]): Rect | null {
+	if (boxes.length === 0) return null;
 	const x = Math.min(...boxes.map((b) => b.x));
 	const y = Math.min(...boxes.map((b) => b.y));
 	return {

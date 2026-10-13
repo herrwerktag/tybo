@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { canvasView, parseViewHash, viewHash } from "./canvas.js";
 import { CLICK_TOLERANCE } from "./dom.js";
 import { text } from "./i18n.js";
-import { createStore, DATA_VERSION, snapToGrid, type Store } from "@tybo/core";
+import { createStore, DATA_VERSION, fitRect, snapToGrid, type Store } from "@tybo/core";
 import { memoryDataPort } from "@tybo/core/testing";
 
 /** A board with one card for Dune (with content, so it can be resized) and one for Herbert. */
@@ -684,4 +684,96 @@ test("the viewer's details have no Connect button", async () => {
 	const { view, card } = await setup({ readOnly: true });
 	cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	assert.equal(detailsButton(view, "Connect"), undefined);
+});
+
+/** Gives the canvas a size (happy-dom lays nothing out) and makes the pan/zoom move at once (reduced motion). */
+function laidOut(view: HTMLElement, width = 800, height = 600): void {
+	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;
+	Object.defineProperties(surface, { clientWidth: { value: width }, clientHeight: { value: height } });
+	Object.assign(window, { matchMedia: (query: string) => ({ matches: query.includes("reduced-motion") }) });
+}
+
+const transform = (view: HTMLElement) => view.querySelector<HTMLElement>(".canvas-board")!.style.transform;
+const viewportTransform = ({ x, y, zoom }: { x: number; y: number; zoom: number }) => `translate(${x}px, ${y}px) scale(${zoom})`;
+const frameName = (view: HTMLElement) => view.querySelector(".frame-switch .picker-name")?.textContent;
+
+/** Picks an item of the frame overlay by its name. */
+function pickFrame(view: HTMLElement, name: string): void {
+	view.querySelector<HTMLButtonElement>(".frame-switch")!.click();
+	[...view.querySelectorAll<HTMLButtonElement>(".frame-dialog .picker-option")].find((b) => b.textContent === name)!.click();
+}
+
+test("in the editor, a step gets a frame of what is seen; only stepping into another frame moves the board", async () => {
+	const { store, view, boardId, pages } = await storyboard();
+	laidOut(view);
+	const board = () => store.data.boards.find((b) => b.id === boardId)!;
+	assert.equal(frameName(view), "No frame");
+
+	view.querySelector<HTMLButtonElement>(".frame-switch")!.click();
+	const form = view.querySelector<HTMLFormElement>(".frame-dialog .picker-new")!;
+	form.querySelector("input")!.value = "Wide";
+	form.requestSubmit();
+	const [wide] = board().frames;
+	assert.deepEqual(wide, { id: wide!.id, name: "Wide", x: 0, y: 0, width: 800, height: 600 });
+	assert.deepEqual(pages().map((p) => p.frameId), [wide!.id, null]);
+	assert.equal(frameName(view), "Wide");
+	assert.equal(view.querySelector(".view-frame.current .view-frame-label")?.textContent, "Wide");
+
+	// A step without a frame: the board stays where it is.
+	view.querySelector<HTMLButtonElement>(`.canvas-zoom button[title="${text.zoomOut}"]`)!.click();
+	const panned = transform(view);
+	pageButton(view, "Next step").click();
+	assert.equal(transform(view), panned);
+	assert.equal(frameName(view), "No frame");
+	assert.equal(view.querySelector(".view-frame.current"), null);
+
+	// Picking a frame goes to it; stepping back to a step in the same frame stays.
+	pickFrame(view, "Wide");
+	assert.equal(pages()[1]!.frameId, wide!.id);
+	assert.equal(transform(view), viewportTransform(fitRect(wide!, 800, 600, 48)));
+	view.querySelector<HTMLButtonElement>(`.canvas-zoom button[title="${text.zoomOut}"]`)!.click();
+	const zoomedOut = transform(view);
+	pageButton(view, "Previous step").click();
+	assert.equal(transform(view), zoomedOut);
+});
+
+test("in the editor, a frame is moved by its name and resized at its corner, on the grid; deleting it frees its steps", async () => {
+	const { store, view, boardId, one, pages } = await storyboard();
+	store.addFrame(boardId, "Wide", { x: 0, y: 0, width: 480, height: 240 }, one.id);
+	const editor = canvasView(store, { readOnly: false });
+	document.body.replaceChildren(editor);
+	view.remove();
+	const saved = () => store.data.boards.find((b) => b.id === boardId)!.frames[0];
+
+	dragBy(editor.querySelector<HTMLElement>(".view-frame-label")!, 50, 30);
+	assert.deepEqual([saved()?.x, saved()?.y], [48, 24]);
+	dragBy(editor.querySelector<HTMLElement>(".view-frame .card-resize")!, -1000, 20);
+	assert.deepEqual([saved()?.width, saved()?.height], [192, 264], "never below the minimum");
+	assert.equal(editor.querySelector<HTMLElement>(".view-frame")!.style.left, "48px");
+
+	Object.assign(globalThis, { confirm: () => true });
+	editor.querySelector<HTMLButtonElement>(".frame-switch")!.click();
+	[...editor.querySelectorAll<HTMLButtonElement>(".frame-dialog button")].find((b) => b.textContent === text.delete)!.click();
+	assert.deepEqual([store.data.boards.find((b) => b.id === boardId)!.frames, pages()[0]!.frameId], [[], null]);
+	assert.equal(editor.querySelector(".view-frame"), null);
+});
+
+test("the viewer fits a step's frame into the screen, and without one what the step or the board shows", async () => {
+	const { store, boardId, one } = await storyboard({ readOnly: true });
+	const frame = store.addFrame(boardId, "Wide", { x: 0, y: 0, width: 400, height: 300 }, one.id)!;
+	const viewer = canvasView(store, { readOnly: true });
+	document.body.replaceChildren(viewer);
+	laidOut(viewer);
+	const reset = () => [...viewer.querySelectorAll<HTMLButtonElement>(".canvas-zoom button")].find((b) => b.textContent === text.resetView)!.click();
+
+	// The whole board without a frame: both cards (and no outlines: the viewer shows no frames).
+	reset();
+	const cards = store.data.boards.find((b) => b.id === boardId)!.cards;
+	const all = { x: 0, y: 0, width: cards[1]!.x + cards[1]!.width, height: Math.max(...cards.map((c) => c.height)) };
+	assert.equal(transform(viewer), viewportTransform(fitRect(all, 800, 600, 48)));
+	assert.equal(viewer.querySelector(".view-frame, .frame-switch"), null);
+
+	pickStory(viewer, "Pitch");
+	assert.equal(transform(viewer), viewportTransform(fitRect(frame, 800, 600)));
+	assert.equal(transform(viewer), "translate(0px, 0px) scale(2)");
 });

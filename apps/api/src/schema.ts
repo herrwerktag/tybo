@@ -174,6 +174,14 @@ export const MIGRATIONS: readonly Migration[] = [
 			await tx`alter table boards drop column story, drop column pages`;
 		},
 	},
+	{
+		version: 7,
+		name: "view frames",
+		async up(tx) {
+			// Null in rows from before: the app makes frames of those boards' steps' pan/zoom.
+			await tx`alter table boards add column frames jsonb, add column view_frame_id text`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */

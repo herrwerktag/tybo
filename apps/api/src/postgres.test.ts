@@ -30,6 +30,8 @@ function sample(): AppData {
 				name: "Brett",
 				cards: [{ id: "card-1", entityId: "ent-1", x: 1, y: 2, width: 240, height: 160 }],
 				viewport: { x: 0, y: 0, zoom: 1 },
+				frames: [],
+				viewFrameId: null,
 				drawings: [],
 				stories: [],
 			},

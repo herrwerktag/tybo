@@ -126,8 +126,23 @@ export interface CanvasCard {
 }
 
 /**
- * One step of a story: which of the board's cards and drawings it shows (they keep one position on all pages), with
- * its own pan/zoom and a description placed over the canvas.
+ * A part of the board to look at, in world coordinates: the viewer fits it into the screen, whatever its size. Story
+ * steps (and the board itself, in the viewer) show one; several steps can share one, so they're seen alike.
+ */
+export interface ViewFrame {
+	id: string;
+	name: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+export const MIN_FRAME_SIZE = { width: 192, height: 120 } as const;
+
+/**
+ * One step of a story: which of the board's cards and drawings it shows (they keep one position on all pages), the
+ * view frame it is seen in, and a description placed over the canvas.
  */
 export interface StoryPage {
 	id: string;
@@ -139,7 +154,8 @@ export interface StoryPage {
 	descriptionPosition: Point;
 	/** The description box's size in world units, the same in the editor and the viewer. */
 	descriptionSize: { width: number; height: number };
-	viewport: Viewport;
+	/** One of the board's frames; null: the viewer fits what the page shows. */
+	frameId: string | null;
 	cardIds: string[];
 	drawingIds: string[];
 	/** Cards the page shows faded, out of focus: some of its `cardIds`. */
@@ -174,8 +190,12 @@ export interface Board {
 	name: string;
 	/** Later cards are drawn on top. */
 	cards: CanvasCard[];
-	/** The pan/zoom of the board; its stories' pages have their own. */
+	/** The editor's pan/zoom of the board, in and outside its stories; the viewer shows frames instead. */
 	viewport: Viewport;
+	/** In the order they were made. */
+	frames: ViewFrame[];
+	/** The frame the viewer shows the whole board in; null: it fits everything on the board. */
+	viewFrameId: string | null;
 	/** Shapes, lines, text and pen strokes, drawn behind the cards; later ones on top. */
 	drawings: Drawing[];
 	/** In the order they were made. */
