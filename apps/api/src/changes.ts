@@ -146,11 +146,12 @@ async function writeUnit(tx: Queries, ws: string, unit: Change): Promise<void> {
 		}
 		case "entity": {
 			const entity = unit.after.value;
-			await tx`insert into entities (workspace_id, id, type_id, position, name, content, description, updated_at)
-				values (${ws}, ${entity.id}, ${entity.typeId}, ${unit.after.position}, ${entity.name}, ${entity.content}, ${entity.description}, now())
+			await tx`insert into entities (workspace_id, id, type_id, position, name, content, description, tags, updated_at)
+				values (${ws}, ${entity.id}, ${entity.typeId}, ${unit.after.position}, ${entity.name}, ${entity.content}, ${entity.description},
+					${jsonbParameter(tx, entity.tags ?? [])}, now())
 				on conflict (workspace_id, id) do update set
 					type_id = excluded.type_id, position = excluded.position, name = excluded.name,
-					content = excluded.content, description = excluded.description, updated_at = now()`;
+					content = excluded.content, description = excluded.description, tags = excluded.tags, updated_at = now()`;
 			// The values the entity no longer has lose their rows; the ones it has are written — the place
 			// is the record's own order, the read assembles the record either way.
 			const values = Object.entries(entity.values ?? {});

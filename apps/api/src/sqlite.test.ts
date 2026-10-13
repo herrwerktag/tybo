@@ -20,7 +20,7 @@ function sample(): AppData {
 				color: "#c4dafa",
 			},
 		],
-		entities: [{ id: "ent-1", typeId: "type-1", name: "Ada", content: "", description: "", values: { "prop-1": "hier" } }],
+		entities: [{ id: "ent-1", typeId: "type-1", name: "Ada", content: "", description: "", tags: ["Analytik", "Pionierin"], values: { "prop-1": "hier" } }],
 		boards: [
 			{
 				id: "board-1",
@@ -56,7 +56,7 @@ async function fresh() {
 test("sqlite: the schema is made once, and survives reopening the file", async () => {
 	const { storage, path, close } = await fresh();
 	try {
-		assert.deepEqual(await storage.init(), [1]);
+		assert.deepEqual(await storage.init(), [1, 2]);
 		assert.deepEqual(await storage.init(), [], "the second start has nothing left to do");
 		assert.equal(await storage.healthy(), true);
 		await storage.createWorkspace({ id: "ws", name: "Bleibt" }, 1);

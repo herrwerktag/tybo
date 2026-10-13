@@ -109,6 +109,8 @@ export interface Entity {
 	content: string;
 	/** Longer text with detailed information, shown in the canvas details panel (not on cards). */
 	description: string;
+	/** Sets the entity belongs to, for filtering (e.g. one project's entities); trimmed, without duplicates. */
+	tags: string[];
 	/** Keyed by PropertyDef.id. */
 	values: Record<string, PropertyValue>;
 }
@@ -438,13 +440,25 @@ function searchKey(value: string): string {
 	return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase();
 }
 
-/** Entities whose name contains `query` (ignoring case and accents), optionally only of one type. */
-export function filterEntities<T extends Pick<Entity, "name" | "typeId">>(
+/** Entities whose name contains `query` (ignoring case and accents), optionally only of one type or with one tag
+ * (ignoring case). */
+export function filterEntities<T extends Pick<Entity, "name" | "typeId" | "tags">>(
 	entities: readonly T[],
-	{ query, typeId }: { query: string; typeId: string | null },
+	{ query, typeId, tag = null }: { query: string; typeId: string | null; tag?: string | null },
 ): T[] {
 	const key = searchKey(query.trim());
-	return entities.filter((e) => (typeId === null || e.typeId === typeId) && searchKey(e.name).includes(key));
+	const tagKey = tag?.toLocaleLowerCase();
+	return entities.filter(
+		(e) =>
+			(typeId === null || e.typeId === typeId) &&
+			(tagKey === undefined || e.tags.some((t) => t.toLocaleLowerCase() === tagKey)) &&
+			searchKey(e.name).includes(key),
+	);
+}
+
+/** The tags in use, sorted; spelled as where they first appear (tags differing only in case count as one). */
+export function entityTags(entities: readonly Pick<Entity, "tags">[]): string[] {
+	return parseTags(entities.flatMap((e) => e.tags).join(",")).sort((a, b) => a.localeCompare(b));
 }
 
 /** Library drawings whose name or one of whose tags contains `query` (ignoring case and accents). */

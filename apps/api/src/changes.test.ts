@@ -25,8 +25,8 @@ function state(): AppData {
 			},
 		],
 		entities: [
-			{ id: "ent-ada", typeId: "type-person", name: "Ada", content: "kocht", description: "die erste", values: { "p-note": "mit Ruhe" } },
-			{ id: "ent-bob", typeId: "type-person", name: "Bob", content: "", description: "", values: {} },
+			{ id: "ent-ada", typeId: "type-person", name: "Ada", content: "kocht", description: "die erste", tags: ["Küche"], values: { "p-note": "mit Ruhe" } },
+			{ id: "ent-bob", typeId: "type-person", name: "Bob", content: "", description: "", tags: [], values: {} },
 		],
 		boards: [
 			{
@@ -244,7 +244,7 @@ test("New and deleted: units appear and disappear in the tables and in every ans
 		// A new entity (with a value of its type's property), its card on the board; one card gone and
 		// the line drawing with it.
 		const grown = structuredClone(base);
-		grown.entities.push({ id: "ent-new", typeId: "type-person", name: "Neu", content: "", description: "", values: { "p-note": "neu hier" } });
+		grown.entities.push({ id: "ent-new", typeId: "type-person", name: "Neu", content: "", description: "", tags: [], values: { "p-note": "neu hier" } });
 		const board = grown.boards[0]!;
 		board.cards = [board.cards[0]!, { id: "card-new", entityId: "ent-new", x: 660, y: 12.5, width: 240, height: 160 }];
 		board.drawings = board.drawings.filter((d) => d.id !== "draw-line");

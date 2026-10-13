@@ -166,3 +166,29 @@ export function resizeHandle(
 		},
 	});
 }
+
+/**
+ * A select filtering by one of `tags` ("All tags" first), remembered under `key`; a remembered tag no longer in
+ * use counts as none (tags differing only in case are the same). `onChange` gets the tag chosen, or null for all. Answers the select and the tag it starts with.
+ */
+export function tagFilter(
+	tags: readonly string[],
+	key: string,
+	onChange: (tag: string | null) => void,
+): { select: HTMLSelectElement; tag: string | null } {
+	const saved = readPreference(key);
+	const tag = tags.find((t) => t.toLocaleLowerCase() === saved?.toLocaleLowerCase()) ?? null;
+	const select: HTMLSelectElement = el(
+		"select",
+		{
+			ariaLabel: text.filterByTag,
+			onchange: () => {
+				writePreference(key, select.value);
+				onChange(select.value || null);
+			},
+		},
+		el("option", { value: "" }, text.allTags),
+		...tags.map((t) => el("option", { value: t, selected: t === tag }, t)),
+	);
+	return { select, tag };
+}

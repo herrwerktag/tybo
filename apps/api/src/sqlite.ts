@@ -128,6 +128,12 @@ export const SQLITE_MIGRATIONS: readonly Migration[] = [
 			`);
 		},
 	},
+	{
+		version: 2,
+		up(db) {
+			db.exec("alter table entities add column tags text");
+		},
+	},
 ];
 
 /** The table holding each kind of unit, one row per unit. */
@@ -181,7 +187,9 @@ export function sqliteStorage(path: string): SqliteStorage {
 			properties: all(
 				"select id, type_id, name, kind, options, reference, card_display from properties where workspace_id = ? order by type_id, position, id",
 			).map((row) => ({ ...row, options: parsed(row.options), reference: parsed(row.reference) })),
-			entities: all("select id, type_id, name, content, description from entities where workspace_id = ? order by position, id"),
+			entities: all("select id, type_id, name, content, description, tags from entities where workspace_id = ? order by position, id").map(
+				(row) => ({ ...row, tags: parsed(row.tags) }),
+			),
 			values: all("select entity_id, property_id, value from entity_values where workspace_id = ? order by entity_id, position, property_id").map(
 				(row) => ({ ...row, value: parsed(row.value) }),
 			),
@@ -244,12 +252,13 @@ export function sqliteStorage(path: string): SqliteStorage {
 			case "entity": {
 				const entity = unit.after.value;
 				run(
-					`insert into entities (workspace_id, id, type_id, position, name, content, description, updated_at)
-					values (?, ?, ?, ?, ?, ?, ?, current_timestamp)
+					`insert into entities (workspace_id, id, type_id, position, name, content, description, tags, updated_at)
+					values (?, ?, ?, ?, ?, ?, ?, ?, current_timestamp)
 					on conflict (workspace_id, id) do update set
 						type_id = excluded.type_id, position = excluded.position, name = excluded.name,
-						content = excluded.content, description = excluded.description, updated_at = current_timestamp`,
+						content = excluded.content, description = excluded.description, tags = excluded.tags, updated_at = current_timestamp`,
 					ws, entity.id, entity.typeId, unit.after.position, plain(entity.name), plain(entity.content), plain(entity.description),
+					json(entity.tags ?? []),
 				);
 				const values = Object.entries(entity.values ?? {});
 				run(

@@ -4,6 +4,7 @@ import {
 	TYPE_COLORS,
 	cardRows,
 	detailRows,
+	entityTags,
 	filterEntities,
 	filterLibrary,
 	parseTags,
@@ -154,6 +155,7 @@ test("cardRows lists visible properties with a value, in order, with reference n
 		name: "Dune",
 		content: "",
 		description: "",
+		tags: [],
 		values: { t: "Dune", h: "secret", s: null, a: "p1", g: ["t1", "gone", "t2"] },
 	};
 	assert.deepEqual(cardRows(type, entity, names), [
@@ -171,7 +173,7 @@ test("cardRows: line references are left out while their card is linked, listed 
 		["t1", "Sci-fi"],
 		["t2", "Classic"],
 	]);
-	const entity = { id: "e", typeId: "book", name: "Dune", content: "", description: "", values: { g: ["t1", "t2"] } };
+	const entity = { id: "e", typeId: "book", name: "Dune", content: "", description: "", tags: [], values: { g: ["t1", "t2"] } };
 	assert.deepEqual(cardRows(type, entity, names, (id) => id === "t1"), [
 		{ label: "tags", kind: "reference", values: ["Classic"], entityIds: ["t2"] },
 	]);
@@ -192,20 +194,23 @@ test("validateType reports problems as codes with the property label", () => {
 	]);
 });
 
-test("filterEntities matches names ignoring case and accents, optionally by type", () => {
+test("filterEntities matches names ignoring case and accents, optionally by type and by tag", () => {
 	const entities = [
-		{ name: "Überprüfung", typeId: "activity" },
-		{ name: "Incident gemeldet", typeId: "event" },
-		{ name: "Deployment-Paket erstellen", typeId: "activity" },
+		{ name: "Überprüfung", typeId: "activity", tags: ["Release"] },
+		{ name: "Incident gemeldet", typeId: "event", tags: [] },
+		{ name: "Deployment-Paket erstellen", typeId: "activity", tags: ["release", "Ops"] },
 	];
-	const names = (query: string, typeId: string | null = null) =>
-		filterEntities(entities, { query, typeId }).map((e) => e.name);
+	const names = (query: string, typeId: string | null = null, tag: string | null = null) =>
+		filterEntities(entities, { query, typeId, tag }).map((e) => e.name);
 
 	assert.deepEqual(names(""), entities.map((e) => e.name));
 	assert.deepEqual(names("uber"), ["Überprüfung"]);
 	assert.deepEqual(names("  GEMELDET "), ["Incident gemeldet"]);
 	assert.deepEqual(names("", "activity"), ["Überprüfung", "Deployment-Paket erstellen"]);
 	assert.deepEqual(names("paket", "event"), []);
+	assert.deepEqual(names("", null, "RELEASE"), ["Überprüfung", "Deployment-Paket erstellen"]);
+	assert.deepEqual(names("", "activity", "Ops"), ["Deployment-Paket erstellen"]);
+	assert.deepEqual(entityTags(entities), ["Ops", "Release"], "sorted, once each whatever the case");
 });
 
 test("inverse references: who points at an entity, only for properties with an inverse label", () => {
@@ -224,10 +229,10 @@ test("inverse references: who points at an entity, only for properties with an i
 		{ id: "activity", name: "Activity", properties: [responsible, reviewer], contentTemplate: "", color: "#c8ebbf" },
 	];
 	const entities = [
-		{ id: "r1", typeId: "role", name: "Dev", content: "", description: "", values: {} },
-		{ id: "a1", typeId: "activity", name: "Build", content: "", description: "", values: { resp: "r1", rev: "r1" } },
-		{ id: "a2", typeId: "activity", name: "Ship", content: "", description: "", values: { resp: "r1" } },
-		{ id: "a3", typeId: "activity", name: "Plan", content: "", description: "", values: { resp: null } },
+		{ id: "r1", typeId: "role", name: "Dev", content: "", description: "", tags: [], values: {} },
+		{ id: "a1", typeId: "activity", name: "Build", content: "", description: "", tags: [], values: { resp: "r1", rev: "r1" } },
+		{ id: "a2", typeId: "activity", name: "Ship", content: "", description: "", tags: [], values: { resp: "r1" } },
+		{ id: "a3", typeId: "activity", name: "Plan", content: "", description: "", tags: [], values: { resp: null } },
 	];
 	const role = entities[0]!;
 	const data = { types, entities };
@@ -264,7 +269,7 @@ test("detailRows lists every property in order, empty ones too, then reverse ref
 	const asLine: PropertyDef = { ...author, cardDisplay: "line" };
 	const book = { id: "book", name: "Book", properties: [title, hidden, status, asLine], contentTemplate: "", color: "#dcdcdc" };
 	const types = [book, { id: "person", name: "Person", properties: [], contentTemplate: "", color: "#c4dafa" }];
-	const dune = { id: "e", typeId: "book", name: "Dune", content: "", description: "", values: { t: "Dune", h: "secret", a: "p1" } };
+	const dune = { id: "e", typeId: "book", name: "Dune", content: "", description: "", tags: [], values: { t: "Dune", h: "secret", a: "p1" } };
 	const names = new Map([
 		["e", "Dune"],
 		["p1", "Frank"],
