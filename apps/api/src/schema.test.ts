@@ -58,7 +58,7 @@ test("a step that fails leaves the schema exactly as it was — none of the run 
 	}
 });
 
-test("step 6: a board's steps from before become one story, with the board's id", { skip: !url }, async () => {
+test("steps 6 to 8: a board's steps from before become one story, with the board's id; its frames stay null", { skip: !url }, async () => {
 	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
 	try {
 		await wipe(sql);
@@ -72,8 +72,10 @@ test("step 6: a board's steps from before become one story, with the board's id"
 		await board("none", 2, false, []);
 		await board("null", 3, null, null);
 
-		assert.deepEqual(await migrateSchema(sql), [6]);
+		assert.deepEqual(await migrateSchema(sql), [6, 7, 8]);
 		const rows = await sql`select id, stories from boards order by position`;
+		// Steps 7 and 8 leave the frames null: the app makes them of the board's and the steps' pan/zoom.
+		assert.deepEqual([...(await sql`select distinct view_frame, frames from boards`)], [{ view_frame: null, frames: null }]);
 		assert.deepEqual(
 			rows.map((row) => [row.id, row.stories]),
 			[
@@ -83,6 +85,32 @@ test("step 6: a board's steps from before become one story, with the board's id"
 				["null", []],
 			],
 		);
+	} finally {
+		await sql.end({ timeout: 5 });
+	}
+});
+
+test("step 8 gives boards their own frame, whichever form step 7 ran in", { skip: !url }, async () => {
+	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
+	const columns = async () =>
+		(await sql`select column_name from information_schema.columns where table_name = 'boards' and column_name like '%frame%' order by column_name`).map(
+			(row) => row.column_name as string,
+		);
+	try {
+		// As step 7 is.
+		await wipe(sql);
+		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 8));
+		assert.deepEqual(await columns(), ["frames", "view_frame_id"]);
+		assert.deepEqual(await migrateSchema(sql), [8]);
+		assert.deepEqual(await columns(), ["frames", "view_frame"]);
+
+		// As step 7 briefly was: with `view_frame` already.
+		await wipe(sql);
+		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 7));
+		await sql`alter table boards add column view_frame jsonb, add column frames jsonb`;
+		await sql`insert into schema_migrations (version, name) values (7, 'view frames')`;
+		assert.deepEqual(await migrateSchema(sql), [8]);
+		assert.deepEqual(await columns(), ["frames", "view_frame"]);
 	} finally {
 		await sql.end({ timeout: 5 });
 	}

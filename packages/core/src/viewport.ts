@@ -1,3 +1,5 @@
+import type { Rect } from "./connectors.js";
+
 /** Pan and zoom of the canvas: a world point p is drawn at screen position p * zoom + (x, y). */
 export interface Viewport {
 	x: number;
@@ -41,4 +43,18 @@ export function zoomAt(viewport: Viewport, zoom: number, sx: number, sy: number)
 	const z = clampZoom(zoom);
 	const world = screenToWorld(viewport, sx, sy);
 	return { x: sx - world.x * z, y: sy - world.y * z, zoom: z };
+}
+
+/** The part of the world seen in `viewport` on a screen (canvas element) of `width` × `height`. */
+export function visibleRect(viewport: Viewport, width: number, height: number): Rect {
+	const { x, y } = screenToWorld(viewport, 0, 0);
+	return { x, y, width: width / viewport.zoom, height: height / viewport.zoom };
+}
+
+/** The pan/zoom showing all of `rect` as large as fits on a screen of `width` × `height`, centered, with
+ * `margin` (screen px) around it; within the zoom limits. */
+export function fitRect(rect: Rect, width: number, height: number, margin = 0): Viewport {
+	const room = (size: number) => Math.max(1, size - 2 * margin);
+	const zoom = clampZoom(Math.min(room(width) / Math.max(1, rect.width), room(height) / Math.max(1, rect.height)));
+	return { x: width / 2 - (rect.x + rect.width / 2) * zoom, y: height / 2 - (rect.y + rect.height / 2) * zoom, zoom };
 }

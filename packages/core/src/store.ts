@@ -1,12 +1,13 @@
 import { isUlid, ulid } from "./ulid.js";
-import type { Point } from "./connectors.js";
+import type { Point, Rect } from "./connectors.js";
 import { changesBetween } from "./changes.js";
 import type { DataPort } from "./ports.js";
-import { clampZoom, defaultViewport, type Viewport } from "./viewport.js";
+import { clampZoom, defaultViewport, visibleRect, type Viewport } from "./viewport.js";
 import {
 	DEFAULT_CARD_SIZE,
 	DEFAULT_DESCRIPTION_SIZE,
 	MIN_DESCRIPTION_SIZE,
+	frameShape,
 	descriptionInView,
 	MIN_CARD_SIZE,
 	CARD_DISPLAYS,
@@ -49,6 +50,7 @@ import {
 	type PropertyValue,
 	type Story,
 	type StoryPage,
+	type ViewFrame,
 } from "./model.js";
 
 export type Store = Awaited<ReturnType<typeof createStore>>;
@@ -57,7 +59,7 @@ export type Store = Awaited<ReturnType<typeof createStore>>;
 const HISTORY_LIMIT = 100;
 
 /** The format of the saved data. When it changes, raise this and add the step from the old version to MIGRATIONS. */
-export const DATA_VERSION = 5;
+export const DATA_VERSION = 6;
 
 type SavedData = Record<string, unknown>;
 
@@ -85,6 +87,9 @@ export const MIGRATIONS: Readonly<Record<number, (data: SavedData) => SavedData>
 	3: (data) => data,
 	// Version 5 gives boards several stories; normalizeBoard() turns a board's steps from before into one story.
 	4: (data) => data,
+	// Version 6 shows steps and boards in view frames instead of each step with its own pan/zoom; normalizeBoard()
+	// turns the pan/zoom of the steps from before into frames, and gives each board a frame of its own pan/zoom.
+	5: (data) => data,
 };
 
 /** The version saved data says it's in; data without a (valid) version is from before versions existed. */
@@ -104,14 +109,15 @@ export function toSaved(data: AppData): SavedData {
 	return { version: DATA_VERSION, ...data };
 }
 
-function newPage(name: string, viewport = defaultViewport()): StoryPage {
+/** A new page, with its description in view in `viewport`. */
+function newPage(name: string, viewport = defaultViewport(), frameId: string | null = null): StoryPage {
 	return {
 		id: ulid(),
 		name,
 		description: "",
 		descriptionPosition: descriptionInView(viewport),
 		descriptionSize: { ...DEFAULT_DESCRIPTION_SIZE },
-		viewport,
+		frameId,
 		cardIds: [],
 		drawingIds: [],
 		dimmedCardIds: [],
@@ -119,7 +125,8 @@ function newPage(name: string, viewport = defaultViewport()): StoryPage {
 }
 
 function newBoard(name: string): Board {
-	return { id: ulid(), name, cards: [], viewport: defaultViewport(), drawings: [], stories: [] };
+	const viewFrame = visibleRect(defaultViewport(), REFERENCE_SCREEN.width, REFERENCE_SCREEN.height);
+	return { id: ulid(), name, cards: [], viewport: defaultViewport(), viewFrame, frames: [], drawings: [], stories: [] };
 }
 
 /** Keeps only the ids of the cards and drawings the board still has, on every page of its stories. */
@@ -151,6 +158,11 @@ function takeOff(board: Board, list: "cards" | "drawings", id: string, pageId?: 
 /** The board with `card` added, also to the page `pageId` (of one of its stories), if given. */
 function withCard(board: Board, card: CanvasCard, pageId?: string): Board {
 	return mapPages({ ...board, cards: [...board.cards, card] }, (p) => (p.id === pageId ? { ...p, cardIds: [...p.cardIds, card.id] } : p));
+}
+
+/** The board with the page `pageId` seen in the frame `frameId` (null: the board's frame). */
+function withFrame(board: Board, frameId: string | null, pageId: string): Board {
+	return mapPages(board, (p) => (p.id === pageId ? { ...p, frameId } : p));
 }
 
 /** How two entities get linked, seen from one of them: through which reference property, held by which side. */
@@ -248,8 +260,17 @@ function normalizeViewport(v: Partial<Viewport> | null | undefined): Viewport {
 }
 
 
-/** A well-formed page, or null; its ids only name the board's own cards and drawings. */
-function normalizePage(raw: unknown, cardIds: ReadonlySet<string>, drawingIds: ReadonlySet<string>, fallbackName: string): StoryPage | null {
+/** The ids a board's pages may name: its cards, drawings and frames — and, for pages saved before frames, the frame
+ * made of each one's pan/zoom (see legacyFrames). */
+interface BoardIds {
+	cardIds: ReadonlySet<string>;
+	drawingIds: ReadonlySet<string>;
+	frameIds: ReadonlySet<string>;
+	legacyFrameIds: ReadonlyMap<string, string>;
+}
+
+/** A well-formed page, or null; its ids only name the board's own cards, drawings and frames. */
+function normalizePage(raw: unknown, { cardIds, drawingIds, frameIds, legacyFrameIds }: BoardIds, fallbackName: string): StoryPage | null {
 	if (!isObject(raw) || typeof raw.id !== "string") return null;
 	const ids = (value: unknown, known: ReadonlySet<string>) =>
 		Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === "string" && known.has(id)))] : [];
@@ -266,7 +287,7 @@ function normalizePage(raw: unknown, cardIds: ReadonlySet<string>, drawingIds: R
 			isNumber(size?.width) && isNumber(size?.height)
 				? { width: Math.max(MIN_DESCRIPTION_SIZE.width, size.width), height: Math.max(MIN_DESCRIPTION_SIZE.height, size.height) }
 				: { ...DEFAULT_DESCRIPTION_SIZE },
-		viewport,
+		frameId: typeof raw.frameId === "string" && frameIds.has(raw.frameId) ? raw.frameId : (legacyFrameIds.get(raw.id) ?? null),
 		cardIds: shown,
 		drawingIds: ids(raw.drawingIds, drawingIds),
 		dimmedCardIds: ids(raw.dimmedCardIds, new Set(shown)),
@@ -277,15 +298,14 @@ function normalizePage(raw: unknown, cardIds: ReadonlySet<string>, drawingIds: R
  * id another story of the board has already (in `seen`) are left out: page ids are unique on a board. */
 function normalizeStory(
 	raw: unknown,
-	cardIds: ReadonlySet<string>,
-	drawingIds: ReadonlySet<string>,
+	ids: BoardIds,
 	seen: Set<string>,
 	viewport: Viewport,
 	fallbackName: string,
 ): Story | null {
 	if (!isObject(raw) || typeof raw.id !== "string") return null;
 	const pages = (Array.isArray(raw.pages) ? raw.pages : []).flatMap((p: unknown, i: number) => {
-		const page = normalizePage(p, cardIds, drawingIds, `Step ${i + 1}`);
+		const page = normalizePage(p, ids, `Step ${i + 1}`);
 		if (!page || seen.has(page.id)) return [];
 		seen.add(page.id);
 		return [page];
@@ -297,12 +317,56 @@ function normalizeStory(
 	};
 }
 
+/** How large a screen is taken where none is at hand: the frames made of a pan/zoom saved before frames show that
+ * much, from the top left corner of their view, and a new board's frame is that large. */
+export const REFERENCE_SCREEN = { width: 1280, height: 720 } as const;
+
+/** A well-formed frame, in a frame's shape (see frameShape), or null. */
+function normalizeFrame(raw: unknown, fallbackName: string): ViewFrame | null {
+	if (!isObject(raw) || typeof raw.id !== "string" || ![raw.x, raw.y, raw.width, raw.height].every(isNumber)) return null;
+	return {
+		id: raw.id,
+		name: typeof raw.name === "string" && raw.name.trim() !== "" ? raw.name : fallbackName,
+		...frameShape({ x: raw.x as number, y: raw.y as number, width: raw.width as number, height: raw.height as number }),
+	};
+}
+
+/**
+ * The frames made of the pan/zoom of steps saved before frames, and which frame each step (by id) is seen in. Steps
+ * seen alike (a new step took the pan/zoom of the one before) share a frame, named after the first of them and with
+ * its id, so reading the same data twice makes the same frames.
+ */
+function legacyFrames(rawStories: readonly unknown[]): { frames: ViewFrame[]; frameIds: Map<string, string> } {
+	const byView = new Map<string, ViewFrame>();
+	const frameIds = new Map<string, string>();
+	for (const story of rawStories) {
+		const pages = isObject(story) && Array.isArray(story.pages) ? story.pages : [];
+		for (const page of pages) {
+			if (!isObject(page) || typeof page.id !== "string" || frameIds.has(page.id)) continue;
+			const viewport = normalizeViewport(page.viewport as Partial<Viewport> | undefined);
+			const key = `${viewport.x},${viewport.y},${viewport.zoom}`;
+			let frame = byView.get(key);
+			if (!frame) {
+				const name = typeof page.name === "string" && page.name.trim() !== "" ? page.name : `Frame ${byView.size + 1}`;
+				frame = { id: page.id, name, ...visibleRect(viewport, REFERENCE_SCREEN.width, REFERENCE_SCREEN.height) };
+				byView.set(key, frame);
+			}
+			frameIds.set(page.id, frame.id);
+		}
+	}
+	return { frames: [...byView.values()], frameIds };
+}
+
 /**
  * Keeps only well-formed cards and viewport; anything else falls back to defaults. Cards and boards saved without an
  * id get one. A board saved before boards had several stories had steps (`pages`, kept also while its story mode was
- * off): they become one story, with the board's id (as the server's schema migration does).
+ * off): they become one story, with the board's id (as the server's schema migration does). A board saved before
+ * frames gets frames for its steps' pan/zoom (see legacyFrames), and its own frame of its pan/zoom.
  */
-function normalizeBoard(board: (Partial<Board> & { story?: unknown; pages?: unknown }) | undefined, fallbackName: string): Board {
+function normalizeBoard(
+	board: (Omit<Partial<Board>, "frames"> & { frames?: unknown; story?: unknown; pages?: unknown }) | undefined,
+	fallbackName: string,
+): Board {
 	const cards = Array.isArray(board?.cards)
 		? board.cards
 				.filter(
@@ -322,14 +386,25 @@ function normalizeBoard(board: (Partial<Board> & { story?: unknown; pages?: unkn
 		: steps.length > 0 || board?.story === true
 			? [{ id, name: "Story 1", pages: steps }]
 			: [];
+	const legacy = Array.isArray(board?.frames) ? null : legacyFrames(rawStories);
+	const frames = legacy?.frames ?? (board!.frames as unknown[]).flatMap((f, i) => normalizeFrame(f, `Frame ${i + 1}`) ?? []);
+	const frameIds = new Set(frames.map((f) => f.id));
+	const ids: BoardIds = { cardIds, drawingIds, frameIds, legacyFrameIds: legacy?.frameIds ?? new Map() };
 	const seen = new Set<string>();
 	return {
 		id,
 		name: typeof board?.name === "string" && board.name.trim() !== "" ? board.name : fallbackName,
 		cards,
 		viewport,
+		// A board saved without its frame (before frames) gets one of its pan/zoom: the viewer showed the board so.
+		viewFrame: frameShape(
+			isObject(board?.viewFrame) && [board.viewFrame.x, board.viewFrame.y, board.viewFrame.width, board.viewFrame.height].every(isNumber)
+				? { x: board.viewFrame.x, y: board.viewFrame.y, width: board.viewFrame.width, height: board.viewFrame.height }
+				: visibleRect(viewport, REFERENCE_SCREEN.width, REFERENCE_SCREEN.height),
+		),
+		frames,
 		drawings,
-		stories: rawStories.flatMap((raw, i) => normalizeStory(raw, cardIds, drawingIds, seen, viewport, `Story ${i + 1}`) ?? []),
+		stories: rawStories.flatMap((raw, i) => normalizeStory(raw, ids, seen, viewport, `Story ${i + 1}`) ?? []),
 	};
 }
 
@@ -623,17 +698,10 @@ export async function createStore(port: DataPort, workspaceId: string) {
 		for (const listener of historyListeners) listener();
 	}
 
-	/** Undo and redo restore everything but pan and zoom (of boards and pages), which stay as they are now. */
+	/** Undo and redo restore everything but the boards' pan and zoom, which stay as they are now. */
 	function restore(snapshot: AppData): void {
-		const viewports = new Map(
-			data.boards.flatMap((b) => [[b.id, b.viewport] as const, ...boardPages(b).map((p) => [p.id, p.viewport] as const)]),
-		);
-		data = {
-			...snapshot,
-			boards: snapshot.boards.map((b) =>
-				mapPages({ ...b, viewport: viewports.get(b.id) ?? b.viewport }, (p) => ({ ...p, viewport: viewports.get(p.id) ?? p.viewport })),
-			),
-		};
+		const viewports = new Map(data.boards.map((b) => [b.id, b.viewport]));
+		data = { ...snapshot, boards: snapshot.boards.map((b) => ({ ...b, viewport: viewports.get(b.id) ?? b.viewport })) };
 		save();
 		for (const listener of historyListeners) listener();
 	}
@@ -836,7 +904,8 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			change({ ...data, boards: data.boards.filter((b) => b.id !== boardId) });
 		},
 
-		/** Adds a story to the board, with an empty first page `firstPageName`, seen as the board is now. */
+		/** Adds a story to the board, with an empty first page `firstPageName`, its description in the board's view (the
+		 * page is seen in the board's frame). */
 		addStory(boardId: string, name: string, firstPageName: string): Story | null {
 			const board = data.boards.find((b) => b.id === boardId);
 			if (!board) return null;
@@ -859,7 +928,7 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			updateBoard(boardId, (b) => ({ ...b, stories: b.stories.filter((s) => s.id !== storyId) }));
 		},
 
-		/** Adds a page after `afterPageId`, in its story, with its pan/zoom and description position. With
+		/** Adds a page after `afterPageId`, in its story, with its frame and description position. With
 		 * `copyPrevious`, it also shows what that page shows. */
 		addPage(boardId: string, afterPageId: string, name: string, copyPrevious: boolean): StoryPage | null {
 			const board = data.boards.find((b) => b.id === boardId);
@@ -868,7 +937,7 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			const previous = story?.pages[index];
 			if (!story || !previous) return null;
 			const page: StoryPage = {
-				...newPage(name.trim(), { ...previous.viewport }),
+				...newPage(name.trim(), undefined, previous.frameId),
 				descriptionPosition: { ...previous.descriptionPosition },
 				descriptionSize: { ...previous.descriptionSize },
 				...(copyPrevious && {
@@ -1107,11 +1176,45 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			save();
 		},
 
-		/** A story page's pan and zoom; like setViewport, not part of the undo history. */
-		setPageViewport(boardId: string, pageId: string, viewport: Viewport): void {
-			const next = { ...viewport, zoom: clampZoom(viewport.zoom) };
-			data = withBoard(boardId, (b) => mapPages(b, (p) => (p.id === pageId ? { ...p, viewport: next } : p)));
-			save();
+		/** Adds a frame showing `rect`, in a frame's shape (see frameShape), and lets the page `pageId` be seen in it; one
+		 * change. */
+		addFrame(boardId: string, name: string, rect: Rect, pageId: string): ViewFrame | null {
+			const board = data.boards.find((b) => b.id === boardId);
+			if (!board) return null;
+			const frame: ViewFrame = {
+				id: ulid(),
+				name: name.trim() || `Frame ${board.frames.length + 1}`,
+				...frameShape({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }),
+			};
+			updateBoard(boardId, (b) => withFrame({ ...b, frames: [...b.frames, frame] }, frame.id, pageId));
+			return frame;
+		},
+
+		/** Renames, moves or resizes a frame; an empty name is ignored, the frame keeps a frame's shape (its height
+		 * follows the width, see frameShape). */
+		updateFrame(boardId: string, frameId: string, patch: Partial<Omit<ViewFrame, "id">>): void {
+			const name = patch.name?.trim();
+			updateBoard(boardId, (b) => ({
+				...b,
+				frames: b.frames.map((f) => (f.id === frameId ? frameShape({ ...f, ...patch, name: name || f.name }) : f)),
+			}));
+		},
+
+		/** Deletes a frame; the pages seen in it are then seen in the board's frame. */
+		removeFrame(boardId: string, frameId: string): void {
+			updateBoard(boardId, (b) =>
+				mapPages({ ...b, frames: b.frames.filter((f) => f.id !== frameId) }, (p) => (p.frameId === frameId ? { ...p, frameId: null } : p)),
+			);
+		},
+
+		/** Lets the page `pageId` be seen in one of the board's frames, or in the board's own (null). */
+		setFrame(boardId: string, frameId: string | null, pageId: string): void {
+			updateBoard(boardId, (b) => (frameId === null || b.frames.some((f) => f.id === frameId) ? withFrame(b, frameId, pageId) : b));
+		},
+
+		/** Moves or resizes the board's own frame, in a frame's shape (see frameShape). */
+		setViewFrame(boardId: string, rect: Rect): void {
+			updateBoard(boardId, (b) => ({ ...b, viewFrame: frameShape({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }) }));
 		},
 
 		get history(): { canUndo: boolean; canRedo: boolean } {

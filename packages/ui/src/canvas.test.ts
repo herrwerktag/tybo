@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { canvasView, parseViewHash, viewHash } from "./canvas.js";
 import { CLICK_TOLERANCE } from "./dom.js";
 import { text } from "./i18n.js";
-import { createStore, DATA_VERSION, snapToGrid, type Store } from "@tybo/core";
+import { createStore, DATA_VERSION, fitRect, frameInside, snapToGrid, visibleRect, type Store } from "@tybo/core";
 import { memoryDataPort } from "@tybo/core/testing";
 
 /** A board with one card for Dune (with content, so it can be resized) and one for Herbert. */
@@ -684,4 +684,150 @@ test("the viewer's details have no Connect button", async () => {
 	const { view, card } = await setup({ readOnly: true });
 	cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	assert.equal(detailsButton(view, "Connect"), undefined);
+});
+
+/** Gives the canvas a size (happy-dom lays nothing out) and makes the pan/zoom move at once (reduced motion). */
+function laidOut(view: HTMLElement, width = 800, height = 600): void {
+	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;
+	Object.defineProperties(surface, { clientWidth: { value: width }, clientHeight: { value: height } });
+	Object.assign(window, { matchMedia: (query: string) => ({ matches: query.includes("reduced-motion") }) });
+}
+
+const transform = (view: HTMLElement) => view.querySelector<HTMLElement>(".canvas-board")!.style.transform;
+const viewportTransform = ({ x, y, zoom }: { x: number; y: number; zoom: number }) => `translate(${x}px, ${y}px) scale(${zoom})`;
+const frameName = (view: HTMLElement) => view.querySelector(".frame-switch .picker-name")?.textContent;
+
+/** Picks an item of the frame overlay by its name. */
+function pickFrame(view: HTMLElement, name: string): void {
+	view.querySelector<HTMLButtonElement>(".frame-switch")!.click();
+	[...view.querySelectorAll<HTMLButtonElement>(".frame-dialog .picker-option")].find((b) => b.textContent === name)!.click();
+}
+
+test("in the editor, a step gets a frame of what is seen, else the board's; only stepping into another frame moves the board", async () => {
+	const { store, view, boardId, pages } = await storyboard();
+	laidOut(view);
+	const board = () => store.data.boards.find((b) => b.id === boardId)!;
+	const zoomOut = () => view.querySelector<HTMLButtonElement>(`.canvas-zoom button[title="${text.zoomOut}"]`)!.click();
+	assert.equal(frameName(view), "Board frame");
+	assert.equal(view.querySelector(".view-frame.board-frame.current .view-frame-label")?.textContent, "Board frame");
+
+	view.querySelector<HTMLButtonElement>(".frame-switch")!.click();
+	const form = view.querySelector<HTMLFormElement>(".frame-dialog .picker-new")!;
+	form.querySelector("input")!.value = "Wide";
+	form.requestSubmit();
+	const [wide] = board().frames;
+	// What is seen, in a screen's shape: as wide as the 800 × 600 canvas, centered top to bottom.
+	assert.deepEqual(wide, { id: wide!.id, name: "Wide", x: 0, y: 75, width: 800, height: 450 });
+	assert.deepEqual(pages().map((p) => p.frameId), [wide!.id, null]);
+	assert.equal(frameName(view), "Wide");
+	assert.equal(view.querySelector(".view-frame.current .view-frame-label")?.textContent, "Wide");
+
+	// The next step is in the board's frame: the board moves there.
+	pageButton(view, "Next step").click();
+	assert.equal(frameName(view), "Board frame");
+	assert.equal(transform(view), viewportTransform(fitRect(board().viewFrame, 800, 600, 48)));
+
+	// Picking a frame goes to it; stepping back to a step in the same frame stays.
+	pickFrame(view, "Wide");
+	assert.equal(pages()[1]!.frameId, wide!.id);
+	assert.equal(transform(view), viewportTransform(fitRect(wide!, 800, 600, 48)));
+	zoomOut();
+	const zoomedOut = transform(view);
+	pageButton(view, "Previous step").click();
+	assert.equal(transform(view), zoomedOut);
+
+	// Outside a story there's only the board's frame: no picker, no step frames.
+	pickStory(view, "Whole board");
+	assert.equal(view.querySelector(".frame-switch"), null);
+	assert.deepEqual([...view.querySelectorAll(".view-frame-label")].map((l) => l.textContent), ["Board frame"]);
+});
+
+test("in the editor, frames are moved by their name and resized at their corner, on the grid; deleting one frees its steps", async () => {
+	const { store, view, boardId, one, pages } = await storyboard();
+	store.addFrame(boardId, "Wide", { x: 0, y: 0, width: 480, height: 240 }, one.id);
+	const editor = canvasView(store, { readOnly: false });
+	document.body.replaceChildren(editor);
+	view.remove();
+	const board = () => store.data.boards.find((b) => b.id === boardId)!;
+	const stepFrame = () => editor.querySelector<HTMLElement>(".view-frame:not(.board-frame)")!;
+
+	dragBy(stepFrame().querySelector<HTMLElement>(".view-frame-label")!, 50, 30);
+	assert.deepEqual([board().frames[0]?.x, board().frames[0]?.y], [48, 24]);
+	dragBy(stepFrame().querySelector<HTMLElement>(".card-resize")!, 0, 54);
+	assert.deepEqual([board().frames[0]?.width, board().frames[0]?.height], [576, 324], "dragged down: as much wider, in a screen's shape");
+	dragBy(stepFrame().querySelector<HTMLElement>(".card-resize")!, -1000, 20);
+	assert.deepEqual([board().frames[0]?.width, board().frames[0]?.height], [192, 108], "never below the minimum");
+	assert.equal(stepFrame().style.left, "48px");
+
+	// The board's own frame, likewise.
+	dragBy(editor.querySelector<HTMLElement>(".board-frame .view-frame-label")!, -50, 0);
+	dragBy(editor.querySelector<HTMLElement>(".board-frame .card-resize")!, 100, 0);
+	assert.deepEqual(board().viewFrame, { x: -48, y: 0, width: 1392, height: 783 }, "the width on the grid, the height following");
+
+	Object.assign(globalThis, { confirm: () => true });
+	editor.querySelector<HTMLButtonElement>(".frame-switch")!.click();
+	[...editor.querySelectorAll<HTMLButtonElement>(".frame-dialog button")].find((b) => b.textContent === text.delete)!.click();
+	assert.deepEqual([board().frames, pages()[0]!.frameId], [[], null]);
+	assert.equal(stepFrame(), null);
+	assert.equal(frameName(editor), "Board frame");
+});
+
+test("the viewer fits the board's frame into the screen, and a step's own frame, else the board's", async () => {
+	const { store, boardId, one } = await storyboard({ readOnly: true });
+	store.addFrame(boardId, "Wide", { x: 0, y: 0, width: 400, height: 300 }, one.id);
+	const viewer = canvasView(store, { readOnly: true });
+	document.body.replaceChildren(viewer);
+	laidOut(viewer);
+	const reset = () => [...viewer.querySelectorAll<HTMLButtonElement>(".canvas-zoom button")].find((b) => b.textContent === text.resetView)!.click();
+	const boardFrame = store.data.boards.find((b) => b.id === boardId)!.viewFrame;
+
+	reset();
+	assert.equal(transform(viewer), viewportTransform(fitRect(boardFrame, 800, 600)));
+	assert.equal(viewer.querySelector(".view-frame, .frame-switch"), null, "the viewer shows no frames");
+
+	pickStory(viewer, "Pitch");
+	assert.equal(transform(viewer), "translate(0px, 75px) scale(2)"); // 400 × 225 fills the width
+	pageButton(viewer, "Next step").click();
+	assert.equal(transform(viewer), viewportTransform(fitRect(boardFrame, 800, 600)));
+});
+
+/** The pan/zoom the canvas shows now, read from its transform. */
+function shownViewport(view: HTMLElement): { x: number; y: number; zoom: number } {
+	const [x, y, zoom] = transform(view).match(/-?[\d.]+/g)!.map(Number);
+	return { x: x!, y: y!, zoom: zoom! };
+}
+
+test("in the editor, 'Use this view' sets the frame of what's shown to what is seen: the step's, else the board's", async () => {
+	const { store, view, boardId, one, pages } = await storyboard();
+	laidOut(view);
+	const wide = store.addFrame(boardId, "Wide", { x: 0, y: 0, width: 480, height: 270 }, one.id)!;
+	const board = () => store.data.boards.find((b) => b.id === boardId)!;
+	const useView = () => view.querySelector<HTMLButtonElement>(".frame-from-view")!.click();
+	const zoomOut = () => view.querySelector<HTMLButtonElement>(`.canvas-zoom button[title="${text.zoomOut}"]`)!.click();
+	/** What is seen now, in a screen's shape. */
+	const seen = () => frameInside(visibleRect(shownViewport(view), 800, 600));
+	const boardFrame = board().viewFrame;
+
+	zoomOut();
+	const step = seen();
+	useView();
+	assert.deepEqual(board().frames[0], { id: wide.id, name: "Wide", ...step });
+	assert.deepEqual(board().viewFrame, boardFrame, "the board's frame stays");
+
+	// A step in the board's frame: the board's frame.
+	pageButton(view, "Next step").click();
+	assert.equal(pages()[1]!.frameId, null);
+	zoomOut();
+	const atStep = seen();
+	useView();
+	assert.deepEqual(board().viewFrame, atStep);
+
+	// The whole board: the board's frame too.
+	pickStory(view, "Whole board");
+	zoomOut();
+	const whole = seen();
+	useView();
+	assert.deepEqual(board().viewFrame, whole);
+	assert.notDeepEqual(whole, atStep);
+	assert.deepEqual(board().frames[0], { id: wide.id, name: "Wide", ...step }, "the step's frame stays");
 });

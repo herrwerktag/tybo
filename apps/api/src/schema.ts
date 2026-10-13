@@ -174,6 +174,23 @@ export const MIGRATIONS: readonly Migration[] = [
 			await tx`alter table boards drop column story, drop column pages`;
 		},
 	},
+	{
+		version: 7,
+		name: "view frames",
+		async up(tx) {
+			// Null in rows from before: the app makes frames of those boards' steps' pan/zoom.
+			await tx`alter table boards add column frames jsonb, add column view_frame_id text`;
+		},
+	},
+	{
+		version: 8,
+		name: "the board's own view frame",
+		async up(tx) {
+			// The board's frame is its own instead of one of the steps': null in rows from before, which the app reads
+			// as a frame of the board's pan/zoom. ("If (not) exists": step 7 briefly made `view_frame` itself.)
+			await tx`alter table boards add column if not exists view_frame jsonb, drop column if exists view_frame_id`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */

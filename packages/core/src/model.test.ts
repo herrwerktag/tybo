@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+	FRAME_ASPECT,
+	frameInside,
+	frameShape,
 	TYPE_COLORS,
 	cardRows,
 	detailRows,
@@ -343,4 +346,13 @@ test("filterLibrary matches names and tags ignoring case and accents", () => {
 	assert.deepEqual(names("sky"), ["Sun"]);
 	assert.deepEqual(names("grun"), ["Tree"]);
 	assert.deepEqual(names("TRE"), ["Tree"]);
+});
+
+test("frames have a screen's shape: frameShape keeps the width (at least the minimum), frameInside the largest fitting", () => {
+	assert.equal(FRAME_ASPECT, 16 / 9);
+	assert.deepEqual(frameShape({ x: 5, y: 6, width: 640, height: 999 }), { x: 5, y: 6, width: 640, height: 360 });
+	assert.deepEqual(frameShape({ x: 0, y: 0, width: 10, height: 10 }), { x: 0, y: 0, width: 192, height: 108 });
+	// A view taller than a screen: as wide, centered top to bottom; a wider one: as tall, centered across.
+	assert.deepEqual(frameInside({ x: 0, y: 0, width: 800, height: 600 }), { x: 0, y: 75, width: 800, height: 450 });
+	assert.deepEqual(frameInside({ x: 100, y: 0, width: 1600, height: 450 }), { x: 500, y: 0, width: 800, height: 450 });
 });

@@ -28,6 +28,8 @@ function sample(): AppData {
 				name: "Brett",
 				cards: [{ id: "card-1", entityId: "ent-1", x: 1.25, y: -2, width: 240, height: 160 }],
 				viewport: { x: 0, y: 0, zoom: 1.5 },
+				frames: [{ id: "frame-1", name: "Weit", x: 0, y: 0, width: 640, height: 360 }],
+				viewFrame: { x: -12.5, y: 0, width: 1280, height: 720 },
 				drawings: [{ id: "draw-star", kind: "symbol", libraryId: "lib-star", x: 40, y: 40.5, width: 96, height: 48 }],
 				stories: [
 					{
@@ -40,7 +42,7 @@ function sample(): AppData {
 								description: "",
 								descriptionPosition: { x: 72, y: 16 },
 								descriptionSize: { width: 384, height: 120 },
-								viewport: { x: 0, y: 0, zoom: 1 },
+								frameId: "frame-1",
 								cardIds: ["card-1"],
 								drawingIds: [],
 								dimmedCardIds: [],
@@ -74,7 +76,7 @@ async function fresh() {
 test("sqlite: the schema is made once, and survives reopening the file", async () => {
 	const { storage, path, close } = await fresh();
 	try {
-		assert.deepEqual(await storage.init(), [1, 2, 3]);
+		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5]);
 		assert.deepEqual(await storage.init(), [], "the second start has nothing left to do");
 		assert.equal(await storage.healthy(), true);
 		await storage.createWorkspace({ id: "ws", name: "Bleibt" }, 1);
@@ -166,7 +168,7 @@ test("sqlite: a change set the tables refuse writes nothing half — 503 over HT
 	}
 });
 
-test("sqlite: a board's steps from before become one story, with the board's id", async () => {
+test("sqlite: a board's steps from before become one story, with the board's id; its frames read as null", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "tybo-sqlite-"));
 	const path = join(dir, "test.sqlite");
 	try {
@@ -183,8 +185,13 @@ test("sqlite: a board's steps from before become one story, with the board's id"
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [3]);
+		assert.deepEqual(await storage.init(), [3, 4, 5]);
 		const { data } = (await storage.readWorkspace("ws"))!;
+		// Null, not missing: the app makes frames of those steps' pan/zoom.
+		assert.deepEqual(
+			data.boards.map((b) => [b.viewFrame, b.frames]),
+			[[null, null], [null, null], [null, null], [null, null]],
+		);
 		assert.deepEqual(
 			data.boards.map((b) => [b.id, b.stories]),
 			[
@@ -195,6 +202,24 @@ test("sqlite: a board's steps from before become one story, with the board's id"
 			],
 		);
 		await storage.close();
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("sqlite: step 5 gives boards their own frame, whichever form step 4 ran in", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "tybo-sqlite-"));
+	try {
+		for (const brief of [false, true]) {
+			const db = new DatabaseSync(join(dir, `${brief}.sqlite`));
+			for (const migration of SQLITE_MIGRATIONS.slice(0, brief ? 3 : 4)) migration.up(db);
+			// As step 4 briefly was: with `view_frame` already.
+			if (brief) db.exec("alter table boards add column view_frame text; alter table boards add column frames text;");
+			SQLITE_MIGRATIONS[4]!.up(db);
+			const columns = (db.prepare("pragma table_info(boards)").all() as { name: string }[]).map((c) => c.name).filter((name) => name.includes("frame"));
+			assert.deepEqual(columns.sort(), ["frames", "view_frame"]);
+			db.close();
+		}
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

@@ -63,7 +63,7 @@ export async function readAppData(queries: Queries, workspaceId: string): Promis
 		queries`select id, type_id, name, kind, options, reference, card_display from properties where workspace_id = ${workspaceId} order by type_id, position, id`,
 		queries`select id, type_id, name, content, description, tags from entities where workspace_id = ${workspaceId} order by position, id`,
 		queries`select entity_id, property_id, value from entity_values where workspace_id = ${workspaceId} order by entity_id, position, property_id`,
-		queries`select id, name, viewport, stories from boards where workspace_id = ${workspaceId} order by position, id`,
+		queries`select id, name, viewport, view_frame, frames, stories from boards where workspace_id = ${workspaceId} order by position, id`,
 		queries`select id, board_id, entity_id, x, y, width, height from cards where workspace_id = ${workspaceId} order by board_id, position, id`,
 		queries`select board_id, body from drawings where workspace_id = ${workspaceId} order by board_id, position, id`,
 		queries`select id, name, tags, drawings from library_drawings where workspace_id = ${workspaceId} order by position, id`,
@@ -120,11 +120,15 @@ export function assembleAppData({ types, properties, entities, values, boards, c
 			tags: tags ?? [],
 			values: valuesOf.get(id) ?? {},
 		})),
-		boards: boards.map(({ id, name, viewport, stories }) => ({
+		// Frames are null on boards saved before them (JSON keeps a null, unlike a missing value, so a save's `before`
+		// still matches): the app makes them of the board's pan/zoom and its steps'.
+		boards: boards.map(({ id, name, viewport, view_frame, frames, stories }) => ({
 			id,
 			name,
 			cards: cardsOf.get(id) ?? [],
 			viewport,
+			viewFrame: view_frame ?? null,
+			frames: frames ?? null,
 			drawings: drawingsOf.get(id) ?? [],
 			stories: stories ?? [],
 		})),
