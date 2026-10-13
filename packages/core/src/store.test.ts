@@ -415,6 +415,25 @@ test("an entity can have several cards; moveCard brings a card to the front", as
 	]);
 });
 
+test("moveItems moves several cards and drawings together, in one undo step", async () => {
+	const store = await open(memoryStorage());
+	const note = store.addType("Note", [], "");
+	const boardId = firstBoard(store).id;
+	const a = store.addCard(boardId, store.addEntity(note.id, "A", "", {}).id, 0, 0);
+	const b = store.addCard(boardId, store.addEntity(note.id, "B", "", {}).id, 48, 0);
+	const box = store.addDrawing(boardId, { kind: "rect", x: 10, y: 10, width: 50, height: 50, color: "#4a4a4a", text: "", textSize: "m" });
+	const line = store.addDrawing(boardId, { kind: "line", points: [{ x: 0, y: 0 }, { x: 5, y: 5 }], color: "#4a4a4a" });
+
+	store.moveItems(boardId, [a.id], [box.id, line.id], 24, -48);
+	assert.deepEqual(firstBoard(store).cards.map((c) => [c.id, c.x, c.y]), [[a.id, 24, -48], [b.id, 48, 0]], "order kept, B stays");
+	assert.deepEqual(firstBoard(store).drawings, [
+		{ ...box, x: 34, y: -38 },
+		{ ...line, points: [{ x: 24, y: -48 }, { x: 29, y: -43 }] },
+	]);
+	store.undo();
+	assert.deepEqual([firstBoard(store).cards[0]!.x, firstBoard(store).drawings], [0, [box, line]]);
+});
+
 test("resizeCard enforces the minimum size; removeCard removes one card and keeps the entity", async () => {
 	const store = await open(memoryStorage());
 	const note = store.addType("Note", [], "");

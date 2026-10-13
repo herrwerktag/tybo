@@ -190,7 +190,13 @@ export interface DrawingLayer {
 	addImage(file: File, center: Point): Promise<void>;
 	/** Places a library drawing on the board, centered on `center` (world coordinates), and selects it. */
 	addSymbol(libraryId: string, center: Point): void;
+	/** Selects one drawing (with its handles and style bar), or none. */
+	select(id: string | null): void;
 	deselect(): void;
+	/** The selected drawing, if any (not those in a group, see `group`). */
+	selected(): string | null;
+	/** While a group is dragged: draws its drawings moved by (dx, dy) world units, not saved; null stops it. */
+	previewMove(ids: ReadonlySet<string> | null, dx?: number, dy?: number): void;
 }
 
 /** Whether the drawing tools are folded (see toolsCollapsed). */
@@ -214,6 +220,11 @@ export function createDrawingLayer(options: {
 	readOnly: boolean;
 	/** A drawing was selected (or the selection cleared by the layer itself). */
 	onSelect: (drawingId: string | null) => void;
+	/** Drawings selected together with others (several items to move at once): outlined, without handles. */
+	group?: () => ReadonlySet<string>;
+	/** A press on a drawing with Shift, or on one in the group: handled by the owner (adding it to the selection
+	 * or moving the group) instead of selecting and moving the drawing alone. */
+	onGroupPress?: (e: PointerEvent, drawingId: string) => void;
 	onToolChange: (tool: Tool) => void;
 	/** Opens a placed library drawing in the library (its style bar button, or a double-click). */
 	onEditSymbol?: (libraryId: string) => void;
@@ -237,6 +248,8 @@ export function createDrawingLayer(options: {
 	/** While erasing: what's left so far of each pen stroke the eraser touched (not saved yet), and where it is. */
 	let erased: Map<string, Point[][]> | null = null;
 	let eraser: Point | null = null;
+	/** While a group is dragged: its drawings and how far they've moved so far (see previewMove). */
+	let groupMove: { ids: ReadonlySet<string>; dx: number; dy: number } | null = null;
 
 	const drawings = (): Drawing[] => {
 		const owner = options.owner();
@@ -265,11 +278,12 @@ export function createDrawingLayer(options: {
 		// The viewer leaves out other pages' drawings; the editor shows them faded (see drawingNode).
 		const shown = drawings()
 			.filter((d) => !readOnly || onPage(d.id))
-			.map((d) => (draft?.id === d.id ? draft : d))
+			.map((d) => (draft?.id === d.id ? draft : groupMove?.ids.has(d.id) ? moveDrawing(d, groupMove.dx, groupMove.dy) : d))
 			.flatMap((d) => erased?.get(d.id)?.map((points) => ({ ...d, points })) ?? [d]);
 		if (draft && !shown.some((d) => d.id === draft!.id)) shown.push(draft);
 		svg.replaceChildren(
 			...shown.map(drawingNode),
+			...(readOnly ? [] : shown.filter((d) => options.group?.().has(d.id)).map(outlineOf)),
 			...selectionOverlay(),
 			...(editingId ? [editor(editingId)] : []),
 			...(eraser ? [svgEl("circle", { class: "eraser-outline", cx: eraser.x, cy: eraser.y, r: ERASER_RADIUS / options.zoom() })] : []),
@@ -296,6 +310,7 @@ export function createDrawingLayer(options: {
 			if (e.button !== 0 || tool !== "select") return;
 			e.preventDefault();
 			e.stopPropagation(); // not a pan
+			if (options.onGroupPress && (e.shiftKey || options.group?.().has(id))) return options.onGroupPress(e, id);
 
 			// The browser's dblclick can't be used: the drag below captures the pointer on the canvas surface,
 			// so the browser sends click and dblclick there instead of to this drawing.
@@ -335,23 +350,30 @@ export function createDrawingLayer(options: {
 		});
 	}
 
-	/** Dashed outline around the selected drawing, with handles to resize boxes or move line ends. */
-	function selectionOverlay(): SVGElement[] {
-		const selected = selectedId ? find(selectedId) : undefined;
-		if (readOnly || !selected) return [];
+	/** A dashed outline around a drawing, keeping its screen size at any zoom. */
+	function outlineOf(d: Drawing): SVGElement {
 		const zoom = options.zoom();
 		const pad = 4 / zoom;
-		const size = 9 / zoom;
-		const b = drawingBounds(selected);
-		const outline = svgEl("rect", {
+		const b = drawingBounds(d);
+		const node = svgEl("rect", {
 			class: "selection-outline",
 			x: b.x - pad,
 			y: b.y - pad,
 			width: b.width + 2 * pad,
 			height: b.height + 2 * pad,
 		});
-		outline.style.strokeWidth = String(1.5 / zoom);
-		outline.style.strokeDasharray = `${4 / zoom} ${3 / zoom}`;
+		node.style.strokeWidth = String(1.5 / zoom);
+		node.style.strokeDasharray = `${4 / zoom} ${3 / zoom}`;
+		return node;
+	}
+
+	/** Outline around the selected drawing, with handles to resize boxes or move line ends. */
+	function selectionOverlay(): SVGElement[] {
+		const selected = selectedId ? find(selectedId) : undefined;
+		if (readOnly || !selected) return [];
+		const zoom = options.zoom();
+		const size = 9 / zoom;
+		const outline = outlineOf(selected);
 
 		const handle = (at: Point, cursor: string, onDrag: (dx: number, dy: number) => Drawing): SVGElement => {
 			const node = svgEl("rect", { class: "selection-handle", x: at.x - size / 2, y: at.y - size / 2, width: size, height: size });
@@ -767,9 +789,15 @@ export function createDrawingLayer(options: {
 		startCreate,
 		addImage,
 		addSymbol,
+		select,
 		deselect(): void {
 			if (!selectedId) return;
 			selectedId = null;
+			draw();
+		},
+		selected: () => selectedId,
+		previewMove(ids, dx = 0, dy = 0): void {
+			groupMove = ids && { ids, dx, dy };
 			draw();
 		},
 	};

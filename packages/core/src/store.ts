@@ -20,6 +20,7 @@ import {
 	type AppData,
 	PEN_STYLES,
 	TEXT_SIZES,
+	hasRect,
 	isSymbol,
 	parseTags,
 	type Board,
@@ -822,6 +823,20 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			updateCardBoard(cardId, (b, card) => ({
 				...b,
 				cards: [...b.cards.filter((c) => c.id !== cardId), { ...card, x, y }],
+			}));
+		},
+
+		/** Moves some of a board's cards and drawings by (dx, dy) together, as one change (one undo step). Unlike
+		 * moveCard, it keeps the order of the cards. */
+		moveItems(boardId: string, cardIds: readonly string[], drawingIds: readonly string[], dx: number, dy: number): void {
+			const cards = new Set(cardIds);
+			const drawings = new Set(drawingIds);
+			const move = (d: Drawing): Drawing =>
+				hasRect(d) ? { ...d, x: d.x + dx, y: d.y + dy } : { ...d, points: d.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) };
+			updateBoard(boardId, (b) => ({
+				...b,
+				cards: b.cards.map((c) => (cards.has(c.id) ? { ...c, x: c.x + dx, y: c.y + dy } : c)),
+				drawings: b.drawings.map((d) => (drawings.has(d.id) ? move(d) : d)),
 			}));
 		},
 
