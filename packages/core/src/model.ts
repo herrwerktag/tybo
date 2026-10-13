@@ -1,4 +1,4 @@
-import type { Point } from "./connectors.js";
+import type { Point, Rect } from "./connectors.js";
 import { screenToWorld, type Viewport } from "./viewport.js";
 
 export type PropertyKind = "text" | "options" | "reference";
@@ -295,6 +295,81 @@ export const GRID_SIZE = 24;
 /** The nearest grid line to `value`. */
 export function snapToGrid(value: number): number {
 	return Math.round(value / GRID_SIZE) * GRID_SIZE;
+}
+
+/**
+ * Where a card of `size` goes from `start` (snapped to the grid): moved down a grid step at a time until it overlaps
+ * none of `cards`, keeping one grid step of space.
+ */
+export function freeSpot(start: Point, cards: readonly Rect[], size: { width: number; height: number }): Point {
+	const x = snapToGrid(start.x);
+	const overlaps = (y: number) =>
+		cards.some(
+			(c) =>
+				x < c.x + c.width + GRID_SIZE &&
+				c.x < x + size.width + GRID_SIZE &&
+				y < c.y + c.height + GRID_SIZE &&
+				c.y < y + size.height + GRID_SIZE,
+		);
+	let y = snapToGrid(start.y);
+	while (overlaps(y)) y += GRID_SIZE;
+	return { x, y };
+}
+
+/** Where a card of `size` goes next to the card `source`: to its right, two grid steps away, at a free spot. */
+export function placeBeside(source: Rect, cards: readonly Rect[], size: { width: number; height: number }): Point {
+	return freeSpot({ x: source.x + source.width + 2 * GRID_SIZE, y: source.y }, cards, size);
+}
+
+/**
+ * A way two entities can be linked, seen from one of them: through one of its own reference properties
+ * (`forward`, it holds the reference), or through a property of another type that can reference it (`inverse`,
+ * the other entity holds it).
+ */
+export interface Relation {
+	prop: PropertyDef;
+	direction: "forward" | "inverse";
+	/** The type of the entity at the other end. */
+	typeId: string;
+}
+
+/** Whether the reference property can take one more entity: it allows several, or it's still empty. */
+export function canTakeMore(prop: PropertyDef, value: PropertyValue | undefined): boolean {
+	return prop.reference?.multiple === true || referencedIds(prop, value).length === 0;
+}
+
+/**
+ * The relations `entity` can get one more entity through, in type and property order: its own references that can
+ * take one more (to each of their target types), then every reference of any type that can point at it.
+ */
+export function relationsOf(types: readonly EntityType[], entity: Entity): Relation[] {
+	const own = types.find((t) => t.id === entity.typeId)?.properties ?? [];
+	const forward = own.flatMap((prop) =>
+		prop.kind === "reference" && canTakeMore(prop, entity.values[prop.id])
+			? (prop.reference?.typeIds ?? []).map((typeId): Relation => ({ prop, direction: "forward", typeId }))
+			: [],
+	);
+	const inverse = types.flatMap((type) =>
+		type.properties.flatMap((prop): Relation[] =>
+			prop.kind === "reference" && prop.reference?.typeIds.includes(entity.typeId) ? [{ prop, direction: "inverse", typeId: type.id }] : [],
+		),
+	);
+	return [...forward, ...inverse];
+}
+
+/** The existing entities `entity` can be linked to through `relation`: of the other type, not linked yet, and
+ * (inverse) whose property can take one more. */
+export function linkCandidates(entities: readonly Entity[], entity: Entity, relation: Relation): Entity[] {
+	const { prop } = relation;
+	const linked = referencedIds(prop, entity.values[prop.id]);
+	return entities.filter(
+		(e) =>
+			e.id !== entity.id &&
+			e.typeId === relation.typeId &&
+			(relation.direction === "forward"
+				? !linked.includes(e.id)
+				: !referencedIds(prop, e.values[prop.id]).includes(entity.id) && canTakeMore(prop, e.values[prop.id])),
+	);
 }
 
 export interface AppData {
