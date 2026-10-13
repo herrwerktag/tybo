@@ -15,6 +15,9 @@ import {
 	moveItem,
 	nextTypeColor,
 	parseValue,
+	linkCandidates,
+	placeBeside,
+	relationsOf,
 	snapToGrid,
 	validateType,
 	type PropertyDef,
@@ -280,6 +283,45 @@ test("detailRows lists every property in order, empty ones too, then reverse ref
 		{ label: "status", kind: "options", values: [], entityIds: [] },
 		{ label: "author", kind: "reference", values: ["Frank"], entityIds: ["p1"] },
 	]);
+});
+
+test("placeBeside puts a card right of the source, moved down past the cards in the way", () => {
+	const source = { x: 0, y: 0, width: 240, height: 168 };
+	const size = { width: 240, height: 168 };
+	assert.deepEqual(placeBeside(source, [source], size), { x: 288, y: 0 });
+	// A card in that place: below it, one grid step apart.
+	assert.deepEqual(placeBeside(source, [source, { x: 288, y: 0, width: 240, height: 168 }], size), { x: 288, y: 192 });
+	// Off the grid, the source still leads to a place on it.
+	assert.deepEqual(placeBeside({ x: 10, y: 13, width: 240, height: 80 }, [], size), { x: 288, y: 24 });
+});
+
+test("relationsOf: an entity's own references that can take one more, and every reference that can point at it", () => {
+	const ref = (id: string, typeIds: string[], multiple: boolean, inverseLabel = ""): PropertyDef => ({
+		id,
+		name: id,
+		kind: "reference",
+		options: [],
+		reference: { typeIds, multiple, arrow: "from", lineLabel: "", inverseLabel },
+		cardDisplay: "line",
+	});
+	const idea = { id: "idea", name: "Idea", properties: [ref("related", ["idea"], true)], contentTemplate: "", color: "#dcdcdc" };
+	const requirement = { id: "req", name: "Requirement", properties: [ref("source", ["idea"], false, "results in")], contentTemplate: "", color: "#dcdcdc" };
+	const types = [idea, requirement];
+	const spark = { id: "i1", typeId: "idea", name: "Spark", content: "", description: "", tags: [], values: {} };
+	const other = { ...spark, id: "i2", name: "Other" };
+	const sourced = { id: "r1", typeId: "req", name: "Sourced", content: "", description: "", tags: [], values: { source: "i2" } };
+	const open = { ...sourced, id: "r2", name: "Open", values: {} };
+
+	const relations = relationsOf(types, spark);
+	assert.deepEqual(
+		relations.map((r) => [r.prop.id, r.direction, r.typeId]),
+		[["related", "forward", "idea"], ["related", "inverse", "idea"], ["source", "inverse", "req"]],
+	);
+	// A requirement from an idea: only those whose single source is still empty.
+	assert.deepEqual(linkCandidates([spark, other, sourced, open], spark, relations[2]!).map((e) => e.name), ["Open"]);
+	assert.deepEqual(linkCandidates([spark, other, sourced, open], spark, relations[0]!).map((e) => e.name), ["Other"]);
+	// A requirement whose single source is set: nothing left (no type references requirements).
+	assert.deepEqual(relationsOf(types, sourced).map((r) => r.prop.id), []);
 });
 
 test("snapToGrid rounds to the nearest grid line", () => {

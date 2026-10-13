@@ -564,3 +564,88 @@ test("the middle button pans instead of selecting; Escape clears a selection", a
 	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 	assert.deepEqual(selectedCards(view), []);
 });
+
+/** Book (author: one Person, inverse label "wrote") and Person; Dune's card selected on the board editor. */
+async function connectable() {
+	freshDom();
+	const store = await createStore(memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } }).port, "ws");
+	const person = store.addType("Person", [], "");
+	const reference = { typeIds: [person.id], multiple: false, arrow: "to" as const, lineLabel: "", inverseLabel: "wrote" };
+	const book = store.addType("Book", [{ name: "author", kind: "reference", options: [], reference, cardDisplay: "line" }], "");
+	const dune = store.addEntity(book.id, "Dune", "", {});
+	const card = store.addCard(store.data.boards[0]!.id, dune.id, 0, 0);
+	const view = canvasView(store, { readOnly: false });
+	document.body.append(view);
+	cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	return { store, view, person, book, author: book.properties[0]!, dune, card };
+}
+const detailsButton = (view: HTMLElement, label: string) =>
+	[...details(view).querySelectorAll<HTMLButtonElement>(".details-actions button")].find((b) => b.textContent === label);
+const connectDialog = (view: HTMLElement) => view.querySelector<HTMLDialogElement>(".connect-dialog")!;
+
+test("Connect creates a new entity the card's entity links to, its card beside it; the selection stays", async () => {
+	const { store, view, author, dune, card } = await connectable();
+	detailsButton(view, "Connect")!.click();
+	const dialog = connectDialog(view);
+	assert.ok(dialog.open);
+	assert.deepEqual([...dialog.querySelectorAll("select option")].map((o) => o.textContent), ["author → Person"]);
+	dialog.querySelector<HTMLInputElement>(".connect-new input")!.value = "Frank Herbert";
+	dialog.querySelector<HTMLFormElement>(".connect-new")!.requestSubmit();
+
+	assert.ok(!dialog.open);
+	const frank = store.data.entities.find((e) => e.name === "Frank Herbert")!;
+	assert.equal(store.data.entities.find((e) => e.id === dune.id)?.values[author.id], frank.id);
+	const placed = store.data.boards[0]!.cards.find((c) => c.entityId === frank.id)!;
+	assert.deepEqual([placed.x, placed.y], [288, 0]);
+	assert.ok(cardNode(view, card.id).classList.contains("selected"));
+	assert.ok(view.querySelector(".connectors path, .connectors line"), "linked by a line");
+	// Dune's single author is set: nothing left to connect it through.
+	assert.equal(detailsButton(view, "Connect")!.disabled, true);
+});
+
+test("Connect links an existing entity, found by name, and the other way round too", async () => {
+	const { store, view, person, book, author, dune } = await connectable();
+	const frank = store.addEntity(person.id, "Frank", "", {});
+	store.addEntity(person.id, "Jane", "", {});
+	detailsButton(view, "Connect")!.click();
+	const dialog = connectDialog(view);
+	const search = dialog.querySelector<HTMLInputElement>(".connect-existing input")!;
+	search.value = "fra";
+	search.dispatchEvent(new Event("input"));
+	const options = [...dialog.querySelectorAll<HTMLButtonElement>(".connect-list button")];
+	assert.deepEqual(options.map((b) => b.textContent), ["Frank"]);
+	options[0]!.click();
+	assert.equal(store.data.entities.find((e) => e.id === dune.id)?.values[author.id], frank.id);
+	const frankCard = store.data.boards[0]!.cards.find((c) => c.entityId === frank.id)!;
+
+	// From Frank's card: a new book he wrote (the book holds the reference).
+	cardNode(view, frankCard.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	detailsButton(view, "Connect")!.click();
+	assert.deepEqual([...dialog.querySelectorAll("select option")].map((o) => o.textContent), ["wrote → Book"]);
+	dialog.querySelector<HTMLInputElement>(".connect-new input")!.value = "Children of Dune";
+	dialog.querySelector<HTMLFormElement>(".connect-new")!.requestSubmit();
+	const sequel = store.data.entities.find((e) => e.name === "Children of Dune")!;
+	assert.deepEqual([sequel.typeId, sequel.values[author.id]], [book.id, frank.id]);
+});
+
+test("+ Entity creates an entity of any type with its card on the board, and selects it", async () => {
+	const { store, view, person } = await connectable();
+	[...view.querySelectorAll<HTMLButtonElement>(".board-controls button")].find((b) => b.textContent === "+ Entity")!.click();
+	const dialog = view.querySelector<HTMLDialogElement>(".new-entity-dialog")!;
+	assert.ok(dialog.open);
+	const typeSelect = dialog.querySelector<HTMLSelectElement>("select")!;
+	typeSelect.value = person.id;
+	dialog.querySelector<HTMLInputElement>(".connect-new input")!.value = "Ada";
+	dialog.querySelector<HTMLFormElement>(".connect-new")!.requestSubmit();
+	const ada = store.data.entities.find((e) => e.name === "Ada")!;
+	assert.equal(ada.typeId, person.id);
+	const adaCard = store.data.boards[0]!.cards.find((c) => c.entityId === ada.id)!;
+	assert.ok(cardNode(view, adaCard.id).classList.contains("selected"));
+	assert.equal(details(view).querySelector(".details-title")?.textContent, "Ada");
+});
+
+test("the viewer's details have no Connect button", async () => {
+	const { view, card } = await setup({ readOnly: true });
+	cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	assert.equal(detailsButton(view, "Connect"), undefined);
+});

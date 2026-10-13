@@ -2036,8 +2036,9 @@ button.ref-tag {
 	white-space: nowrap;
 }
 
-/* The boards overlay: switch to a board; in the editor also create, rename and delete them. */
-.board-dialog {
+/* Overlays over the canvas: the boards (switch; in the editor also create, rename and delete), connecting an
+   entity with another, a new entity. */
+.canvas-dialog {
 	/* Centered on the screen (the reset takes away the browser's margin: auto). */
 	margin: auto;
 	width: min(26rem, calc(100vw - 2rem));
@@ -2050,30 +2051,31 @@ button.ref-tag {
 	box-shadow: 0 6px 20px rgb(0 0 0 / 0.12);
 }
 
-.board-dialog[open] {
+.canvas-dialog[open] {
 	display: grid;
 	gap: 0.75rem;
 }
 
-.board-dialog::backdrop {
+.canvas-dialog::backdrop {
 	background: rgb(0 0 0 / 0.25);
 }
 
-.board-dialog header {
+.canvas-dialog header {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 }
 
-.board-dialog h2 {
+.canvas-dialog h2 {
 	font-size: 1rem;
 }
 
-.board-dialog h3 {
+.canvas-dialog h3 {
 	font-size: 0.9rem;
 }
 
-.board-list {
+.board-list,
+.connect-list {
 	display: grid;
 	gap: 0.25rem;
 	margin: 0;
@@ -2083,6 +2085,7 @@ button.ref-tag {
 }
 
 .board-list li,
+.connect-list li,
 .board-rename {
 	display: flex;
 	gap: 0.25rem;
@@ -2119,6 +2122,27 @@ button.ref-tag {
 
 .board-new button {
 	justify-self: start;
+}
+
+/* Connecting an entity: the new one's name and its button on one line, then the existing ones to pick. */
+.connect-new,
+.connect-existing {
+	display: grid;
+	gap: 0.5rem;
+}
+
+.connect-new .row input {
+	flex: 1;
+	min-width: 0;
+}
+
+.connect-existing {
+	padding-top: 0.75rem;
+	border-top: 1px solid var(--border);
+}
+
+.connect-list {
+	max-height: 14rem;
 }
 
 /* Without any board: just the button creating the first, in the middle. */

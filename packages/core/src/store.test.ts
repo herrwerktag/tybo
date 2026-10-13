@@ -415,6 +415,96 @@ test("an entity can have several cards; moveCard brings a card to the front", as
 	]);
 });
 
+/** Book (author: one Person, characters: several Persons) and Person; Dune (tagged Classic) with a card on a board
+ * in story mode. */
+async function linkable() {
+	const store = await open(memoryStorage());
+	const person = store.addType("Person", [], "## Bio");
+	const ref = (name: string, multiple: boolean): DraftProperty => ({
+		name,
+		kind: "reference",
+		options: [],
+		reference: { typeIds: [person.id], multiple, arrow: "to", lineLabel: "", inverseLabel: "" },
+		cardDisplay: "line",
+	});
+	const book = store.addType("Book", [ref("author", false), ref("characters", true)], "");
+	const [author, characters] = book.properties;
+	const dune = store.addEntity(book.id, "Dune", "", {}, "", ["Classic"]);
+	const boardId = firstBoard(store).id;
+	store.setStoryMode(boardId, true, "Start");
+	const pageId = firstBoard(store).pages[0]!.id;
+	const card = store.addCard(boardId, dune.id, 0, 0, pageId);
+	return { store, person, book, author: author!, characters: characters!, dune, boardId, pageId, card };
+}
+const valueOf = (store: Store, entityId: string, propId: string) => store.data.entities.find((e) => e.id === entityId)?.values[propId];
+
+test("addLinkedEntity creates an entity the card's entity references, with its card beside it, in one undo step", async () => {
+	const { store, person, author, characters, dune, pageId, card } = await linkable();
+	const made = store.addLinkedEntity(card.id, { propId: author.id, direction: "forward" }, person.id, " Frank Herbert ", pageId)!;
+	assert.deepEqual(
+		{ ...made.entity, id: "" },
+		{ id: "", typeId: person.id, name: "Frank Herbert", content: "", description: "## Bio", tags: ["Classic"], values: {} },
+	);
+	assert.equal(valueOf(store, dune.id, author.id), made.entity.id);
+	assert.deepEqual([made.card.entityId, made.card.x, made.card.y], [made.entity.id, 288, 0]);
+	assert.deepEqual(firstBoard(store).pages[0]!.cardIds, [card.id, made.card.id]);
+
+	// The author is set now: a second one doesn't fit (nothing changes).
+	assert.equal(store.addLinkedEntity(card.id, { propId: author.id, direction: "forward" }, person.id, "Other"), null);
+	// A reference allowing several gets one more; the next card goes below the first one.
+	const paul = store.addLinkedEntity(card.id, { propId: characters.id, direction: "forward" }, person.id, "Paul")!;
+	assert.deepEqual(valueOf(store, dune.id, characters.id), [paul.entity.id]);
+	assert.deepEqual([paul.card.x, paul.card.y], [288, 192]);
+	assert.equal(store.data.entities.length, 3);
+
+	store.undo();
+	assert.equal(store.data.entities.some((e) => e.id === paul.entity.id), false);
+	assert.equal(valueOf(store, dune.id, characters.id), undefined);
+	assert.equal(firstBoard(store).cards.length, 2);
+});
+
+test("addLinkedEntity also goes the other way: the new entity references the card's entity", async () => {
+	const { store, book, author } = await linkable();
+	const frank = store.addEntity(store.data.types[0]!.id, "Frank", "", {});
+	const frankCard = store.addCard(firstBoard(store).id, frank.id, 0, 400);
+	// From Frank: a new Book whose author he is.
+	const made = store.addLinkedEntity(frankCard.id, { propId: author.id, direction: "inverse" }, book.id, "Children of Dune")!;
+	assert.equal(made.entity.typeId, book.id);
+	assert.equal(made.entity.values[author.id], frank.id);
+	assert.deepEqual([made.card.x, made.card.y], [288, 408], "beside Frank's card, clear of Dune's");
+});
+
+test("linkEntity links an existing entity either way, showing its card: the one on the board, or a new one", async () => {
+	const { store, book, author, characters, dune, boardId, pageId, card } = await linkable();
+	const person = store.data.types[0]!;
+	const frank = store.addEntity(person.id, "Frank", "", {});
+	const paul = store.addEntity(person.id, "Paul", "", {});
+	const paulCard = store.addCard(boardId, paul.id, 600, 600); // on the board, not on the page
+
+	const placed = store.linkEntity(card.id, { propId: author.id, direction: "forward" }, frank.id, pageId)!;
+	assert.equal(valueOf(store, dune.id, author.id), frank.id);
+	assert.deepEqual([placed.entityId, placed.x, placed.y], [frank.id, 288, 0], "a new card beside Dune's");
+	const shown = store.linkEntity(card.id, { propId: characters.id, direction: "forward" }, paul.id, pageId)!;
+	assert.equal(shown.id, paulCard.id, "Paul's card, put on the page too");
+	assert.ok(firstBoard(store).pages[0]!.cardIds.includes(paulCard.id));
+	assert.equal(store.linkEntity(card.id, { propId: characters.id, direction: "forward" }, paul.id), null, "linked already");
+
+	// From Frank's card: Emma, an existing book, gets him as author.
+	const emma = store.addEntity(book.id, "Emma", "", {});
+	assert.ok(store.linkEntity(placed.id, { propId: author.id, direction: "inverse" }, emma.id));
+	assert.equal(valueOf(store, emma.id, author.id), frank.id);
+});
+
+test("addEntityWithCard creates an entity with its card at the first free spot, in one undo step", async () => {
+	const { store, person, boardId, pageId } = await linkable();
+	const made = store.addEntityWithCard(boardId, person.id, " Ada ", { x: 10, y: 10 }, pageId, ["Classic", "classic"])!;
+	assert.deepEqual([made.entity.name, made.entity.tags, made.entity.description], ["Ada", ["Classic"], "## Bio"]);
+	assert.deepEqual([made.card.x, made.card.y], [0, 192], "below Dune's card at 0, 0");
+	assert.ok(firstBoard(store).pages[0]!.cardIds.includes(made.card.id));
+	store.undo();
+	assert.equal(store.data.entities.some((e) => e.id === made.entity.id), false);
+});
+
 test("moveItems moves several cards and drawings together, in one undo step", async () => {
 	const store = await open(memoryStorage());
 	const note = store.addType("Note", [], "");

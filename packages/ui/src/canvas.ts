@@ -15,6 +15,8 @@ import {
 	detailRows,
 	entityTags,
 	filterEntities,
+	linkCandidates,
+	relationsOf,
 	filterLibrary,
 	inverseCardRows,
 	isSymbol,
@@ -23,6 +25,7 @@ import {
 	type Board,
 	type CanvasCard,
 	type CardRow,
+	type Relation,
 	type Entity,
 	type EntityType,
 	type LineArrow,
@@ -204,12 +207,11 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	}
 
 	/** Panning and zooming fire many events; save once they settle. */
-	function saveViewportSoon(): void {
+	function saveViewportSoon(next: Viewport = viewport): void {
 		if (readOnly) return; // the viewer never saves pan or zoom
 		clearTimeout(saveTimer);
 		const id = boardId;
 		const page = currentPage()?.id;
-		const next = viewport;
 		pendingSave = () => {
 			pendingSave = null;
 			if (page) store.setPageViewport(id, page, next);
@@ -301,7 +303,46 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		animation = requestAnimationFrame(frame);
 	}
 
+	/** Pans just enough to bring a rectangle (world coordinates) into view, with a little room around it. */
+	function reveal(rect: Rect): void {
+		const width = surface.clientWidth;
+		const height = surface.clientHeight;
+		if (width === 0 || height === 0) return; // not laid out (yet)
+		const margin = GRID_SIZE;
+		const shift = (start: number, size: number, room: number) =>
+			start < margin ? margin - start : start + size > room - margin ? Math.max(margin - start, room - margin - start - size) : 0;
+		const { zoom } = viewport;
+		const dx = shift(rect.x * zoom + viewport.x, rect.width * zoom, width);
+		const dy = shift(rect.y * zoom + viewport.y, rect.height * zoom, height);
+		if (dx === 0 && dy === 0) return;
+		const target = { ...viewport, x: viewport.x + dx, y: viewport.y + dy };
+		animateViewport(target);
+		saveViewportSoon(target);
+	}
+
 	const boardControls = el("div", { className: "board-controls" });
+
+	/** An overlay over the canvas (shown with showModal), closed by its × (see dialogHeader), Escape, or a click beside it. */
+	function canvasDialog(className: string, label: string): HTMLDialogElement {
+		const dialog: HTMLDialogElement = el("dialog", {
+			className: `canvas-dialog ${className}`,
+			ariaLabel: label,
+			// No expression body: an on… handler returning false would cancel every click inside, submits included.
+			onclick: (e: MouseEvent) => {
+				if (e.target === dialog) dialog.close();
+			},
+		});
+		return dialog;
+	}
+
+	function dialogHeader(dialog: HTMLDialogElement, title: string): HTMLElement {
+		return el(
+			"header",
+			{},
+			el("h2", {}, title),
+			el("button", { type: "button", className: "card-remove", title: text.close, ariaLabel: text.close, onclick: () => dialog.close() }, "×"),
+		);
+	}
 
 	/** Opens the overlay listing the boards, to switch to another (and in the editor, to create, rename or delete). */
 	const boardButton = el("button", {
@@ -314,15 +355,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			boardDialog.showModal();
 		},
 	});
-	const boardDialog = el("dialog", {
-		className: "board-dialog",
-		ariaLabel: text.tabBoards,
-		// A click on the backdrop (outside the box) closes it. (No expression body: an on… handler returning false
-		// would cancel every click inside, submits included.)
-		onclick: (e: MouseEvent) => {
-			if (e.target === boardDialog) boardDialog.close();
-		},
-	});
+	const boardDialog = canvasDialog("board-dialog", text.tabBoards);
 
 	function renderBoardControls(): void {
 		boardButton.replaceChildren(el("span", { className: "board-name" }, currentBoard().name), el("span", { ariaHidden: "true" }, "▾"));
@@ -352,6 +385,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		}
 		boardControls.replaceChildren(
 			boardButton,
+			el("button", { type: "button", title: text.newEntityHint, onclick: openNewEntity }, text.newEntityButton),
 			// Shows the board step by step, like a presentation; switched off, its steps stay for next time.
 			el(
 				"button",
@@ -445,12 +479,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		);
 
 		boardDialog.replaceChildren(
-			el(
-				"header",
-				{},
-				el("h2", {}, text.tabBoards),
-				el("button", { type: "button", className: "card-remove", title: text.close, ariaLabel: text.close, onclick: () => boardDialog.close() }, "×"),
-			),
+			dialogHeader(boardDialog, text.tabBoards),
 			el("ul", { className: "board-list" }, ...rows),
 			...(readOnly ? [] : [newForm]),
 		);
@@ -836,6 +865,147 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		select(entityId, currentBoard().cards.find((c) => c.entityId === entityId && onPage(c.id))?.id ?? null);
 	}
 
+	/** Links the selected card's entity with another one, existing or new, through any relation (see relationsOf). */
+	const connectDialog = canvasDialog("connect-dialog", text.connect);
+
+	function connectButton(entity: Entity, cardId: string): HTMLButtonElement {
+		const none = relationsOf(store.data.types, entity).length === 0;
+		return el(
+			"button",
+			{ type: "button", disabled: none, title: none ? text.noRelations : text.connectHint, onclick: () => openConnect(entity.id, cardId) },
+			text.connect,
+		);
+	}
+
+	/** How a relation reads in the dialog, seen from the selected entity: its own reference, or another type's. */
+	function relationLabel({ prop, direction, typeId }: Relation): string {
+		const typeName = store.data.types.find((t) => t.id === typeId)?.name ?? "?";
+		if (direction === "forward") return text.relationForward(prop.name, typeName);
+		const inverse = prop.reference?.inverseLabel.trim() ?? "";
+		return inverse ? text.relationInverse(inverse, typeName) : text.relationInverseUnnamed(typeName, prop.name);
+	}
+
+	function openConnect(entityId: string, cardId: string): void {
+		renderConnect(entityId, cardId);
+		connectDialog.showModal();
+		connectDialog.querySelector<HTMLInputElement>(".connect-new input")?.focus();
+	}
+
+	/** The dialog's content for one of the relations: the existing entities fitting it (found by name), and a form for
+	 * a new one. Either way the other entity's card is shown beside the card, and the selection stays on it. */
+	function renderConnect(entityId: string, cardId: string, index = 0): void {
+		const entity = store.data.entities.find((e) => e.id === entityId);
+		if (!entity) return connectDialog.close();
+		const relations = relationsOf(store.data.types, entity);
+		const relation = relations[index];
+		if (!relation) return connectDialog.close();
+		const link = { propId: relation.prop.id, direction: relation.direction };
+		const typeName = store.data.types.find((t) => t.id === relation.typeId)?.name ?? "?";
+		const done = (card: CanvasCard | undefined) => {
+			connectDialog.close();
+			if (!card) return;
+			appearing = new Set([card.id]);
+			renderCards();
+			renderPanel();
+			reveal(cardRects.get(card.id) ?? card);
+		};
+
+		const choice = el(
+			"select",
+			{ ariaLabel: text.relation, onchange: () => renderConnect(entityId, cardId, Number(choice.value)) },
+			...relations.map((r, i) => el("option", { value: String(i), selected: i === index }, relationLabel(r))),
+		);
+		const candidates = linkCandidates(store.data.entities, entity, relation);
+		const list = el("ul", { className: "connect-list" });
+		const renderList = (query: string) => {
+			const found = filterEntities(candidates, { query, typeId: null });
+			list.replaceChildren(
+				...(found.length === 0 ? [el("li", { className: "muted" }, candidates.length === 0 ? text.noCandidates : text.noMatches)] : []),
+				...found.map((other) =>
+					el(
+						"li",
+						{},
+						el(
+							"button",
+							{
+								type: "button",
+								className: "board-option",
+								onclick: () => done(store.linkEntity(cardId, link, other.id, currentPage()?.id) ?? undefined),
+							},
+							other.name,
+						),
+					),
+				),
+			);
+		};
+		renderList("");
+		const search = el("input", {
+			type: "search",
+			placeholder: text.searchEntities,
+			ariaLabel: text.searchEntities,
+			oninput: () => renderList(search.value),
+		});
+		const name = el("input", { required: true, pattern: ".*\\S.*", placeholder: text.name, ariaLabel: text.name });
+		connectDialog.replaceChildren(
+			dialogHeader(connectDialog, text.connectNamed(entity.name)),
+			el("label", { className: "field" }, el("span", {}, text.relation), choice),
+			el(
+				"form",
+				{
+					className: "connect-new",
+					onsubmit: (e: SubmitEvent) => {
+						e.preventDefault();
+						done(store.addLinkedEntity(cardId, link, relation.typeId, name.value, currentPage()?.id)?.card);
+					},
+				},
+				el("h3", {}, text.newEntity(typeName)),
+				el("div", { className: "row" }, name, el("button", { type: "submit", className: "primary" }, text.create)),
+			),
+			el("div", { className: "connect-existing" }, el("h3", {}, text.existingEntity(typeName)), search, list),
+		);
+	}
+
+	/** Creates an entity of any type, with its card in the middle of the view (tagged like the side panel's filter). */
+	const newEntityDialog = canvasDialog("new-entity-dialog", text.newEntityTitle);
+
+	function openNewEntity(): void {
+		const types = store.data.types;
+		const typeSelect = el("select", { ariaLabel: text.entityType }, ...types.map((t) => el("option", { value: t.id }, t.name)));
+		const name = el("input", { required: true, pattern: ".*\\S.*", placeholder: text.name, ariaLabel: text.name });
+		newEntityDialog.replaceChildren(
+			dialogHeader(newEntityDialog, text.newEntityTitle),
+			types.length === 0
+				? el("p", { className: "muted" }, text.createTypeFirst)
+				: el(
+						"form",
+						{
+							className: "connect-new",
+							onsubmit: (e: SubmitEvent) => {
+								e.preventDefault();
+								const { zoom } = viewport;
+								const at = screenToWorld(
+									viewport,
+									surface.clientWidth / 2 - (DEFAULT_CARD_SIZE.width * zoom) / 2,
+									surface.clientHeight / 2 - (DEFAULT_CARD_SIZE.height * zoom) / 2,
+								);
+								const made = store.addEntityWithCard(boardId, typeSelect.value, name.value, at, currentPage()?.id, panelTag ? [panelTag] : []);
+								newEntityDialog.close();
+								if (!made) return;
+								appearing = new Set([made.card.id]);
+								renderCards();
+								renderPanel();
+								select(made.entity.id, made.card.id);
+								reveal(cardRects.get(made.card.id) ?? made.card);
+							},
+						},
+						el("label", { className: "field" }, el("span", {}, text.entityType), typeSelect),
+						el("div", { className: "row" }, name, el("button", { type: "submit", className: "primary" }, text.create)),
+					),
+		);
+		newEntityDialog.showModal();
+		name.focus();
+	}
+
 	/** Easy-to-read details of the selected entity: description, all properties, content and ID. */
 	function renderDetails(): void {
 		const entity = selected && store.data.entities.find((e) => e.id === selected!.entityId);
@@ -861,20 +1031,20 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			),
 		);
 		if (type) bar.style.background = type.color;
+		// In the editor: Edit opens the entity's form; for a card on the board, Connect links it with another entity,
+		// existing or new (see openConnect).
+		const actions = readOnly
+			? []
+			: [
+					...(onEditEntity ? [el("button", { type: "button", title: text.editInData, onclick: () => onEditEntity(entity.id) }, text.edit)] : []),
+					...(selected?.cardId ? [connectButton(entity, selected.cardId)] : []),
+				];
 		const header = el(
 			"header",
 			{ className: "details-header" },
 			bar,
 			el("h2", { className: "details-title" }, entity.name),
-			...(!readOnly && onEditEntity
-				? [
-						el(
-							"div",
-							{ className: "details-actions" },
-							el("button", { type: "button", title: text.editInData, onclick: () => onEditEntity(entity.id) }, text.edit),
-						),
-					]
-				: []),
+			...(actions.length > 0 ? [el("div", { className: "details-actions" }, ...actions)] : []),
 		);
 
 		const section = (title: string, ...content: Node[]) =>
@@ -1690,6 +1860,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		zoomBar,
 		preview,
 		boardDialog,
+		connectDialog,
+		newEntityDialog,
 	);
 	// Drag handles for the widths of the side panel and the details (hidden along with them, see CSS).
 	const panelHandle = resizeHandle(panel, { key: PANEL_WIDTH_KEY, side: "left", min: 12, max: 32 });
