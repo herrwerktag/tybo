@@ -703,9 +703,36 @@ function pickFrame(view: HTMLElement, name: string): void {
 	[...view.querySelectorAll<HTMLButtonElement>(".frame-dialog .picker-option")].find((b) => b.textContent === name)!.click();
 }
 
+/** Turns on editing the frames in the editor, as its toggle does: only then are they shown, with their controls. */
+function editFrames(view: HTMLElement): void {
+	const toggle = view.querySelector<HTMLButtonElement>(".frames-toggle")!;
+	if (toggle.ariaPressed !== "true") toggle.click();
+}
+
+test("in the editor, frames are only shown, with their controls, while editing them; that is remembered", async () => {
+	const { store, view } = await storyboard();
+	const toggle = () => view.querySelector<HTMLButtonElement>(".frames-toggle")!;
+	assert.equal(toggle().ariaPressed, "false");
+	assert.equal(view.querySelector(".view-frame, .frame-switch, .frame-from-view"), null);
+
+	toggle().click();
+	assert.equal(toggle().ariaPressed, "true");
+	assert.equal(toggle().textContent, `▭${text.doneEditingFrames}`);
+	assert.ok(view.querySelector(".view-frame.board-frame"));
+	assert.ok(view.querySelector(".frame-switch"));
+	assert.ok(view.querySelector(".frame-from-view"));
+
+	const again = canvasView(store, { readOnly: false });
+	assert.ok(again.querySelector(".view-frame.board-frame"), "still editing frames when the canvas is shown again");
+
+	toggle().click();
+	assert.equal(view.querySelector(".view-frame, .frame-switch, .frame-from-view"), null);
+});
+
 test("in the editor, a step gets a frame of what is seen, else the board's; only stepping into another frame moves the board", async () => {
 	const { store, view, boardId, pages } = await storyboard();
 	laidOut(view);
+	editFrames(view);
 	const board = () => store.data.boards.find((b) => b.id === boardId)!;
 	const zoomOut = () => view.querySelector<HTMLButtonElement>(`.canvas-zoom button[title="${text.zoomOut}"]`)!.click();
 	assert.equal(frameName(view), "Board frame");
@@ -748,6 +775,7 @@ test("in the editor, frames are moved by their name and resized at their corner,
 	const editor = canvasView(store, { readOnly: false });
 	document.body.replaceChildren(editor);
 	view.remove();
+	editFrames(editor);
 	const board = () => store.data.boards.find((b) => b.id === boardId)!;
 	const stepFrame = () => editor.querySelector<HTMLElement>(".view-frame:not(.board-frame)")!;
 
@@ -791,6 +819,31 @@ test("the viewer fits the board's frame into the screen, and a step's own frame,
 	assert.equal(transform(viewer), viewportTransform(fitRect(boardFrame, 800, 600)));
 });
 
+test("the viewer keeps where it was panned to when the canvas changes size, e.g. as a card's details open", async () => {
+	const { store, duneCard } = await storyboard({ readOnly: true });
+	let resized = () => {};
+	Object.assign(window, {
+		ResizeObserver: class {
+			constructor(callback: () => void) {
+				resized = callback;
+			}
+			observe() {}
+		},
+	});
+	const viewer = canvasView(store, { readOnly: true });
+	document.body.replaceChildren(viewer);
+	laidOut(viewer);
+	resized();
+	const fittedTransform = transform(viewer);
+
+	dragBy(viewer.querySelector<HTMLElement>(".canvas-surface")!, 120, 40);
+	const panned = transform(viewer);
+	assert.notEqual(panned, fittedTransform);
+	cardNode(viewer, duneCard.id).click();
+	resized();
+	assert.equal(transform(viewer), panned);
+});
+
 /** The pan/zoom the canvas shows now, read from its transform. */
 function shownViewport(view: HTMLElement): { x: number; y: number; zoom: number } {
 	const [x, y, zoom] = transform(view).match(/-?[\d.]+/g)!.map(Number);
@@ -800,6 +853,7 @@ function shownViewport(view: HTMLElement): { x: number; y: number; zoom: number 
 test("in the editor, 'Use this view' sets the frame of what's shown to what is seen: the step's, else the board's", async () => {
 	const { store, view, boardId, one, pages } = await storyboard();
 	laidOut(view);
+	editFrames(view);
 	const wide = store.addFrame(boardId, "Wide", { x: 0, y: 0, width: 480, height: 270 }, one.id)!;
 	const board = () => store.data.boards.find((b) => b.id === boardId)!;
 	const useView = () => view.querySelector<HTMLButtonElement>(".frame-from-view")!.click();

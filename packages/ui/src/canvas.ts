@@ -54,6 +54,8 @@ const PANEL_TAG_KEY = "canvas-panel-tag";
 /** The size of the library drawings' thumbnails in the side panel, in px. */
 const THUMBNAIL_SIZE = 40;
 const ACTIVE_BOARD_KEY = "canvas-active-board";
+/** Whether the editor is editing the frames: only then are they shown, with their controls. */
+const EDIT_FRAMES_KEY = "canvas-edit-frames";
 /** The story last shown in the editor, per board (empty: the whole board). */
 const activeStoryKey = (boardId: string) => `canvas-active-story:${boardId}`;
 /** The page last shown in the editor, per story. (A board's steps from before became a story with the board's id, so
@@ -700,6 +702,19 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		text.frameFromView,
 	);
 
+	/** Editor: frames are only shown, picked and changed while editing them, so they don't clutter the board. */
+	let editingFrames = readPreference(EDIT_FRAMES_KEY) === "true";
+	const editFramesButton = el("button", {
+		type: "button",
+		className: "frames-toggle",
+		title: text.editFramesHint,
+		onclick: () => {
+			editingFrames = !editingFrames;
+			writePreference(EDIT_FRAMES_KEY, String(editingFrames));
+			framesChanged();
+		},
+	});
+
 	function renderBoardControls(): void {
 		boardButton.replaceChildren(...pickerLabel(currentBoard().name));
 		// The viewer offers the stories only if there are any; outside one, the button invites to pick one.
@@ -712,12 +727,14 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			return boardControls.replaceChildren(boardButton, ...(hasStories ? [storyButton] : []), ...(onExportView ? [exportButton] : []));
 		}
 		frameButton.replaceChildren(el("span", { ariaHidden: "true" }, "▭"), ...pickerLabel(currentFrame().name));
+		editFramesButton.ariaPressed = String(editingFrames);
+		editFramesButton.replaceChildren(el("span", { ariaHidden: "true" }, "▭"), editingFrames ? text.doneEditingFrames : text.editFrames);
 		boardControls.replaceChildren(
 			boardButton,
 			storyButton,
+			editFramesButton,
 			// Outside a story, the whole board is always seen in its own frame.
-			...(story ? [frameButton] : []),
-			frameFromViewButton,
+			...(editingFrames ? [...(story ? [frameButton] : []), frameFromViewButton] : []),
 			el("button", { type: "button", title: text.newEntityHint, onclick: openNewEntity }, text.newEntityButton),
 		);
 	}
@@ -1761,6 +1778,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		trackPointer(
 			e,
 			(dx, dy) => {
+				fitted = false;
 				viewport = { ...start, x: start.x + dx, y: start.y + dy };
 				applyViewport();
 			},
@@ -2055,9 +2073,9 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		description.replaceChildren(handle, input, resize);
 	}
 
-	/** Editor: the frames as outlines on the canvas — the board's, and in a story the steps' too —, the one of what's
-	 * shown highlighted. Each is moved by its name (a click there goes to it) and resized at its corner, snapped to the
-	 * grid; only those react to the pointer. */
+	/** Editor, while editing frames: the frames as outlines on the canvas — the board's, and in a story the steps'
+	 * too —, the one of what's shown highlighted. Each is moved by its name (a click there goes to it) and resized at
+	 * its corner, snapped to the grid; only those react to the pointer. */
 	const frameLayer = el("div", { className: "view-frames" });
 
 	function placeFrame(node: HTMLElement, { x, y, width, height }: { x: number; y: number; width: number; height: number }): void {
@@ -2066,6 +2084,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 
 	function renderFrames(): void {
 		if (readOnly) return;
+		if (!editingFrames) return frameLayer.replaceChildren();
 		const current = currentFrame().id;
 		const frames = [boardFrame(), ...(currentPage() ? currentBoard().frames : [])];
 		frameLayer.replaceChildren(...frames.map((frame) => frameElement(frame, frame.id === current)));

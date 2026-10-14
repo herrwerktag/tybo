@@ -1768,6 +1768,18 @@ button.ref-tag {
 	margin-left: auto;
 }
 
+/* Turns editing the frames on and off (see renderBoardControls); while on, it stands out. */
+.frames-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+}
+
+.frames-toggle[aria-pressed="true"] {
+	border-color: var(--focus);
+	color: var(--focus);
+}
+
 .card-dim[aria-pressed="true"] {
 	color: var(--focus);
 }
