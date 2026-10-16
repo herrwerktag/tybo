@@ -391,6 +391,20 @@ test("the View tab exports the current board as an HTML file with the viewer ins
 	assert.match(html, /"name":"Dune"/);
 });
 
+test("the workspace menu exports the workspace as a text file", async () => {
+	const root = await startApp(library);
+	const downloads: Blob[] = [];
+	const createObjectURL = URL.createObjectURL;
+	URL.createObjectURL = (blob: Blob) => (downloads.push(blob), "blob:export");
+	try {
+		root.querySelector<HTMLButtonElement>(`button[title="${text.exportText}"]`)!.click();
+	} finally {
+		URL.createObjectURL = createObjectURL;
+	}
+	assert.equal(downloads[0]?.type, "text/plain;charset=utf-8");
+	assert.match(await downloads[0]!.text(), /^## Book "Dune"$/m);
+});
+
 test("a workspace saved by a newer version warns that changes aren't saved, and offers a reload", async () => {
 	const root = await startApp({ version: 999, types: [], entities: [] });
 	const banner = root.querySelector<HTMLElement>(".problem-banner")!;

@@ -32,6 +32,7 @@ import { libraryView, selectLibraryDrawing } from "./library.js";
 import { downloadFile, el, safeFileName, tagFilter, typeDot } from "./dom.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
 import { standaloneViewHtml } from "./standalone.js";
+import { workspaceText } from "./text-export.js";
 import type { Store } from "@tybo/core";
 import { exportWorkspace, readWorkspaceFile, type Workspaces } from "@tybo/core";
 
@@ -273,6 +274,12 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 		const { name } = workspaces.active;
 		const date = new Date().toISOString().slice(0, 10);
 		downloadFile(`${safeFileName(name)} ${date}.json`, exportWorkspace(name, store.data));
+	}
+
+	function exportActiveWorkspaceText(): void {
+		const { name } = workspaces.active;
+		const date = new Date().toISOString().slice(0, 10);
+		downloadFile(`${safeFileName(name)} ${date}.txt`, workspaceText(name, store.data, date), "text/plain;charset=utf-8");
 	}
 
 	function exportView(viewScript: string, boardId: string): void {
@@ -563,6 +570,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 				},
 				text.exportButton,
 			),
+			el("button", { type: "button", title: text.exportText, onclick: exportActiveWorkspaceText }, text.exportTextButton),
 			el("button", { type: "button", title: text.importWorkspace, onclick: () => fileInput.click() }, text.importButton),
 			fileInput,
 		);
