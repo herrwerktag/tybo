@@ -16,6 +16,8 @@ import {
 	effectiveCardDisplay,
 	entityTypeMap,
 	detailRows,
+	placeholderProperty,
+	propertyRow,
 	entityTags,
 	filterEntities,
 	linkCandidates,
@@ -1305,21 +1307,27 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		const section = (title: string, ...content: Node[]) =>
 			el("section", { className: "details-section" }, el("h3", {}, title), ...content);
 		const rows = detailRows(store.data, entity, entityNames);
+		// A referenced entity as a tag in the color of its type; clicking it shows that entity's details.
+		const refTag = (name: string, entityId: string): HTMLElement => {
+			const tag = el("button", { type: "button", className: "ref-tag", onclick: () => selectEntity(entityId) }, name);
+			const color = types.get(entityTypes.get(entityId) ?? "")?.color;
+			if (color) tag.style.background = color;
+			return tag;
+		};
 		const value = (row: CardRow): HTMLElement => {
 			if (row.values.length === 0) return el("dd", { className: "muted" }, "—");
 			if (row.kind === "text") return el("dd", { className: "details-text" }, ...row.values);
 			if (row.kind === "options") return el("dd", { className: "prop-chips" }, ...row.values.map((v) => el("span", { className: "chip" }, v)));
-			// References: tags in the color of the entity's type; clicking one shows that entity's details.
-			return el(
-				"dd",
-				{ className: "prop-chips" },
-				...row.values.map((name, i) => {
-					const tag = el("button", { type: "button", className: "ref-tag", onclick: () => selectEntity(row.entityIds[i]!) }, name);
-					const color = types.get(entityTypes.get(row.entityIds[i]!) ?? "")?.color;
-					if (color) tag.style.background = color;
-					return tag;
-				}),
-			);
+			return el("dd", { className: "prop-chips" }, ...row.values.map((name, i) => refTag(name, row.entityIds[i]!)));
+		};
+		// `{{Property}}` in the description: the value as text, references as tags, "—" when empty.
+		const placeholder = (name: string): Node[] | null => {
+			const prop = placeholderProperty(type, name);
+			if (!prop) return null;
+			const row = propertyRow(prop, entity, entityNames);
+			if (row.values.length === 0) return [el("span", { className: "muted" }, "—")];
+			if (row.kind !== "reference") return [document.createTextNode(row.values.join(", "))];
+			return row.values.flatMap((n, i) => [...(i > 0 ? [document.createTextNode(", ")] : []), refTag(n, row.entityIds[i]!)]);
 		};
 
 		details.replaceChildren(
@@ -1330,7 +1338,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				section(
 					text.description,
 					entity.description.trim()
-						? renderMarkdown(entity.description)
+						? renderMarkdown(entity.description, placeholder)
 						: el("p", { className: "muted" }, text.noDescription),
 				),
 				...(rows.length > 0
