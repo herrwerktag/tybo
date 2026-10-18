@@ -549,18 +549,42 @@ export function detailRows(
 	entityNames: ReadonlyMap<string, string>,
 ): CardRow[] {
 	const type = data.types.find((t) => t.id === entity.typeId);
-	const own = (type?.properties ?? []).map((prop): CardRow => {
-		const value = entity.values[prop.id];
-		const raw = value === null || value === undefined ? [] : typeof value === "string" ? [value] : value;
-		const entityIds = prop.kind === "reference" ? raw.filter((id) => entityNames.has(id)) : [];
-		return {
-			label: prop.name,
-			kind: prop.kind,
-			values: prop.kind === "reference" ? entityIds.map((id) => entityNames.get(id)!) : raw,
-			entityIds,
-		};
-	});
+	const own = (type?.properties ?? []).map((prop) => propertyRow(prop, entity, entityNames));
 	return [...own, ...inverseCardRows(data, entity, entityNames)];
+}
+
+/** One property of `entity` as a row, `values` empty when it has none; card display settings don't apply. */
+export function propertyRow(prop: PropertyDef, entity: Entity, entityNames: ReadonlyMap<string, string>): CardRow {
+	const value = entity.values[prop.id];
+	const raw = value === null || value === undefined ? [] : typeof value === "string" ? [value] : value;
+	const entityIds = prop.kind === "reference" ? raw.filter((id) => entityNames.has(id)) : [];
+	return {
+		label: prop.name,
+		kind: prop.kind,
+		values: prop.kind === "reference" ? entityIds.map((id) => entityNames.get(id)!) : raw,
+		entityIds,
+	};
+}
+
+/** `{{Property name}}` in a description: stands for the entity's value of that property. */
+const PLACEHOLDER = /\{\{([^{}]+)\}\}/g;
+
+/** The type's own property a placeholder names (ignoring case and surrounding spaces). */
+export function placeholderProperty(type: Pick<EntityType, "properties"> | undefined, name: string): PropertyDef | undefined {
+	const key = name.trim().toLocaleLowerCase();
+	return type?.properties.find((p) => p.name.trim().toLocaleLowerCase() === key);
+}
+
+/** `source` with each placeholder that names a property replaced by `value(prop)`; others stay as typed. */
+export function fillPlaceholders(
+	source: string,
+	type: Pick<EntityType, "properties"> | undefined,
+	value: (prop: PropertyDef) => string,
+): string {
+	return source.replace(PLACEHOLDER, (whole, name: string) => {
+		const prop = placeholderProperty(type, name);
+		return prop ? value(prop) : whole;
+	});
 }
 
 /** Lower case without accents, so "uber" matches "Über". */

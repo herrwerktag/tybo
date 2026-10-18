@@ -10,7 +10,9 @@ import {
 	entityTags,
 	filterEntities,
 	filterLibrary,
+	fillPlaceholders,
 	parseTags,
+	placeholderProperty,
 	inverseCardRows,
 	inverseReferences,
 	inverseRelations,
@@ -355,4 +357,19 @@ test("frames have a screen's shape: frameShape keeps the width (at least the min
 	// A view taller than a screen: as wide, centered top to bottom; a wider one: as tall, centered across.
 	assert.deepEqual(frameInside({ x: 0, y: 0, width: 800, height: 600 }), { x: 0, y: 75, width: 800, height: 450 });
 	assert.deepEqual(frameInside({ x: 100, y: 0, width: 1600, height: 450 }), { x: 500, y: 0, width: 800, height: 450 });
+});
+
+test("placeholderProperty finds the type's own property by name, ignoring case and surrounding spaces", () => {
+	const book = { properties: [title, status] };
+	assert.equal(placeholderProperty(book, " Status "), status);
+	assert.equal(placeholderProperty(book, "author"), undefined);
+	assert.equal(placeholderProperty(undefined, "title"), undefined);
+});
+
+test("fillPlaceholders replaces the placeholders naming a property and keeps the others as typed", () => {
+	const book = { properties: [title, status] };
+	assert.equal(
+		fillPlaceholders("{{title}} is {{ STATUS }}, {{typo}} and {single}", book, (prop) => `<${prop.id}>`),
+		"<t> is <s>, {{typo}} and {single}",
+	);
 });

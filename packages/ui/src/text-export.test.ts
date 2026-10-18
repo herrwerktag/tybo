@@ -124,3 +124,17 @@ test("references to entities that don't exist anymore are left out", () => {
 	assert.match(result, /## Aktivität "Prüfen"\n*$/);
 	assert.doesNotMatch(result, /deleted/);
 });
+
+test("{{Property}} in a description is written as the value, references by type and name, empty ones as —", () => {
+	setLanguage("de");
+	try {
+		const description = "{{Verantwortlicher}} prüft {{benötigt}} im {{ Prozess }}; {{Status}}, {{Tippfehler}}";
+		const entities = data.entities.map((e) => (e.id === "a1" ? { ...e, description, values: { ...e.values, status: null } } : e));
+		assert.match(
+			workspaceText("Projekt X", { ...data, entities }, "2026-10-16"),
+			/\nBeschreibung: Rolle „Buchhaltung“ prüft Artefakt „Rechnung“, Artefakt „Rechnung \(2\)“ im Rechnungseingang; —, \{\{Tippfehler\}\}\n/,
+		);
+	} finally {
+		setLanguage("en");
+	}
+});

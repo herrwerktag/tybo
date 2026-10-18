@@ -1,4 +1,4 @@
-import { referencedIds, type AppData, type Entity, type EntityType } from "@tybo/core";
+import { fillPlaceholders, referencedIds, type AppData, type Entity, type EntityType, type PropertyDef } from "@tybo/core";
 import { text } from "./i18n.js";
 
 /**
@@ -74,7 +74,14 @@ function entitySection(
 		lines.push(`${label}: ${linked.map((id) => mentions.get(id)!).join(", ")}`);
 	}
 	if (entity.content.trim() !== "") lines.push(field(text.content, entity.content));
-	if (entity.description.trim() !== "") lines.push(field(text.description, entity.description));
+	// {{Property}} in the description: the value, references by type and name like above, "—" when empty.
+	const placeholder = (prop: PropertyDef): string => {
+		const value = entity.values[prop.id];
+		const linked = referencedIds(prop, value).flatMap((id) => mentions.get(id) ?? []);
+		const shown = prop.kind === "reference" ? linked.join(", ") : typeof value === "string" ? value.trim() : "";
+		return shown || "—";
+	};
+	if (entity.description.trim() !== "") lines.push(field(text.description, fillPlaceholders(entity.description, type, placeholder)));
 	return lines.join("\n");
 }
 

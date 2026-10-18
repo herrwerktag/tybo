@@ -45,3 +45,13 @@ test("bare addresses become links, without trailing punctuation; www. ones get h
 test("HTML in the text stays text", () => {
 	assert.equal(html('<img src=x onerror="alert(1)">'), "<p>&lt;img src=x onerror=\"alert(1)\"&gt;</p>");
 });
+
+test("placeholders become the resolver's nodes, also in lists and bold; unknown ones, code and link labels keep the text", () => {
+	const resolve = (name: string) => (name === "Owner" ? [document.createTextNode("Ann")] : null);
+	const withValues = (source: string) => renderMarkdown(source, resolve).innerHTML;
+	assert.equal(withValues("By {{Owner}}, {{Typo}}"), "<p>By Ann, {{Typo}}</p>");
+	assert.equal(withValues("- **{{Owner}}**"), "<ul><li><strong>Ann</strong></li></ul>");
+	assert.equal(withValues("`{{Owner}}`"), "<p><code>{{Owner}}</code></p>");
+	assert.equal(withValues("[{{Owner}}](https://x.de)"), '<p><a href="https://x.de" target="_blank" rel="noopener noreferrer">{{Owner}}</a></p>');
+	assert.equal(html("By {{Owner}}"), "<p>By {{Owner}}</p>");
+});

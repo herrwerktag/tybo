@@ -619,6 +619,26 @@ const detailsButton = (view: HTMLElement, label: string) =>
 	[...details(view).querySelectorAll<HTMLButtonElement>(".details-actions button")].find((b) => b.textContent === label);
 const connectDialog = (view: HTMLElement) => view.querySelector<HTMLDialogElement>(".connect-dialog")!;
 
+test("{{Property}} in the description shows the value: a reference as a tag that shows its details, empty as —", async () => {
+	const { store, person, author, dune, card } = await connectable();
+	const detailsOf = (values: Record<string, string>) => {
+		store.updateEntity(dune.id, "Dune", "", values, "By **{{ Author }}**, {{typo}}", []);
+		freshDom();
+		const view = canvasView(store, { readOnly: false });
+		document.body.append(view);
+		cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+		return details(view);
+	};
+	assert.equal(detailsOf({}).querySelector(".markdown")?.textContent, "By —, {{typo}}");
+
+	const frank = store.addEntity(person.id, "Frank", "", {});
+	const panel = detailsOf({ [author.id]: frank.id });
+	const tag = panel.querySelector<HTMLButtonElement>(".markdown strong .ref-tag")!;
+	assert.equal(tag.textContent, "Frank");
+	tag.click();
+	assert.equal(panel.querySelector(".details-title")?.textContent, "Frank");
+});
+
 test("Connect creates a new entity the card's entity links to, its card beside it; the selection stays", async () => {
 	const { store, view, author, dune, card } = await connectable();
 	detailsButton(view, "Connect")!.click();
