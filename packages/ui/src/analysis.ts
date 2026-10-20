@@ -12,8 +12,9 @@ import {
 	type PathStep,
 	type Store,
 } from "@tybo/core";
+import { analysisMarkdown, pathLabel } from "./analysis-export.js";
 import { DETAILS_WIDTH_KEY } from "./canvas.js";
-import { el, resizeHandle, typeDot } from "./dom.js";
+import { downloadFile, el, resizeHandle, safeFileName, typeDot } from "./dom.js";
 import { createCardPreview, entityDetails } from "./entity-card.js";
 import { text } from "./i18n.js";
 import { readPreference, writePreference } from "./preferences.js";
@@ -293,19 +294,9 @@ export function analysisView(store: Store, { onEditEntity }: { onEditEntity: (en
 		return option.typeIds.length > 0 ? `${option.prop.name} → ${option.typeIds.map(typeName).join(" / ")}` : option.prop.name;
 	}
 
-	/** How a path reads as a heading: its steps' names. */
-	function pathLabel(typeId: string, path: PathStep[]): string {
-		const { options } = resolvePath(store.data.types, typeId, path);
-		if (options.length === 0) return "—";
-		return options
-			.map((o) =>
-				o.step.direction === "inverse" ? o.prop.reference?.inverseLabel || text.inverseStep(typeName(o.ownerTypeId), o.prop.name) : o.prop.name,
-			)
-			.join(" › ");
-	}
-
 	function resultSection(analysis: Analysis): HTMLElement {
-		const section = el("section", { className: "analysis-result" }, el("h2", {}, text.analysisResult));
+		const header = el("div", { className: "section-header" }, el("h2", {}, text.analysisResult));
+		const section = el("section", { className: "analysis-result" }, header);
 		const type = store.data.types.find((t) => t.id === analysis.typeId);
 		if (!type) {
 			section.append(el("p", { className: "muted" }, text.analysisChooseType));
@@ -316,8 +307,15 @@ export function analysisView(store: Store, { onEditEntity }: { onEditEntity: (en
 			section.append(el("p", { className: "muted" }, text.analysisNoRows(type.name)));
 			return section;
 		}
+		const exportMarkdown = () => {
+			const date = new Date().toISOString().slice(0, 10);
+			downloadFile(`${safeFileName(analysis.name)} ${date}.md`, analysisMarkdown(store.data, analysis, date), "text/markdown;charset=utf-8");
+		};
+		header.append(
+			el("button", { type: "button", title: text.exportAnalysisMarkdownHint, onclick: exportMarkdown }, text.exportAnalysisMarkdown),
+		);
 		const levels = analysis.groups.filter((path) => path.length > 0 && resolvePath(store.data.types, type.id, path).broken === null);
-		const headers = [type.name, ...analysis.columns.map((path) => pathLabel(type.id, path))];
+		const headers = [type.name, ...analysis.columns.map((path) => pathLabel(store.data.types, type.id, path))];
 		section.append(el("p", { className: "muted" }, text.analysisCount(result.count)));
 		section.append(...(result.groups.length > 0 ? groups(type, result.groups, levels, headers, 0) : [table(type, result.rows, headers)]));
 		return section;
@@ -332,7 +330,7 @@ export function analysisView(store: Store, { onEditEntity }: { onEditEntity: (en
 				el(
 					heading,
 					{},
-					group.value ? valueView(group.value) : el("span", { className: "muted" }, text.analysisNoValue(pathLabel(type.id, levels[level]!))),
+					group.value ? valueView(group.value) : el("span", { className: "muted" }, text.analysisNoValue(pathLabel(store.data.types, type.id, levels[level]!))),
 					el("span", { className: "muted analysis-count" }, text.analysisCount(group.count)),
 				),
 				...(group.groups.length > 0 ? groups(type, group.groups, levels, headers, level + 1) : [table(type, group.rows, headers)]),

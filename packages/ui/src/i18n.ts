@@ -354,6 +354,10 @@ const en = {
 	analysisNoRows: (type: string) => `No ${type} entities yet.`,
 	analysisNoValue: (label: string) => `Without ${label}`,
 	analysisCount: (n: number) => `${n} ${n === 1 ? "row" : "rows"}`,
+	exportAnalysisMarkdown: "Export as Markdown",
+	exportAnalysisMarkdownHint: "Download the result as a Markdown file, with the descriptions of its entities",
+	analysisExportTitle: (name: string, date: string) => `${name} (as of ${date})`,
+	analysisExportMentioned: "Named in the columns",
 };
 
 export type Messages = typeof en;
@@ -690,6 +694,10 @@ const de: Messages = {
 	analysisNoRows: (type) => `Noch keine Entitäten vom Typ ${type}.`,
 	analysisNoValue: (label) => `Ohne ${label}`,
 	analysisCount: (n) => `${n} ${n === 1 ? "Zeile" : "Zeilen"}`,
+	exportAnalysisMarkdown: "Als Markdown exportieren",
+	exportAnalysisMarkdownHint: "Das Ergebnis als Markdown-Datei herunterladen, mit den Beschreibungen seiner Entitäten",
+	analysisExportTitle: (name, date) => `${name} (Stand ${date})`,
+	analysisExportMentioned: "In den Spalten genannt",
 };
 
 const MESSAGES: Record<Language, Messages> = { en, de };
