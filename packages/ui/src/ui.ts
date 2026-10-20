@@ -33,6 +33,7 @@ import { downloadFile, el, safeFileName, tagFilter, typeDot } from "./dom.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
 import { standaloneViewHtml } from "./standalone.js";
 import { workspaceText } from "./text-export.js";
+import { boardDrawio } from "./drawio-export.js";
 import type { Store } from "@tybo/core";
 import { exportWorkspace, readWorkspaceFile, type Workspaces } from "@tybo/core";
 
@@ -287,6 +288,11 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 		downloadFile(`${safeFileName(name)}.html`, standaloneViewHtml(viewScript, store.data, boardId, language), "text/html");
 	}
 
+	function exportDrawio(boardId: string): void {
+		const name = store.data.boards.find((b) => b.id === boardId)?.name ?? "";
+		downloadFile(`${safeFileName(name)}.drawio`, boardDrawio(store.data, boardId), "application/xml");
+	}
+
 	function renderBanner(): void {
 		const { load, saveFailed, saveConflict } = store.problems;
 		const messages: Node[] = [];
@@ -384,6 +390,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 						readOnly: route === "view",
 						addressed: true,
 						...(viewScript ? { onExportView: (boardId: string) => exportView(viewScript, boardId) } : {}),
+						onExportDrawio: exportDrawio,
 						// The details panel's Edit button: open the entity in the Entities page's form.
 						onEditEntity: (entityId) => {
 							const entity = store.data.entities.find((e) => e.id === entityId);

@@ -96,6 +96,7 @@ interface CanvasOptions {
 	addressed?: boolean;
 	onEditEntity?: (entityId: string) => void;
 	onExportView?: (boardId: string) => void;
+	onExportDrawio?: (boardId: string) => void;
 	onEditLibraryDrawing?: (libraryId: string) => void;
 }
 
@@ -123,9 +124,9 @@ function firstBoardView(store: Store, options: CanvasOptions): HTMLElement {
 
 /**
  * The board canvas. With `readOnly` (the Viewer) it only displays: no side panel, no board editing,
- * no moving, resizing, removing or dropping cards, and pan/zoom are never saved. With `onExportView`, the
- * viewer offers to export the current board. With `onEditLibraryDrawing`, a placed library drawing can be opened
- * in the library.
+ * no moving, resizing, removing or dropping cards, and pan/zoom are never saved. With `onExportView` and
+ * `onExportDrawio`, the viewer offers to export the current board (as HTML, for draw.io). With
+ * `onEditLibraryDrawing`, a placed library drawing can be opened in the library.
  *
  * A board can have stories. A story is shown one page at a time, with a page bar at the bottom and the page's
  * description over the canvas; the editor also shows the cards and drawings of other pages, faded, so they can be
@@ -138,7 +139,7 @@ function firstBoardView(store: Store, options: CanvasOptions): HTMLElement {
  */
 export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	if (store.data.boards.length === 0) return firstBoardView(store, options);
-	const { readOnly, onEditEntity, onExportView, onEditLibraryDrawing } = options;
+	const { readOnly, onEditEntity, onExportView, onExportDrawio, onEditLibraryDrawing } = options;
 	const addressed = readOnly && options.addressed === true;
 	const target = addressed ? parseViewHash(location.hash) : {};
 	let boardId = target.boardId ?? readPreference(ACTIVE_BOARD_KEY) ?? "";
@@ -726,7 +727,13 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		// The viewer only switches boards and stories, and maybe exports the current board.
 		if (readOnly) {
 			const exportButton = el("button", { type: "button", title: text.exportView, onclick: () => onExportView?.(boardId) }, text.exportButton);
-			return boardControls.replaceChildren(boardButton, ...(hasStories ? [storyButton] : []), ...(onExportView ? [exportButton] : []));
+			const drawioButton = el("button", { type: "button", title: text.exportDrawio, onclick: () => onExportDrawio?.(boardId) }, text.exportDrawioButton);
+			return boardControls.replaceChildren(
+				boardButton,
+				...(hasStories ? [storyButton] : []),
+				...(onExportView ? [exportButton] : []),
+				...(onExportDrawio ? [drawioButton] : []),
+			);
 		}
 		frameButton.replaceChildren(el("span", { ariaHidden: "true" }, "▭"), ...pickerLabel(currentFrame().name));
 		editFramesButton.ariaPressed = String(editingFrames);

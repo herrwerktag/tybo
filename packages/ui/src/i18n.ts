@@ -226,6 +226,8 @@ const en = {
 	zoomIn: "Zoom in",
 	resetView: "Reset view",
 	exportView: "Download this board as an HTML file that shows it like here, without the server",
+	exportDrawioButton: "Export for draw.io",
+	exportDrawio: "Download this board's cards and lines as a draw.io file",
 
 	// Story mode
 	stories: "Stories",
@@ -532,6 +534,8 @@ const de: Messages = {
 	zoomIn: "Vergrößern",
 	resetView: "Ansicht zurücksetzen",
 	exportView: "Dieses Board als HTML-Datei herunterladen, die es wie hier zeigt, ohne Server",
+	exportDrawioButton: "Für draw.io exportieren",
+	exportDrawio: "Karten und Linien dieses Boards als draw.io-Datei herunterladen",
 
 	stories: "Stories",
 	changeStory: "Eine Story durch dieses Board Schritt für Schritt zeigen, oder das ganze Board",
