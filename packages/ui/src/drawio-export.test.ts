@@ -113,8 +113,20 @@ test("a card shows its type, name, properties shown on cards and content, escape
 
 test("the description is the tooltip, with its placeholders filled in", () => {
 	const doc = parse(boardDrawio(data, "b"));
-	assert.equal(cell(doc, "card-ca").getAttribute("tooltip"), "Status: offen, durch Buchhaltung");
+	assert.equal(cell(doc, "card-ca").getAttribute("tooltip"), "<p>Status: offen, durch Buchhaltung</p>");
 	assert.equal(cell(doc, "card-cr").getAttribute("tooltip"), "");
+});
+
+test("the tooltip shows the description's Markdown as HTML, filled-in values as typed", () => {
+	const description = "**Wichtig:** {{Status}}\n\n- [Doku](https://example.org)\n- <b>nein</b>";
+	const withMarkdown = {
+		...data,
+		entities: data.entities.map((e) => (e.id === "a1" ? { ...e, description, values: { ...e.values, status: "*offen*" } } : e)),
+	};
+	assert.equal(
+		cell(parse(boardDrawio(withMarkdown, "b")), "card-ca").getAttribute("tooltip"),
+		'<p><strong>Wichtig:</strong> *offen*</p><ul><li><a href="https://example.org" target="_blank" rel="noopener noreferrer">Doku</a></li><li>&lt;b&gt;nein&lt;/b&gt;</li></ul>',
+	);
 });
 
 test("line references are edges to the nearest card, with their label and arrow", () => {
