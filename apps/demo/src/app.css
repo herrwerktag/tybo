@@ -1451,7 +1451,7 @@ button.ref-tag {
 	left: 0.75rem;
 	bottom: 0.75rem;
 	/* Leave room for the zoom controls on the right. */
-	max-width: calc(100% - 20rem);
+	max-width: calc(100% - 23rem);
 	flex-wrap: wrap;
 }
 
@@ -1466,19 +1466,21 @@ button.ref-tag {
 	bottom: 0.75rem;
 }
 
-/* Story mode pages: bottom center. The drawing style bar moves up above it. */
+/* Story mode pages: bottom center, only as wide as needed (centered at left: 50%, it would otherwise wrap at half the
+   canvas width). The drawing style bar and the zoom move up above it, by its height as measured (--page-bar-height). */
 .page-bar {
 	position: absolute;
 	left: 50%;
 	bottom: 0.75rem;
 	transform: translateX(-50%);
+	width: max-content;
 	max-width: calc(100% - 1.5rem);
 	flex-wrap: wrap;
 	justify-content: center;
 }
 
-.story-mode .drawing-style {
-	bottom: 3.75rem;
+.story-mode :is(.drawing-style, .canvas-zoom) {
+	bottom: calc(var(--page-bar-height, 2.75rem) + 1.25rem);
 }
 
 .page-bar input.page-name {
@@ -1502,13 +1504,6 @@ button.ref-tag {
 	display: flex;
 	align-items: center;
 	gap: 0.25rem;
-}
-
-/* Too narrow for page bar and zoom side by side: zoom goes above. */
-@media (max-width: 60rem) {
-	.story-mode .canvas-zoom {
-		bottom: 3.75rem;
-	}
 }
 
 /* The button showing the controls kept out of the way on narrow screens; wider ones show them all. */

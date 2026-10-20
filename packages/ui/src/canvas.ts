@@ -2225,6 +2225,10 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			applyViewport();
 		}).observe(surface);
 	}
+	// The page bar wraps on narrow canvases; what sits above it moves up by its actual height (see CSS).
+	if (typeof ResizeObserver !== "undefined") {
+		new ResizeObserver(() => canvasMain.style.setProperty("--page-bar-height", `${pageBar.offsetHeight}px`)).observe(pageBar);
+	}
 	canvasMain.append(
 		surface,
 		...(readOnly ? [] : [openPanelButton, drawing.toolbar, drawing.styleBar]),
