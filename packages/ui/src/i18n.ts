@@ -287,6 +287,7 @@ const en = {
 	tools: {
 		select: "Select",
 		rect: "Rectangle",
+		area: "Group",
 		ellipse: "Ellipse",
 		line: "Line",
 		arrow: "Arrow",
@@ -592,6 +593,7 @@ const de: Messages = {
 	tools: {
 		select: "Auswählen",
 		rect: "Rechteck",
+		area: "Gruppe",
 		ellipse: "Ellipse",
 		line: "Linie",
 		arrow: "Pfeil",

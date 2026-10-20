@@ -25,6 +25,7 @@ import {
 	PEN_STYLES,
 	TEXT_SIZES,
 	hasRect,
+	isArea,
 	isBox,
 	isImage,
 	isSymbol,
@@ -43,6 +44,7 @@ const TOOLS: readonly { tool: Tool; icon: string; key: string }[] = [
 	{ tool: "select", icon: "↖", key: "v" },
 	{ tool: "rect", icon: "▭", key: "r" },
 	{ tool: "ellipse", icon: "◯", key: "o" },
+	{ tool: "area", icon: "⬚", key: "g" },
 	{ tool: "line", icon: "╱", key: "l" },
 	{ tool: "arrow", icon: "→", key: "a" },
 	{ tool: "text", icon: "T", key: "t" },
@@ -56,7 +58,12 @@ const ERASER_RADIUS = 10;
 const HIGHLIGHTER_HALF_WIDTH = 8;
 
 /** Size of a shape or text box created with a click instead of a drag. */
-const DEFAULT_SIZE = { rect: { width: 160, height: 100 }, ellipse: { width: 160, height: 100 }, text: { width: 200, height: 40 } };
+const DEFAULT_SIZE = {
+	rect: { width: 160, height: 100 },
+	ellipse: { width: 160, height: 100 },
+	area: { width: 480, height: 312 },
+	text: { width: 200, height: 40 },
+};
 /** Length of a line or arrow created with a click instead of a drag. */
 const DEFAULT_LINE_LENGTH = 120;
 const CORNERS: readonly Corner[] = ["nw", "ne", "sw", "se"];
@@ -104,6 +111,10 @@ function drawingShape(d: Drawing, library: readonly LibraryDrawing[], withText =
 				: svgEl("rect", { x: d.x, y: d.y, width: d.width, height: d.height, rx: d.kind === "rect" ? 6 : 0 });
 		if (d.kind === "text") {
 			shape.classList.add("drawing-textbox"); // invisible, but makes the whole box grabbable
+		} else if (d.kind === "area") {
+			shape.classList.add("drawing-area");
+			shape.style.fill = fillFor(d.color);
+			shape.style.stroke = stroke;
 		} else {
 			shape.classList.add("drawing-shape");
 			shape.style.fill = fillFor(d.color);
@@ -129,10 +140,15 @@ function drawingShape(d: Drawing, library: readonly LibraryDrawing[], withText =
 	return shapes;
 }
 
+/** Text in shapes is centered; free text starts at the top left, and so does an area's name (as its title). */
+function textPlacement(box: BoxDrawing): string {
+	return box.kind === "text" ? "free" : box.kind === "area" ? "free area-name" : "centered";
+}
+
 function textNode(box: BoxDrawing): SVGForeignObjectElement {
 	const label = el(
 		"div",
-		{ className: `drawing-label size-${box.textSize} ${box.kind === "text" ? "free" : "centered"}` },
+		{ className: `drawing-label size-${box.textSize} ${textPlacement(box)}` },
 		box.text,
 	);
 	label.style.color = strokeFor(box.color);
@@ -225,6 +241,8 @@ export function createDrawingLayer(options: {
 	/** A press on a drawing with Shift, or on one in the group: handled by the owner (adding it to the selection
 	 * or moving the group) instead of selecting and moving the drawing alone. */
 	onGroupPress?: (e: PointerEvent, drawingId: string) => void;
+	/** A press on an area (a named group) alone: handled by the owner, moving it together with what lies in it. */
+	onAreaPress?: (e: PointerEvent, drawingId: string) => void;
 	onToolChange: (tool: Tool) => void;
 	/** Opens a placed library drawing in the library (its style bar button, or a double-click). */
 	onEditSymbol?: (libraryId: string) => void;
@@ -264,6 +282,8 @@ export function createDrawingLayer(options: {
 			? store.addDrawing(owner.boardId, drawing, options.page()?.id)
 			: store.addToLibraryDrawing(owner.libraryId, drawing);
 	};
+	/** The tools for the owner: areas group cards, so only boards have them. */
+	const tools = () => ("boardId" in options.owner() ? TOOLS : TOOLS.filter((t) => t.tool !== "area"));
 	const find = (id: string): Drawing | undefined => (draft?.id === id ? draft : drawings().find((d) => d.id === id));
 
 	function render(): void {
@@ -276,7 +296,9 @@ export function createDrawingLayer(options: {
 
 	function draw(): void {
 		// The viewer leaves out other pages' drawings; the editor shows them faded (see drawingNode).
-		const shown = drawings()
+		// Areas lie below the other drawings, so they never cover what's in them.
+		const all = drawings();
+		const shown = [...all.filter(isArea), ...all.filter((d) => !isArea(d))]
 			.filter((d) => !readOnly || onPage(d.id))
 			.map((d) => (draft?.id === d.id ? draft : groupMove?.ids.has(d.id) ? moveDrawing(d, groupMove.dx, groupMove.dy) : d))
 			.flatMap((d) => erased?.get(d.id)?.map((points) => ({ ...d, points })) ?? [d]);
@@ -327,8 +349,9 @@ export function createDrawingLayer(options: {
 				return;
 			}
 
-			select(id);
 			const original = find(id);
+			if (original && isArea(original) && options.onAreaPress) return options.onAreaPress(e, id);
+			select(id);
 			if (!original) return;
 			const zoom = options.zoom();
 			let moving = false;
@@ -369,8 +392,10 @@ export function createDrawingLayer(options: {
 
 	/** Outline around the selected drawing, with handles to resize boxes or move line ends. */
 	function selectionOverlay(): SVGElement[] {
-		const selected = selectedId ? find(selectedId) : undefined;
-		if (readOnly || !selected) return [];
+		const found = selectedId ? find(selectedId) : undefined;
+		if (readOnly || !found) return [];
+		// A selected area moves with what lies in it (see previewMove), its handles along with it.
+		const selected = groupMove?.ids.has(found.id) ? moveDrawing(found, groupMove.dx, groupMove.dy) : found;
 		const zoom = options.zoom();
 		const size = 9 / zoom;
 		const outline = outlineOf(selected);
@@ -425,7 +450,7 @@ export function createDrawingLayer(options: {
 	function editor(id: string): SVGForeignObjectElement {
 		const box = find(id) as BoxDrawing;
 		const input = el("textarea", {
-			className: `drawing-editor size-${box.textSize} ${box.kind === "text" ? "free" : "centered"}`,
+			className: `drawing-editor size-${box.textSize} ${textPlacement(box)}`,
 			value: box.text,
 			ariaLabel: text.tools.text,
 		});
@@ -507,7 +532,7 @@ export function createDrawingLayer(options: {
 		const pen: Point[] = [start];
 		const at = (dx: number, dy: number): Point => ({ x: start.x + dx / zoom, y: start.y + dy / zoom });
 		const shape = (end: Point): NewDrawing => {
-			if (kind === "rect" || kind === "ellipse") {
+			if (kind === "rect" || kind === "ellipse" || kind === "area") {
 				return { kind, ...normalizeRect(start, end), color, text: "", textSize: "m" };
 			}
 			return kind === "pen" ? { kind, points: [...pen], color, penStyle } : { kind, points: [start, end], color };
@@ -534,7 +559,7 @@ export function createDrawingLayer(options: {
 				if (kind === "pen") {
 					// Simplified by screen distance, so strokes drawn zoomed in keep their detail.
 					created = dragged ? { kind, points: simplifyStroke(pen, 2 / zoom), color, penStyle } : null;
-				} else if (kind === "rect" || kind === "ellipse") {
+				} else if (kind === "rect" || kind === "ellipse" || kind === "area") {
 					const box = dragged ? normalizeRect(start, at(dx, dy)) : { ...start, ...DEFAULT_SIZE[kind] };
 					created = {
 						kind,
@@ -551,6 +576,9 @@ export function createDrawingLayer(options: {
 				const added = created && add(created);
 				if (kind === "pen") {
 					draw(); // the pen stays active for the next stroke
+				} else if (added && kind === "area") {
+					setTool("select");
+					startEditing(added.id); // name it right away
 				} else {
 					setTool("select");
 					if (added) select(added.id);
@@ -669,7 +697,7 @@ export function createDrawingLayer(options: {
 				toolsCollapsed ? "▾" : "▴",
 			),
 			// Folded, CSS shows only the current tool (the shortcut keys still switch tools).
-			...TOOLS.map(({ tool: t, icon, key }) => {
+			...tools().map(({ tool: t, icon, key }) => {
 				const button = el(
 					"button",
 					{
@@ -774,7 +802,7 @@ export function createDrawingLayer(options: {
 			if (tool !== "select") setTool("select");
 			else if (selectedId) select(null);
 		} else {
-			const shortcut = TOOLS.find((t) => t.key === e.key.toLowerCase());
+			const shortcut = tools().find((t) => t.key === e.key.toLowerCase());
 			if (shortcut) setTool(shortcut.tool);
 		}
 	}

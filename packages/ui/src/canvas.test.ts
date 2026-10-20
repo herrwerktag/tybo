@@ -585,6 +585,54 @@ test("dragging on the empty board frames cards and drawings to select them; a cl
 	assert.equal(view.querySelectorAll(".drawings .selection-outline").length, 0);
 });
 
+test("a group is drawn with its tool and named right away", async () => {
+	const { store, view } = await setup();
+	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "g", bubbles: true }));
+	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;
+	press(surface, 10, 10, 300, 200);
+
+	const [area] = store.data.boards[0]!.drawings;
+	assert.deepEqual(area && [area.kind, "width" in area && area.width, "height" in area && area.height], ["area", 300, 200]);
+	const input = view.querySelector<HTMLTextAreaElement>(".drawings textarea.drawing-editor.area-name")!;
+	input.value = "Team";
+	input.dispatchEvent(new FocusEvent("blur"));
+	assert.equal(store.data.boards[0]!.drawings[0]?.kind === "area" && store.data.boards[0]!.drawings[0].text, "Team");
+	assert.equal(view.querySelector(".drawings .drawing-label.area-name")?.textContent, "Team");
+});
+
+test("dragging a group moves the cards and drawings lying in it along, in one undo step", async () => {
+	const { store, view: first, card } = await setup();
+	const boardId = store.data.boards[0]!.id;
+	const other = store.data.boards[0]!.cards.find((c) => c.id !== card.id)!; // Herbert's card at (400, 100): outside
+	const box = store.addDrawing(boardId, { kind: "rect", x: 120, y: 300, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
+	// Made last, the group is still drawn below the box.
+	const area = store.addDrawing(boardId, { kind: "area", x: 72, y: 72, width: 312, height: 312, color: "#c4dafa", text: "Team", textSize: "m" });
+	first.remove();
+	const view = canvasView(store, { readOnly: false });
+	document.body.append(view);
+	assert.deepEqual([...view.querySelectorAll(".drawings g.drawing")].map((g) => g.getAttribute("data-id")), [area.id, box.id]);
+
+	// Pressing redraws the drawings; the surface captures the pointer (as the browser would send it there).
+	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;
+	const pointer = (target: Element, type: string, x: number, y: number) =>
+		target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, clientX: x, clientY: y }));
+	pointer(view.querySelector(`.drawings g[data-id="${area.id}"] rect`)!, "pointerdown", 0, 0);
+	pointer(surface, "pointermove", 48, 24);
+	pointer(surface, "pointerup", 48, 24);
+	const drawings = () => store.data.boards[0]!.drawings;
+	assert.deepEqual(
+		[savedCard(store, card.id), savedCard(store, other.id), ...drawings()].map((i) => [i && "x" in i && i.x, i && "y" in i && i.y]),
+		[[148, 124], [400, 100], [168, 324], [120, 96]],
+	);
+	assert.deepEqual(selectedCards(view), [], "only the group is selected");
+
+	store.undo();
+	assert.deepEqual(
+		[savedCard(store, card.id), ...drawings()].map((i) => [i && "x" in i && i.x, i && "y" in i && i.y]),
+		[[100, 100], [120, 300], [72, 72]],
+	);
+});
+
 test("the middle button pans instead of selecting; Escape clears a selection", async () => {
 	const { store, view } = await setup();
 	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;

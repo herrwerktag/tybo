@@ -3,8 +3,8 @@
 import type { Point, Rect } from "@tybo/core";
 import { hasRect, type Drawing, type PathDrawing } from "@tybo/core";
 
-/** The canvas tools: select (and move, resize, edit), draw one kind of drawing, or erase pen strokes. */
-export type Tool = "select" | "rect" | "ellipse" | "line" | "arrow" | "text" | "pen" | "eraser";
+/** The canvas tools: select (and move, resize, edit), draw one kind of drawing (or a group), or erase pen strokes. */
+export type Tool = "select" | "rect" | "ellipse" | "area" | "line" | "arrow" | "text" | "pen" | "eraser";
 
 /** Boxes never get smaller than this, so they stay visible and grabbable. */
 export const MIN_BOX_SIZE = 12;
@@ -90,6 +90,26 @@ export function drawingBounds(drawing: Drawing): Rect {
 	const x = Math.min(...xs);
 	const y = Math.min(...ys);
 	return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+}
+
+/**
+ * What lies in an area: the cards and drawings whose middle is inside it (not the area itself). Areas inside it count,
+ * and so does what lies in them.
+ */
+export function areaContents(
+	area: Drawing & Rect,
+	cards: readonly (Rect & { id: string })[],
+	drawings: readonly Drawing[],
+): { cardIds: Set<string>; drawingIds: Set<string> } {
+	const inside = (r: Rect) => {
+		const x = r.x + r.width / 2;
+		const y = r.y + r.height / 2;
+		return x >= area.x && x <= area.x + area.width && y >= area.y && y <= area.y + area.height;
+	};
+	return {
+		cardIds: new Set(cards.filter(inside).map((c) => c.id)),
+		drawingIds: new Set(drawings.filter((d) => d.id !== area.id && inside(drawingBounds(d))).map((d) => d.id)),
+	};
 }
 
 /** The smallest box containing all the drawings, or null when there are none. */
