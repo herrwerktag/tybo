@@ -707,6 +707,7 @@ test("Analyses: an analysis set up step by step lists the rows grouped, is saved
 	assert.deepEqual(headings, [`Developer${text.analysisCount(1)}`, `${text.analysisNoValue("Responsible")}${text.analysisCount(1)}`]);
 	const rows = [...root.querySelectorAll(".analysis-result tbody tr")].map((tr) => [...tr.querySelectorAll("td")].map((td) => td.textContent));
 	assert.deepEqual(rows, [["Build", "Delivery"], ["Sort", "Delivery"]]);
+	assert.ok(byText(root, ".analysis-result .section-header button", text.exportAnalysisMarkdown), "the result can be exported");
 
 	const saved = await readSaved();
 	assert.deepEqual(saved.analyses.map(({ name, typeId, groups, columns }) => ({ name, typeId, groups, columns })), [

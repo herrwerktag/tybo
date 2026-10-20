@@ -90,12 +90,20 @@ function entitySection(
  * start of a line is escaped, so free text never reads as a heading of its own.
  */
 function field(label: string, value: string): string {
-	const lines = value.trim().split(/\r?\n/).map((line) => line.replace(/^(\s*)#/, "$1\\#"));
+	const lines = escapeHeadings(value.trim()).split("\n");
 	return lines.length === 1 ? `${label}: ${lines[0]}` : [`${label}:`, ...lines.map((line) => `  ${line}`)].join("\n");
 }
 
+/** The lines of free text with a "#" at their start escaped, so none reads as a heading of its own. */
+export function escapeHeadings(value: string): string {
+	return value
+		.split(/\r?\n/)
+		.map((line) => line.replace(/^(\s*)#/, "$1\\#"))
+		.join("\n");
+}
+
 /** Entity names, made unique within each type: the second "Dune" is "Dune (2)", and so on. */
-function uniqueNames(entities: readonly Entity[]): Map<string, string> {
+export function uniqueNames(entities: readonly Entity[]): Map<string, string> {
 	const seen = new Map<string, number>();
 	return new Map(
 		entities.map((e) => {
