@@ -30,8 +30,9 @@ export function pathLabel(types: readonly EntityType[], typeId: string, path: re
 
 /**
  * The result of an analysis as Markdown: its groups as headings, nested like in the Analyses tab, and in them a
- * section per row with what each column leads to and the row's description. After them, every entity a column names
- * that isn't a row itself, once, with its description. Entities are named by type and name, like in the text export.
+ * section per row with its content, what each column leads to and its description. After them, every entity a column
+ * names that isn't a row itself, once, with its content and description. Entities are named by type and name, like in
+ * the text export.
  */
 export function analysisMarkdown(data: Pick<AppData, "types" | "entities">, analysis: Analysis, date: string): string {
 	const title = `# ${text.analysisExportTitle(analysis.name, date)}`;
@@ -52,6 +53,8 @@ export function analysisMarkdown(data: Pick<AppData, "types" | "entities">, anal
 
 	const rowSection = (row: AnalysisRow, depth: number): string => {
 		const lines = [`${heading(depth)} ${mentions.get(row.entity.id)!}`];
+		const content = contentText(row.entity);
+		if (content) lines.push(content);
 		const cells = row.cells.map((values, i) => {
 			for (const value of values) if (value.entityId !== null) named.add(value.entityId);
 			return `- ${headers[i]}: ${values.length > 0 ? values.map(mention).join(", ") : "—"}`;
@@ -76,11 +79,16 @@ export function analysisMarkdown(data: Pick<AppData, "types" | "entities">, anal
 	if (mentioned.length > 0) {
 		sections.push("---", `## ${text.analysisExportMentioned}`);
 		for (const entity of mentioned) {
-			const description = descriptionText(entity, types.get(entity.typeId)!, mentions);
-			sections.push([`### ${mentions.get(entity.id)!}`, ...(description ? [description] : [])].join("\n\n"));
+			const texts = [contentText(entity), descriptionText(entity, types.get(entity.typeId)!, mentions)].filter((t) => t !== "");
+			sections.push([`### ${mentions.get(entity.id)!}`, ...texts].join("\n\n"));
 		}
 	}
 	return `${sections.join("\n\n")}\n`;
+}
+
+/** The entity's content, as on its card, with no line reading as a heading; empty when it has none. */
+function contentText(entity: Entity): string {
+	return escapeHeadings(entity.content.trim());
 }
 
 /** The entity's description with {{Property}} filled in (references by type and name, "—" when empty) and no line

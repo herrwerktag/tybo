@@ -18,11 +18,18 @@ const reference = (typeIds: string[]) => ({
 	kind: "reference" as const,
 	reference: { typeIds, multiple: true, arrow: "to" as const, lineLabel: "", inverseLabel: "" },
 });
-const entity = (id: string, typeId: string, name: string, values: AppData["entities"][number]["values"] = {}, description = "") => ({
+const entity = (
+	id: string,
+	typeId: string,
+	name: string,
+	values: AppData["entities"][number]["values"] = {},
+	description = "",
+	content = "",
+) => ({
 	id,
 	typeId,
 	name,
-	content: "",
+	content,
 	description,
 	tags: [],
 	values,
@@ -54,19 +61,23 @@ const data: Pick<AppData, "types" | "entities"> = {
 			"Rechnung prüfen",
 			{ responsible: ["r1", "r2"], needs: ["x1", "x2"], status: "offen" },
 			"{{Status}}, mit {{Benötigt}}\n# Schritte",
+			"Gegen die Bestellung prüfen.\n# Notiz",
 		),
 		entity("a2", "activity", "Zahlung anweisen"),
 		entity("r1", "role", "Buchhaltung", {}, "Bucht."),
 		entity("r2", "role", "Einkauf"),
-		entity("x1", "artifact", "Rechnung", {}, "Die Rechnung."),
+		entity("x1", "artifact", "Rechnung", {}, "Die Rechnung.", "Als PDF."),
 		entity("x2", "artifact", "Rechnung"),
 	],
 };
 
-test("an analysis as Markdown: its groups as headings, a section per row with its columns and description, then the entities the columns name", () => {
+test("an analysis as Markdown: its groups as headings, a section per row with its content, columns and description, then the entities the columns name", () => {
 	setLanguage("de");
 	try {
 		const row = `### Aktivität „Rechnung prüfen“
+
+Gegen die Bestellung prüfen.
+\\# Notiz
 
 - Benötigt: Artefakt „Rechnung“, Artefakt „Rechnung (2)“
 - Status: offen
@@ -98,6 +109,8 @@ ${row}
 
 ### Artefakt „Rechnung“
 
+Als PDF.
+
 Die Rechnung.
 
 ### Artefakt „Rechnung (2)“
@@ -115,6 +128,9 @@ test("without grouping the rows are sections of their own; without columns namin
 		`# Prüfung (as of 2026-10-21)
 
 ## Aktivität "Rechnung prüfen"
+
+Gegen die Bestellung prüfen.
+\\# Notiz
 
 - Status: offen
 
