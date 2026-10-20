@@ -391,6 +391,24 @@ test("the View tab exports the current board as an HTML file with the viewer ins
 	assert.match(html, /"name":"Dune"/);
 });
 
+test("the View tab exports the current board for draw.io", async () => {
+	const data = structuredClone(library) as { boards: unknown[] };
+	data.boards = [{ id: "b", name: "Shelf", cards: [{ id: "c", entityId: "01J00000000000000000000000", x: 0, y: 0, width: 240, height: 160 }], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] }];
+	const app = await startApp(data, "#view");
+	const downloads: Blob[] = [];
+	const createObjectURL = URL.createObjectURL;
+	URL.createObjectURL = (blob: Blob) => (downloads.push(blob), "blob:export");
+	try {
+		app.querySelector<HTMLButtonElement>(`button[title="${text.exportDrawio}"]`)!.click();
+	} finally {
+		URL.createObjectURL = createObjectURL;
+	}
+	assert.equal(downloads[0]?.type, "application/xml");
+	const xml = await downloads[0]!.text();
+	assert.match(xml, /<diagram id="b" name="Shelf">/);
+	assert.match(xml, /<UserObject id="card-c" label="[^"]*Dune/);
+});
+
 test("the workspace menu exports the workspace as a text file", async () => {
 	const root = await startApp(library);
 	const downloads: Blob[] = [];
