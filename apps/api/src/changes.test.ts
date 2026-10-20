@@ -72,11 +72,14 @@ function state(): AppData {
 				drawings: [{ id: "lib-rect", kind: "rect", x: 0, y: 0, width: 20, height: 10.5, color: "#f6e8a6", text: "★", textSize: "l" }],
 			},
 		],
+		analyses: [
+			{ id: "ana-1", name: "Rollen", typeId: null, groups: [[{ propertyId: "gone", direction: "inverse" }]], columns: [] },
+		],
 	};
 }
 
 /** A workspace before its first save: nothing in it, not even a board. */
-const empty = (): AppData => ({ types: [], entities: [], boards: [], library: [] });
+const empty = (): AppData => ({ types: [], entities: [], boards: [], library: [], analyses: [] });
 
 /** The whole situation of a test: the storage against the database, the API over it, a workspace of the
  * test's own (no other test sees its rows), and a connection of the tests' own to look into the tables

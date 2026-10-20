@@ -102,6 +102,7 @@ function asAppData(data: Record<string, unknown>): AppData {
 		entities: list(data.entities),
 		boards: list(data.boards).map((board: Partial<Board>) => ({ ...board, cards: list(board.cards), drawings: list(board.drawings) })),
 		library: list(data.library),
+		analyses: list(data.analyses),
 	} as AppData;
 }
 
@@ -120,6 +121,7 @@ function applyChanges(data: AppData, changes: readonly Change[]): AppData {
 	const types = placed(data.types);
 	const entities = placed(data.entities);
 	const library = placed(data.library);
+	const analyses = placed(data.analyses);
 	const boards = new Map(
 		data.boards.map((board, position) => [
 			board.id,
@@ -140,6 +142,9 @@ function applyChanges(data: AppData, changes: readonly Change[]): AppData {
 				break;
 			case "library":
 				set(library, unit.id, unit.after);
+				break;
+			case "analysis":
+				set(analyses, unit.id, unit.after);
 				break;
 			case "board": {
 				if (!unit.after) {
@@ -177,5 +182,6 @@ function applyChanges(data: AppData, changes: readonly Change[]): AppData {
 			.sort((a, b) => a.position - b.position)
 			.map(({ board, cards, drawings }) => ({ ...board, cards: ordered(cards), drawings: ordered(drawings) })),
 		library: ordered(library),
+		analyses: ordered(analyses),
 	};
 }

@@ -166,6 +166,25 @@ export const SQLITE_MIGRATIONS: readonly Migration[] = [
 			if (columns.has("view_frame_id")) db.exec("alter table boards drop column view_frame_id");
 		},
 	},
+	{
+		version: 6,
+		up(db) {
+			// As Postgres's step 9.
+			db.exec(`
+				create table analyses (
+					workspace_id text not null references workspaces(id) on delete cascade,
+					id text not null,
+					position integer not null,
+					name text,
+					type_id text,
+					group_paths text,
+					column_paths text,
+					updated_at text not null default current_timestamp,
+					primary key (workspace_id, id)
+				);
+			`);
+		},
+	},
 ];
 
 /** The table holding each kind of unit, one row per unit. */
@@ -173,6 +192,7 @@ const TABLES: Record<Change["kind"], string> = {
 	type: "entity_types",
 	entity: "entities",
 	library: "library_drawings",
+	analysis: "analyses",
 	board: "boards",
 	card: "cards",
 	drawing: "drawings",
@@ -241,6 +261,11 @@ export function sqliteStorage(path: string): SqliteStorage {
 				...row,
 				tags: parsed(row.tags),
 				drawings: parsed(row.drawings),
+			})),
+			analyses: all("select id, name, type_id, group_paths, column_paths from analyses where workspace_id = ? order by position, id").map((row) => ({
+				...row,
+				group_paths: parsed(row.group_paths),
+				column_paths: parsed(row.column_paths),
 			})),
 		});
 	};
@@ -317,6 +342,18 @@ export function sqliteStorage(path: string): SqliteStorage {
 						position = excluded.position, name = excluded.name, tags = excluded.tags, drawings = excluded.drawings,
 						updated_at = current_timestamp`,
 					ws, item.id, unit.after.position, plain(item.name), json(item.tags), json(item.drawings),
+				);
+				return;
+			}
+			case "analysis": {
+				const item = unit.after.value;
+				run(
+					`insert into analyses (workspace_id, id, position, name, type_id, group_paths, column_paths, updated_at)
+					values (?, ?, ?, ?, ?, ?, ?, current_timestamp)
+					on conflict (workspace_id, id) do update set
+						position = excluded.position, name = excluded.name, type_id = excluded.type_id, group_paths = excluded.group_paths,
+						column_paths = excluded.column_paths, updated_at = current_timestamp`,
+					ws, item.id, unit.after.position, plain(item.name), plain(item.typeId), json(item.groups), json(item.columns),
 				);
 				return;
 			}

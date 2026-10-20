@@ -26,6 +26,8 @@ import {
 	referencedIds,
 	type Relation,
 	type AppData,
+	type Analysis,
+	type PathStep,
 	PEN_STYLES,
 	TEXT_SIZES,
 	hasRect,
@@ -59,7 +61,7 @@ export type Store = Awaited<ReturnType<typeof createStore>>;
 const HISTORY_LIMIT = 100;
 
 /** The format of the saved data. When it changes, raise this and add the step from the old version to MIGRATIONS. */
-export const DATA_VERSION = 6;
+export const DATA_VERSION = 7;
 
 type SavedData = Record<string, unknown>;
 
@@ -90,6 +92,8 @@ export const MIGRATIONS: Readonly<Record<number, (data: SavedData) => SavedData>
 	// Version 6 shows steps and boards in view frames instead of each step with its own pan/zoom; normalizeBoard()
 	// turns the pan/zoom of the steps from before into frames, and gives each board a frame of its own pan/zoom.
 	5: (data) => data,
+	// Version 7 adds analyses; normalize() gives data without them none.
+	6: (data) => data,
 };
 
 /** The version saved data says it's in; data without a (valid) version is from before versions existed. */
@@ -208,7 +212,7 @@ function linkOnBoard(data: AppData, sourceCardId: string, link: Link, other: Ent
 }
 
 function emptyData(): AppData {
-	return { types: [], entities: [], boards: [newBoard("Board 1")], library: [] };
+	return { types: [], entities: [], boards: [newBoard("Board 1")], library: [], analyses: [] };
 }
 
 const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -438,6 +442,35 @@ function normalizeLibrary(raw: unknown): LibraryDrawing[] {
 	});
 }
 
+/** A path's well-formed steps. */
+function normalizePath(raw: unknown): PathStep[] {
+	if (!Array.isArray(raw)) return [];
+	return raw.flatMap((step: unknown) =>
+		isObject(step) && typeof step.propertyId === "string" && (step.direction === "forward" || step.direction === "inverse")
+			? [{ propertyId: step.propertyId, direction: step.direction }]
+			: [],
+	);
+}
+
+/** The well-formed analyses, each with only well-formed paths. Steps whose property is gone stay: the analysis shows
+ * them as not fitting, so they can be fixed. */
+function normalizeAnalyses(raw: unknown): Analysis[] {
+	if (!Array.isArray(raw)) return [];
+	return raw.flatMap((item: unknown, i) => {
+		if (!isObject(item) || typeof item.id !== "string") return [];
+		const paths = (value: unknown) => (Array.isArray(value) ? value.map(normalizePath) : []);
+		return [
+			{
+				id: item.id,
+				name: typeof item.name === "string" && item.name.trim() !== "" ? item.name : `Analysis ${i + 1}`,
+				typeId: typeof item.typeId === "string" ? item.typeId : null,
+				groups: paths(item.groups),
+				columns: paths(item.columns),
+			},
+		];
+	});
+}
+
 /** Re-validates every entity's values against its type's current properties, e.g. dropping references to deleted entities,
  * and drops cards of deleted entities and placed drawings whose library drawing was deleted. */
 function reconcile(data: AppData): AppData {
@@ -532,6 +565,7 @@ function storedStand(data: AppData): AppData {
 			drawings: Array.isArray(board.drawings) ? board.drawings : [],
 		})),
 		library: Array.isArray(data.library) ? data.library : [],
+		analyses: Array.isArray(data.analyses) ? data.analyses : [],
 	};
 }
 
@@ -548,6 +582,7 @@ function normalize(data: AppData): AppData {
 	return {
 		boards: normalizeBoards(data),
 		library: normalizeLibrary(data.library),
+		analyses: normalizeAnalyses(data.analyses),
 		types: data.types.map((type) => ({
 			...type,
 			color: colorFor(type.color),
@@ -1168,6 +1203,26 @@ export async function createStore(port: DataPort, workspaceId: string) {
 		libraryUses(libraryId: string): { count: number; boards: number } {
 			const counts = data.boards.map((b) => b.drawings.filter((d) => isSymbol(d) && d.libraryId === libraryId).length);
 			return { count: counts.reduce((sum, n) => sum + n, 0), boards: counts.filter((n) => n > 0).length };
+		},
+
+		/** Adds an analysis without a type yet. */
+		addAnalysis(name: string): Analysis {
+			const item: Analysis = { id: ulid(), name: name.trim() || `Analysis ${data.analyses.length + 1}`, typeId: null, groups: [], columns: [] };
+			change({ ...data, analyses: [...data.analyses, item] });
+			return item;
+		},
+
+		/** Renames the analysis or sets its type, groups or columns; an empty name is ignored. */
+		updateAnalysis(analysisId: string, patch: Partial<Omit<Analysis, "id">>): void {
+			const name = patch.name?.trim();
+			change({
+				...data,
+				analyses: data.analyses.map((item) => (item.id === analysisId ? { ...item, ...patch, name: name || item.name } : item)),
+			});
+		},
+
+		deleteAnalysis(analysisId: string): void {
+			change({ ...data, analyses: data.analyses.filter((item) => item.id !== analysisId) });
 		},
 
 		/** Pan and zoom are saved, but not part of the undo history. */

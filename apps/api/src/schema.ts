@@ -191,6 +191,24 @@ export const MIGRATIONS: readonly Migration[] = [
 			await tx`alter table boards add column if not exists view_frame jsonb, drop column if exists view_frame_id`;
 		},
 	},
+	{
+		version: 9,
+		name: "analyses",
+		async up(tx) {
+			// An analysis is one row; its paths name types and properties by id, and may outlive them.
+			await tx`create table analyses (
+				workspace_id text not null references workspaces(id) on delete cascade,
+				id text not null,
+				position int not null,
+				name text,
+				type_id text,
+				group_paths jsonb,
+				column_paths jsonb,
+				updated_at timestamptz not null default now(),
+				primary key (workspace_id, id)
+			)`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */
