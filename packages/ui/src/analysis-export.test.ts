@@ -77,17 +77,15 @@ offen, mit Artefakt „Rechnung“, Artefakt „Rechnung (2)“
 			analysisMarkdown(data, analysis({ groups: [step("responsible")], columns: [step("needs"), step("status")] }), "2026-10-21"),
 			`# Prüfung (Stand 2026-10-21)
 
-2 Zeilen
-
-## Buchhaltung (1 Zeile)
+## Buchhaltung
 
 ${row}
 
-## Einkauf (1 Zeile)
+## Einkauf
 
 ${row}
 
-## Ohne Verantwortlicher (1 Zeile)
+## Ohne Verantwortlicher
 
 ### Aktivität „Zahlung anweisen“
 
@@ -116,8 +114,6 @@ test("without grouping the rows are sections of their own; without columns namin
 		analysisMarkdown(data, analysis({ columns: [step("status")] }), "2026-10-21"),
 		`# Prüfung (as of 2026-10-21)
 
-2 rows
-
 ## Aktivität "Rechnung prüfen"
 
 - Status: offen
@@ -134,7 +130,7 @@ offen, mit Artefakt "Rechnung", Artefakt "Rechnung (2)"
 
 test("deeply nested groups don't go below the sixth heading level; an analysis without a type is only its title", () => {
 	const deep = analysisMarkdown(data, analysis({ groups: Array.from({ length: 5 }, () => step("responsible")) }), "2026-10-21");
-	assert.match(deep, /^###### Buchhaltung \(1 row\)$/m);
+	assert.match(deep, /^###### Buchhaltung$/m);
 	assert.match(deep, /^###### Aktivität "Rechnung prüfen"$/m);
 	assert.doesNotMatch(deep, /#######/);
 	assert.equal(analysisMarkdown(data, analysis({ typeId: null }), "2026-10-21"), "# Prüfung (as of 2026-10-21)\n");

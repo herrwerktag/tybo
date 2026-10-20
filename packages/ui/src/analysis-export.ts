@@ -63,13 +63,12 @@ export function analysisMarkdown(data: Pick<AppData, "types" | "entities">, anal
 	};
 	const groupSections = (groups: AnalysisGroup[], level: number): string[] =>
 		groups.flatMap((group) => [
-			`${heading(2 + level)} ${group.value ? group.value.label : text.analysisNoValue(pathLabel(data.types, type.id, levels[level]!))} (${text.analysisCount(group.count)})`,
+			`${heading(2 + level)} ${group.value ? group.value.label : text.analysisNoValue(pathLabel(data.types, type.id, levels[level]!))}`,
 			...(group.groups.length > 0 ? groupSections(group.groups, level + 1) : group.rows.map((row) => rowSection(row, 3 + level))),
 		]);
 
 	const sections = [
 		title,
-		text.analysisCount(result.count),
 		...(result.groups.length > 0 ? groupSections(result.groups, 0) : result.rows.map((row) => rowSection(row, 2))),
 	];
 	const rowIds = new Set(entities.filter((e) => e.typeId === type.id).map((e) => e.id));
