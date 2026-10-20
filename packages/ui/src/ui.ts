@@ -33,7 +33,8 @@ import { downloadFile, el, safeFileName, tagFilter, typeDot } from "./dom.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
 import { standaloneViewHtml } from "./standalone.js";
 import { workspaceText } from "./text-export.js";
-import { boardDrawio } from "./drawio-export.js";
+import { boardDrawioFiles } from "./drawio-export.js";
+import { zipFiles } from "./zip.js";
 import type { Store } from "@tybo/core";
 import { exportWorkspace, readWorkspaceFile, type Workspaces } from "@tybo/core";
 
@@ -288,9 +289,12 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 		downloadFile(`${safeFileName(name)}.html`, standaloneViewHtml(viewScript, store.data, boardId, language), "text/html");
 	}
 
+	/** One draw.io file, or with groups on the board a ZIP with one more file per group. */
 	function exportDrawio(boardId: string): void {
 		const name = store.data.boards.find((b) => b.id === boardId)?.name ?? "";
-		downloadFile(`${safeFileName(name)}.drawio`, boardDrawio(store.data, boardId), "application/xml");
+		const files = boardDrawioFiles(store.data, boardId);
+		if (files.length === 1) downloadFile(files[0]!.name, files[0]!.contents, "application/xml");
+		else downloadFile(`${safeFileName(name)}.zip`, zipFiles(files), "application/zip");
 	}
 
 	function renderBanner(): void {

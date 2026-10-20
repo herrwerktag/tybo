@@ -2,7 +2,8 @@ import "./test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AppData, Board, PropertyDef } from "@tybo/core";
-import { boardDrawio } from "./drawio-export.js";
+import { boardDrawio, boardDrawioFiles } from "./drawio-export.js";
+import { text } from "./i18n.js";
 
 const prop = (id: string, name: string, more: Partial<PropertyDef> = {}): PropertyDef => ({
 	id,
@@ -139,4 +140,64 @@ test("cards of deleted entities are left out", () => {
 	const doc = parse(boardDrawio(gone, "b"));
 	assert.equal(doc.querySelector('[id="card-cr"]'), null);
 	assert.equal(doc.querySelectorAll("mxCell[edge]").length, 1);
+});
+
+const area = (id: string, name: string, x: number, y: number, width: number, height: number) =>
+	({ id, kind: "area" as const, x, y, width, height, color: "#c4dafa", text: name, textSize: "m" as const });
+
+/** The board with groups: "Rechnungswesen" around the activity and its role, "Kern" in it around the activity only,
+ * another "Rechnungswesen" around the far role card, and an empty group without a name. */
+const grouped = structuredClone(data);
+grouped.boards[0]!.drawings = [
+	area("outer", "Rechnungswesen", -24, -48, 792, 300),
+	area("kern", "Kern", -12, -24, 300, 240),
+	area("far", "Rechnungswesen", 2376, -24, 288, 216),
+	area("empty", " ", 0, 1000, 240, 240),
+];
+const geometryOf = (doc: Document, id: string) =>
+	["x", "y"].map((a) => cell(doc, id).querySelector("mxGeometry")!.getAttribute(a));
+const parentOf = (doc: Document, id: string) => (cell(doc, id).tagName === "UserObject" ? cell(doc, id).firstElementChild! : cell(doc, id)).getAttribute("parent");
+
+test("without groups, the board is exported as one file", () => {
+	assert.deepEqual(boardDrawioFiles(data, "b").map((f) => f.name), ["Prozess -Rechnung-.drawio"]);
+	assert.equal(boardDrawioFiles(data, "b")[0]!.contents, boardDrawio(data, "b"));
+});
+
+test("groups are named containers; cards and groups hang in the smallest group around their middle, placed relative to it", () => {
+	const doc = parse(boardDrawio(grouped, "b"));
+	assert.equal(cell(doc, "area-outer").getAttribute("value"), "Rechnungswesen");
+	assert.match(cell(doc, "area-outer").getAttribute("style")!, /container=1;.*fillColor=#c4dafa;/);
+	assert.deepEqual([parentOf(doc, "area-outer"), ...geometryOf(doc, "area-outer")], ["1", "-24", "-48"]);
+	assert.deepEqual([parentOf(doc, "area-kern"), ...geometryOf(doc, "area-kern")], ["area-outer", "12", "24"]);
+	assert.deepEqual([parentOf(doc, "card-ca"), ...geometryOf(doc, "card-ca")], ["area-kern", "12", "24"]);
+	assert.deepEqual([parentOf(doc, "card-cr"), ...geometryOf(doc, "card-cr")], ["area-outer", "504", "48"]);
+	assert.deepEqual([parentOf(doc, "card-cf"), ...geometryOf(doc, "card-cf")], ["1", "0", "480"]);
+	// Containers come before what's in them.
+	const ids = [...doc.querySelectorAll("[id]")].map((n) => n.getAttribute("id"));
+	assert.ok(ids.indexOf("area-outer") < ids.indexOf("area-kern") && ids.indexOf("area-kern") < ids.indexOf("card-ca"));
+	assert.equal(doc.querySelectorAll("mxCell[edge]").length, 2, "lines between groups stay");
+});
+
+test("each group gets a file of its own: what lies in it, from (0, 0); lines out of it are listed instead", () => {
+	const files = boardDrawioFiles(grouped, "b");
+	assert.deepEqual(files.map((f) => f.name), [
+		"Prozess -Rechnung-.drawio",
+		"Rechnungswesen.drawio",
+		"Kern.drawio",
+		"Rechnungswesen 2.drawio",
+		`${text.groupFallbackName} 1.drawio`,
+	]);
+	const outer = parse(files[1]!.contents);
+	assert.equal(outer.querySelector("diagram")!.getAttribute("name"), "Rechnungswesen");
+	assert.deepEqual(geometryOf(outer, "area-outer"), ["0", "0"]);
+	assert.deepEqual([...outer.querySelectorAll("UserObject")].map((n) => n.getAttribute("id")), ["card-ca", "card-cr"]);
+	assert.deepEqual([...outer.querySelectorAll("mxCell[edge]")].map((e) => e.getAttribute("target")), ["card-cr"]);
+	assert.match(label(outer, "card-ca"), />Eingabe<\/td><td><span [^>]*>Rechnung</, "the input's card is outside: listed");
+
+	const kern = parse(files[2]!.contents);
+	assert.deepEqual([...kern.querySelectorAll("[id^=area-]")].map((n) => n.getAttribute("id")), ["area-kern"]);
+	assert.deepEqual(geometryOf(kern, "card-ca"), ["12", "24"]);
+	assert.match(label(kern, "card-ca"), />Verantwortlich<\/td><td><span [^>]*>Buchhaltung</);
+
+	assert.equal(parse(files[4]!.contents).querySelectorAll("UserObject").length, 0, "an empty group is an empty file");
 });

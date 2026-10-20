@@ -13,7 +13,7 @@ export function el<K extends keyof HTMLElementTagNameMap>(
 }
 
 /** Saves text as a file through the browser's download. */
-export function downloadFile(fileName: string, contents: string, type = "application/json"): void {
+export function downloadFile(fileName: string, contents: string | Uint8Array<ArrayBuffer>, type = "application/json"): void {
 	const url = URL.createObjectURL(new Blob([contents], { type }));
 	const link = el("a", { href: url, download: fileName });
 	document.body.append(link); // some browsers only follow links in the page

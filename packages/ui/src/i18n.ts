@@ -227,7 +227,8 @@ const en = {
 	resetView: "Reset view",
 	exportView: "Download this board as an HTML file that shows it like here, without the server",
 	exportDrawioButton: "Export for draw.io",
-	exportDrawio: "Download this board's cards and lines as a draw.io file",
+	exportDrawio: "Download this board's cards and lines as a draw.io file; with groups, as a ZIP with one more file per group",
+	groupFallbackName: "Group",
 
 	// Story mode
 	stories: "Stories",
@@ -536,7 +537,8 @@ const de: Messages = {
 	resetView: "Ansicht zurücksetzen",
 	exportView: "Dieses Board als HTML-Datei herunterladen, die es wie hier zeigt, ohne Server",
 	exportDrawioButton: "Für draw.io exportieren",
-	exportDrawio: "Karten und Linien dieses Boards als draw.io-Datei herunterladen",
+	exportDrawio: "Karten und Linien dieses Boards als draw.io-Datei herunterladen; mit Gruppen als ZIP mit je einer weiteren Datei pro Gruppe",
+	groupFallbackName: "Gruppe",
 
 	stories: "Stories",
 	changeStory: "Eine Story durch dieses Board Schritt für Schritt zeigen, oder das ganze Board",
