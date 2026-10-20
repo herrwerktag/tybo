@@ -1,13 +1,14 @@
 import { safeFileName } from "./dom.js";
 import { areaContents } from "./drawings.js";
 import { text } from "./i18n.js";
+import { renderMarkdown } from "./markdown.js";
 import {
 	cardRows,
 	effectiveCardDisplay,
-	fillPlaceholders,
 	inverseCardRows,
 	isArea,
 	nearest,
+	placeholderProperty,
 	referencedIds,
 	type AppData,
 	type Board,
@@ -24,7 +25,7 @@ import {
 /**
  * A board as a draw.io file: its cards as boxes, where they are on the board, showing what the cards show (type bar,
  * name, properties, content), and the lines of `line` references as edges attached to them, so they stay attached
- * when moved in draw.io. A card's description is its tooltip. Groups (areas) are named containers holding the cards
+ * when moved in draw.io. A card's description is its tooltip, as HTML. Groups (areas) are named containers holding the cards
  * lying in them, so they move together in draw.io too. Like the editor outside a story, the whole board is in; other
  * drawings and stories are left out.
  */
@@ -206,9 +207,13 @@ function cardLabel(entity: Entity, type: EntityType | undefined, rows: readonly 
 	return `<div style="font-family:system-ui,sans-serif;">${bar}${name}${table}${content}</div>`;
 }
 
-/** The description as plain text, its {{Property}} placeholders filled in like in the details panel ("—" when empty). */
+/** The description as HTML (draw.io renders it in the tooltip), its {{Property}} placeholders filled in like in the
+ * details panel ("—" when empty). */
 function description(entity: Entity, type: EntityType | undefined, entityNames: ReadonlyMap<string, string>): string {
-	return fillPlaceholders(entity.description.trim(), type, (prop) => {
+	if (!entity.description.trim()) return "";
+	return renderMarkdown(entity.description, (name) => {
+		const prop = placeholderProperty(type, name);
+		if (!prop) return null;
 		const value = entity.values[prop.id];
 		const shown =
 			prop.kind === "reference"
@@ -216,8 +221,8 @@ function description(entity: Entity, type: EntityType | undefined, entityNames: 
 				: typeof value === "string"
 					? value.trim()
 					: "";
-		return shown || "—";
-	});
+		return [document.createTextNode(shown || "—")];
+	}).innerHTML;
 }
 
 const cellId = (cardId: string) => `card-${cardId}`;
