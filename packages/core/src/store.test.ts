@@ -1343,6 +1343,59 @@ test("data saved before versions existed loads without a problem, and saving goe
 	assert.equal("version" in store.data, false);
 });
 
+test("analyses can be added, changed and deleted, each one undo step, and are saved", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
+	const first = store.addAnalysis(" Rollen ");
+	assert.deepEqual(first, { id: first.id, name: "Rollen", typeId: null, groups: [], columns: [] });
+	const path = [{ propertyId: "p", direction: "inverse" as const }, { propertyId: "q", direction: "forward" as const }];
+	store.updateAnalysis(first.id, { typeId: "t", groups: [path], columns: [[path[1]!]] });
+	store.updateAnalysis(first.id, { name: "  " });
+	const second = store.addAnalysis("");
+	assert.equal(second.name, "Analysis 2");
+
+	const reopened = await open(storage);
+	assert.deepEqual(reopened.data.analyses, [
+		{ id: first.id, name: "Rollen", typeId: "t", groups: [path], columns: [[path[1]]] },
+		{ id: second.id, name: "Analysis 2", typeId: null, groups: [], columns: [] },
+	]);
+
+	store.deleteAnalysis(first.id);
+	assert.deepEqual(store.data.analyses.map((a) => a.name), ["Analysis 2"]);
+	store.undo();
+	assert.deepEqual(store.data.analyses.map((a) => a.name), ["Rollen", "Analysis 2"]);
+	store.undo();
+	store.undo();
+	assert.deepEqual(store.data.analyses[0]!.groups, [], "undoing the change brings back the analysis before it");
+});
+
+test("analyses: data from version 6 gets none; malformed analyses and steps are dropped, steps of deleted properties kept", async () => {
+	const old = await open(memoryStorage({ version: 6, types: [], entities: [], boards: [] }));
+	assert.deepEqual(old.data.analyses, []);
+
+	const store = await open(
+		memoryStorage({
+			version: DATA_VERSION,
+			types: [],
+			entities: [],
+			boards: [],
+			analyses: [
+				{
+					id: "a",
+					name: "",
+					typeId: 3,
+					groups: [[{ propertyId: "gone", direction: "forward" }, { propertyId: "x", direction: "sideways" }, "nonsense"], "no path"],
+					columns: "no list",
+				},
+				{ name: "without id" },
+			],
+		}),
+	);
+	assert.deepEqual(store.data.analyses, [
+		{ id: "a", name: "Analysis 1", typeId: null, groups: [[{ propertyId: "gone", direction: "forward" }], []], columns: [] },
+	]);
+});
+
 test("migrate runs one step per version, in order, from the saved version up", () => {
 	const steps = {
 		0: (d: Record<string, unknown>) => ({ ...d, log: [...(d.log as string[]), "0→1"] }),

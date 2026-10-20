@@ -24,6 +24,7 @@ const TABLES: Record<Change["kind"], string> = {
 	type: "entity_types",
 	entity: "entities",
 	library: "library_drawings",
+	analysis: "analyses",
 	board: "boards",
 	card: "cards",
 	drawing: "drawings",
@@ -174,6 +175,16 @@ async function writeUnit(tx: Queries, ws: string, unit: Change): Promise<void> {
 				on conflict (workspace_id, id) do update set
 					position = excluded.position, name = excluded.name, tags = excluded.tags, drawings = excluded.drawings,
 					updated_at = now()`;
+			return;
+		}
+		case "analysis": {
+			const item = unit.after.value;
+			await tx`insert into analyses (workspace_id, id, position, name, type_id, group_paths, column_paths, updated_at)
+				values (${ws}, ${item.id}, ${unit.after.position}, ${item.name}, ${item.typeId}, ${jsonbParameter(tx, item.groups)},
+					${jsonbParameter(tx, item.columns)}, now())
+				on conflict (workspace_id, id) do update set
+					position = excluded.position, name = excluded.name, type_id = excluded.type_id, group_paths = excluded.group_paths,
+					column_paths = excluded.column_paths, updated_at = now()`;
 			return;
 		}
 		case "board": {

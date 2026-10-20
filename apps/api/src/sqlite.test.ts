@@ -53,10 +53,11 @@ function sample(): AppData {
 			},
 		],
 		library: [{ id: "lib-star", name: "Stern", tags: ["Form"], drawings: [{ id: "lib-rect", kind: "rect", x: 0, y: 0, width: 20, height: 10.5, color: "#f6e8a6", text: "★", textSize: "l" }] }],
+		analyses: [{ id: "ana-1", name: "Rollen", typeId: null, groups: [[{ propertyId: "gone", direction: "inverse" }]], columns: [[]] }],
 	};
 }
 
-const empty = (): AppData => ({ types: [], entities: [], boards: [], library: [] });
+const empty = (): AppData => ({ types: [], entities: [], boards: [], library: [], analyses: [] });
 
 /** A storage on a fresh file of its own; close() closes it and removes the file. */
 async function fresh() {
@@ -76,7 +77,7 @@ async function fresh() {
 test("sqlite: the schema is made once, and survives reopening the file", async () => {
 	const { storage, path, close } = await fresh();
 	try {
-		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5]);
+		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6]);
 		assert.deepEqual(await storage.init(), [], "the second start has nothing left to do");
 		assert.equal(await storage.healthy(), true);
 		await storage.createWorkspace({ id: "ws", name: "Bleibt" }, 1);
@@ -185,7 +186,7 @@ test("sqlite: a board's steps from before become one story, with the board's id;
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [3, 4, 5]);
+		assert.deepEqual(await storage.init(), [3, 4, 5, 6]);
 		const { data } = (await storage.readWorkspace("ws"))!;
 		// Null, not missing: the app makes frames of those steps' pan/zoom.
 		assert.deepEqual(

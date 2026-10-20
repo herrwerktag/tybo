@@ -4,7 +4,7 @@ import { changesBetween, jsonEqual, type Change } from "./changes.js";
 import type { AppData, CanvasCard, Drawing, Entity, EntityType } from "./model.js";
 
 /** A state to build stands from: one type with a text property, two entities, one board with two cards and
- * one drawing, and one library drawing — enough of every unit to change, add and delete one each without touching
+ * one drawing, one library drawing and one analysis — enough of every unit to change, add and delete one each without touching
  * another. */
 function state(): AppData {
 	const type: EntityType = {
@@ -48,6 +48,7 @@ function state(): AppData {
 			},
 		],
 		library: [{ id: "lib-star", name: "Stern", tags: ["Form"], drawings: [{ ...drawing, id: "lib-line" }] }],
+		analyses: [{ id: "ana-notes", name: "Notizen", typeId: type.id, groups: [], columns: [[{ propertyId: "p-note", direction: "forward" }]] }],
 	};
 }
 
@@ -199,4 +200,16 @@ test("library drawings come before the boards whose drawings name them", () => {
 	after.boards[0]!.drawings.push({ id: "draw-moon", kind: "symbol", libraryId: "lib-moon", x: 0, y: 0, width: 50, height: 50 });
 
 	assert.deepEqual(outline(changesBetween(before, after)), ["library:lib-moon", "drawing:draw-moon:board-1"]);
+});
+
+test("an analysis is one unit with its paths; changing one of them touches nothing else", () => {
+	const before = state();
+	const after = structuredClone(before);
+	after.analyses[0]!.groups = [[{ propertyId: "p-note", direction: "forward" }]];
+	after.analyses.push({ id: "ana-new", name: "Neu", typeId: null, groups: [], columns: [] });
+
+	const changes = changesBetween(before, after);
+	assert.deepEqual(outline(changes), ["analysis:ana-notes", "analysis:ana-new"]);
+	const [changed] = changes as [Extract<Change, { kind: "analysis" }>];
+	assert.deepEqual(changed.after!.value.groups, [[{ propertyId: "p-note", direction: "forward" }]]);
 });

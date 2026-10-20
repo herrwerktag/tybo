@@ -12,25 +12,18 @@ import {
 	MIN_FRAME_SIZE,
 	descriptionInView,
 	frameInside,
-	cardRows,
 	effectiveCardDisplay,
-	entityTypeMap,
-	detailRows,
-	placeholderProperty,
-	propertyRow,
 	entityTags,
 	filterEntities,
 	linkCandidates,
 	relationsOf,
 	filterLibrary,
-	inverseCardRows,
 	isArea,
 	isSymbol,
 	referencedIds,
 	snapToGrid,
 	type Board,
 	type CanvasCard,
-	type CardRow,
 	type Relation,
 	type Entity,
 	type EntityType,
@@ -40,6 +33,7 @@ import {
 	type ViewFrame,
 } from "@tybo/core";
 import { renderMarkdown } from "./markdown.js";
+import { cardParts, createCardPreview, entityDetails } from "./entity-card.js";
 import { readPreference, readSession, writePreference, writeSession } from "./preferences.js";
 import type { Store } from "@tybo/core";
 import { defaultViewport, fitRect, screenToWorld, snapZoom, stepZoom, visibleRect, zoomAt, type Viewport } from "@tybo/core";
@@ -49,7 +43,7 @@ const LIBRARY_MIME = "application/x-library-drawing-id";
 const PANEL_COLLAPSED_KEY = "canvas-panel-collapsed";
 /** The widths of the side panel and the details panel, if changed by dragging. */
 export const PANEL_WIDTH_KEY = "canvas-panel-width";
-const DETAILS_WIDTH_KEY = "details-panel-width";
+export const DETAILS_WIDTH_KEY = "details-panel-width";
 /** What the side panel shows: entities or library drawings. */
 const PANEL_TAB_KEY = "canvas-panel-tab";
 /** The tag the side panel's entities are filtered by, if any. */
@@ -979,58 +973,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 
 	const canvasMain = el("div", { className: "canvas-main" });
 	/** Read-only card shown while hovering or focusing a reference tag; in screen space, so zoom doesn't shrink it. */
-	const preview = el("article", { className: "canvas-card card-preview", role: "tooltip", id: "card-preview" });
-	preview.hidden = true;
-	let previewTimer: ReturnType<typeof setTimeout> | undefined;
-
-	function attachPreview(tag: HTMLElement, entityId: string): void {
-		tag.tabIndex = 0;
-		tag.setAttribute("aria-describedby", preview.id);
-		tag.addEventListener("pointerenter", () => {
-			clearTimeout(previewTimer);
-			// A short delay, so moving across a card doesn't flash previews.
-			previewTimer = setTimeout(() => showPreview(tag, entityId), 250);
-		});
-		tag.addEventListener("pointerleave", hidePreview);
-		tag.addEventListener("focus", () => showPreview(tag, entityId));
-		tag.addEventListener("blur", hidePreview);
-	}
-
-	function showPreview(anchor: HTMLElement, entityId: string): void {
-		const entity = store.data.entities.find((e) => e.id === entityId);
-		if (!entity || !anchor.isConnected) return;
-		const type = store.data.types.find((t) => t.id === entity.typeId);
-		const entityNames = new Map(store.data.entities.map((e) => [e.id, e.name]));
-		const { header, body } = cardParts(entity, type, entityNames, () => false, { previews: false });
-		preview.replaceChildren(header, ...(body ? [body] : []));
-		preview.hidden = false;
-
-		// The whole card, as tall as the canvas allows.
-		const gap = 6;
-		const margin = 8;
-		const area = canvasMain.getBoundingClientRect();
-		const tag = anchor.getBoundingClientRect();
-		preview.style.maxHeight = `${area.height - 2 * margin}px`;
-		const { offsetWidth: width, offsetHeight: height } = preview;
-		// Fade the bottom only if even the full canvas height isn't enough.
-		preview.classList.toggle("clipped", !!body && body.scrollHeight > body.clientHeight);
-
-		// Below the tag if it fits, else above; otherwise as low as fits inside the canvas (it may cover the tag,
-		// which is fine because the preview never catches the pointer).
-		const tagTop = tag.top - area.top;
-		const tagBottom = tag.bottom - area.top;
-		let top: number;
-		if (tagBottom + gap + height <= area.height - margin) top = tagBottom + gap;
-		else if (tagTop - gap - height >= margin) top = tagTop - gap - height;
-		else top = Math.max(margin, area.height - margin - height);
-		const left = Math.min(Math.max(margin, tag.left - area.left), area.width - width - margin);
-		Object.assign(preview.style, { left: `${left}px`, top: `${top}px` });
-	}
-
-	function hidePreview(): void {
-		clearTimeout(previewTimer);
-		preview.hidden = true;
-	}
+	const preview = createCardPreview(store, canvasMain);
 
 	/** The entity shown in the details panel, and the card that was selected for it (if it's on this board). */
 	let selected: { entityId: string; cardId: string | null } | null = null;
@@ -1294,22 +1237,6 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			details.replaceChildren();
 			return;
 		}
-		const types = new Map(store.data.types.map((t) => [t.id, t]));
-		const type = types.get(entity.typeId);
-		const entityNames = new Map(store.data.entities.map((e) => [e.id, e.name]));
-		const entityTypes = entityTypeMap(store.data);
-
-		const bar = el(
-			"div",
-			{ className: "card-bar" },
-			el("span", { className: "card-type" }, type?.name ?? ""),
-			el(
-				"button",
-				{ type: "button", className: "card-remove", title: text.closeDetails, ariaLabel: text.closeDetails, onclick: () => select(null) },
-				"×",
-			),
-		);
-		if (type) bar.style.background = type.color;
 		// In the editor: Edit opens the entity's form; for a card on the board, Connect links it with another entity,
 		// existing or new (see openConnect).
 		const actions = readOnly
@@ -1318,58 +1245,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 					...(onEditEntity ? [el("button", { type: "button", title: text.editInData, onclick: () => onEditEntity(entity.id) }, text.edit)] : []),
 					...(selected?.cardId ? [connectButton(entity, selected.cardId)] : []),
 				];
-		const header = el(
-			"header",
-			{ className: "details-header" },
-			bar,
-			el("h2", { className: "details-title" }, entity.name),
-			...(actions.length > 0 ? [el("div", { className: "details-actions" }, ...actions)] : []),
-		);
-
-		const section = (title: string, ...content: Node[]) =>
-			el("section", { className: "details-section" }, el("h3", {}, title), ...content);
-		const rows = detailRows(store.data, entity, entityNames);
-		// A referenced entity as a tag in the color of its type; clicking it shows that entity's details.
-		const refTag = (name: string, entityId: string): HTMLElement => {
-			const tag = el("button", { type: "button", className: "ref-tag", onclick: () => selectEntity(entityId) }, name);
-			const color = types.get(entityTypes.get(entityId) ?? "")?.color;
-			if (color) tag.style.background = color;
-			return tag;
-		};
-		const value = (row: CardRow): HTMLElement => {
-			if (row.values.length === 0) return el("dd", { className: "muted" }, "—");
-			if (row.kind === "text") return el("dd", { className: "details-text" }, ...row.values);
-			if (row.kind === "options") return el("dd", { className: "prop-chips" }, ...row.values.map((v) => el("span", { className: "chip" }, v)));
-			return el("dd", { className: "prop-chips" }, ...row.values.map((name, i) => refTag(name, row.entityIds[i]!)));
-		};
-		// `{{Property}}` in the description: the value as text, references as tags, "—" when empty.
-		const placeholder = (name: string): Node[] | null => {
-			const prop = placeholderProperty(type, name);
-			if (!prop) return null;
-			const row = propertyRow(prop, entity, entityNames);
-			if (row.values.length === 0) return [el("span", { className: "muted" }, "—")];
-			if (row.kind !== "reference") return [document.createTextNode(row.values.join(", "))];
-			return row.values.flatMap((n, i) => [...(i > 0 ? [document.createTextNode(", ")] : []), refTag(n, row.entityIds[i]!)]);
-		};
-
-		details.replaceChildren(
-			header,
-			el(
-				"div",
-				{ className: "details-body" },
-				section(
-					text.description,
-					entity.description.trim()
-						? renderMarkdown(entity.description, placeholder)
-						: el("p", { className: "muted" }, text.noDescription),
-				),
-				...(rows.length > 0
-					? [section(text.properties, el("dl", { className: "details-props" }, ...rows.flatMap((row) => [el("dt", {}, row.label), value(row)])))]
-					: []),
-				...(entity.content.trim() ? [section(text.content, el("p", { className: "details-text" }, entity.content))] : []),
-				el("p", { className: "details-id" }, `${text.id}: `, el("span", { className: "mono" }, entity.id)),
-			),
-		);
+		details.replaceChildren(...entityDetails(store, entity, { actions, onClose: () => select(null), onSelectEntity: selectEntity }));
 	}
 
 	// Escape closes the details panel, the arrow keys page through story mode (the listener removes itself
@@ -1397,7 +1273,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	let appearing = new Set<string>();
 
 	function renderCards(): void {
-		hidePreview(); // its tag is about to be replaced
+		preview.hide(); // its tag is about to be replaced
 		const board = currentBoard();
 		const entities = new Map(store.data.entities.map((e) => [e.id, e]));
 		const entityNames = new Map(store.data.entities.map((e) => [e.id, e.name]));
@@ -1517,81 +1393,6 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		connectorLabels.replaceChildren(...labels);
 	}
 
-	/**
-	 * Label/value rows: text as plain text, options as a grey chip, references as tags in their entity's type color.
-	 * With `previews`, hovering or focusing a reference tag shows that entity's card.
-	 */
-	function propertyList(rows: CardRow[], previews: boolean): HTMLElement {
-		return el(
-			"dl",
-			{ className: "card-props" },
-			...rows.flatMap((row) => {
-				const value =
-					row.kind === "text"
-						? el("dd", { className: "prop-text", title: row.values.join("") }, ...row.values)
-						: el(
-								"dd",
-								{ className: "prop-chips" },
-								...row.values.map((v, i) => {
-									if (row.kind !== "reference") return el("span", { className: "chip" }, v);
-									// Same color as the top bar of the card it points to.
-									const tag = el("span", { className: "ref-tag" }, v);
-									const entityId = row.entityIds[i];
-									const typeId = store.data.entities.find((e) => e.id === entityId)?.typeId;
-									const color = store.data.types.find((t) => t.id === typeId)?.color;
-									if (color) tag.style.background = color;
-									if (previews && entityId) attachPreview(tag, entityId);
-									return tag;
-								}),
-							);
-				return [el("dt", { title: row.label }, row.label), value];
-			}),
-		);
-	}
-
-	/** Header (colored bar, name) and scrolling body (properties, content) shared by cards and previews. */
-	function cardParts(
-		entity: Entity,
-		type: EntityType | undefined,
-		entityNames: ReadonlyMap<string, string>,
-		isLinked: (entityId: string) => boolean,
-		options: { buttons?: HTMLElement[]; previews: boolean },
-	): { header: HTMLElement; body: HTMLElement | null } {
-		// Top bar in the type's color: type label (and × on real cards).
-		const bar = el(
-			"div",
-			{ className: "card-bar" },
-			el("span", { className: "card-type" }, type?.name ?? ""),
-			...(options.buttons ?? []),
-		);
-		if (type) bar.style.background = type.color;
-		const header = el(
-			"header",
-			{},
-			bar,
-			// Wraps up to three lines; the full name is in the tooltip.
-			el("strong", { className: "card-title", title: entity.name }, entity.name),
-		);
-		// Properties and content scroll together below the fixed header.
-		// Own properties first, then the reverse side of references to this entity (e.g. "responsible for").
-		const rows = [
-			...(type ? cardRows(type, entity, entityNames, isLinked) : []),
-			...inverseCardRows(store.data, entity, entityNames, isLinked),
-		];
-		// Nothing to show below the name: no body at all (a compact card).
-		const content = entity.content.trim();
-		const body =
-			rows.length > 0 || content
-				? el(
-						"div",
-						{ className: "card-body" },
-						...(rows.length > 0 ? [propertyList(rows, options.previews)] : []),
-						...(content ? [el("div", { className: "card-content" }, entity.content)] : []),
-					)
-				: null;
-		return { header, body };
-	}
-
 	function cardElement(
 		card: CanvasCard,
 		entity: Entity,
@@ -1657,9 +1458,9 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 							"◐",
 						),
 					];
-		const { header, body } = cardParts(entity, type, entityNames, isLinked, {
+		const { header, body } = cardParts(store, entity, type, entityNames, isLinked, {
 			buttons: [...dimButton, ...(removeButton ? [removeButton] : [])],
-			previews: true,
+			preview,
 		});
 		// Without content a card is as tall as what it shows (bar, name, maybe properties), rounded up to the
 		// grid: only its width can be changed. Only cards with content keep a saved height, so long text can be given more or less room.
@@ -1797,8 +1598,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	}
 
 	// Any drag, pan or zoom on the canvas closes the preview.
-	surface.addEventListener("pointerdown", hidePreview, { capture: true });
-	surface.addEventListener("wheel", hidePreview, { capture: true, passive: true });
+	surface.addEventListener("pointerdown", preview.hide, { capture: true });
+	surface.addEventListener("wheel", preview.hide, { capture: true, passive: true });
 
 	/** Pans the board along with the pointer from this press; a click without moving clears the selection. */
 	function pan(e: PointerEvent): void {
@@ -2235,7 +2036,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		toolbar,
 		pageBar,
 		zoomBar,
-		preview,
+		preview.element,
 		boardDialog,
 		storyDialog,
 		frameDialog,
