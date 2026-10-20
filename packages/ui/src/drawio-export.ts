@@ -1,37 +1,84 @@
+import { safeFileName } from "./dom.js";
+import { areaContents } from "./drawings.js";
+import { text } from "./i18n.js";
 import {
 	cardRows,
 	effectiveCardDisplay,
 	fillPlaceholders,
 	inverseCardRows,
+	isArea,
 	nearest,
 	referencedIds,
 	type AppData,
+	type Board,
+	type BoxDrawing,
 	type CanvasCard,
 	type CardRow,
 	type Entity,
 	type EntityType,
 	type LineArrow,
+	type Point,
+	type Rect,
 } from "@tybo/core";
 
 /**
  * A board as a draw.io file: its cards as boxes, where they are on the board, showing what the cards show (type bar,
  * name, properties, content), and the lines of `line` references as edges attached to them, so they stay attached
- * when moved in draw.io. A card's description is its tooltip. Like the editor outside a story, the whole board is
- * in; drawings and stories are left out.
+ * when moved in draw.io. A card's description is its tooltip. Groups (areas) are named containers holding the cards
+ * lying in them, so they move together in draw.io too. Like the editor outside a story, the whole board is in; other
+ * drawings and stories are left out.
  */
 export function boardDrawio(data: Pick<AppData, "types" | "entities" | "boards">, boardId: string): string {
+	const board = findBoard(data, boardId);
+	return drawioFile(data, board, board.name, board.cards, board.drawings.filter(isArea), { x: 0, y: 0 });
+}
+
+/**
+ * The files to export a board as for draw.io: the board's file, and for each group (area) on it one more, of the
+ * group with what lies in it, its top left corner at (0, 0). File names end in .drawio and are unique.
+ */
+export function boardDrawioFiles(data: Pick<AppData, "types" | "entities" | "boards">, boardId: string): { name: string; contents: string }[] {
+	const board = findBoard(data, boardId);
+	const areas = board.drawings.filter(isArea);
+	const cards = exportCards(data, board.cards).map(({ card, height }) => ({ ...card, height }));
+	let unnamed = 0;
+	const files = [
+		{ name: board.name, contents: boardDrawio(data, boardId) },
+		...areas.map((area) => {
+			const name = area.text.replace(/\s+/g, " ").trim() || `${text.groupFallbackName} ${++unnamed}`;
+			const { cardIds, drawingIds } = areaContents(area, cards, areas);
+			const inside = [area, ...areas.filter((a) => drawingIds.has(a.id))];
+			return { name, contents: drawioFile(data, board, name, board.cards.filter((c) => cardIds.has(c.id)), inside, area) };
+		}),
+	];
+	const taken = new Set<string>();
+	return files.map(({ name, contents }) => {
+		const base = safeFileName(name);
+		let unique = base;
+		for (let n = 2; taken.has(unique.toLocaleLowerCase()); n++) unique = `${base} ${n}`;
+		taken.add(unique.toLocaleLowerCase());
+		return { name: `${unique}.drawio`, contents };
+	});
+}
+
+function findBoard(data: Pick<AppData, "boards">, boardId: string): Board {
 	const board = data.boards.find((b) => b.id === boardId);
 	if (!board) throw new Error(`No board ${boardId}`);
+	return board;
+}
+
+/**
+ * The cards (of entities that still exist) as they're exported: with their entity, type, the rows they show and their
+ * height. Lines only go to cards among `cards`; references to other cards are listed instead.
+ */
+function exportCards(data: Pick<AppData, "types" | "entities">, cards: readonly CanvasCard[]) {
 	const types = new Map(data.types.map((t) => [t.id, t]));
 	const entities = new Map(data.entities.map((e) => [e.id, e]));
 	const entityNames = new Map(data.entities.map((e) => [e.id, e.name]));
-	const cards = board.cards.filter((c) => entities.has(c.entityId));
+	const shown = cards.filter((c) => entities.has(c.entityId));
 	const cardsByEntity = new Map<string, CanvasCard[]>();
-	for (const card of cards) cardsByEntity.set(card.entityId, [...(cardsByEntity.get(card.entityId) ?? []), card]);
-
-	const vertices: string[] = [];
-	const edges: string[] = [];
-	for (const card of cards) {
+	for (const card of shown) cardsByEntity.set(card.entityId, [...(cardsByEntity.get(card.entityId) ?? []), card]);
+	return shown.map((card) => {
 		const entity = entities.get(card.entityId)!;
 		const type = types.get(entity.typeId);
 		// Like on the canvas: other cards of the referenced entity, the line going to the nearest one.
@@ -41,12 +88,55 @@ export function boardDrawio(data: Pick<AppData, "types" | "entities" | "boards">
 		// Cards without content are as tall as what they show, which the editor measures: here it's counted in grid
 		// steps like in the stylesheet (bar, one line of name, the property rows with half a step above and below).
 		const height = entity.content.trim() ? card.height : 72 + (rows.length > 0 ? 24 * (rows.length + 1) : 0);
+		return { card, entity, type, rows, height, targetCards };
+	});
+}
+
+/** A draw.io file of some of a board's cards and groups, moved so `origin` is at (0, 0). */
+function drawioFile(
+	data: Pick<AppData, "types" | "entities">,
+	board: Board,
+	name: string,
+	cards: readonly CanvasCard[],
+	areas: readonly Area[],
+	origin: Point,
+): string {
+	const types = new Map(data.types.map((t) => [t.id, t]));
+	const entities = new Map(data.entities.map((e) => [e.id, e]));
+	const entityNames = new Map(data.entities.map((e) => [e.id, e.name]));
+	// A card or group goes into the smallest group (larger than itself) its middle lies in; in draw.io, its position
+	// is then relative to that group.
+	const parentOf = (rect: Rect): Area | undefined =>
+		areas
+			.filter((a) => a.width * a.height > rect.width * rect.height && contains(a, middle(rect)))
+			.sort((a, b) => a.width * a.height - b.width * b.height)[0];
+	const geometry = (rect: Rect) => {
+		const parent = parentOf(rect);
+		const at = parent ?? origin;
+		return {
+			parent: parent ? areaCellId(parent.id) : "1",
+			xml: `<mxGeometry x="${rect.x - at.x}" y="${rect.y - at.y}" width="${rect.width}" height="${rect.height}" as="geometry"/>`,
+		};
+	};
+
+	// Outer groups first: draw.io wants a container before what's in it.
+	const containers = [...areas]
+		.sort((a, b) => b.width * b.height - a.width * a.height)
+		.map((area) => {
+			const { parent, xml } = geometry(area);
+			return (
+				`<mxCell id="${attr(areaCellId(area.id))}" value="${attr(esc(area.text.trim()))}" style="${areaStyle(area.color)}" ` +
+				`vertex="1" parent="${attr(parent)}">${xml}</mxCell>`
+			);
+		});
+	const vertices: string[] = [];
+	const edges: string[] = [];
+	for (const { card, entity, type, rows, height, targetCards } of exportCards(data, cards)) {
 		const label = cardLabel(entity, type, rows, (id) => types.get(entities.get(id)?.typeId ?? "")?.color ?? "#ebebeb");
+		const { parent, xml } = geometry({ ...card, height });
 		vertices.push(
 			`<UserObject id="${attr(cellId(card.id))}" label="${attr(label)}" tooltip="${attr(description(entity, type, entityNames))}">` +
-				`<mxCell style="${CARD_STYLE}" vertex="1" parent="1">` +
-				`<mxGeometry x="${card.x}" y="${card.y}" width="${card.width}" height="${height}" as="geometry"/>` +
-				`</mxCell></UserObject>`,
+				`<mxCell style="${CARD_STYLE}" vertex="1" parent="${attr(parent)}">${xml}</mxCell></UserObject>`,
 		);
 		for (const prop of type?.properties ?? []) {
 			if (effectiveCardDisplay(prop) !== "line") continue;
@@ -63,10 +153,24 @@ export function boardDrawio(data: Pick<AppData, "types" | "entities" | "boards">
 		}
 	}
 	return (
-		`<mxfile host="tybo"><diagram id="${attr(board.id)}" name="${attr(board.name)}">` +
+		`<mxfile host="tybo"><diagram id="${attr(board.id)}" name="${attr(name)}">` +
 		`<mxGraphModel grid="1" gridSize="24" guides="1" connect="1" arrows="1" page="0"><root>` +
-		`<mxCell id="0"/><mxCell id="1" parent="0"/>${vertices.join("")}${edges.join("")}` +
+		`<mxCell id="0"/><mxCell id="1" parent="0"/>${containers.join("")}${vertices.join("")}${edges.join("")}` +
 		`</root></mxGraphModel></diagram></mxfile>\n`
+	);
+}
+
+type Area = BoxDrawing & { kind: "area" };
+
+const middle = (r: Rect): Point => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+const contains = (r: Rect, p: Point) => p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height;
+
+/** Like on the canvas: a see-through box in the group's color with a dashed border, its name as a bold title. */
+function areaStyle(color: string): string {
+	return (
+		"rounded=1;absoluteArcSize=1;arcSize=12;html=1;whiteSpace=wrap;container=1;collapsible=0;dashed=1;" +
+		`verticalAlign=top;align=left;spacingLeft=8;spacingTop=2;fontStyle=1;fillColor=${color};fillOpacity=35;` +
+		"strokeColor=#6b6b6b;fontColor=#4a4a4a;"
 	);
 }
 
@@ -117,6 +221,7 @@ function description(entity: Entity, type: EntityType | undefined, entityNames: 
 }
 
 const cellId = (cardId: string) => `card-${cardId}`;
+const areaCellId = (areaId: string) => `area-${areaId}`;
 
 /** Text as HTML, for labels. */
 function esc(value: string): string {
