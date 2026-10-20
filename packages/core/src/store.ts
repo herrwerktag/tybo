@@ -231,7 +231,7 @@ function normalizeDrawing(raw: unknown): Drawing | null {
 		return { id: d.id, kind: d.kind, x: d.x!, y: d.y!, width: d.width!, height: d.height!, src: d.src };
 	}
 	if (typeof d.color !== "string") return null;
-	if (d.kind === "rect" || d.kind === "ellipse" || d.kind === "text") {
+	if (d.kind === "rect" || d.kind === "ellipse" || d.kind === "text" || d.kind === "area") {
 		if (![d.x, d.y, d.width, d.height].every(isNumber)) return null;
 		return {
 			id: d.id,

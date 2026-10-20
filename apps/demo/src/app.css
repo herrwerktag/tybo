@@ -1265,6 +1265,13 @@ button.ref-tag {
 	fill: transparent;
 }
 
+/* An area (a named group): a light, see-through box with a dashed border, its name as the title. */
+.drawing-area {
+	fill-opacity: 0.35;
+	stroke-width: 1.5;
+	stroke-dasharray: 8 5;
+}
+
 .drawing-stroke {
 	fill: none;
 	stroke-width: 2.5;
@@ -1369,6 +1376,14 @@ button.ref-tag {
 
 .drawing-editor.centered {
 	text-align: center;
+}
+
+.drawing-label.area-name {
+	font-weight: 600;
+}
+
+.drawing-editor.area-name {
+	height: 2.6em;
 }
 
 .size-s {

@@ -1,6 +1,6 @@
 import { connector, nearest, type Rect } from "@tybo/core";
 import { createDrawingLayer, libraryPicture } from "./drawing-layer.js";
-import { drawingBounds } from "./drawings.js";
+import { areaContents, drawingBounds } from "./drawings.js";
 import { CLICK_TOLERANCE, el, resizeHandle, svgEl, tagFilter, trackPointer, typeDot, wheelGesture } from "./dom.js";
 import { text } from "./i18n.js";
 import {
@@ -24,6 +24,7 @@ import {
 	relationsOf,
 	filterLibrary,
 	inverseCardRows,
+	isArea,
 	isSymbol,
 	referencedIds,
 	snapToGrid,
@@ -254,6 +255,16 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		onGroupPress: (e, drawingId) => {
 			if (e.shiftKey) toggleSelected("drawingIds", drawingId);
 			else dragGroup(e, { drawingId });
+		},
+		// An area moves along with the cards and drawings lying in it.
+		onAreaPress: (e, drawingId) => {
+			const board = currentBoard();
+			const area = board.drawings.find((d) => d.id === drawingId);
+			if (!area || !isArea(area)) return;
+			const cards = board.cards.map((c) => ({ ...c, ...cardRects.get(c.id) }));
+			const { cardIds, drawingIds } = areaContents(area, cards, board.drawings);
+			setSelection(new Set(), new Set([drawingId]));
+			dragGroup(e, { drawingId }, { cardIds, drawingIds: drawingIds.add(drawingId) });
 		},
 		onToolChange: (tool) => surface.classList.toggle("drawing-tool", tool !== "select"),
 		...(onEditLibraryDrawing && { onEditSymbol: onEditLibraryDrawing }),
@@ -1079,13 +1090,17 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	}
 
 	/**
-	 * Moves the group along with the pointer from a press on one of its cards or drawings, snapped to the grid like a
-	 * single card, in one change. A click without moving selects just what was pressed (a card's own click handler
-	 * does that for cards).
+	 * Moves the group (or other `items`) along with the pointer from a press on one of its cards or drawings, snapped to
+	 * the grid like a single card, in one change. A click without moving selects just what was pressed (a card's own
+	 * click handler does that for cards).
 	 */
-	function dragGroup(e: PointerEvent, pressed: { cardNode: HTMLElement } | { drawingId: string }): void {
-		if (!group) return;
-		const { cardIds, drawingIds } = group;
+	function dragGroup(
+		e: PointerEvent,
+		pressed: { cardNode: HTMLElement } | { drawingId: string },
+		items: { cardIds: ReadonlySet<string>; drawingIds: ReadonlySet<string> } | null = group,
+	): void {
+		if (!items) return;
+		const { cardIds, drawingIds } = items;
 		const { zoom } = viewport;
 		const board = currentBoard();
 		const cards = board.cards.filter((c) => cardIds.has(c.id));

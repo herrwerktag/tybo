@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
 	MAX_IMAGE_SIZE,
 	MIN_BOX_SIZE,
+	areaContents,
 	arrowGeometry,
 	contentBounds,
 	drawingBounds,
@@ -138,4 +139,16 @@ test("placed library drawings move like boxes and resize keeping their aspect ra
 test("contentBounds spans all drawings, or is null without any", () => {
 	assert.equal(contentBounds([]), null);
 	assert.deepEqual(contentBounds([box, line]), { x: 0, y: 0, width: 300, height: 200 });
+});
+
+test("areaContents finds the cards and drawings whose middle is in the area, nested areas included", () => {
+	const area: BoxDrawing = { ...box, id: "a", kind: "area", x: 0, y: 0, width: 300, height: 200 };
+	const nested: BoxDrawing = { ...box, id: "n", kind: "area", x: 20, y: 20, width: 100, height: 60 };
+	const cards = [
+		{ id: "in", x: 100, y: 100, width: 160, height: 80 }, // reaches out on the right, but its middle is inside
+		{ id: "out", x: 250, y: 100, width: 160, height: 80 },
+	];
+	const contents = areaContents(area, cards, [area, nested, line, { ...image, x: 400 }]);
+	assert.deepEqual([...contents.cardIds], ["in"]);
+	assert.deepEqual([...contents.drawingIds], ["n", "l"], "not the area itself, nor the image outside it");
 });

@@ -1241,6 +1241,7 @@ test("older boards load without drawings; malformed drawings are dropped", async
 					{ id: "image", kind: "image", x: 1, y: 2, width: 3, height: 4, src: "data:image/png;base64,AAAA" },
 					{ id: "image-no-src", kind: "image", x: 1, y: 2, width: 3, height: 4 },
 					{ id: "image-remote", kind: "image", x: 1, y: 2, width: 3, height: 4, src: "https://example.com/a.png" },
+					{ id: "area", kind: "area", x: 1, y: 2, width: 3, height: 4, color: "#c4dafa", text: "Team" },
 				],
 			},
 		],
@@ -1249,8 +1250,9 @@ test("older boards load without drawings; malformed drawings are dropped", async
 	assert.deepEqual(old?.drawings, []);
 	assert.deepEqual(
 		mixed?.drawings.map((d) => d.id),
-		["ok", "pen", "image"],
+		["ok", "pen", "image", "area"],
 	);
+	assert.deepEqual(mixed?.drawings[3], { id: "area", kind: "area", x: 1, y: 2, width: 3, height: 4, color: "#c4dafa", text: "Team", textSize: "m" });
 	assert.deepEqual(mixed?.drawings[2], { id: "image", kind: "image", x: 1, y: 2, width: 3, height: 4, src: "data:image/png;base64,AAAA" });
 	// Missing text fields get defaults.
 	assert.deepEqual(mixed?.drawings[0], { id: "ok", kind: "ellipse", x: 1, y: 2, width: 3, height: 4, color: "#c4dafa", text: "", textSize: "m" });

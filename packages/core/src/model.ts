@@ -231,10 +231,13 @@ export function mapPages<B extends Pick<Board, "stories">>(board: B, fn: (page: 
 export type TextSize = "s" | "m" | "l";
 export const TEXT_SIZES: readonly TextSize[] = ["s", "m", "l"];
 
-/** A rectangle, ellipse or free text box; all can hold text. */
+/**
+ * A rectangle, ellipse or free text box; all can hold text. An area is a named group: the cards and drawings lying in
+ * it move along when it's moved; its text is the name.
+ */
 export interface BoxDrawing {
 	id: string;
-	kind: "rect" | "ellipse" | "text";
+	kind: "rect" | "ellipse" | "text" | "area";
 	x: number;
 	y: number;
 	width: number;
@@ -289,9 +292,13 @@ export interface SymbolDrawing {
 
 export type Drawing = BoxDrawing | PathDrawing | ImageDrawing | SymbolDrawing;
 
-/** Rectangles, ellipses and text boxes (as opposed to lines, arrows, pen strokes, images and library drawings). */
+/** Rectangles, ellipses, text boxes and areas (as opposed to lines, arrows, pen strokes, images and library drawings). */
 export function isBox(drawing: Drawing): drawing is BoxDrawing {
-	return drawing.kind === "rect" || drawing.kind === "ellipse" || drawing.kind === "text";
+	return drawing.kind === "rect" || drawing.kind === "ellipse" || drawing.kind === "text" || drawing.kind === "area";
+}
+
+export function isArea(drawing: Drawing): drawing is BoxDrawing & { kind: "area" } {
+	return drawing.kind === "area";
 }
 
 export function isImage(drawing: Drawing): drawing is ImageDrawing {
