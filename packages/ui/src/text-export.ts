@@ -95,7 +95,7 @@ function field(label: string, value: string): string {
 }
 
 /** The lines of free text with a "#" at their start escaped, so none reads as a heading of its own. */
-export function escapeHeadings(value: string): string {
+function escapeHeadings(value: string): string {
 	return value
 		.split(/\r?\n/)
 		.map((line) => line.replace(/^(\s*)#/, "$1\\#"))

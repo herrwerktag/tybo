@@ -13,8 +13,9 @@ import {
 	type PathStep,
 	type PropertyDef,
 } from "@tybo/core";
+import { uniqueFileNames } from "./dom.js";
 import { text } from "./i18n.js";
-import { escapeHeadings, uniqueNames } from "./text-export.js";
+import { uniqueNames } from "./text-export.js";
 
 /** How a path reads as a heading: its steps' names. */
 export function pathLabel(types: readonly EntityType[], typeId: string, path: readonly PathStep[]): string {
@@ -29,15 +30,22 @@ export function pathLabel(types: readonly EntityType[], typeId: string, path: re
 }
 
 /**
- * The result of an analysis as Markdown: its groups as headings, nested like in the Analyses tab, and in them a
- * section per row with its content, what each column leads to and its description. After them, every entity a column
- * names that isn't a row itself, once, with its content and description. Entities are named by type and name, like in
- * the text export.
+ * The result of an analysis as Markdown files. The first holds all of it: its groups as headings, nested like in the
+ * Analyses tab, and in them a section per row with its content, a table of what each column leads to and its
+ * description. After them, every entity a column names that isn't a row itself, once, with its content and
+ * description. Then one more file per outermost group, with the group as its title and the entities named in it.
+ * Entities are named by type and name, like in the text export; headings in contents and descriptions become
+ * subheadings of their section.
  */
-export function analysisMarkdown(data: Pick<AppData, "types" | "entities">, analysis: Analysis, date: string): string {
+export function analysisMarkdownFiles(
+	data: Pick<AppData, "types" | "entities">,
+	analysis: Analysis,
+	date: string,
+): { name: string; contents: string }[] {
 	const title = `# ${text.analysisExportTitle(analysis.name, date)}`;
+	const fileName = `${analysis.name} ${date}`;
 	const type = data.types.find((t) => t.id === analysis.typeId);
-	if (!type) return `${title}\n`;
+	if (!type) return uniqueFileNames([{ name: fileName, contents: `${title}\n` }], "md");
 	const types = new Map(data.types.map((t) => [t.id, t]));
 	const entities = data.entities.filter((e) => types.has(e.typeId));
 	const names = uniqueNames(entities);
@@ -47,53 +55,104 @@ export function analysisMarkdown(data: Pick<AppData, "types" | "entities">, anal
 	const result = runAnalysis(data, analysis);
 	const levels = analysis.groups.filter((path) => path.length > 0 && resolvePath(data.types, type.id, path).broken === null);
 	const headers = analysis.columns.map((path) => pathLabel(data.types, type.id, path));
-	const heading = (depth: number) => "#".repeat(Math.min(depth, 6));
-	/** The entities the columns name, by id. */
-	const named = new Set<string>();
+	const groupLabel = (group: AnalysisGroup, level: number) =>
+		group.value ? group.value.label : text.analysisNoValue(pathLabel(data.types, type.id, levels[level]!));
 
-	const rowSection = (row: AnalysisRow, depth: number): string => {
+	/** A row's section; the entities its columns name are added to `named`. */
+	const rowSection = (row: AnalysisRow, depth: number, named: Set<string>): string => {
 		const lines = [`${heading(depth)} ${mentions.get(row.entity.id)!}`];
-		const content = contentText(row.entity);
+		const content = contentText(row.entity, depth);
 		if (content) lines.push(content);
-		const cells = row.cells.map((values, i) => {
-			for (const value of values) if (value.entityId !== null) named.add(value.entityId);
-			return `- ${headers[i]}: ${values.length > 0 ? values.map(mention).join(", ") : "—"}`;
-		});
-		if (cells.length > 0) lines.push(cells.join("\n"));
-		const description = descriptionText(row.entity, type, mentions);
+		if (headers.length > 0) {
+			const cells = row.cells.map((values) => {
+				for (const value of values) if (value.entityId !== null) named.add(value.entityId);
+				return values.length > 0 ? values.map(mention).join(", ") : "—";
+			});
+			lines.push([tableRow(headers), tableRow(headers.map(() => "---")), tableRow(cells)].join("\n"));
+		}
+		const description = descriptionText(row.entity, type, mentions, depth);
 		if (description) lines.push(description);
 		return lines.join("\n\n");
 	};
-	const groupSections = (groups: AnalysisGroup[], level: number): string[] =>
-		groups.flatMap((group) => [
-			`${heading(2 + level)} ${group.value ? group.value.label : text.analysisNoValue(pathLabel(data.types, type.id, levels[level]!))}`,
-			...(group.groups.length > 0 ? groupSections(group.groups, level + 1) : group.rows.map((row) => rowSection(row, 3 + level))),
-		]);
+	/** What's inside a group: its subgroups or its rows, from the given heading level on. */
+	const groupBody = (group: AnalysisGroup, level: number, depth: number, named: Set<string>): string[] =>
+		group.groups.length > 0
+			? group.groups.flatMap((sub) => [`${heading(depth)} ${groupLabel(sub, level + 1)}`, ...groupBody(sub, level + 1, depth + 1, named)])
+			: group.rows.map((row) => rowSection(row, depth, named));
 
-	const sections = [
-		title,
-		...(result.groups.length > 0 ? groupSections(result.groups, 0) : result.rows.map((row) => rowSection(row, 2))),
-	];
 	const rowIds = new Set(entities.filter((e) => e.typeId === type.id).map((e) => e.id));
-	const mentioned = data.types.flatMap((t) => entities.filter((e) => e.typeId === t.id && named.has(e.id) && !rowIds.has(e.id)));
-	if (mentioned.length > 0) {
-		sections.push("---", `## ${text.analysisExportMentioned}`);
-		for (const entity of mentioned) {
-			const texts = [contentText(entity), descriptionText(entity, types.get(entity.typeId)!, mentions)].filter((t) => t !== "");
-			sections.push([`### ${mentions.get(entity.id)!}`, ...texts].join("\n\n"));
+	/** A file: its title, its sections and then the entities they name. */
+	const markdown = (heading: string, sections: (named: Set<string>) => string[]): string => {
+		const named = new Set<string>();
+		const all = [heading, ...sections(named)];
+		const mentioned = data.types.flatMap((t) => entities.filter((e) => e.typeId === t.id && named.has(e.id) && !rowIds.has(e.id)));
+		if (mentioned.length > 0) {
+			all.push("---", `## ${text.analysisExportMentioned}`);
+			for (const entity of mentioned) {
+				const texts = [contentText(entity, 3), descriptionText(entity, types.get(entity.typeId)!, mentions, 3)].filter((t) => t !== "");
+				all.push([`### ${mentions.get(entity.id)!}`, ...texts].join("\n\n"));
+			}
 		}
-	}
-	return `${sections.join("\n\n")}\n`;
+		return `${all.join("\n\n")}\n`;
+	};
+
+	return uniqueFileNames(
+		[
+			{
+				name: fileName,
+				contents: markdown(title, (named) =>
+					result.groups.length > 0
+						? result.groups.flatMap((group) => [`## ${groupLabel(group, 0)}`, ...groupBody(group, 0, 3, named)])
+						: result.rows.map((row) => rowSection(row, 2, named)),
+				),
+			},
+			...result.groups.map((group) => ({
+				name: groupLabel(group, 0),
+				contents: markdown(`# ${groupLabel(group, 0)}`, (named) => groupBody(group, 0, 2, named)),
+			})),
+		],
+		"md",
+	);
 }
 
-/** The entity's content, as on its card, with no line reading as a heading; empty when it has none. */
-function contentText(entity: Entity): string {
-	return escapeHeadings(entity.content.trim());
+/** A heading's marker on the given level, no deeper than Markdown's sixth. */
+function heading(depth: number): string {
+	return "#".repeat(Math.min(depth, 6));
 }
 
-/** The entity's description with {{Property}} filled in (references by type and name, "—" when empty) and no line
- * reading as a heading; empty when it has none. */
-function descriptionText(entity: Entity, type: EntityType, mentions: ReadonlyMap<string, string>): string {
+/** A row of a Markdown table; a "|" in a cell doesn't end it. */
+function tableRow(cells: readonly string[]): string {
+	return `| ${cells.map((cell) => cell.replace(/\|/g, "\\|")).join(" | ")} |`;
+}
+
+/**
+ * Free text in a section whose heading is on the given level: its headings become subheadings of that section ("#"
+ * one level below it, "##" two, …), no deeper than the sixth. Lines in fenced code blocks stay as they are.
+ */
+function nestHeadings(value: string, depth: number): string {
+	let fence: string | null = null;
+	return value
+		.split(/\r?\n/)
+		.map((line) => {
+			const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+			if (marker && (fence === null || (marker[0] === fence[0] && marker.length >= fence.length))) {
+				fence = fence === null ? marker : null;
+				return line;
+			}
+			if (fence !== null) return line;
+			return line.replace(/^( {0,3})(#{1,6})(?=\s|$)/, (_, indent: string, marks: string) => indent + heading(depth + marks.length));
+		})
+		.join("\n");
+}
+
+/** The entity's content, as on its card, in a section on the given heading level; empty when it has none. */
+function contentText(entity: Entity, depth: number): string {
+	return nestHeadings(entity.content.trim(), depth);
+}
+
+/** The entity's description with {{Property}} filled in (references by type and name, "—" when empty), in a section
+ * on the given heading level; empty when it has none. */
+function descriptionText(entity: Entity, type: EntityType, mentions: ReadonlyMap<string, string>, depth: number): string {
 	if (entity.description.trim() === "") return "";
 	const placeholder = (prop: PropertyDef): string => {
 		const value = entity.values[prop.id];
@@ -107,5 +166,5 @@ function descriptionText(entity: Entity, type: EntityType, mentions: ReadonlyMap
 					: "";
 		return shown || "—";
 	};
-	return escapeHeadings(fillPlaceholders(entity.description, type, placeholder).trim());
+	return nestHeadings(fillPlaceholders(entity.description, type, placeholder).trim(), depth);
 }

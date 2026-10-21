@@ -2,7 +2,7 @@ import "./test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Analysis, AppData, PathStep, PropertyDef } from "@tybo/core";
-import { analysisMarkdown } from "./analysis-export.js";
+import { analysisMarkdownFiles } from "./analysis-export.js";
 import { setLanguage } from "./i18n.js";
 
 const prop = (id: string, name: string, more: Partial<PropertyDef> = {}): PropertyDef => ({
@@ -71,39 +71,25 @@ const data: Pick<AppData, "types" | "entities"> = {
 	],
 };
 
-test("an analysis as Markdown: its groups as headings, a section per row with its content, columns and description, then the entities the columns name", () => {
+/** The contents of the analysis's Markdown files, by file name. */
+const markdownFiles = (an: Analysis, from = data) =>
+	Object.fromEntries(analysisMarkdownFiles(from, an, "2026-10-21").map((file) => [file.name, file.contents]));
+
+test("an analysis as Markdown: its groups as headings, a section per row with its content, a table of its columns and its description, then the entities the columns name", () => {
 	setLanguage("de");
 	try {
-		const row = `### Aktivität „Rechnung prüfen“
+		const row = (depth: string) => `${depth} Aktivität „Rechnung prüfen“
 
 Gegen die Bestellung prüfen.
-\\# Notiz
+${depth}# Notiz
 
-- Benötigt: Artefakt „Rechnung“, Artefakt „Rechnung (2)“
-- Status: offen
+| Benötigt | Status |
+| --- | --- |
+| Artefakt „Rechnung“, Artefakt „Rechnung (2)“ | offen |
 
 offen, mit Artefakt „Rechnung“, Artefakt „Rechnung (2)“
-\\# Schritte`;
-		assert.equal(
-			analysisMarkdown(data, analysis({ groups: [step("responsible")], columns: [step("needs"), step("status")] }), "2026-10-21"),
-			`# Prüfung (Stand 2026-10-21)
-
-## Buchhaltung
-
-${row}
-
-## Einkauf
-
-${row}
-
-## Ohne Verantwortlicher
-
-### Aktivität „Zahlung anweisen“
-
-- Benötigt: —
-- Status: —
-
----
+${depth}# Schritte`;
+		const mentioned = `---
 
 ## In den Spalten genannt
 
@@ -114,40 +100,88 @@ Als PDF.
 Die Rechnung.
 
 ### Artefakt „Rechnung (2)“
-`,
+`;
+		const unassigned = (depth: string) => `${depth} Aktivität „Zahlung anweisen“
+
+| Benötigt | Status |
+| --- | --- |
+| — | — |
+`;
+		const files = markdownFiles(analysis({ groups: [step("responsible")], columns: [step("needs"), step("status")] }));
+		assert.deepEqual(Object.keys(files), ["Prüfung 2026-10-21.md", "Buchhaltung.md", "Einkauf.md", "Ohne Verantwortlicher.md"]);
+		assert.equal(
+			files["Prüfung 2026-10-21.md"],
+			`# Prüfung (Stand 2026-10-21)
+
+## Buchhaltung
+
+${row("###")}
+
+## Einkauf
+
+${row("###")}
+
+## Ohne Verantwortlicher
+
+${unassigned("###")}
+${mentioned}`,
 		);
+		assert.equal(files["Buchhaltung.md"], `# Buchhaltung\n\n${row("##")}\n\n${mentioned}`);
+		assert.equal(files["Einkauf.md"], `# Einkauf\n\n${row("##")}\n\n${mentioned}`);
+		assert.equal(files["Ohne Verantwortlicher.md"], `# Ohne Verantwortlicher\n\n${unassigned("##")}`, "naming no entity, it has no list of them");
 	} finally {
 		setLanguage("en");
 	}
 });
 
-test("without grouping the rows are sections of their own; without columns naming entities there is no list of them", () => {
+test("without grouping there is only the one file, the rows being sections of their own; without columns naming entities there is no list of them", () => {
 	setLanguage("en");
-	assert.equal(
-		analysisMarkdown(data, analysis({ columns: [step("status")] }), "2026-10-21"),
-		`# Prüfung (as of 2026-10-21)
+	assert.deepEqual(markdownFiles(analysis({ columns: [step("status")] })), {
+		"Prüfung 2026-10-21.md": `# Prüfung (as of 2026-10-21)
 
 ## Aktivität "Rechnung prüfen"
 
 Gegen die Bestellung prüfen.
-\\# Notiz
+### Notiz
 
-- Status: offen
+| Status |
+| --- |
+| offen |
 
 offen, mit Artefakt "Rechnung", Artefakt "Rechnung (2)"
-\\# Schritte
+### Schritte
 
 ## Aktivität "Zahlung anweisen"
 
-- Status: —
+| Status |
+| --- |
+| — |
 `,
-	);
+	});
+});
+
+test("files of groups with the same name are numbered; nested groups have their own headings in a group's file", () => {
+	const files = markdownFiles(analysis({ groups: [step("needs"), step("responsible")] }));
+	assert.deepEqual(Object.keys(files), ["Prüfung 2026-10-21.md", "Rechnung.md", "Rechnung 2.md", "Without Benötigt.md"]);
+	assert.match(files["Rechnung 2.md"]!, /^# Rechnung\n\n## Buchhaltung\n\n### Aktivität "Rechnung prüfen"\n/);
+});
+
+test("a | in a table cell is escaped; headings in code blocks stay as they are and nested headings don't go below the sixth level", () => {
+	const piped: typeof data = {
+		types: data.types,
+		entities: data.entities.map((e) =>
+			e.id === "a2" ? { ...e, values: { status: "in | Arbeit" }, description: "```\n# kein Titel\n```\n##### Tief" } : e,
+		),
+	};
+	const contents = markdownFiles(analysis({ columns: [step("status")] }), piped)["Prüfung 2026-10-21.md"]!;
+	assert.match(contents, /^\| in \\\| Arbeit \|$/m);
+	assert.match(contents, /^```\n# kein Titel\n```\n###### Tief$/m);
 });
 
 test("deeply nested groups don't go below the sixth heading level; an analysis without a type is only its title", () => {
-	const deep = analysisMarkdown(data, analysis({ groups: Array.from({ length: 5 }, () => step("responsible")) }), "2026-10-21");
+	const deep = markdownFiles(analysis({ groups: Array.from({ length: 5 }, () => step("responsible")) }))["Prüfung 2026-10-21.md"]!;
 	assert.match(deep, /^###### Buchhaltung$/m);
 	assert.match(deep, /^###### Aktivität "Rechnung prüfen"$/m);
 	assert.doesNotMatch(deep, /#######/);
-	assert.equal(analysisMarkdown(data, analysis({ typeId: null }), "2026-10-21"), "# Prüfung (as of 2026-10-21)\n");
+	assert.deepEqual(markdownFiles(analysis({ typeId: null })), { "Prüfung 2026-10-21.md": "# Prüfung (as of 2026-10-21)\n" });
 });

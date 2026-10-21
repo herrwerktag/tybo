@@ -355,7 +355,7 @@ const en = {
 	analysisNoValue: (label: string) => `Without ${label}`,
 	analysisCount: (n: number) => `${n} ${n === 1 ? "row" : "rows"}`,
 	exportAnalysisMarkdown: "Export as Markdown",
-	exportAnalysisMarkdownHint: "Download the result as a Markdown file, with the descriptions of its entities",
+	exportAnalysisMarkdownHint: "Download the result as a Markdown file, with the descriptions of its entities; with groups, as a ZIP with one more file per outermost group",
 	analysisExportTitle: (name: string, date: string) => `${name} (as of ${date})`,
 	analysisExportMentioned: "Named in the columns",
 };
@@ -695,7 +695,7 @@ const de: Messages = {
 	analysisNoValue: (label) => `Ohne ${label}`,
 	analysisCount: (n) => `${n} ${n === 1 ? "Zeile" : "Zeilen"}`,
 	exportAnalysisMarkdown: "Als Markdown exportieren",
-	exportAnalysisMarkdownHint: "Das Ergebnis als Markdown-Datei herunterladen, mit den Beschreibungen seiner Entitäten",
+	exportAnalysisMarkdownHint: "Das Ergebnis als Markdown-Datei herunterladen, mit den Beschreibungen seiner Entitäten; mit Gruppen als ZIP mit je einer weiteren Datei pro äußerster Gruppe",
 	analysisExportTitle: (name, date) => `${name} (Stand ${date})`,
 	analysisExportMentioned: "In den Spalten genannt",
 };
