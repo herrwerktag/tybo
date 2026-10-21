@@ -33,7 +33,8 @@ export function pathLabel(types: readonly EntityType[], typeId: string, path: re
  * The result of an analysis as Markdown files. The first holds all of it: its groups as headings, nested like in the
  * Analyses tab, and in them a section per row with its content, a table of what each column leads to and its
  * description. After them, every entity a column names that isn't a row itself, once, with its content and
- * description. Then one more file per outermost group, with the group as its title and the entities named in it.
+ * description. Then one more file per outermost group, with the group as its title, its entity's content and
+ * description first and the entities named in it last.
  * Entities are named by type and name, like in the text export; headings in contents and descriptions become
  * subheadings of their section.
  */
@@ -80,18 +81,21 @@ export function analysisMarkdownFiles(
 			? group.groups.flatMap((sub) => [`${heading(depth)} ${groupLabel(sub, level + 1)}`, ...groupBody(sub, level + 1, depth + 1, named)])
 			: group.rows.map((row) => rowSection(row, depth, named));
 
+	/** An entity's content and description, those it has, in a section on the given heading level. */
+	const entityTexts = (entity: Entity, depth: number): string[] =>
+		[contentText(entity, depth), descriptionText(entity, types.get(entity.typeId)!, mentions, depth)].filter((t) => t !== "");
+
 	const rowIds = new Set(entities.filter((e) => e.typeId === type.id).map((e) => e.id));
-	/** A file: its title, its sections and then the entities they name. */
-	const markdown = (heading: string, sections: (named: Set<string>) => string[]): string => {
+	/** A file: its title, its sections and then the entities they name, but for the one the file is about. */
+	const markdown = (heading: string, sections: (named: Set<string>) => string[], about?: Entity): string => {
 		const named = new Set<string>();
 		const all = [heading, ...sections(named)];
-		const mentioned = data.types.flatMap((t) => entities.filter((e) => e.typeId === t.id && named.has(e.id) && !rowIds.has(e.id)));
+		const mentioned = data.types.flatMap((t) =>
+			entities.filter((e) => e.typeId === t.id && named.has(e.id) && !rowIds.has(e.id) && e !== about),
+		);
 		if (mentioned.length > 0) {
 			all.push("---", `## ${text.analysisExportMentioned}`);
-			for (const entity of mentioned) {
-				const texts = [contentText(entity, 3), descriptionText(entity, types.get(entity.typeId)!, mentions, 3)].filter((t) => t !== "");
-				all.push([`### ${mentions.get(entity.id)!}`, ...texts].join("\n\n"));
-			}
+			for (const entity of mentioned) all.push([`### ${mentions.get(entity.id)!}`, ...entityTexts(entity, 3)].join("\n\n"));
 		}
 		return `${all.join("\n\n")}\n`;
 	};
@@ -106,10 +110,17 @@ export function analysisMarkdownFiles(
 						: result.rows.map((row) => rowSection(row, 2, named)),
 				),
 			},
-			...result.groups.map((group) => ({
-				name: groupLabel(group, 0),
-				contents: markdown(`# ${groupLabel(group, 0)}`, (named) => groupBody(group, 0, 2, named)),
-			})),
+			...result.groups.map((group) => {
+				const entity = entities.find((e) => e.id === group.value?.entityId);
+				return {
+					name: groupLabel(group, 0),
+					contents: markdown(
+						`# ${groupLabel(group, 0)}`,
+						(named) => [...(entity ? entityTexts(entity, 1) : []), ...groupBody(group, 0, 2, named)],
+						entity,
+					),
+				};
+			}),
 		],
 		"md",
 	);

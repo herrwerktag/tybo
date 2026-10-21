@@ -126,7 +126,7 @@ ${row("###")}
 ${unassigned("###")}
 ${mentioned}`,
 		);
-		assert.equal(files["Buchhaltung.md"], `# Buchhaltung\n\n${row("##")}\n\n${mentioned}`);
+		assert.equal(files["Buchhaltung.md"], `# Buchhaltung\n\nBucht.\n\n${row("##")}\n\n${mentioned}`, "the group's entity's description comes first");
 		assert.equal(files["Einkauf.md"], `# Einkauf\n\n${row("##")}\n\n${mentioned}`);
 		assert.equal(files["Ohne Verantwortlicher.md"], `# Ohne Verantwortlicher\n\n${unassigned("##")}`, "naming no entity, it has no list of them");
 	} finally {
@@ -164,6 +164,20 @@ test("files of groups with the same name are numbered; nested groups have their 
 	const files = markdownFiles(analysis({ groups: [step("needs"), step("responsible")] }));
 	assert.deepEqual(Object.keys(files), ["Prüfung 2026-10-21.md", "Rechnung.md", "Rechnung 2.md", "Without Benötigt.md"]);
 	assert.match(files["Rechnung 2.md"]!, /^# Rechnung\n\n## Buchhaltung\n\n### Aktivität "Rechnung prüfen"\n/);
+});
+
+test("a group's file starts with its entity's content and description, their headings below its title; the entity isn't listed again as named", () => {
+	const files = markdownFiles(analysis({ groups: [step("needs")], columns: [step("needs")] }));
+	assert.match(files["Rechnung.md"]!, /^# Rechnung\n\nAls PDF\.\n\nDie Rechnung\.\n\n## Aktivität "Rechnung prüfen"\n/);
+	assert.match(files["Rechnung.md"]!, /### Artefakt "Rechnung \(2\)"\n$/);
+	assert.doesNotMatch(files["Rechnung.md"]!, /### Artefakt "Rechnung"\n/);
+	assert.match(files["Prüfung 2026-10-21.md"]!, /^## Rechnung\n\n### Aktivität/m, "the full analysis has no group texts");
+
+	const headed: typeof data = {
+		types: data.types,
+		entities: data.entities.map((e) => (e.id === "x1" ? { ...e, content: "", description: "# Zweck\nBeleg." } : e)),
+	};
+	assert.match(markdownFiles(analysis({ groups: [step("needs")] }), headed)["Rechnung.md"]!, /^# Rechnung\n\n## Zweck\nBeleg\.\n\n## Aktivität/);
 });
 
 test("a | in a table cell is escaped; headings in code blocks stay as they are and nested headings don't go below the sixth level", () => {
