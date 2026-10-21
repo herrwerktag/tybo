@@ -221,10 +221,21 @@ async function exists(tx: Queries, table: string): Promise<boolean> {
  * running the same step. */
 const MIGRATION_LOCK = 4_711_001;
 
+/** A step the database records under a version that has another step here: the database was brought up by
+ * other code (another branch, say), so the steps of this version here would never run. Its message names only
+ * the steps, nothing of the connection. */
+export class SchemaMismatch extends Error {
+	constructor(readonly version: number, readonly recorded: string, readonly expected: string) {
+		super(`Schema step ${version} in the database is "${recorded}", but here it is "${expected}" — the database was brought up by other code.`);
+		this.name = "SchemaMismatch";
+	}
+}
+
 /**
  * Brings the database's schema up to date: every step it hasn't run yet, in order, and each recorded in
  * `schema_migrations` so it never runs again. All of it in one transaction — a step that fails leaves the
  * schema exactly as it was. Answers the versions it ran (none: the schema was up to date already).
+ * A recorded step whose name isn't this version's throws a SchemaMismatch, before anything runs.
  */
 export async function migrateSchema(sql: Sql, migrations: readonly Migration[] = MIGRATIONS): Promise<number[]> {
 	return sql.begin(async (tx) => {
@@ -236,7 +247,11 @@ export async function migrateSchema(sql: Sql, migrations: readonly Migration[] =
 				applied_at timestamptz not null default now()
 			)`;
 		}
-		const done = new Set((await tx`select version from schema_migrations`).map((row) => row.version as number));
+		const done = new Map((await tx`select version, name from schema_migrations`).map((row) => [row.version as number, row.name as string]));
+		for (const migration of migrations) {
+			const recorded = done.get(migration.version);
+			if (recorded !== undefined && recorded !== migration.name) throw new SchemaMismatch(migration.version, recorded, migration.name);
+		}
 		const ran: number[] = [];
 		for (const migration of migrations) {
 			if (done.has(migration.version)) continue;

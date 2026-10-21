@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { test } from "node:test";
-import { MIGRATIONS, migrateSchema } from "./schema.js";
+import { MIGRATIONS, SchemaMismatch, migrateSchema } from "./schema.js";
 
 /** The test database these tests run against (never the productive DATABASE_URL); without it they are skipped, not failed. */
 const url = process.env.TEST_DATABASE_URL;
@@ -53,6 +53,26 @@ test("a step that fails leaves the schema exactly as it was — none of the run 
 		assert.deepEqual(await sql`select version from schema_migrations order by version`, before);
 		const [half] = await sql`select to_regclass('schema_test_half') is not null as there`;
 		assert.equal(half?.there, false, "the step before the failing one was rolled back with it");
+	} finally {
+		await sql.end({ timeout: 5 });
+	}
+});
+
+test("a step recorded under another name stops the run before anything runs", { skip: !url }, async () => {
+	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
+	try {
+		// As a database brought up by another branch: its own step 9, not this one's.
+		await wipe(sql);
+		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 9));
+		await sql`insert into schema_migrations (version, name) values (9, 'from another branch')`;
+		const last = MIGRATIONS.at(-1)!;
+		const later = [...MIGRATIONS, { version: last.version + 1, name: "later", up: async (tx: postgres.ISql<{}>) => void (await tx`create table schema_test_later (id int)`) }];
+
+		await assert.rejects(migrateSchema(sql, later), (error) =>
+			error instanceof SchemaMismatch && error.version === 9 && error.recorded === "from another branch" && error.expected === MIGRATIONS.find((m) => m.version === 9)!.name,
+		);
+		const [table] = await sql`select to_regclass('schema_test_later') is not null as there`;
+		assert.equal(table?.there, false, "no step ran");
 	} finally {
 		await sql.end({ timeout: 5 });
 	}
