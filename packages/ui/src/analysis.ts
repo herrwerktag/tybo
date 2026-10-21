@@ -12,12 +12,13 @@ import {
 	type PathStep,
 	type Store,
 } from "@tybo/core";
-import { analysisMarkdown, pathLabel } from "./analysis-export.js";
+import { analysisMarkdownFiles, pathLabel } from "./analysis-export.js";
 import { DETAILS_WIDTH_KEY } from "./canvas.js";
 import { downloadFile, el, resizeHandle, safeFileName, typeDot } from "./dom.js";
 import { createCardPreview, entityDetails } from "./entity-card.js";
 import { text } from "./i18n.js";
 import { readPreference, writePreference } from "./preferences.js";
+import { zipFiles } from "./zip.js";
 
 /** The analysis open in the Analyses tab. */
 const SELECTED_KEY = "analysis-selected";
@@ -309,7 +310,9 @@ export function analysisView(store: Store, { onEditEntity }: { onEditEntity: (en
 		}
 		const exportMarkdown = () => {
 			const date = new Date().toISOString().slice(0, 10);
-			downloadFile(`${safeFileName(analysis.name)} ${date}.md`, analysisMarkdown(store.data, analysis, date), "text/markdown;charset=utf-8");
+			const files = analysisMarkdownFiles(store.data, analysis, date);
+			if (files.length === 1) downloadFile(files[0]!.name, files[0]!.contents, "text/markdown;charset=utf-8");
+			else downloadFile(`${safeFileName(analysis.name)} ${date}.zip`, zipFiles(files), "application/zip");
 		};
 		header.append(
 			el("button", { type: "button", title: text.exportAnalysisMarkdownHint, onclick: exportMarkdown }, text.exportAnalysisMarkdown),

@@ -28,6 +28,18 @@ export function safeFileName(name: string): string {
 	return name.replace(/[\\/:*?"<>|]/g, "-").trim() || "workspace";
 }
 
+/** Files named from user text, made safe and unique (ignoring case) by numbering repeats: "Dune", "Dune 2", … */
+export function uniqueFileNames(files: readonly { name: string; contents: string }[], extension: string): { name: string; contents: string }[] {
+	const taken = new Set<string>();
+	return files.map(({ name, contents }) => {
+		const base = safeFileName(name);
+		let unique = base;
+		for (let n = 2; taken.has(unique.toLocaleLowerCase()); n++) unique = `${base} ${n}`;
+		taken.add(unique.toLocaleLowerCase());
+		return { name: `${unique}.${extension}`, contents };
+	});
+}
+
 /** A small colored circle marking an entity type. */
 export function typeDot(color: string): HTMLElement {
 	const dot = el("span", { className: "type-dot", ariaHidden: "true" });

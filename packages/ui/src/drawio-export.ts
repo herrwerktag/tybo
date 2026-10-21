@@ -1,4 +1,4 @@
-import { safeFileName } from "./dom.js";
+import { uniqueFileNames } from "./dom.js";
 import { areaContents } from "./drawings.js";
 import { text } from "./i18n.js";
 import { renderMarkdown } from "./markdown.js";
@@ -52,14 +52,7 @@ export function boardDrawioFiles(data: Pick<AppData, "types" | "entities" | "boa
 			return { name, contents: drawioFile(data, board, name, board.cards.filter((c) => cardIds.has(c.id)), inside, area) };
 		}),
 	];
-	const taken = new Set<string>();
-	return files.map(({ name, contents }) => {
-		const base = safeFileName(name);
-		let unique = base;
-		for (let n = 2; taken.has(unique.toLocaleLowerCase()); n++) unique = `${base} ${n}`;
-		taken.add(unique.toLocaleLowerCase());
-		return { name: `${unique}.drawio`, contents };
-	});
+	return uniqueFileNames(files, "drawio");
 }
 
 function findBoard(data: Pick<AppData, "boards">, boardId: string): Board {
