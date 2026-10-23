@@ -797,6 +797,11 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			for (const listener of historyListeners) listener();
 		},
 
+		/** Settles once the saves on their way have landed, well or badly — `problems` says which. */
+		saved(): Promise<void> {
+			return savesSettled;
+		},
+
 		/** Calls `listener` whenever `problems.saveFailed` or `problems.saveConflict` changes. */
 		onProblemsChange(listener: () => void): void {
 			problemListeners.push(listener);
