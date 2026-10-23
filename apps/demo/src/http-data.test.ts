@@ -41,18 +41,20 @@ const jsonAnswer = (value: unknown, headers: Record<string, string> = {}) =>
 
 const JSON_BODY = { "content-type": "application/json" };
 
-test("the workspaces are listed, made, renamed and deleted at their addresses, ids escaped", async () => {
+test("the workspaces are listed, made, renamed, moved and deleted at their addresses, ids escaped", async () => {
 	const api = fakeFetch((sent) => (sent.method === "GET" ? jsonAnswer([{ id: "a/b", name: "Erste" }]) : answer(sent.method === "POST" ? 201 : 204)));
 	const port = httpData("http://api.local/");
 	try {
 		assert.deepEqual(await port.listWorkspaces(), [{ id: "a/b", name: "Erste" }]);
 		await port.createWorkspace({ id: "a/b", name: "Erste" }, 1);
 		await port.renameWorkspace("a/b", "Neu");
+		await port.moveWorkspace("a/b", 2);
 		await port.deleteWorkspace("a/b");
 		assert.deepEqual(api.sent, [
 			{ method: "GET", url: "http://api.local/workspaces", body: null, headers: {} },
 			{ method: "POST", url: "http://api.local/workspaces", body: '{"id":"a/b","name":"Erste","dataVersion":1}', headers: JSON_BODY },
 			{ method: "PATCH", url: "http://api.local/workspaces/a%2Fb", body: '{"name":"Neu"}', headers: JSON_BODY },
+			{ method: "PATCH", url: "http://api.local/workspaces/a%2Fb", body: '{"position":2}', headers: JSON_BODY },
 			{ method: "DELETE", url: "http://api.local/workspaces/a%2Fb", body: null, headers: {} },
 		]);
 	} finally {

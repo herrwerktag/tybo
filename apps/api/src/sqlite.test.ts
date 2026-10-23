@@ -108,6 +108,14 @@ test("sqlite: a workspace is made empty, saved, read back as saved, renamed and 
 		assert.equal(await storage.renameWorkspace("none", "Niemand"), false);
 		assert.deepEqual(await storage.listWorkspaces(), [{ id: "ws", name: "Umbenannt" }]);
 
+		await storage.createWorkspace({ id: "ws-2", name: "Zweit" }, 1);
+		await storage.createWorkspace({ id: "ws-3", name: "Dritt" }, 1);
+		assert.equal(await storage.moveWorkspace("ws-3", 0), true);
+		assert.equal(await storage.moveWorkspace("none", 0), false);
+		assert.deepEqual((await storage.listWorkspaces()).map((w) => w.id), ["ws-3", "ws", "ws-2"]);
+		await storage.deleteWorkspace("ws-2");
+		await storage.deleteWorkspace("ws-3");
+
 		// Deleting the type takes its entity, the entity's card and value with it.
 		const withoutType = { ...sample(), types: [], entities: [], boards: [{ ...sample().boards[0]!, cards: [] }] };
 		await storage.writeChanges("ws", changesBetween(sample(), { ...sample(), types: [] }).filter((c) => c.kind === "type"));

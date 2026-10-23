@@ -46,6 +46,10 @@ export function httpData(apiUrl: string): DataPort {
 			return inOrder(async () => void takeOrReject(await fetch(at("workspaces", id), json("PATCH", { name }))));
 		},
 
+		moveWorkspace(id, to) {
+			return inOrder(async () => void takeOrReject(await fetch(at("workspaces", id), json("PATCH", { position: to }))));
+		},
+
 		deleteWorkspace(id) {
 			return inOrder(async () => void takeOrReject(await fetch(at("workspaces", id), { method: "DELETE" })));
 		},

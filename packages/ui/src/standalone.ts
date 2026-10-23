@@ -56,6 +56,7 @@ function readOnlyPort(data: unknown): DataPort {
 		listWorkspaces: async () => [{ id: VIEW_WORKSPACE, name: "" }],
 		createWorkspace: refuse,
 		renameWorkspace: refuse,
+		moveWorkspace: refuse,
 		deleteWorkspace: refuse,
 		load: async (id) => (id === VIEW_WORKSPACE ? { data, version: "1" } : null),
 		version: async (id) => (id === VIEW_WORKSPACE ? "1" : null),

@@ -1,4 +1,4 @@
-import type { AppData, Drawing, WorkspaceInfo } from "@tybo/core";
+import { moveItem, type AppData, type Drawing, type WorkspaceInfo } from "@tybo/core";
 import type { Queries, Sql } from "./schema.js";
 
 /** A workspace's data as a read answers it: its rows put together the way the app holds them, marked with
@@ -28,6 +28,21 @@ export async function createWorkspace(sql: Queries, info: WorkspaceInfo, dataVer
 export async function renameWorkspace(sql: Queries, id: string, name: string): Promise<boolean> {
 	const updated = await sql`update workspaces set name = ${name}, updated_at = now() where id = ${id} returning id`;
 	return updated.length > 0;
+}
+
+/** Moves the workspace to index `to` in the list, renumbering the positions of all; false when there is none of
+ * that id. */
+export async function moveWorkspace(sql: Sql, id: string, to: number): Promise<boolean> {
+	return sql.begin(async (tx) => {
+		const rows = await tx`select id from workspaces order by position, created_at, id for update`;
+		const ids = rows.map((row) => row.id as string);
+		const from = ids.indexOf(id);
+		if (from < 0) return false;
+		for (const [position, each] of moveItem(ids, from, to).entries()) {
+			await tx`update workspaces set position = ${position} where id = ${each}`;
+		}
+		return true;
+	});
 }
 
 /** Deletes the workspace, and with it every row of its data (the tables' references cascade). */

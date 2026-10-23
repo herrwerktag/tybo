@@ -1,5 +1,5 @@
 import { unitStands, untouched, type Change } from "./changes.js";
-import type { AppData, Board } from "./model.js";
+import { moveItem, type AppData, type Board } from "./model.js";
 import type { DataPort, SavedChanges, WorkspaceInfo } from "./ports.js";
 
 /** One workspace as the memory holds it: its data as saved (in whatever shape a test put there), and the
@@ -17,7 +17,7 @@ interface Held {
  * Besides the port, it lets a test look in and step in: what was saved (`saves`), how often a version was
  * asked for (`looks`), someone else saving (`saveElsewhere`), and calls that fail (`failing`). */
 export function memoryDataPort(initial: Record<string, unknown> = {}) {
-	const held = new Map<string, Held>(
+	let held = new Map<string, Held>(
 		Object.entries(initial).map(([id, data]) => [id, { name: id, data: data as Record<string, unknown>, version: 1 }]),
 	);
 	const failing = { loads: false, saves: false, looks: false, workspaces: false };
@@ -42,6 +42,12 @@ export function memoryDataPort(initial: Record<string, unknown> = {}) {
 			fail("workspaces");
 			const workspace = held.get(id);
 			if (workspace) workspace.name = name;
+		},
+		async moveWorkspace(id, to) {
+			fail("workspaces");
+			const entries = [...held];
+			const from = entries.findIndex(([key]) => key === id);
+			if (from >= 0) held = new Map(moveItem(entries, from, to));
 		},
 		async deleteWorkspace(id) {
 			fail("workspaces");

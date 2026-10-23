@@ -204,3 +204,69 @@ export function tagFilter(
 	);
 	return { select, tag };
 }
+
+/** A ⠿ button for reorderable(); `focusKey` finds it again after a re-render (see UiState.focusHandle). */
+export function dragHandle(label: string, focusKey: string): HTMLButtonElement {
+	const handle = el("button", { type: "button", className: "drag-handle", title: text.dragToReorder, ariaLabel: label }, "⠿");
+	handle.dataset.focusKey = focusKey;
+	return handle;
+}
+
+/**
+ * Lets `item`, at `index` of `count` in its list, be dragged by `handle` to another place in that list (`mime` keeps
+ * drags from landing in another list), or moved up and down with the arrow keys while the handle has focus.
+ * `move(from, to)` gets the item's index and the one it should end up at.
+ */
+export function reorderable(
+	item: HTMLElement,
+	handle: HTMLElement,
+	{ index, count, mime, move }: { index: number; count: number; mime: string; move: (from: number, to: number) => void },
+): void {
+	handle.addEventListener("keydown", (e) => {
+		if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+		e.preventDefault();
+		const to = e.key === "ArrowUp" ? index - 1 : index + 1;
+		if (to >= 0 && to < count) move(index, to);
+	});
+	// Only the handle makes the item draggable, so text in it stays selectable.
+	handle.addEventListener("pointerdown", () => {
+		item.draggable = true;
+	});
+	// A click without a drag: stop the item being draggable again (a real drag ends in dragend).
+	handle.addEventListener("pointerup", () => {
+		item.draggable = false;
+	});
+	const clearDropMarker = () => item.classList.remove("drop-before", "drop-after");
+	const dropsBefore = (e: DragEvent) => {
+		const rect = item.getBoundingClientRect();
+		return e.clientY < rect.top + rect.height / 2;
+	};
+	item.addEventListener("dragstart", (e) => {
+		e.dataTransfer?.setData(mime, String(index));
+		if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+		item.classList.add("dragging");
+	});
+	item.addEventListener("dragend", () => {
+		item.draggable = false;
+		item.classList.remove("dragging");
+	});
+	item.addEventListener("dragover", (e) => {
+		if (!e.dataTransfer?.types.includes(mime)) return;
+		e.preventDefault();
+		e.dataTransfer.dropEffect = "move";
+		const before = dropsBefore(e);
+		item.classList.toggle("drop-before", before);
+		item.classList.toggle("drop-after", !before);
+	});
+	item.addEventListener("dragleave", clearDropMarker);
+	item.addEventListener("drop", (e) => {
+		const from = Number(e.dataTransfer?.getData(mime));
+		clearDropMarker();
+		if (!Number.isInteger(from)) return;
+		e.preventDefault();
+		// Index among the other items, once the dragged one is taken out.
+		const target = dropsBefore(e) ? index : index + 1;
+		const to = from < target ? target - 1 : target;
+		if (to !== from) move(from, to);
+	});
+}

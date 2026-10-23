@@ -82,7 +82,7 @@ laufen immer, jeweils auf einer eigenen temporaeren Datei.
 | --- | --- | --- |
 | `GET` | `/health` | Datenbank erreichbar? |
 | `GET` / `POST` | `/workspaces` | Arbeitsbereiche auflisten / anlegen |
-| `PATCH` / `DELETE` | `/workspaces/:id` | umbenennen / loeschen |
+| `PATCH` / `DELETE` | `/workspaces/:id` | umbenennen (`{ name }`) oder verschieben (`{ position }`) / loeschen |
 | `GET` / `HEAD` | `/workspaces/:id/data` | Daten lesen / nur Stand (ETag) |
 | `PUT` | `/workspaces/:id/changes` | Aenderungen je Einheit schreiben |
 

@@ -70,6 +70,11 @@ test("a workspace is made empty, renamed, listed, and deleted with every row of 
 		const listed = (await storage.listWorkspaces()).find((w) => w.id === id);
 		assert.deepEqual(listed, { id, name: "Umbenannt" });
 
+		// Other tests' workspaces may be there too: the move is seen relative to them.
+		assert.equal(await storage.moveWorkspace(id, 0), true);
+		assert.equal(await storage.moveWorkspace(freshId(), 0), false);
+		assert.equal((await storage.listWorkspaces())[0]?.id, id);
+
 		const saved = await storage.writeChanges(id, changesBetween(empty(), sample()));
 		assert.deepEqual(saved, { version: "1", collided: [] });
 		assert.equal(await storage.workspaceRevision(id), "1");

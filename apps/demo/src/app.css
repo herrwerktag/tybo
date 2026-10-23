@@ -169,6 +169,11 @@ main.standalone {
 	gap: 0.15rem;
 }
 
+.workspace-list li {
+	display: flex;
+	align-items: center;
+}
+
 .workspace-option {
 	width: 100%;
 	text-align: left;
@@ -368,17 +373,17 @@ button:disabled {
 	touch-action: none;
 }
 
-:is(.property, .type-item, tr).dragging {
+:is(.property, .type-item, tr, .workspace-list li, .picker-list li).dragging {
 	opacity: 0.5;
 }
 
-/* Where a dragged property, type or entity will land (on a table row, its cells draw the line). */
-:is(.property, .type-item).drop-before,
+/* Where a dragged property, type, entity, workspace or board will land (on a table row, its cells draw the line). */
+:is(.property, .type-item, .workspace-list li, .picker-list li).drop-before,
 tr.drop-before > td {
 	box-shadow: 0 -3px 0 var(--focus);
 }
 
-:is(.property, .type-item).drop-after,
+:is(.property, .type-item, .workspace-list li, .picker-list li).drop-after,
 tr.drop-after > td {
 	box-shadow: 0 3px 0 var(--focus);
 }
@@ -2404,11 +2409,31 @@ button.ref-tag {
 	justify-content: space-between;
 }
 
-.canvas-dialog h2 {
+/* The board, story and frame pickers: dropdowns under their buttons, like the workspace menu (placed by script). */
+.picker-dropdown {
+	position: fixed;
+	z-index: 30;
+	margin: 0;
+	width: min(26rem, calc(100vw - 1rem));
+	overflow-y: auto;
+	padding: 1rem;
+	background: var(--surface);
+	color: inherit;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	box-shadow: 0 6px 20px rgb(0 0 0 / 0.12);
+}
+
+.picker-dropdown[open] {
+	display: grid;
+	gap: 0.75rem;
+}
+
+:is(.canvas-dialog, .picker-dropdown) h2 {
 	font-size: 1rem;
 }
 
-.canvas-dialog h3 {
+:is(.canvas-dialog, .picker-dropdown) h3 {
 	font-size: 0.9rem;
 }
 
@@ -2419,6 +2444,11 @@ button.ref-tag {
 	margin: 0;
 	padding: 0;
 	list-style: none;
+}
+
+/* The pickers' dropdowns scroll as a whole; a scrolling list would cut off the drop marker above its first board
+   and below its last. */
+.connect-list {
 	overflow-y: auto;
 }
 

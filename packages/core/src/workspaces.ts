@@ -1,5 +1,5 @@
 import { changesBetween } from "./changes.js";
-import type { AppData, EntityType } from "./model.js";
+import { moveItem, type AppData, type EntityType } from "./model.js";
 import { DATA_VERSION, createStore, looksLikeAppData, prepareImport, toSaved, type Store } from "./store.js";
 import type { DataPort, WorkspaceInfo } from "./ports.js";
 import { ulid } from "./ulid.js";
@@ -134,6 +134,16 @@ export async function createWorkspaces(port: DataPort, defaultName: (n: number) 
 			if (name.trim() === "") return;
 			list = list.map((w) => (w.id === id ? { ...w, name: name.trim() } : w));
 			void port.renameWorkspace(id, name.trim()).catch(() => {});
+		},
+
+		/** Moves a workspace to index `to` in the list; a move the storage doesn't take is undone here at its next
+		 * reload. The active workspace is remembered: without that, the next start would open whichever is first now. */
+		move(id: string, to: number): void {
+			const from = list.findIndex((w) => w.id === id);
+			if (from < 0) return;
+			list = moveItem(list, from, to);
+			preference.write(active);
+			void port.moveWorkspace(id, to).catch(() => {});
 		},
 
 		/** Deletes a workspace and all its data. The last workspace can't be deleted. */
