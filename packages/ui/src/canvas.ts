@@ -996,6 +996,31 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card[data-card-id]")) {
 			node.classList.toggle("selected", isCardSelected(node.dataset.cardId!));
 		}
+		markChain();
+	}
+
+	/** The cards linked by lines to this one, either way and through others, with it. */
+	function chainOf(cardId: string): Set<string> {
+		const chain = new Set([cardId]);
+		for (const id of chain) {
+			for (const [from, to] of edges) {
+				if (from === id) chain.add(to);
+				if (to === id) chain.add(from);
+			}
+		}
+		return chain;
+	}
+
+	/** With one card selected, everything on the board fades but its chain: the cards linked to it and their lines. */
+	function markChain(): void {
+		const chain = selected?.cardId && !group ? chainOf(selected.cardId) : null;
+		layer.classList.toggle("focusing", chain !== null);
+		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card[data-card-id]")) {
+			node.classList.toggle("in-chain", !!chain?.has(node.dataset.cardId!));
+		}
+		for (const node of layer.querySelectorAll<HTMLElement | SVGElement>(".connector, .connector-label")) {
+			node.classList.toggle("in-chain", !!chain?.has(node.dataset.from!) && !!chain?.has(node.dataset.to!));
+		}
 	}
 
 	/** What's selected on the board: the group, or the one card or drawing (copies, to change). */
@@ -1271,6 +1296,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	let links: { fromCardId: string; targetCardIds: string[]; label: string; color: string; arrow: LineArrow }[] = [];
 	/** Cards that just came onto the page shown, so they fade in; set when changing pages. */
 	let appearing = new Set<string>();
+	/** The lines drawn, as the cards they link (see drawConnectors). */
+	let edges: [string, string][] = [];
 
 	function renderCards(): void {
 		preview.hide(); // its tag is about to be replaced
@@ -1364,21 +1391,23 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	function drawConnectors(): void {
 		const lines: SVGElement[] = [];
 		const labels: HTMLElement[] = [];
+		edges = [];
 		// A line touching a dimmed card is dimmed with it.
 		const dimmed = new Set(currentPage()?.dimmedCardIds);
 		for (const { fromCardId, targetCardIds, label, color, arrow } of links) {
 			const from = cardRects.get(fromCardId);
 			const to = from && nearest(from, targetCardIds.flatMap((id) => cardRects.get(id) ?? []));
 			if (!from || !to) continue;
-			const toCardId = targetCardIds.find((id) => cardRects.get(id) === to);
-			const faded = dimmed.has(fromCardId) || (toCardId !== undefined && dimmed.has(toCardId));
+			const toCardId = targetCardIds.find((id) => cardRects.get(id) === to)!;
+			edges.push([fromCardId, toCardId]);
+			const faded = dimmed.has(fromCardId) || dimmed.has(toCardId);
 			// "from" draws the same curve the other way round, so the arrowhead lands on this card.
 			const shape = arrow === "from" ? connector(to, from) : connector(from, to, arrow === "to");
 			const { path, mid } = shape;
 			lines.push(
 				svgEl(
 					"g",
-					{ class: faded ? "connector dimmed" : "connector" },
+					{ class: faded ? "connector dimmed" : "connector", "data-from": fromCardId, "data-to": toCardId },
 					svgEl("path", { class: "connector-line", d: path }),
 					...(shape.arrow
 						? [svgEl("polygon", { class: "connector-arrow", points: shape.arrow, fill: color || "currentColor" })]
@@ -1387,10 +1416,12 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			);
 			const tag = el("span", { className: faded ? "connector-label dimmed" : "connector-label" }, label);
 			Object.assign(tag.style, { left: `${mid.x}px`, top: `${mid.y}px` });
+			Object.assign(tag.dataset, { from: fromCardId, to: toCardId });
 			labels.push(tag);
 		}
 		connectorLayer.replaceChildren(...lines);
 		connectorLabels.replaceChildren(...labels);
+		markChain();
 	}
 
 	function cardElement(

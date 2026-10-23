@@ -707,6 +707,37 @@ test("Connect creates a new entity the card's entity links to, its card beside i
 	assert.equal(detailsButton(view, "Connect")!.disabled, true);
 });
 
+test("selecting a card fades the board but its chain: the cards linked to it either way, through others too", async () => {
+	const { store, person, book, author, card } = await connectable();
+	const boardId = store.data.boards[0]!.id;
+	const frank = store.addEntity(person.id, "Frank", "", {});
+	const sequel = store.addEntity(book.id, "Children of Dune", "", { [author.id]: frank.id });
+	const other = store.addEntity(person.id, "Jane", "", {});
+	store.updateEntity(card.entityId, "Dune", "", { [author.id]: frank.id }, "", []);
+	const frankCard = store.addCard(boardId, frank.id, 300, 0);
+	const sequelCard = store.addCard(boardId, sequel.id, 600, 0);
+	const otherCard = store.addCard(boardId, other.id, 0, 300);
+	freshDom();
+	const view = canvasView(store, { readOnly: false });
+	document.body.append(view);
+	const inChain = () =>
+		[card, frankCard, sequelCard, otherCard].filter((c) => cardNode(view, c.id).classList.contains("in-chain")).map((c) => c.id);
+	const board = view.querySelector(".canvas-board")!;
+
+	// Dune → Frank ← Children of Dune: all three stand out from Dune, not Jane.
+	cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	assert.ok(board.classList.contains("focusing"));
+	assert.deepEqual(inChain(), [card.id, frankCard.id, sequelCard.id]);
+	assert.equal(view.querySelectorAll(".connector.in-chain").length, 2);
+
+	cardNode(view, otherCard.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	assert.deepEqual(inChain(), [otherCard.id]);
+	assert.equal(view.querySelectorAll(".connector.in-chain").length, 0);
+
+	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+	assert.ok(!board.classList.contains("focusing"));
+});
+
 test("Connect links an existing entity, found by name, and the other way round too", async () => {
 	const { store, view, person, book, author, dune } = await connectable();
 	const frank = store.addEntity(person.id, "Frank", "", {});

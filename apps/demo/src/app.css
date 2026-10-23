@@ -2026,6 +2026,15 @@ button.ref-tag {
 	opacity: 0.2;
 }
 
+/* With one card selected, the rest of the board fades to grey so the chain of cards linked to it stands out. */
+.focusing .canvas-card:not(.in-chain),
+.focusing .connector:not(.in-chain),
+.focusing .connector-label:not(.in-chain),
+.focusing .drawing {
+	opacity: 0.2;
+	filter: grayscale(1);
+}
+
 /* The dim toggle sits right, next to ×. */
 .card-dim {
 	margin-left: auto;
