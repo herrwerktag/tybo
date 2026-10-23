@@ -673,7 +673,7 @@ test("Analyses: an analysis set up step by step lists the rows grouped, is saved
 		name,
 		kind: "reference",
 		options: [],
-		reference: { typeIds: [typeId], multiple: false, arrow: "to", lineLabel: "", inverseLabel },
+		reference: { typeIds: [typeId], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel },
 		cardDisplay: "list",
 	});
 	// Entity ids are ULIDs (others are replaced on loading, losing the references to them).

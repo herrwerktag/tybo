@@ -17,6 +17,7 @@ import {
 	inverseReferences,
 	inverseRelations,
 	migrateValues,
+	missingRequired,
 	moveItem,
 	nextTypeColor,
 	parseValue,
@@ -26,6 +27,7 @@ import {
 	snapToGrid,
 	validateType,
 	type PropertyDef,
+	type PropertyValue,
 } from "./model.js";
 
 const noTypes = new Set<string>();
@@ -77,8 +79,8 @@ test("migrateValues: text to options keeps values that match an option", () => {
 	assert.deepEqual(migrateValues({ t: "Emma" }, [asOptions], noEntities), { t: null });
 });
 
-const author: PropertyDef = { id: "a", name: "author", kind: "reference", options: [], reference: { typeIds: ["person"], multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" };
-const tags: PropertyDef = { id: "g", name: "tags", kind: "reference", options: [], reference: { typeIds: ["tag"], multiple: true, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" };
+const author: PropertyDef = { id: "a", name: "author", kind: "reference", options: [], reference: { typeIds: ["person"], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" };
+const tags: PropertyDef = { id: "g", name: "tags", kind: "reference", options: [], reference: { typeIds: ["tag"], multiple: true, required: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" };
 const entityTypes = new Map([
 	["p1", "person"],
 	["p2", "person"],
@@ -110,14 +112,14 @@ test("parseValue: a list is not a valid text value", () => {
 });
 
 test("migrateValues: single and multiple references convert into each other", () => {
-	const asMultiple: PropertyDef = { ...author, reference: { typeIds: ["person"], multiple: true, arrow: "to", lineLabel: "", inverseLabel: "" } };
+	const asMultiple: PropertyDef = { ...author, reference: { typeIds: ["person"], multiple: true, required: false, arrow: "to", lineLabel: "", inverseLabel: "" } };
 	assert.deepEqual(migrateValues({ a: "p1" }, [asMultiple], entityTypes), { a: ["p1"] });
-	const asSingle: PropertyDef = { ...tags, reference: { typeIds: ["tag"], multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" } };
+	const asSingle: PropertyDef = { ...tags, reference: { typeIds: ["tag"], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" } };
 	assert.deepEqual(migrateValues({ g: ["t2", "t1"] }, [asSingle], entityTypes), { g: "t2" });
 });
 
 test("migrateValues: changing the target type clears references", () => {
-	const toTag: PropertyDef = { ...author, reference: { typeIds: ["tag"], multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" } };
+	const toTag: PropertyDef = { ...author, reference: { typeIds: ["tag"], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" } };
 	assert.deepEqual(migrateValues({ a: "p1" }, [toTag], entityTypes), { a: null });
 });
 
@@ -227,7 +229,7 @@ test("inverse references: who points at an entity, only for properties with an i
 		name,
 		kind: "reference",
 		options: [],
-		reference: { typeIds: ["role"], multiple: false, arrow: "to", lineLabel: "", inverseLabel },
+		reference: { typeIds: ["role"], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel },
 		cardDisplay: "list",
 	});
 	const responsible = ref("resp", "responsible", "responsible for");
@@ -300,13 +302,31 @@ test("placeBeside puts a card right of the source, moved down past the cards in 
 	assert.deepEqual(placeBeside({ x: 10, y: 13, width: 240, height: 80 }, [], size), { x: 288, y: 24 });
 });
 
+test("missingRequired: required references without an entity, in property order", () => {
+	const required = (id: string, multiple: boolean): PropertyDef => ({
+		...author,
+		id,
+		name: id,
+		reference: { ...author.reference!, multiple, required: true },
+	});
+	const type = { properties: [required("one", false), author, required("many", true)] };
+	const entity = (values: Record<string, PropertyValue>) => ({ id: "e", typeId: "t", name: "E", content: "", description: "", tags: [], values });
+
+	assert.deepEqual(missingRequired(type, entity({})).map((p) => p.id), ["one", "many"]);
+	assert.deepEqual(missingRequired(type, entity({ one: "p1", many: null })).map((p) => p.id), ["many"]);
+	assert.deepEqual(missingRequired(type, entity({ one: "p1", many: ["t1"] })), []);
+	// Optional references and an unknown type are never missing.
+	assert.deepEqual(missingRequired({ properties: [author] }, entity({})), []);
+	assert.deepEqual(missingRequired(undefined, entity({})), []);
+});
+
 test("relationsOf: an entity's own references that can take one more, and every reference that can point at it", () => {
 	const ref = (id: string, typeIds: string[], multiple: boolean, inverseLabel = ""): PropertyDef => ({
 		id,
 		name: id,
 		kind: "reference",
 		options: [],
-		reference: { typeIds, multiple, arrow: "from", lineLabel: "", inverseLabel },
+		reference: { typeIds, multiple, required: false, arrow: "from", lineLabel: "", inverseLabel },
 		cardDisplay: "line",
 	});
 	const idea = { id: "idea", name: "Idea", properties: [ref("related", ["idea"], true)], contentTemplate: "", color: "#dcdcdc" };

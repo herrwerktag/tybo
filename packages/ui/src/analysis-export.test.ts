@@ -16,7 +16,7 @@ const prop = (id: string, name: string, more: Partial<PropertyDef> = {}): Proper
 });
 const reference = (typeIds: string[]) => ({
 	kind: "reference" as const,
-	reference: { typeIds, multiple: true, arrow: "to" as const, lineLabel: "", inverseLabel: "" },
+	reference: { typeIds, multiple: true, required: false, arrow: "to" as const, lineLabel: "", inverseLabel: "" },
 });
 const entity = (
 	id: string,

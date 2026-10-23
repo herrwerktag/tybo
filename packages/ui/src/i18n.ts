@@ -113,6 +113,7 @@ const en = {
 	noProperties: "no properties",
 	kinds: { text: "text", options: "options", reference: "reference" } satisfies Record<PropertyKind, string>,
 	multipleSuffix: "(multiple)",
+	requiredSuffix: "(required)",
 	confirmChangedValues: (count: number) => `This changes or clears ${count} existing values. Continue?`,
 	cannotDeleteType: (name: string, usedBy: string) =>
 		`Can't delete ${name}: used by ${usedBy}. Remove or change those properties first.`,
@@ -140,6 +141,8 @@ const en = {
 	addReference: "Add…",
 	removeReference: (name: string) => `Remove ${name}`,
 	allowMultiple: "Allow multiple",
+	requiredReference: "Required",
+	requiredReferenceHint: "Entities without one are still saved, but marked as incomplete",
 	arrow: "Arrow",
 	arrows: { to: "To target", from: "From target", none: "None" } satisfies Record<LineArrow, string>,
 	lineLabel: "Line label",
@@ -183,6 +186,8 @@ const en = {
 	description: "Description",
 	details: "Details",
 	noDescription: "No description",
+	missingRequired: (names: string) => `Missing: ${names}`,
+	missingValue: "missing",
 	closeDetails: "Close details",
 	confirmDeleteEntity: (name: string, references: number) =>
 		`Delete "${name}"?` +
@@ -466,6 +471,7 @@ const de: Messages = {
 	noProperties: "keine Eigenschaften",
 	kinds: { text: "Text", options: "Auswahl", reference: "Referenz" },
 	multipleSuffix: "(mehrfach)",
+	requiredSuffix: "(Pflicht)",
 	confirmChangedValues: (count) => `Dadurch werden ${count} vorhandene Werte geändert oder geleert. Fortfahren?`,
 	cannotDeleteType: (name, usedBy) =>
 		`${name} kann nicht gelöscht werden: wird verwendet von ${usedBy}. Entferne oder ändere zuerst diese Eigenschaften.`,
@@ -492,6 +498,8 @@ const de: Messages = {
 	addReference: "Hinzufügen …",
 	removeReference: (name) => `${name} entfernen`,
 	allowMultiple: "Mehrfachauswahl",
+	requiredReference: "Pflichtfeld",
+	requiredReferenceHint: "Entitäten ohne Verweis werden trotzdem gespeichert, aber als unvollständig markiert",
 	arrow: "Pfeil",
 	arrows: { to: "Zum Ziel", from: "Vom Ziel", none: "Keiner" },
 	lineLabel: "Linienbeschriftung",
@@ -535,6 +543,8 @@ const de: Messages = {
 	description: "Beschreibung",
 	details: "Details",
 	noDescription: "Keine Beschreibung",
+	missingRequired: (names) => `Fehlt: ${names}`,
+	missingValue: "fehlt",
 	closeDetails: "Details schließen",
 	confirmDeleteEntity: (name, references) =>
 		`„${name}“ löschen?` +

@@ -17,7 +17,7 @@ const prop = (id: string, name: string, more: Partial<PropertyDef> = {}): Proper
 const reference = (typeIds: string[], more: Partial<NonNullable<PropertyDef["reference"]>> = {}) => ({
 	kind: "reference" as const,
 	cardDisplay: "line" as const,
-	reference: { typeIds, multiple: false, arrow: "to" as const, lineLabel: "", inverseLabel: "", ...more },
+	reference: { typeIds, multiple: false, required: false, arrow: "to" as const, lineLabel: "", inverseLabel: "", ...more },
 });
 const entity = (id: string, typeId: string, name: string, values: AppData["entities"][number]["values"] = {}, more = {}) => ({
 	id,

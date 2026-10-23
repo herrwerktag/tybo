@@ -110,7 +110,8 @@ function describeProperty(p: PropertyDef, types: EntityType[]): string {
 	if (p.kind === "reference") {
 		const target = (p.reference?.typeIds ?? []).map((id) => types.find((t) => t.id === id)?.name ?? "?").join(" / ") || "?";
 		// No-break spaces keep "→ Target (multiple)" together; a long line wraps after the property name.
-		const suffix = p.reference?.multiple ? `\u00a0${text.multipleSuffix}` : "";
+		const multiple = p.reference?.multiple ? `\u00a0${text.multipleSuffix}` : "";
+		const suffix = multiple + (p.reference?.required ? `\u00a0${text.requiredSuffix}` : "");
 		return `${p.name} →\u00a0${target}${suffix}`;
 	}
 	return `${p.name}: ${text.kinds.text}`;
@@ -752,6 +753,18 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 							},
 						}),
 						` ${text.allowMultiple}`,
+					),
+					el(
+						"label",
+						{ className: "checkbox-setting", title: text.requiredReferenceHint },
+						el("input", {
+							type: "checkbox",
+							checked: reference.required,
+							onchange: (e) => {
+								reference.required = (e.target as HTMLInputElement).checked;
+							},
+						}),
+						` ${text.requiredReference}`,
 					),
 				),
 			);

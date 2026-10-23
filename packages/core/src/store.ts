@@ -508,6 +508,7 @@ function normalizeReference({ typeId, ...reference }: ReferenceDef & { typeId?: 
 			: typeof typeId === "string"
 				? [typeId]
 				: [],
+		required: reference.required === true,
 		arrow: LINE_ARROWS.includes(reference.arrow) ? reference.arrow : "to",
 		lineLabel: typeof reference.lineLabel === "string" ? reference.lineLabel : "",
 		inverseLabel: typeof reference.inverseLabel === "string" ? reference.inverseLabel : "",

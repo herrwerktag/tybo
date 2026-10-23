@@ -122,6 +122,17 @@ test("update_type keeps listed properties with their values, removes the ones le
 	assert.deepEqual((await call("get_entity", { entity: "Ada" })).values, {});
 });
 
+test("a required reference is saved without an entity, and the entity lists it as missing until it has one", async () => {
+	const { call } = await withPeople();
+	await call("update_type", { type: "Task", properties: [{ name: "Owner", required: true }] });
+	assert.equal((await call("describe_workspace")).types[1].properties[0].required, true);
+
+	const created = await call("create_entity", { type: "Task", name: "Review" });
+	assert.deepEqual(created.entity.missing, ["Owner"]);
+	await call("update_entity", { entity: "Review", values: { Owner: "Alan" } });
+	assert.equal((await call("get_entity", { entity: "Review" })).missing, undefined);
+});
+
 test("what doesn't fit is refused with a message the model can act on, and nothing is written", async () => {
 	const { refusal, storage, call } = await withPeople();
 	const saves = storage.saves.length;
