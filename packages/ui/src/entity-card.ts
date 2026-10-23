@@ -3,6 +3,7 @@ import {
 	detailRows,
 	entityTypeMap,
 	inverseCardRows,
+	missingRequired,
 	placeholderProperty,
 	propertyRow,
 	type CardRow,
@@ -142,11 +143,14 @@ export function cardParts(
 	const rows = [...(type ? cardRows(type, entity, entityNames, isLinked) : []), ...inverseCardRows(store.data, entity, entityNames, isLinked)];
 	// Nothing to show below the name: no body at all (a compact card).
 	const content = entity.content.trim();
+	// Required references that are still empty, whatever their card display.
+	const missing = missingRequired(type, entity).map((p) => p.name);
 	const body =
-		rows.length > 0 || content
+		rows.length > 0 || content || missing.length > 0
 			? el(
 					"div",
 					{ className: "card-body" },
+					...(missing.length > 0 ? [el("p", { className: "card-missing" }, text.missingRequired(missing.join(", ")))] : []),
 					...(rows.length > 0 ? [propertyList(store, rows, options.preview)] : []),
 					...(content ? [el("div", { className: "card-content" }, entity.content)] : []),
 				)
@@ -191,6 +195,7 @@ export function entityDetails(
 
 	const section = (title: string, ...content: Node[]) => el("section", { className: "details-section" }, el("h3", {}, title), ...content);
 	const rows = detailRows(store.data, entity, entityNames);
+	const missing = new Set(missingRequired(type, entity).map((p) => p.name));
 	const refTag = (name: string, entityId: string): HTMLElement => {
 		const tag = el("button", { type: "button", className: "ref-tag", onclick: () => onSelectEntity(entityId) }, name);
 		const color = types.get(entityTypes.get(entityId) ?? "")?.color;
@@ -198,7 +203,9 @@ export function entityDetails(
 		return tag;
 	};
 	const value = (row: CardRow): HTMLElement => {
-		if (row.values.length === 0) return el("dd", { className: "muted" }, "—");
+		if (row.values.length === 0) {
+			return missing.has(row.label) ? el("dd", { className: "missing" }, text.missingValue) : el("dd", { className: "muted" }, "—");
+		}
 		if (row.kind === "text") return el("dd", { className: "details-text" }, ...row.values);
 		if (row.kind === "options") return el("dd", { className: "prop-chips" }, ...row.values.map((v) => el("span", { className: "chip" }, v)));
 		return el("dd", { className: "prop-chips" }, ...row.values.map((name, i) => refTag(name, row.entityIds[i]!)));

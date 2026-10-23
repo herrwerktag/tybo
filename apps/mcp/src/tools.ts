@@ -5,6 +5,7 @@ import {
 	entityTags,
 	entityTypeMap,
 	filterEntities,
+	missingRequired,
 	newReference,
 	parseValue,
 	placeholderProperty,
@@ -171,7 +172,7 @@ export function tyboTools(port: DataPort): Tool[] {
 			name: "create_type",
 			description:
 				"Creates an entity type. Properties are text, options (with their `options`) or references (with `targets`: names of " +
-				"the types they point to, `multiple` for several, `inverseLabel` for how the referenced entities show the reference). " +
+				"the types they point to, `multiple` for several, `required` for at least one, `inverseLabel` for how the referenced entities show the reference). " +
 				"A reference to the type itself is added afterwards with update_type.",
 			inputSchema: object(
 				{
@@ -327,6 +328,10 @@ const PROPERTY = {
 		options: { type: "array", items: { type: "string" }, description: "For options: the allowed values." },
 		targets: { type: "array", items: { type: "string" }, description: "For references: names or ids of the types pointed to." },
 		multiple: { type: "boolean", description: "For references: whether several entities can be picked." },
+		required: {
+			type: "boolean",
+			description: "For references: whether each entity should reference one. Not enforced; entities without one are listed as `missing`.",
+		},
 		inverseLabel: { type: "string", description: "For references: the label on the referenced entities; empty hides it there." },
 		cardDisplay: { type: "string", enum: ["list", "line", "hidden"], description: "How cards show it; line draws references as lines." },
 	},
@@ -395,7 +400,7 @@ function describeType(data: AppData, type: EntityType) {
 			kind: p.kind,
 			...(p.kind === "options" ? { options: p.options } : {}),
 			...(p.reference
-				? { targets: p.reference.typeIds.map((id) => typeName(data, id)), multiple: p.reference.multiple, inverseLabel: p.reference.inverseLabel }
+				? { targets: p.reference.typeIds.map((id) => typeName(data, id)), multiple: p.reference.multiple, required: p.reference.required, inverseLabel: p.reference.inverseLabel }
 				: {}),
 		})),
 		contentTemplate: type.contentTemplate,
@@ -410,7 +415,17 @@ function describeEntity(data: AppData, entity: Entity) {
 		if (value === undefined || value === null) continue;
 		values[prop.name] = prop.kind === "reference" ? referencedIds(prop, value).map((id) => named(data, id)) : value;
 	}
-	return { id: entity.id, type: type?.name ?? null, name: entity.name, tags: entity.tags, content: entity.content, description: entity.description, values };
+	const missing = missingRequired(type, entity).map((p) => p.name);
+	return {
+		id: entity.id,
+		type: type?.name ?? null,
+		name: entity.name,
+		tags: entity.tags,
+		content: entity.content,
+		description: entity.description,
+		values,
+		...(missing.length > 0 ? { missing } : {}),
+	};
 }
 
 const named = (data: AppData, id: string) => ({ id, name: data.entities.find((e) => e.id === id)?.name ?? null });
@@ -494,6 +509,7 @@ function drafts(data: AppData, raw: unknown, current: readonly PropertyDef[]): D
 						...(was?.reference ?? newReference([])),
 						...(given.targets === undefined ? {} : { typeIds: texts(given.targets, "targets").map((t) => typeOf(data, t).id) }),
 						...(given.multiple === undefined ? {} : { multiple: given.multiple === true }),
+						...(given.required === undefined ? {} : { required: given.required === true }),
 						...(given.inverseLabel === undefined ? {} : { inverseLabel: text(given.inverseLabel, "inverseLabel") }),
 					};
 		const draft: DraftProperty = {

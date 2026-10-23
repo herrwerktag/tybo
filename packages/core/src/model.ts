@@ -10,6 +10,11 @@ export interface ReferenceDef {
 	typeIds: string[];
 	/** Whether several entities can be picked instead of one. */
 	multiple: boolean;
+	/**
+	 * Whether an entity should reference at least one entity through it. Not enforced when saving (entities are often
+	 * made before what they reference); entities without one are pointed out instead (see missingRequired).
+	 */
+	required: boolean;
 	/** Where the arrowhead goes when drawn as a line: at the referenced card, at this card, or nowhere. */
 	arrow: LineArrow;
 	/** Text on the line; empty means the property name. */
@@ -26,7 +31,7 @@ export type LineArrow = "to" | "from" | "none";
 export const LINE_ARROWS: readonly LineArrow[] = ["to", "from", "none"];
 
 export function newReference(typeIds: string[]): ReferenceDef {
-	return { typeIds, multiple: false, arrow: "to", lineLabel: "", inverseLabel: "" };
+	return { typeIds, multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" };
 }
 
 export interface PropertyDef {
@@ -396,6 +401,13 @@ export interface Relation {
 /** Whether the reference property can take one more entity: it allows several, or it's still empty. */
 export function canTakeMore(prop: PropertyDef, value: PropertyValue | undefined): boolean {
 	return prop.reference?.multiple === true || referencedIds(prop, value).length === 0;
+}
+
+/** The required reference properties of `entity`'s type that reference nothing yet, in property order. */
+export function missingRequired(type: Pick<EntityType, "properties"> | undefined, entity: Entity): PropertyDef[] {
+	return (type?.properties ?? []).filter(
+		(prop) => prop.reference?.required === true && referencedIds(prop, entity.values[prop.id]).length === 0,
+	);
 }
 
 /**

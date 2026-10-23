@@ -2347,6 +2347,20 @@ button.ref-tag {
 	background: var(--ref-tag);
 }
 
+/* Required references still empty: one grid step, above the property list. */
+.card-missing {
+	padding: 0 0.75rem;
+	font-size: 0.875rem;
+	line-height: 24px;
+	color: var(--error);
+	background: var(--error-tint);
+	overflow-wrap: anywhere;
+}
+
+.missing {
+	color: var(--error);
+}
+
 /* Separates the property list from the content below it. */
 .card-props + .card-content {
 	border-top: 1px solid var(--border);

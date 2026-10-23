@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { canvasView, parseViewHash, viewHash } from "./canvas.js";
 import { CLICK_TOLERANCE } from "./dom.js";
 import { text } from "./i18n.js";
-import { createStore, DATA_VERSION, fitRect, frameInside, snapToGrid, visibleRect, type Store } from "@tybo/core";
+import { createStore, DATA_VERSION, fitRect, frameInside, newReference, snapToGrid, visibleRect, type Store } from "@tybo/core";
 import { memoryDataPort } from "@tybo/core/testing";
 
 /** A board with one card for Dune (with content, so it can be resized) and one for Herbert. */
@@ -44,6 +44,29 @@ test("dragging a card's header moves it onto the grid and saves the position; it
 	assert.deepEqual([savedCard(store, card.id)?.x, savedCard(store, card.id)?.y], [144, 120]);
 	assert.equal(cardNode(view, card.id).style.left, "144px");
 	assert.equal(details(view).hidden, true);
+});
+
+test("a card and its details point out required references that are still empty", async () => {
+	freshDom();
+	const store = await createStore(memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } }).port, "ws");
+	const person = store.addType("Person", [], "");
+	const reference = { ...newReference([person.id]), required: true };
+	const book = store.addType("Book", [{ name: "Author", kind: "reference", options: [], reference, cardDisplay: "list" }], "");
+	const frank = store.addEntity(person.id, "Frank", "", {});
+	const boardId = store.data.boards[0]!.id;
+	const missing = store.addCard(boardId, store.addEntity(book.id, "Dune", "", {}).id, 100, 100);
+	const authorId = book.properties[0]!.id;
+	const complete = store.addCard(boardId, store.addEntity(book.id, "Emma", "", { [authorId]: frank.id }).id, 400, 100);
+	const view = canvasView(store, { readOnly: false });
+	document.body.append(view);
+
+	assert.equal(cardNode(view, missing.id).querySelector(".card-missing")?.textContent, text.missingRequired("Author"));
+	assert.equal(cardNode(view, complete.id).querySelector(".card-missing"), null);
+
+	dragBy(cardNode(view, missing.id).querySelector("header")!, 0, 0);
+	assert.equal(details(view).querySelector(".details-props dd.missing")?.textContent, text.missingValue);
+	dragBy(cardNode(view, complete.id).querySelector("header")!, 0, 0);
+	assert.equal(details(view).querySelector(".details-props dd.missing"), null);
 });
 
 test("a click with a little jitter selects the card and shows its details without moving it", async () => {
@@ -725,7 +748,7 @@ async function connectable() {
 	freshDom();
 	const store = await createStore(memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } }).port, "ws");
 	const person = store.addType("Person", [], "");
-	const reference = { typeIds: [person.id], multiple: false, arrow: "to" as const, lineLabel: "", inverseLabel: "wrote" };
+	const reference = { typeIds: [person.id], multiple: false, required: false, arrow: "to" as const, lineLabel: "", inverseLabel: "wrote" };
 	const book = store.addType("Book", [{ name: "author", kind: "reference", options: [], reference, cardDisplay: "line" }], "");
 	const dune = store.addEntity(book.id, "Dune", "", {});
 	const card = store.addCard(store.data.boards[0]!.id, dune.id, 0, 0);

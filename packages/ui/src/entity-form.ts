@@ -127,7 +127,12 @@ function propertyField(
 	prop: PropertyDef,
 	current: PropertyValue,
 ): { prop: PropertyDef; element: HTMLElement; read: () => string | string[] } {
-	const label = el("span", {}, prop.name);
+	const label = el(
+		"span",
+		{},
+		prop.name,
+		...(prop.reference?.required ? [el("span", { className: "muted" }, ` ${text.requiredSuffix}`)] : []),
+	);
 	if (prop.kind === "reference") {
 		const targetTypes = store.data.types.filter((t) => prop.reference?.typeIds.includes(t.id));
 		const targets = store.data.entities.filter((e) => targetTypes.some((t) => t.id === e.typeId));

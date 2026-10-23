@@ -42,6 +42,7 @@ function typeSection(type: EntityType, types: ReadonlyMap<string, EntityType>): 
 		if (prop.kind === "reference" && prop.reference) {
 			kind += ` → ${prop.reference.typeIds.flatMap((id) => types.get(id)?.name ?? []).join(", ")}`;
 			if (prop.reference.multiple) kind += ` ${text.multipleSuffix}`;
+			if (prop.reference.required) kind += ` ${text.requiredSuffix}`;
 		}
 		return `- ${prop.name}: ${kind}`;
 	});
