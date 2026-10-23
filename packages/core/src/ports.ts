@@ -21,6 +21,8 @@ export interface DataPort {
 	createWorkspace(info: WorkspaceInfo, dataVersion: number): Promise<void>;
 	/** Renames a workspace. */
 	renameWorkspace(id: string, name: string): Promise<void>;
+	/** Moves a workspace to index `to` in the list of workspaces. */
+	moveWorkspace(id: string, to: number): Promise<void>;
 	/** Deletes a workspace and all its data. */
 	deleteWorkspace(id: string): Promise<void>;
 	/** The workspace's data — the app's data, marked with the format it is in (`version`) — and the version it

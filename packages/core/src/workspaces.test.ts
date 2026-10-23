@@ -73,6 +73,24 @@ test("add and rename reach the storage; setActive is remembered; empty names are
 	assert.equal(elsewhere.active.id, reloaded.list[0]!.id);
 });
 
+test("move reorders the workspaces, here and in the storage; the active one stays active at the next start", async () => {
+	const storage = memoryDataPort();
+	const preference = rememberedActive();
+	const workspaces = await createWorkspaces(storage.port, workspaceName, preference);
+	const first = workspaces.active.id;
+	await workspaces.add("B");
+	const c = (await workspaces.add("C"))!;
+
+	workspaces.move(c.id, 0);
+	workspaces.move("unknown", 0);
+	assert.deepEqual(workspaces.list.map((w) => w.name), ["C", "Workspace 1", "B"]);
+	await settle();
+
+	const reloaded = await createWorkspaces(storage.port, workspaceName, preference);
+	assert.deepEqual(reloaded.list.map((w) => w.name), ["C", "Workspace 1", "B"]);
+	assert.equal(reloaded.active.id, first, "not the one that is first now");
+});
+
 test("remove deletes the workspace with its data, moves the active one and never removes the last", async () => {
 	const storage = memoryDataPort();
 	const workspaces = await createWorkspaces(storage.port, workspaceName, rememberedActive());

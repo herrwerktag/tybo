@@ -30,7 +30,7 @@ import {
 import { canvasView } from "./canvas.js";
 import { analysisView } from "./analysis.js";
 import { libraryView, selectLibraryDrawing } from "./library.js";
-import { downloadFile, el, safeFileName, tagFilter, typeDot } from "./dom.js";
+import { downloadFile, dragHandle, el, reorderable, safeFileName, tagFilter, typeDot } from "./dom.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
 import { standaloneViewHtml } from "./standalone.js";
 import { workspaceText } from "./text-export.js";
@@ -70,6 +70,7 @@ type MenuName = "settings" | "workspace";
 const PROPERTY_MIME = "application/x-property-index";
 const TYPE_MIME = "application/x-type-index";
 const ENTITY_MIME = "application/x-entity-index";
+const WORKSPACE_MIME = "application/x-workspace-index";
 /** The tag the Entities page is filtered by, if any. */
 const ENTITIES_TAG_KEY = "entities-tag";
 
@@ -123,72 +124,6 @@ function setting(label: string, control: HTMLElement): HTMLElement {
 /** A thrown value as text for the user. */
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
-}
-
-/** A ⠿ button for reorderable(); `focusKey` finds it again after a re-render (see UiState.focusHandle). */
-function dragHandle(label: string, focusKey: string): HTMLButtonElement {
-	const handle = el("button", { type: "button", className: "drag-handle", title: text.dragToReorder, ariaLabel: label }, "⠿");
-	handle.dataset.focusKey = focusKey;
-	return handle;
-}
-
-/**
- * Lets `item`, at `index` of `count` in its list, be dragged by `handle` to another place in that list (`mime` keeps
- * drags from landing in another list), or moved up and down with the arrow keys while the handle has focus.
- * `move(from, to)` gets the item's index and the one it should end up at.
- */
-function reorderable(
-	item: HTMLElement,
-	handle: HTMLElement,
-	{ index, count, mime, move }: { index: number; count: number; mime: string; move: (from: number, to: number) => void },
-): void {
-	handle.addEventListener("keydown", (e) => {
-		if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-		e.preventDefault();
-		const to = e.key === "ArrowUp" ? index - 1 : index + 1;
-		if (to >= 0 && to < count) move(index, to);
-	});
-	// Only the handle makes the item draggable, so text in it stays selectable.
-	handle.addEventListener("pointerdown", () => {
-		item.draggable = true;
-	});
-	// A click without a drag: stop the item being draggable again (a real drag ends in dragend).
-	handle.addEventListener("pointerup", () => {
-		item.draggable = false;
-	});
-	const clearDropMarker = () => item.classList.remove("drop-before", "drop-after");
-	const dropsBefore = (e: DragEvent) => {
-		const rect = item.getBoundingClientRect();
-		return e.clientY < rect.top + rect.height / 2;
-	};
-	item.addEventListener("dragstart", (e) => {
-		e.dataTransfer?.setData(mime, String(index));
-		if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-		item.classList.add("dragging");
-	});
-	item.addEventListener("dragend", () => {
-		item.draggable = false;
-		item.classList.remove("dragging");
-	});
-	item.addEventListener("dragover", (e) => {
-		if (!e.dataTransfer?.types.includes(mime)) return;
-		e.preventDefault();
-		e.dataTransfer.dropEffect = "move";
-		const before = dropsBefore(e);
-		item.classList.toggle("drop-before", before);
-		item.classList.toggle("drop-after", !before);
-	});
-	item.addEventListener("dragleave", clearDropMarker);
-	item.addEventListener("drop", (e) => {
-		const from = Number(e.dataTransfer?.getData(mime));
-		clearDropMarker();
-		if (!Number.isInteger(from)) return;
-		e.preventDefault();
-		// Index among the other items, once the dragged one is taken out.
-		const target = dropsBefore(e) ? index : index + 1;
-		const to = from < target ? target - 1 : target;
-		if (to !== from) move(from, to);
-	});
 }
 
 function newDraftProperty(): DraftProperty {
@@ -527,14 +462,27 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 		const list = el(
 			"ul",
 			{ className: "workspace-list" },
-			...workspaces.list.map((w) => {
+			...workspaces.list.map((w, i) => {
 				const option = el(
 					"button",
 					{ type: "button", className: "workspace-option", onclick: () => switchWorkspace(w.id) },
 					w.name,
 				);
 				if (w.id === current.id) option.setAttribute("aria-current", "true");
-				return el("li", {}, option);
+				const handle = dragHandle(text.moveWorkspace(w.name), `workspace:${w.id}`);
+				const item = el("li", {}, handle, option);
+				reorderable(item, handle, {
+					index: i,
+					count: workspaces.list.length,
+					mime: WORKSPACE_MIME,
+					move: (from, to) => {
+						const moved = workspaces.list[from]!.id;
+						workspaces.move(moved, to);
+						state.focusHandle = `workspace:${moved}`;
+						rerender();
+					},
+				});
+				return item;
 			}),
 		);
 

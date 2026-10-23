@@ -939,6 +939,13 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			updateBoard(boardId, (b) => ({ ...b, name: name.trim() }));
 		},
 
+		/** Moves the board to index `to` in the list of boards. */
+		moveBoard(boardId: string, to: number): void {
+			const from = data.boards.findIndex((b) => b.id === boardId);
+			if (from < 0) return;
+			change({ ...data, boards: moveItem(data.boards, from, to) });
+		},
+
 		/** Deletes a board and its cards (never the entities), even the last one. */
 		deleteBoard(boardId: string): void {
 			change({ ...data, boards: data.boards.filter((b) => b.id !== boardId) });

@@ -159,6 +159,23 @@ test("moveType and moveEntity reorder; entities move among their type's only, an
 	assert.deepEqual(store.data.entities.map((e) => e.name), ["A", "X", "B", "C"]);
 });
 
+test("moveBoard reorders the boards, and the order is saved", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
+	const second = store.addBoard("Second");
+	store.addBoard("Third");
+
+	store.moveBoard(second.id, 0);
+	store.moveBoard("unknown", 0);
+	assert.deepEqual(store.data.boards.map((b) => b.name), ["Second", "Board 1", "Third"]);
+
+	const reloaded = await open(storage);
+	assert.deepEqual(reloaded.data.boards.map((b) => b.name), ["Second", "Board 1", "Third"]);
+
+	assert.ok(store.undo());
+	assert.deepEqual(store.data.boards.map((b) => b.name), ["Board 1", "Second", "Third"]);
+});
+
 test("loads data saved with the old number/boolean/date kinds as text", async () => {
 	const old = {
 		types: [{ id: "b", name: "Book", properties: [{ id: "p", name: "pages", kind: "number" }] }],

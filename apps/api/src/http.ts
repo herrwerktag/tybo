@@ -34,6 +34,8 @@ export interface Api {
 	createWorkspace(info: WorkspaceInfo, dataVersion: number): Promise<boolean>;
 	/** Renames a workspace; false when there is none of that id. */
 	renameWorkspace(id: string, name: string): Promise<boolean>;
+	/** Moves a workspace to index `to` in the list; false when there is none of that id. */
+	moveWorkspace(id: string, to: number): Promise<boolean>;
 	/** Deletes a workspace and all its data; there being none of that id is no error. */
 	deleteWorkspace(id: string): Promise<void>;
 	/** The workspace's data with its revision, read as one — or null when there is none of that id. */
@@ -50,7 +52,8 @@ export interface Api {
  *
  * GET /workspaces answers the workspaces as JSON (`[{ id, name }]`), in their order. POST /workspaces makes
  * an empty one from the body `{ id, name, dataVersion }` — 201, or 409 when that id is taken. PATCH
- * /workspaces/{id} renames it (`{ name }`) — 204, or 404 when there is none. DELETE /workspaces/{id}
+ * /workspaces/{id} renames it (`{ name }`) or moves it to another index in the list (`{ position }`) — 204, or
+ * 404 when there is none. DELETE /workspaces/{id}
  * deletes it with all its data, 204 either way.
  *
  * GET /workspaces/{id}/data answers the workspace's data as JSON — the app's data marked with the format it
@@ -163,7 +166,10 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api, client
 			case null:
 				switch (method) {
 					case "PATCH": {
-						const name = parseName(await readJson(req));
+						const body = await readJson(req);
+						const position = parsePosition(body);
+						if (position !== null) return sendEmpty(res, (await api.moveWorkspace(id, position)) ? 204 : 404);
+						const name = parseName(body);
 						if (name === null) return sendEmpty(res, 400);
 						return sendEmpty(res, (await api.renameWorkspace(id, name)) ? 204 : 404);
 					}
@@ -229,6 +235,12 @@ function routeOf(pathname: string): { id: null } | { id: string; part: null | "d
 function parseName(raw: unknown): string | null {
 	const name = (raw as { name?: unknown } | null)?.name;
 	return typeof name === "string" && name.trim() !== "" ? name.trim() : null;
+}
+
+/** The index a PATCH moves the workspace to; null when the body names none. */
+function parsePosition(raw: unknown): number | null {
+	const position = (raw as { position?: unknown } | null)?.position;
+	return typeof position === "number" && Number.isInteger(position) && position >= 0 ? position : null;
 }
 
 /** What a POST must say to make a workspace; null when the body says something else. */

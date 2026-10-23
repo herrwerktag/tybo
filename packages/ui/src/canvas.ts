@@ -1,7 +1,7 @@
 import { connector, nearest, type Rect } from "@tybo/core";
 import { createDrawingLayer, libraryPicture } from "./drawing-layer.js";
 import { areaContents, drawingBounds } from "./drawings.js";
-import { CLICK_TOLERANCE, el, resizeHandle, svgEl, tagFilter, trackPointer, typeDot, wheelGesture } from "./dom.js";
+import { CLICK_TOLERANCE, dragHandle, el, reorderable, resizeHandle, svgEl, tagFilter, trackPointer, typeDot, wheelGesture } from "./dom.js";
 import { text } from "./i18n.js";
 import {
 	DEFAULT_CARD_SIZE,
@@ -40,6 +40,7 @@ import { defaultViewport, fitRect, screenToWorld, snapZoom, stepZoom, visibleRec
 
 const ENTITY_MIME = "application/x-entity-id";
 const LIBRARY_MIME = "application/x-library-drawing-id";
+const PICKER_MIME = "application/x-picker-index";
 const PANEL_COLLAPSED_KEY = "canvas-panel-collapsed";
 /** The widths of the side panel and the details panel, if changed by dragging. */
 export const PANEL_WIDTH_KEY = "canvas-panel-width";
@@ -464,8 +465,9 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	}
 
 	/**
-	 * A picker overlay (boards, stories): its items, the current one marked; clicking one picks it. In the editor
-	 * (with `editing`), each can be renamed in place (unless `fixed`) and deleted, and a form below adds one.
+	 * A picker dropdown (boards, stories, frames): its items, the current one marked; clicking one picks it. In the editor
+	 * (with `editing`), each can be renamed in place (unless `fixed`) and deleted, and a form below adds one; with
+	 * `move`, too, the items can be reordered (then none is `fixed`).
 	 */
 	interface Picker {
 		dialog: HTMLDialogElement;
@@ -475,7 +477,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		/** The item shown with a name field instead, if any. */
 		renamingId: string | null;
 		pick(id: string): void;
-		/** Draws the overlay again (with an item being renamed). */
+		/** Draws the dropdown again (with an item being renamed). */
 		rerender(renamingId?: string | null): void;
 		editing?: {
 			renameTitle: string;
@@ -485,14 +487,18 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			newTitle: string;
 			newName: string;
 			add(name: string): void;
+			/** Moves the item to index `to` among the items. */
+			move?(id: string, to: number): void;
+			/** The label of an item's drag handle. */
+			moveTitle?(name: string): string;
 		};
 	}
 
 	function renderPicker({ dialog, title, items, currentId, renamingId, pick, rerender, editing }: Picker): void {
-		const rows = items.map((item) => {
+		const rows = items.map((item, i) => {
 			if (editing && item.id === renamingId) {
 				const input = el("input", { value: item.name, ariaLabel: editing.renameTitle, required: true });
-				// Escape leaves the name as it was, instead of closing the overlay.
+				// Escape leaves the name as it was, instead of closing the dropdown.
 				input.addEventListener("keydown", (e) => {
 					if (e.key !== "Escape") return;
 					e.preventDefault();
@@ -532,13 +538,30 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			);
 			if (item.id === currentId) option.setAttribute("aria-current", "true");
 			if (!editing || item.fixed) return el("li", {}, option);
-			return el(
+			const { move, moveTitle } = editing;
+			const handle = move ? dragHandle(moveTitle?.(item.name) ?? item.name, item.id) : null;
+			const row = el(
 				"li",
 				{},
+				...(handle ? [handle] : []),
 				option,
 				el("button", { type: "button", title: editing.renameTitle, onclick: () => rerender(item.id) }, text.renameButton),
 				el("button", { type: "button", title: editing.deleteTitle, onclick: () => editing.remove(item.id) }, text.delete),
 			);
+			if (handle && move) {
+				reorderable(row, handle, {
+					index: i,
+					count: items.length,
+					mime: PICKER_MIME,
+					move: (from, to) => {
+						const moved = items[from]!.id;
+						move(moved, to);
+						rerender();
+						dialog.querySelector<HTMLElement>(`.drag-handle[data-focus-key="${moved}"]`)?.focus();
+					},
+				});
+			}
+			return row;
 		});
 
 		const nameInput = el("input", { ariaLabel: text.name, value: editing?.newName ?? "", required: true });
@@ -556,20 +579,58 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			nameInput,
 			el("button", { type: "submit", className: "primary" }, text.create),
 		);
-		dialog.replaceChildren(dialogHeader(dialog, title), el("ul", { className: "picker-list" }, ...rows), ...(editing ? [newForm] : []));
+		dialog.replaceChildren(el("h2", {}, title), el("ul", { className: "picker-list" }, ...rows), ...(editing ? [newForm] : []));
 	}
 
-	/** A button showing what's current, opening a picker overlay. */
-	const pickerButton = (className: string, title: string, open: () => void) =>
-		el("button", { type: "button", className: `picker-switch ${className}`, title, ariaHasPopup: "dialog", onclick: open });
+	/**
+	 * A picker as a dropdown under its button (`buttonClass`, showing what's current), the way the workspace menu opens:
+	 * a dialog that isn't modal, filled by `render` as it opens. Picking closes it, and so do Escape, a click beside it,
+	 * or its button again.
+	 */
+	function pickerDropdown(dialogClass: string, label: string, buttonClass: string, title: string, render: () => void) {
+		const dialog: HTMLDialogElement = el("dialog", { className: `picker-dropdown ${dialogClass}`, ariaLabel: label });
+		const button = el("button", {
+			type: "button",
+			className: `picker-switch ${buttonClass}`,
+			title,
+			ariaHasPopup: "dialog",
+			onclick: () => (dialog.open ? dialog.close() : open()),
+		});
+		button.setAttribute("aria-expanded", "false");
+		function open(): void {
+			render();
+			dialog.show();
+			// Under the button, kept on the screen; what doesn't fit below scrolls.
+			const at = button.getBoundingClientRect();
+			dialog.style.top = `${at.bottom + 6}px`;
+			dialog.style.left = `${Math.max(8, Math.min(at.left, innerWidth - dialog.offsetWidth - 8))}px`;
+			dialog.style.maxHeight = `${innerHeight - at.bottom - 14}px`;
+			button.setAttribute("aria-expanded", "true");
+			document.addEventListener("pointerdown", onPointerDown);
+			document.addEventListener("keydown", onKeyDown);
+		}
+		function onPointerDown(e: PointerEvent): void {
+			if (!dialog.contains(e.target as Node) && !button.contains(e.target as Node)) dialog.close();
+		}
+		function onKeyDown(e: KeyboardEvent): void {
+			// A rename field takes its own Escape (it keeps the old name).
+			if (e.key !== "Escape" || e.defaultPrevented) return;
+			dialog.close();
+			button.focus();
+		}
+		dialog.addEventListener("close", () => {
+			button.setAttribute("aria-expanded", "false");
+			document.removeEventListener("pointerdown", onPointerDown);
+			document.removeEventListener("keydown", onKeyDown);
+		});
+		return { dialog, button };
+	}
 	const pickerLabel = (name: string) => [el("span", { className: "picker-name" }, name), el("span", { ariaHidden: "true" }, "▾")];
 
 	/** The boards: switch to another (and in the editor, create, rename or delete). */
-	const boardDialog = canvasDialog("board-dialog", text.tabBoards);
-	const boardButton = pickerButton("board-switch", text.changeBoard, () => {
-		renderBoardDialog();
-		boardDialog.showModal();
-	});
+	const { dialog: boardDialog, button: boardButton } = pickerDropdown("board-dialog", text.tabBoards, "board-switch", text.changeBoard, () =>
+		renderBoardDialog(),
+	);
 
 	function renderBoardDialog(renamingId: string | null = null): void {
 		const boards = store.data.boards;
@@ -593,17 +654,17 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 					newTitle: text.newBoard,
 					newName: text.defaultBoardName(boards.length + 1),
 					add: (name) => switchBoard(store.addBoard(name).id),
+					move: (id, to) => store.moveBoard(id, to),
+					moveTitle: text.moveBoard,
 				},
 			}),
 		});
 	}
 
 	/** The board's stories, or the whole board: show one (and in the editor, create, rename or delete). */
-	const storyDialog = canvasDialog("story-dialog", text.stories);
-	const storyButton = pickerButton("story-switch", text.changeStory, () => {
-		renderStoryDialog();
-		storyDialog.showModal();
-	});
+	const { dialog: storyDialog, button: storyButton } = pickerDropdown("story-dialog", text.stories, "story-switch", text.changeStory, () =>
+		renderStoryDialog(),
+	);
 
 	function renderStoryDialog(renamingId: string | null = null): void {
 		const { stories } = currentBoard();
@@ -648,11 +709,9 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 
 	/** Editor, in a story: the frames — the one the step is seen in by the viewer, to pick another or the board's, and
 	 * to create one of what's seen now, rename or delete one. */
-	const frameDialog = canvasDialog("frame-dialog", text.frames);
-	const frameButton = pickerButton("frame-switch", text.changeFrame, () => {
-		renderFrameDialog();
-		frameDialog.showModal();
-	});
+	const { dialog: frameDialog, button: frameButton } = pickerDropdown("frame-dialog", text.frames, "frame-switch", text.changeFrame, () =>
+		renderFrameDialog(),
+	);
 
 	function renderFrameDialog(renamingId: string | null = null): void {
 		const { frames } = currentBoard();

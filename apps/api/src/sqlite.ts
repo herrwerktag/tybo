@@ -1,6 +1,6 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type { AppData, Change, SavedChanges } from "@tybo/core";
-import { CHANGE_KINDS, unitStands, untouched } from "@tybo/core";
+import { CHANGE_KINDS, moveItem, unitStands, untouched } from "@tybo/core";
 import { assembleAppData, type StoredWorkspace } from "./data.js";
 import type { Api } from "./http.js";
 
@@ -431,6 +431,20 @@ export function sqliteStorage(path: string): SqliteStorage {
 		async renameWorkspace(id, name) {
 			const updated = db.prepare("update workspaces set name = ?, updated_at = current_timestamp where id = ? returning id").all(name, id);
 			return updated.length > 0;
+		},
+
+		async moveWorkspace(id, to) {
+			return transaction(db, () => {
+				const ids = db
+					.prepare("select id from workspaces order by position, created_at, id")
+					.all()
+					.map((row) => row.id as string);
+				const from = ids.indexOf(id);
+				if (from < 0) return false;
+				const update = db.prepare("update workspaces set position = ? where id = ?");
+				moveItem(ids, from, to).forEach((each, position) => update.run(position, each));
+				return true;
+			});
 		},
 
 		async deleteWorkspace(id) {

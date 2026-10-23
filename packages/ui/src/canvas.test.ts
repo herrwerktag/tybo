@@ -136,7 +136,7 @@ async function storyboard({ readOnly = false, addressed = false, hash = "" } = {
 const shownCards = (view: HTMLElement) =>
 	[...view.querySelectorAll<HTMLElement>(".canvas-board .canvas-card:not(.ghost)")].map((c) => c.querySelector(".card-title")?.textContent);
 const pageButton = (view: HTMLElement, label: string) => view.querySelector<HTMLButtonElement>(`.page-bar button[title="${label}"]`)!;
-/** Picks an item of the story overlay (opened by the story button) by its name. */
+/** Picks an item of the story dropdown (opened by the story button) by its name. */
 function pickStory(view: HTMLElement, name: string): void {
 	view.querySelector<HTMLButtonElement>(".story-switch")!.click();
 	[...view.querySelectorAll<HTMLButtonElement>(".story-dialog .picker-option")].find((b) => b.textContent === name)!.click();
@@ -185,7 +185,7 @@ test("in the editor, × hides a card on this page, + shows it again, and pages a
 	assert.equal(view.querySelector(".page-counter")?.textContent, "2 / 3");
 });
 
-test("the editor's story overlay shows the whole board or a story, and creates, renames and deletes stories", async () => {
+test("the editor's story dropdown shows the whole board or a story, and creates, renames and deletes stories", async () => {
 	const { store, view, boardId, duneCard } = await storyboard();
 	pickStory(view, "Whole board");
 	assert.equal(view.querySelector<HTMLElement>(".page-bar")!.hidden, true);
@@ -463,7 +463,7 @@ test("the drawing tools fold down to the current tool, and stay folded", async (
 	assert.ok(again.querySelector(".drawing-tools")!.classList.contains("collapsed"));
 });
 
-/** Opens the boards overlay with the Change board button, which shows the current board's name. */
+/** Opens the boards dropdown with the Change board button, which shows the current board's name. */
 function openBoards(view: HTMLElement): HTMLDialogElement {
 	view.querySelector<HTMLButtonElement>(".board-switch")!.click();
 	const dialog = view.querySelector<HTMLDialogElement>(".board-dialog")!;
@@ -473,7 +473,7 @@ function openBoards(view: HTMLElement): HTMLDialogElement {
 const boardOption = (dialog: HTMLElement, name: string) =>
 	[...dialog.querySelectorAll<HTMLButtonElement>(".picker-option")].find((b) => b.textContent === name)!;
 
-test("the boards overlay creates a board and switches to it, and switches back by clicking a board", async () => {
+test("the boards dropdown creates a board and switches to it, and switches back by clicking a board", async () => {
 	const { store, view } = await setup();
 	assert.equal(view.querySelector(".board-switch .picker-name")?.textContent, "Board 1");
 	let dialog = openBoards(view);
@@ -491,7 +491,42 @@ test("the boards overlay creates a board and switches to it, and switches back b
 	assert.equal(view.querySelectorAll(".canvas-card[data-card-id]").length, 2);
 });
 
-test("a board is renamed in place in the overlay; Escape keeps the old name", async () => {
+test("the boards dropdown opens under its button and closes with Escape, a click beside it, or its button again", async () => {
+	const { view } = await setup();
+	const button = view.querySelector<HTMLButtonElement>(".board-switch")!;
+	let dialog = openBoards(view);
+	assert.equal(button.getAttribute("aria-expanded"), "true");
+	document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+	assert.ok(!dialog.open);
+	assert.equal(button.getAttribute("aria-expanded"), "false");
+
+	dialog = openBoards(view);
+	dialog.querySelector("h2")!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+	assert.ok(dialog.open, "a click inside keeps it open");
+	view.querySelector(".canvas-surface")!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+	assert.ok(!dialog.open);
+
+	dialog = openBoards(view);
+	button.click();
+	assert.ok(!dialog.open);
+});
+
+test("boards are reordered in the dropdown with their drag handles' arrow keys; focus stays on the moved one", async () => {
+	const { store, view } = await setup();
+	const planning = store.addBoard("Planning");
+	const dialog = openBoards(view);
+	const press = (handle: Element, key: string) => handle.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+
+	press(dialog.querySelectorAll(".drag-handle")[1]!, "ArrowUp");
+	assert.deepEqual(store.data.boards.map((b) => b.name), ["Planning", "Board 1"]);
+	assert.deepEqual([...dialog.querySelectorAll(".picker-option")].map((b) => b.textContent), ["Planning", "Board 1"]);
+	assert.equal((document.activeElement as HTMLElement).dataset.focusKey, planning.id);
+	press(document.activeElement!, "ArrowUp"); // already first: nothing changes
+	assert.deepEqual(store.data.boards.map((b) => b.name), ["Planning", "Board 1"]);
+	assert.equal(view.querySelector(".board-switch .picker-name")?.textContent, "Board 1", "the current board stays");
+});
+
+test("a board is renamed in place in the dropdown; Escape keeps the old name", async () => {
 	const { store, view } = await setup();
 	const dialog = openBoards(view);
 	const rename = () => [...dialog.querySelectorAll<HTMLButtonElement>("li button")].find((b) => b.textContent === "Rename")!.click();
@@ -523,7 +558,7 @@ test("deleting the last board leaves only a button creating the first one", asyn
 	assert.equal(document.querySelector(".first-board"), null);
 });
 
-test("in the viewer, the boards overlay only switches boards", async () => {
+test("in the viewer, the boards dropdown only switches boards", async () => {
 	const { view } = await setup({ readOnly: true });
 	const dialog = openBoards(view);
 	assert.equal(dialog.querySelector(".picker-new"), null);
@@ -796,7 +831,7 @@ const transform = (view: HTMLElement) => view.querySelector<HTMLElement>(".canva
 const viewportTransform = ({ x, y, zoom }: { x: number; y: number; zoom: number }) => `translate(${x}px, ${y}px) scale(${zoom})`;
 const frameName = (view: HTMLElement) => view.querySelector(".frame-switch .picker-name")?.textContent;
 
-/** Picks an item of the frame overlay by its name. */
+/** Picks an item of the frame dropdown by its name. */
 function pickFrame(view: HTMLElement, name: string): void {
 	view.querySelector<HTMLButtonElement>(".frame-switch")!.click();
 	[...view.querySelectorAll<HTMLButtonElement>(".frame-dialog .picker-option")].find((b) => b.textContent === name)!.click();

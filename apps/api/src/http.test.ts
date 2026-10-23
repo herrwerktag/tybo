@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { moveItem } from "@tybo/core";
 import { DEFAULT_PORT, portFromEnv, type Api } from "./http.js";
 import { call, startApp } from "./test-server.js";
 
@@ -7,7 +8,7 @@ import { call, startApp } from "./test-server.js";
  * applied (the database tests cover that); it only grows the revision by one, the way a save does, and
  * reports every unit it deletes as collided, so the answer has something to carry. */
 function memoryApi(healthy: () => Promise<boolean> = async () => true): Api & { writes: () => number } {
-	const workspaces = new Map<string, { name: string; dataVersion: number; revision: number }>();
+	let workspaces = new Map<string, { name: string; dataVersion: number; revision: number }>();
 	let written = 0;
 	return {
 		healthy,
@@ -21,6 +22,13 @@ function memoryApi(healthy: () => Promise<boolean> = async () => true): Api & { 
 			const workspace = workspaces.get(id);
 			if (!workspace) return false;
 			workspace.name = name;
+			return true;
+		},
+		moveWorkspace: async (id, to) => {
+			const entries = [...workspaces];
+			const from = entries.findIndex(([key]) => key === id);
+			if (from < 0) return false;
+			workspaces = new Map(moveItem(entries, from, to));
 			return true;
 		},
 		deleteWorkspace: async (id) => {
@@ -56,6 +64,7 @@ function failingApi(): Api {
 		listWorkspaces: gone,
 		createWorkspace: gone,
 		renameWorkspace: gone,
+		moveWorkspace: gone,
 		deleteWorkspace: gone,
 		readWorkspace: gone,
 		workspaceRevision: gone,
@@ -89,6 +98,13 @@ test("workspaces are listed, made, renamed and deleted — each answer with its 
 		assert.equal(renamed.status, 204);
 		assert.equal(JSON.parse((await call(api.url, "workspaces")).text)[0].name, "Neu", "the name is kept trimmed");
 
+		const moved = await call(api.url, "workspaces/ws-2", { method: "PATCH", body: JSON.stringify({ position: 0 }) });
+		assert.equal(moved.status, 204);
+		assert.deepEqual(
+			JSON.parse((await call(api.url, "workspaces")).text).map((w: { id: string }) => w.id),
+			["ws-2", "ws-1"],
+		);
+
 		assert.equal((await call(api.url, "workspaces/ws-1", { method: "DELETE" })).status, 204);
 		assert.equal((await call(api.url, "workspaces/ws-1", { method: "DELETE" })).status, 204, "gone already is no error");
 		assert.deepEqual(JSON.parse((await call(api.url, "workspaces")).text), [{ id: "ws-2", name: "Zweite" }]);
@@ -107,10 +123,11 @@ test("a workspace id that is taken answers 409, and a body that says too little 
 		for (const body of ["not json", "{}", '{"id":"x","name":"  ","dataVersion":1}', '{"id":"","name":"n","dataVersion":1}', '{"id":"x","name":"n","dataVersion":-1}', '{"id":"x","name":"n"}']) {
 			assert.equal((await call(api.url, "workspaces", { method: "POST", body })).status, 400, `"${body}" makes no workspace`);
 		}
-		for (const body of ["not json", "{}", '{"name":""}', '{"name":5}']) {
+		for (const body of ["not json", "{}", '{"name":""}', '{"name":5}', '{"position":-1}', '{"position":1.5}']) {
 			assert.equal((await call(api.url, "workspaces/ws-1", { method: "PATCH", body })).status, 400, `"${body}" is no name`);
 		}
 		assert.equal((await call(api.url, "workspaces/none", { method: "PATCH", body: '{"name":"n"}' })).status, 404);
+		assert.equal((await call(api.url, "workspaces/none", { method: "PATCH", body: '{"position":0}' })).status, 404);
 	} finally {
 		await api.close();
 	}

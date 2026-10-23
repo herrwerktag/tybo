@@ -280,6 +280,22 @@ test("a new workspace from the menu starts empty and becomes active; switching b
 	assert.ok(byText(root, ".type-name", "Book"));
 });
 
+test("workspaces are reordered in the menu with their drag handles' arrow keys; the order is saved", async () => {
+	const behind = memoryStorage(library);
+	const root = await startApp(library, "#types", behind);
+	const newForm = root.querySelector<HTMLFormElement>(".workspace-new")!;
+	newForm.querySelector<HTMLInputElement>("input:not([type])")!.value = "Second";
+	byText(newForm, "button", text.create).click();
+	await settle();
+
+	root.querySelectorAll<HTMLElement>(".workspace-list .drag-handle")[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+	assert.deepEqual([...root.querySelectorAll(".workspace-option")].map((b) => b.textContent), ["Second", text.defaultWorkspaceName(1)]);
+	assert.ok((document.activeElement as HTMLElement).dataset.focusKey?.startsWith("workspace:"));
+	await settle();
+	assert.deepEqual((await behind.port.listWorkspaces()).map((w) => w.name), ["Second", text.defaultWorkspaceName(1)]);
+	assert.equal(root.querySelector(".workspace-name")?.textContent, "Second", "the active workspace stays");
+});
+
 test("a workspace whose data can't be loaded warns that changes aren't saved, and offers a reload", async () => {
 	const behind = memoryStorage(library);
 	behind.failing.loads = true;
