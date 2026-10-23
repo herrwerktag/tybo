@@ -282,6 +282,19 @@ test("failed saves are reported until a save succeeds again — and then nothing
 	assert.deepEqual(storedBoards(storage), ["Board 1", "A", "B", "C", "D"]);
 });
 
+test("saved() settles once the saves on their way have landed, and problems then say how they went", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
+
+	store.addBoard("A");
+	await store.saved();
+	assert.deepEqual(storedBoards(storage), ["Board 1", "A"]);
+	storage.failing.saves = true;
+	store.addBoard("B");
+	await store.saved();
+	assert.equal(store.problems.saveFailed, true);
+});
+
 test("a save that collided with someone else's is its own problem, and saving stops until it's read anew", async () => {
 	const storage = memoryStorage();
 	const store = await open(storage);

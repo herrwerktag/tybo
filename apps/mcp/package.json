@@ -1,0 +1,23 @@
+{
+	"name": "@tybo/mcp",
+	"version": "1.0.0",
+	"description": "MCP server on tybo's API: a model reads and writes types and entities",
+	"license": "MIT",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"start": "tsx --env-file-if-exists=../../.env src/index.ts",
+		"typecheck": "tsc --noEmit",
+		"test": "tsx --test src/*.test.ts",
+		"build": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@tybo/core": "workspace:*",
+		"@tybo/demo": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^26.6.3",
+		"tsx": "^4.23.15",
+		"typescript": "^7.0.2"
+	}
+}
