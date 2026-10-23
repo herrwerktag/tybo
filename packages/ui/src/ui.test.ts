@@ -759,3 +759,20 @@ test("Analyses: an analysis set up step by step lists the rows grouped, is saved
 	assert.equal(details.querySelector(".details-title")?.textContent, "Build it");
 	assert.ok(byText(root, ".analysis-result button", "Build it"), "the result names it anew");
 });
+
+test("the settings switch the theme: dark or light on <html>, or none to follow the system, remembered in this browser", async () => {
+	const root = await startApp();
+	const select = byText(root, "#settings-menu label > span", text.theme).closest("label")!.querySelector("select")!;
+	assert.equal(select.value, "system");
+	assert.equal(document.documentElement.dataset.theme, undefined);
+
+	select.value = "dark";
+	select.dispatchEvent(new Event("change"));
+	assert.equal(document.documentElement.dataset.theme, "dark");
+	assert.equal(localStorage.getItem("ui-theme"), "dark");
+
+	select.value = "system";
+	select.dispatchEvent(new Event("change"));
+	assert.equal(document.documentElement.dataset.theme, undefined);
+	assert.equal(localStorage.getItem("ui-theme"), "system");
+});

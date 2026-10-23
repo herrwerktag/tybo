@@ -31,6 +31,7 @@ import { analysisView } from "./analysis.js";
 import { libraryView, selectLibraryDrawing } from "./library.js";
 import { downloadFile, dragHandle, el, reorderable, safeFileName, tagFilter, typeDot } from "./dom.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
+import { THEMES, setTheme, theme, type Theme } from "./theme.js";
 import { standaloneViewHtml } from "./standalone.js";
 import { workspaceText } from "./text-export.js";
 import { boardDrawioFiles } from "./drawio-export.js";
@@ -419,7 +420,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 		return wrapper;
 	}
 
-	/** ⚙ Settings: the UI language. */
+	/** ⚙ Settings: the UI language and the theme. */
 	function settingsMenu(): HTMLElement {
 		const languageSelect = el(
 			"select",
@@ -432,12 +433,19 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 			},
 			...LANGUAGES.map(({ code, name }) => el("option", { value: code, lang: code, selected: code === language }, name)),
 		);
+		const themeNames: Record<Theme, string> = { system: text.themeSystem, light: text.themeLight, dark: text.themeDark };
+		const themeSelect = el(
+			"select",
+			{ onchange: () => setTheme(themeSelect.value as Theme) },
+			...THEMES.map((code) => el("option", { value: code, selected: code === theme }, themeNames[code])),
+		);
 		return popover(
 			"settings",
 			el("button", {}, el("span", { ariaHidden: "true" }, "⚙"), text.settings),
 			text.settings,
 			el("h2", {}, text.settings),
 			el("label", { className: "field" }, el("span", {}, text.language), languageSelect),
+			el("label", { className: "field" }, el("span", {}, text.theme), themeSelect),
 		);
 	}
 
