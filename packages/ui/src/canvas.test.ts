@@ -63,6 +63,42 @@ test("a click with a little jitter selects the card and shows its details withou
 	assert.equal(details(view).hidden, true);
 });
 
+test("Edit in the details shows the entity's form there: saving updates the entity and its card, Cancel changes nothing", async () => {
+	const { store, view, card, dune } = await setup();
+	const editButton = () => [...details(view).querySelectorAll("button")].find((b) => b.textContent === text.edit)!;
+	const form = () => details(view).querySelector<HTMLFormElement>("#entity-form")!;
+	const nameInput = () => form().querySelector<HTMLInputElement>("input")!;
+	dragBy(cardNode(view, card.id).querySelector("header")!, 0, 0);
+
+	// The form is below the bar of the entity's type.
+	editButton().click();
+	assert.equal(details(view).querySelector(".card-type")?.textContent, "Book");
+
+	// Cancel shows the details again, unchanged.
+	nameInput().value = "Arrakis";
+	[...form().querySelectorAll("button")].find((b) => b.textContent === text.cancel)!.click();
+	assert.equal(details(view).querySelector(".details-title")?.textContent, "Dune");
+	assert.equal(store.data.entities.find((e) => e.id === dune.id)?.name, "Dune");
+
+	// Redrawing the board (here: moving the card) keeps what was typed.
+	editButton().click();
+	nameInput().value = "Dune Messiah";
+	dragBy(cardNode(view, card.id).querySelector("header")!, 50, 30);
+	assert.equal(nameInput().value, "Dune Messiah");
+
+	form().requestSubmit();
+	assert.equal(store.data.entities.find((e) => e.id === dune.id)?.name, "Dune Messiah");
+	assert.equal(details(view).querySelector(".details-title")?.textContent, "Dune Messiah");
+	assert.equal(cardNode(view, card.id).querySelector(".card-title")?.textContent, "Dune Messiah");
+});
+
+test("the viewer's details have no Edit", async () => {
+	const { view, card } = await setup({ readOnly: true });
+	dragBy(cardNode(view, card.id).querySelector("header")!, 0, 0);
+	assert.equal(details(view).hidden, false);
+	assert.ok(![...details(view).querySelectorAll("button")].some((b) => b.textContent === text.edit));
+});
+
 test("resizing saves the new size on the grid, but never below the minimum", async () => {
 	const { store, view, card } = await setup();
 	dragBy(cardNode(view, card.id).querySelector(".card-resize")!, 60, 40);

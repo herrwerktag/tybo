@@ -154,6 +154,18 @@ export function cardParts(
 	return { header, body };
 }
 
+/** The details panel's top bar in the type's color: the type's name and × calling `onClose`. */
+export function detailsBar(type: EntityType | undefined, onClose: () => void): HTMLElement {
+	const bar = el(
+		"div",
+		{ className: "card-bar" },
+		el("span", { className: "card-type" }, type?.name ?? ""),
+		el("button", { type: "button", className: "card-remove", title: text.closeDetails, ariaLabel: text.closeDetails, onclick: onClose }, "×"),
+	);
+	if (type) bar.style.background = type.color;
+	return bar;
+}
+
 /**
  * Easy-to-read details of an entity, for a details panel: its header (colored bar with ×, name, `actions`), then
  * description, all properties, content and ID. A referenced entity is a tag in the color of its type; clicking it
@@ -169,17 +181,10 @@ export function entityDetails(
 	const entityNames = new Map(store.data.entities.map((e) => [e.id, e.name]));
 	const entityTypes = entityTypeMap(store.data);
 
-	const bar = el(
-		"div",
-		{ className: "card-bar" },
-		el("span", { className: "card-type" }, type?.name ?? ""),
-		el("button", { type: "button", className: "card-remove", title: text.closeDetails, ariaLabel: text.closeDetails, onclick: onClose }, "×"),
-	);
-	if (type) bar.style.background = type.color;
 	const header = el(
 		"header",
 		{ className: "details-header" },
-		bar,
+		detailsBar(type, onClose),
 		el("h2", { className: "details-title" }, entity.name),
 		...(actions.length > 0 ? [el("div", { className: "details-actions" }, ...actions)] : []),
 	);

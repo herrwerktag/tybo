@@ -34,6 +34,7 @@ import {
 } from "@tybo/core";
 import { renderMarkdown } from "./markdown.js";
 import { cardParts, createCardPreview, entityDetails } from "./entity-card.js";
+import { showEntityEditor } from "./entity-form.js";
 import { readPreference, readSession, writePreference, writeSession } from "./preferences.js";
 import type { Store } from "@tybo/core";
 import { defaultViewport, fitRect, screenToWorld, snapZoom, stepZoom, visibleRect, zoomAt, type Viewport } from "@tybo/core";
@@ -90,7 +91,6 @@ interface CanvasOptions {
 	readOnly: boolean;
 	/** Viewer only: the address (location.hash) names the board, story and step shown, and follows them. */
 	addressed?: boolean;
-	onEditEntity?: (entityId: string) => void;
 	onExportView?: (boardId: string) => void;
 	onExportDrawio?: (boardId: string) => void;
 	onEditLibraryDrawing?: (libraryId: string) => void;
@@ -135,7 +135,7 @@ function firstBoardView(store: Store, options: CanvasOptions): HTMLElement {
  */
 export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	if (store.data.boards.length === 0) return firstBoardView(store, options);
-	const { readOnly, onEditEntity, onExportView, onExportDrawio, onEditLibraryDrawing } = options;
+	const { readOnly, onExportView, onExportDrawio, onEditLibraryDrawing } = options;
 	const addressed = readOnly && options.addressed === true;
 	const target = addressed ? parseViewHash(location.hash) : {};
 	let boardId = target.boardId ?? readPreference(ACTIVE_BOARD_KEY) ?? "";
@@ -1036,6 +1036,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 
 	/** The entity shown in the details panel, and the card that was selected for it (if it's on this board). */
 	let selected: { entityId: string; cardId: string | null } | null = null;
+	/** Editor: the details panel shows the selected entity's form instead of its details. */
+	let editing = false;
 	const details = el("aside", { className: "details-panel", ariaLabel: text.details });
 	details.hidden = true;
 
@@ -1043,6 +1045,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		const hadGroup = group !== null;
 		group = null;
 		selected = entityId ? { entityId, cardId } : null;
+		editing = false;
 		if (entityId) drawing.deselect();
 		markSelectedCards();
 		if (hadGroup) drawing.render(); // without the group's outlines
@@ -1321,12 +1324,30 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			details.replaceChildren();
 			return;
 		}
-		// In the editor: Edit opens the entity's form; for a card on the board, Connect links it with another entity,
-		// existing or new (see openConnect).
+		const type = store.data.types.find((t) => t.id === entity.typeId);
+		if (editing && type) {
+			// Redrawing the board (moving a card, …) keeps the open form and what was typed.
+			return showEntityEditor(details, store, entity, type, {
+				onClose: () => select(null),
+				onDone: (saved) => {
+					editing = false;
+					if (!saved) return renderDetails();
+					// What the cards show (name, properties, lines) may have changed; renderCards shows the details again.
+					renderCards();
+					renderPanel();
+				},
+			});
+		}
+		// In the editor: Edit shows the entity's form here; for a card on the board, Connect links it with another
+		// entity, existing or new (see openConnect).
+		const edit = () => {
+			editing = true;
+			renderDetails();
+		};
 		const actions = readOnly
 			? []
 			: [
-					...(onEditEntity ? [el("button", { type: "button", title: text.editInData, onclick: () => onEditEntity(entity.id) }, text.edit)] : []),
+					el("button", { type: "button", onclick: edit }, text.edit),
 					...(selected?.cardId ? [connectButton(entity, selected.cardId)] : []),
 				];
 		details.replaceChildren(...entityDetails(store, entity, { actions, onClose: () => select(null), onSelectEntity: selectEntity }));
