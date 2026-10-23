@@ -180,7 +180,6 @@ const en = {
 	details: "Details",
 	noDescription: "No description",
 	closeDetails: "Close details",
-	editInData: "Edit in the Data view",
 	confirmDeleteEntity: (name: string, references: number) =>
 		`Delete "${name}"?` +
 		(references > 0 ? ` It's referenced ${references} times; those references will be removed.` : ""),
@@ -529,7 +528,6 @@ const de: Messages = {
 	details: "Details",
 	noDescription: "Keine Beschreibung",
 	closeDetails: "Details schließen",
-	editInData: "In der Datenansicht bearbeiten",
 	confirmDeleteEntity: (name, references) =>
 		`„${name}“ löschen?` +
 		(references > 0 ? ` Es wird ${references}-mal referenziert; diese Verweise werden entfernt.` : ""),

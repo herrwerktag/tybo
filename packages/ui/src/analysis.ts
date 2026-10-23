@@ -16,6 +16,7 @@ import { analysisMarkdownFiles, pathLabel } from "./analysis-export.js";
 import { DETAILS_WIDTH_KEY } from "./canvas.js";
 import { downloadFile, el, resizeHandle, safeFileName, typeDot } from "./dom.js";
 import { createCardPreview, entityDetails } from "./entity-card.js";
+import { showEntityEditor } from "./entity-form.js";
 import { text } from "./i18n.js";
 import { readPreference, writePreference } from "./preferences.js";
 import { zipFiles } from "./zip.js";
@@ -29,9 +30,9 @@ const sameStep = (a: PathStep, b: PathStep) => a.propertyId === b.propertyId && 
  * The Analyses tab: the saved analyses in a list, the one chosen set up above (the type of its rows, the paths it
  * groups them by, the paths of its columns) and its result below — the rows in nested groups, a table per group.
  * Hovering an entity named in the result shows its card; clicking it shows its details beside, like on a board, where
- * Edit calls `onEditEntity`.
+ * Edit shows its form instead.
  */
-export function analysisView(store: Store, { onEditEntity }: { onEditEntity: (entityId: string) => void }): HTMLElement {
+export function analysisView(store: Store): HTMLElement {
 	const selected = (): Analysis | undefined => {
 		const id = readPreference(SELECTED_KEY);
 		return store.data.analyses.find((item) => item.id === id) ?? store.data.analyses[0];
@@ -45,6 +46,8 @@ export function analysisView(store: Store, { onEditEntity }: { onEditEntity: (en
 	main.addEventListener("scroll", preview.hide, { passive: true });
 	/** The entity whose details are shown beside the result. */
 	let shownEntityId: string | null = null;
+	/** Whether the details panel shows the entity's form instead of its details. */
+	let editing = false;
 	const details = el("aside", { className: "details-panel", ariaLabel: text.details });
 	const detailsHandle = resizeHandle(details, { key: DETAILS_WIDTH_KEY, side: "right", min: 16, max: 40 });
 	detailsHandle.classList.add("details-resize");
@@ -75,17 +78,34 @@ export function analysisView(store: Store, { onEditEntity }: { onEditEntity: (en
 	/** Shows the entity's details beside the result (none: closes them), and marks its links there. */
 	function showDetails(entityId: string | null): void {
 		const entity = entityId === null ? undefined : store.data.entities.find((e) => e.id === entityId);
+		if (entity?.id !== shownEntityId) editing = false;
 		shownEntityId = entity?.id ?? null;
 		details.hidden = !entity;
-		details.replaceChildren(
-			...(entity
-				? entityDetails(store, entity, {
-						actions: [el("button", { type: "button", title: text.editInData, onclick: () => onEditEntity(entity.id) }, text.edit)],
-						onClose: () => showDetails(null),
-						onSelectEntity: showDetails,
-					})
-				: []),
-		);
+		const type = entity && store.data.types.find((t) => t.id === entity.typeId);
+		if (entity && type && editing) {
+			// Saving draws the result again (see onHistoryChange), keeping the form until it's done.
+			showEntityEditor(details, store, entity, type, {
+				onClose: () => showDetails(null),
+				onDone: () => {
+					editing = false;
+					showDetails(entity.id);
+				},
+			});
+		} else {
+			const edit = () => {
+				editing = true;
+				showDetails(shownEntityId);
+			};
+			details.replaceChildren(
+				...(entity
+					? entityDetails(store, entity, {
+							actions: [el("button", { type: "button", onclick: edit }, text.edit)],
+							onClose: () => showDetails(null),
+							onSelectEntity: showDetails,
+						})
+					: []),
+			);
+		}
 		for (const link of content.querySelectorAll<HTMLElement>(".entity-link")) {
 			link.classList.toggle("selected", link.dataset.entityId === shownEntityId);
 		}
