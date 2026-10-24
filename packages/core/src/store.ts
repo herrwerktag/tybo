@@ -57,6 +57,17 @@ import {
 
 export type Store = Awaited<ReturnType<typeof createStore>>;
 
+/** An entity to add with `addEntities`; without an id it gets a new one. */
+export interface NewEntity {
+	id?: string;
+	typeId: string;
+	name: string;
+	content: string;
+	values: Record<string, PropertyValue>;
+	description?: string;
+	tags?: readonly string[];
+}
+
 /** How many changes can be undone. */
 const HISTORY_LIMIT = 100;
 
@@ -887,6 +898,24 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			const entity: Entity = { id: ulid(), typeId, name: name.trim(), content, description, tags: parseTags(tags.join(",")), values };
 			change({ ...data, entities: [...data.entities, entity] });
 			return entity;
+		},
+
+		/** Adds several entities as one change — one save, one step to undo. One given with an id keeps it, so the
+		 * others can already reference it. */
+		addEntities(items: readonly NewEntity[]): Entity[] {
+			const entities = items.map(
+				(item): Entity => ({
+					id: item.id ?? ulid(),
+					typeId: item.typeId,
+					name: item.name.trim(),
+					content: item.content,
+					description: item.description ?? "",
+					tags: parseTags((item.tags ?? []).join(",")),
+					values: item.values,
+				}),
+			);
+			change({ ...data, entities: [...data.entities, ...entities] });
+			return entities;
 		},
 
 		/** Without a description or tags, the entity keeps its current ones. */

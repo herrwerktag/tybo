@@ -3,16 +3,18 @@ import {
 	PROPERTY_KINDS,
 	createStore,
 	entityTags,
-	entityTypeMap,
 	filterEntities,
 	missingRequired,
 	newReference,
 	parseValue,
+	pathOptions,
 	placeholderProperty,
 	referencedIds,
 	resolvePath,
 	runAnalysis,
+	ulid,
 	validateType,
+	type Analysis,
 	type AnalysisGroup,
 	type AnalysisRow,
 	type AppData,
@@ -21,6 +23,8 @@ import {
 	type DraftProperty,
 	type Entity,
 	type EntityType,
+	type NewEntity,
+	type PathOption,
 	type PathStep,
 	type PropertyDef,
 	type PropertyKind,
@@ -83,7 +87,7 @@ export function tyboTools(port: DataPort): Tool[] {
 				return json({
 					types: data.types.map((type) => ({ ...describeType(data, type), entities: data.entities.filter((e) => e.typeId === type.id).length })),
 					tags: entityTags(data.entities),
-					analyses: data.analyses.map((a) => ({ id: a.id, name: a.name, type: typeName(data, a.typeId) })),
+					analyses: data.analyses.map((a) => describeAnalysis(data, a)),
 				});
 			},
 		},
@@ -91,8 +95,9 @@ export function tyboTools(port: DataPort): Tool[] {
 			name: "find_entities",
 			description:
 				"Finds entities by type, by a part of their name (ignoring case and accents), by tag, and by property values " +
-				"(`values`: property name → text it contains, option, or name/id of an entity it references; needs `type`). " +
-				"Answers id, type, name and tags of each; get_entity tells the rest.",
+				"(`values`: property name → text it contains, option, or name/id of an entity it references; needs `type`), " +
+				"and with `missing: true` to those lacking a required reference. " +
+				"Answers id, type, name and tags of each (and the required references it lacks); get_entity tells the rest.",
 			inputSchema: object(
 				{
 					workspace: WORKSPACE,
@@ -100,6 +105,7 @@ export function tyboTools(port: DataPort): Tool[] {
 					query: { type: "string", description: "Part of the name." },
 					tag: { type: "string" },
 					values: { type: "object", additionalProperties: { type: "string" } },
+					missing: { type: "boolean", description: "Only the entities lacking a required reference." },
 					limit: { type: "integer", minimum: 1, description: "At most this many (default 50)." },
 				},
 				["workspace"],
@@ -119,10 +125,15 @@ export function tyboTools(port: DataPort): Tool[] {
 						found = found.filter((e) => valueMatches(data, prop, e.values[prop.id], text(wanted, name)));
 					}
 				}
+				const missing = (e: Entity) => missingRequired(data.types.find((t) => t.id === e.typeId), e).map((p) => p.name);
+				if (args.missing === true) found = found.filter((e) => missing(e).length > 0);
 				const limit = typeof args.limit === "number" && args.limit >= 1 ? Math.floor(args.limit) : 50;
 				return json({
 					total: found.length,
-					entities: found.slice(0, limit).map((e) => ({ id: e.id, type: typeName(data, e.typeId), name: e.name, tags: e.tags })),
+					entities: found.slice(0, limit).map((e) => {
+						const lacking = missing(e);
+						return { id: e.id, type: typeName(data, e.typeId), name: e.name, tags: e.tags, ...(lacking.length > 0 ? { missing: lacking } : {}) };
+					}),
 				});
 			},
 		},
@@ -142,30 +153,111 @@ export function tyboTools(port: DataPort): Tool[] {
 			name: "run_analysis",
 			description:
 				"Runs a saved analysis (see describe_workspace): the entities of its type as rows, nested in groups by what its grouping " +
-				"paths lead to, with a cell per column (`columns` names them, in the order of the cells).",
-			inputSchema: object({ workspace: WORKSPACE, analysis: { type: "string", description: "Name or id of the analysis." } }, ["workspace", "analysis"]),
+				"paths lead to, with a cell per column (`columns` names them, in the order of the cells). At most `limit` rows are " +
+				"shown (default 100); the groups' counts are always whole.",
+			inputSchema: object(
+				{
+					workspace: WORKSPACE,
+					analysis: ANALYSIS,
+					limit: { type: "integer", minimum: 1, description: "At most this many rows (default 100)." },
+				},
+				["workspace", "analysis"],
+			),
 			async run(args) {
 				const { data } = await open(args.workspace);
-				const wanted = text(args.analysis, "analysis");
-				const analysis = data.analyses.find((a) => a.id === wanted) ?? data.analyses.find((a) => sameName(a.name, wanted));
-				if (!analysis) throw new ToolError(`There is no analysis "${wanted}". Analyses: ${data.analyses.map((a) => a.name).join(", ") || "none"}.`);
+				const analysis = analysisOf(data, args.analysis);
 				if (analysis.typeId === null) throw new ToolError(`The analysis "${analysis.name}" has no type picked yet.`);
 				const typeId = analysis.typeId;
 				const result = runAnalysis(data, analysis);
-				const row = (r: AnalysisRow) => ({ entity: { id: r.entity.id, name: r.entity.name }, cells: r.cells.map((c) => c.map((v) => v.label)) });
-				const group = (g: AnalysisGroup): object => ({
-					value: g.value?.label ?? null,
-					count: g.count,
-					...(g.groups.length > 0 ? { groups: g.groups.map(group) } : { rows: g.rows.map(row) }),
-				});
+				const limit = typeof args.limit === "number" && args.limit >= 1 ? Math.floor(args.limit) : 100;
+				// The rows still to show; once none are left, the groups after are left out.
+				let left = limit;
+				let cut = false;
+				const rows = (rs: readonly AnalysisRow[]) => {
+					const shown = rs.slice(0, left);
+					left -= shown.length;
+					cut ||= shown.length < rs.length;
+					return shown.map((r) => ({ entity: { id: r.entity.id, name: r.entity.name }, cells: r.cells.map((c) => c.map((v) => v.label)) }));
+				};
+				const groups = (gs: readonly AnalysisGroup[]): object[] =>
+					gs.flatMap((g) => {
+						if (left === 0) {
+							cut = true;
+							return [];
+						}
+						return [{ value: g.value?.label ?? null, count: g.count, ...(g.groups.length > 0 ? { groups: groups(g.groups) } : { rows: rows(g.rows) }) }];
+					});
+				const shown = result.groups.length > 0 ? { groups: groups(result.groups) } : { rows: rows(result.rows) };
 				return json({
 					analysis: analysis.name,
 					type: typeName(data, typeId),
 					groupedBy: analysis.groups.map((path) => pathLabel(data, typeId, path)),
 					columns: analysis.columns.map((path) => pathLabel(data, typeId, path)),
 					count: result.count,
-					...(result.groups.length > 0 ? { groups: result.groups.map(group) } : { rows: result.rows.map(row) }),
+					...shown,
+					...(cut ? { truncated: `Only the first ${limit} rows are shown; ask with a higher limit for more.` } : {}),
 				});
+			},
+		},
+		{
+			name: "create_analysis",
+			description:
+				"Creates an analysis: the entities of `type` as rows, grouped by the paths in `groups` (outermost first), with a column " +
+				"per path in `columns`. " +
+				PATHS,
+			inputSchema: object({ workspace: WORKSPACE, name: { type: "string" }, type: { type: "string", description: "Name or id of the row type." }, groups: PATH_LIST, columns: PATH_LIST }, [
+				"workspace",
+				"name",
+				"type",
+			]),
+			async run(args) {
+				const store = await open(args.workspace);
+				const name = analysisName(store.data, args.name, null);
+				const type = typeOf(store.data, args.type);
+				const groups = args.groups === undefined ? [] : paths(store.data, type.id, args.groups, "groups");
+				const columns = args.columns === undefined ? [] : paths(store.data, type.id, args.columns, "columns");
+				const analysis = store.addAnalysis(name);
+				store.updateAnalysis(analysis.id, { typeId: type.id, groups, columns });
+				return answerSaved(store, { analysis: describeAnalysis(store.data, analysisOf(store.data, analysis.id)) });
+			},
+		},
+		{
+			name: "update_analysis",
+			description:
+				"Changes an analysis: its name, its row type, its groups or its columns. `groups` and `columns` each replace the whole list; " +
+				"a new `type` without them empties them, as the paths of the old type don't fit. " +
+				PATHS,
+			inputSchema: object(
+				{ workspace: WORKSPACE, analysis: ANALYSIS, name: { type: "string" }, type: { type: "string", description: "Name or id of the row type." }, groups: PATH_LIST, columns: PATH_LIST },
+				["workspace", "analysis"],
+			),
+			async run(args) {
+				const store = await open(args.workspace);
+				const analysis = analysisOf(store.data, args.analysis);
+				const patch: Partial<Omit<Analysis, "id">> = {};
+				if (args.name !== undefined) patch.name = analysisName(store.data, args.name, analysis.id);
+				if (args.type !== undefined) {
+					const type = typeOf(store.data, args.type);
+					if (type.id !== analysis.typeId) Object.assign(patch, { typeId: type.id, groups: [], columns: [] });
+				}
+				const typeId = patch.typeId ?? analysis.typeId;
+				if ((args.groups !== undefined || args.columns !== undefined) && typeId === null) throw new ToolError("Give the analysis a `type` first.");
+				if (args.groups !== undefined) patch.groups = paths(store.data, typeId!, args.groups, "groups");
+				if (args.columns !== undefined) patch.columns = paths(store.data, typeId!, args.columns, "columns");
+				store.updateAnalysis(analysis.id, patch);
+				return answerSaved(store, { analysis: describeAnalysis(store.data, analysisOf(store.data, analysis.id)) });
+			},
+		},
+		{
+			name: "delete_analysis",
+			description: "Deletes an analysis; the entities stay as they are. Needs `confirm: true`.",
+			inputSchema: object({ workspace: WORKSPACE, analysis: ANALYSIS, confirm: { type: "boolean" } }, ["workspace", "analysis", "confirm"]),
+			async run(args) {
+				const store = await open(args.workspace);
+				const analysis = analysisOf(store.data, args.analysis);
+				if (args.confirm !== true) throw new ToolError(`Deleting the analysis "${analysis.name}" needs confirm: true.`);
+				store.deleteAnalysis(analysis.id);
+				return answerSaved(store, { deleted: { id: analysis.id, name: analysis.name } });
 			},
 		},
 		{
@@ -198,7 +290,7 @@ export function tyboTools(port: DataPort): Tool[] {
 			description:
 				"Changes an entity type: its name, its content template, or its properties. `properties` replaces the whole list: a " +
 				"property keeps its values when it is listed with its id (or its current name), and what isn't given of it stays as it " +
-				"is; a property left out is removed, together with its values on all entities.",
+				"is; a property left out is removed, together with its values on all entities — which needs `confirm: true`.",
 			inputSchema: object(
 				{
 					workspace: WORKSPACE,
@@ -206,6 +298,7 @@ export function tyboTools(port: DataPort): Tool[] {
 					name: { type: "string" },
 					properties: { type: "array", items: { ...PROPERTY, properties: { id: { type: "string" }, ...PROPERTY.properties }, required: [] } },
 					contentTemplate: { type: "string" },
+					confirm: { type: "boolean", description: "Needed when properties are left out, as they are removed with their values." },
 				},
 				["workspace", "type"],
 			),
@@ -216,6 +309,14 @@ export function tyboTools(port: DataPort): Tool[] {
 				if (store.data.types.some((t) => t.id !== type.id && sameName(t.name, name))) throw new ToolError(`There is a type "${name}" already.`);
 				const properties = args.properties === undefined ? type.properties : drafts(store.data, args.properties, type.properties);
 				check(store.data, name, properties);
+				const removed = type.properties.filter((p) => !properties.some((d) => d.id === p.id));
+				if (removed.length > 0 && args.confirm !== true) {
+					const losing = store.data.entities.filter((e) => removed.some((p) => e.values[p.id] !== undefined && e.values[p.id] !== null)).length;
+					throw new ToolError(
+						`This removes ${removed.map((p) => `"${p.name}"`).join(", ")} from ${type.name}, with the values of ${losing} entities. ` +
+							"List the properties to keep, or repeat with confirm: true.",
+					);
+				}
 				const template = args.contentTemplate === undefined ? type.contentTemplate : text(args.contentTemplate, "contentTemplate");
 				store.updateType(type.id, name, properties, template);
 				return answerSaved(store, { type: describeType(store.data, typeOf(store.data, type.id)) });
@@ -226,33 +327,53 @@ export function tyboTools(port: DataPort): Tool[] {
 			description:
 				"Creates an entity of a type. `values` maps property names to a text, an option, or the name/id of the entity a " +
 				"reference points to (a list for references allowing several). Without a description it starts with the type's template.",
+			inputSchema: object({ workspace: WORKSPACE, ...ENTITY_FIELDS }, ["workspace", "type", "name"]),
+			async run(args) {
+				const store = await open(args.workspace);
+				const [entity] = store.addEntities([newEntity(store.data, args, store.data.entities)]);
+				return answerSaved(store, { entity: describeEntity(store.data, entity!) });
+			},
+		},
+		{
+			name: "create_entities",
+			description:
+				"Creates several entities at once, each given as to create_entity (`type`, `name`, `content`, `description`, `tags`, `values`). " +
+				"A reference may name another entity of the same call. All are checked first: one that doesn't fit, and none is created.",
 			inputSchema: object(
 				{
 					workspace: WORKSPACE,
-					type: { type: "string", description: "Name or id of the entity type." },
-					name: { type: "string" },
-					content: { type: "string", description: "Short text shown on the entity's cards." },
-					description: { type: "string", description: "Longer text, Markdown." },
-					tags: { type: "array", items: { type: "string" } },
-					values: VALUES,
+					entities: { type: "array", minItems: 1, items: object(ENTITY_FIELDS, ["type", "name"]) },
 				},
-				["workspace", "type", "name"],
+				["workspace", "entities"],
 			),
 			async run(args) {
 				const store = await open(args.workspace);
-				const type = typeOf(store.data, args.type);
-				const name = text(args.name, "name");
-				if (name.trim() === "") throw new ToolError("An entity needs a name.");
-				const values = args.values === undefined ? {} : valuesOf(store.data, type, record(args.values, "values"));
-				const entity = store.addEntity(
-					type.id,
-					name,
-					args.content === undefined ? "" : text(args.content, "content"),
-					values,
-					args.description === undefined ? type.contentTemplate : text(args.description, "description"),
-					args.tags === undefined ? [] : texts(args.tags, "tags"),
+				if (!Array.isArray(args.entities) || args.entities.length === 0) throw new ToolError("`entities` must be a list of entities.");
+				/** `run` on the `index`th entity given, its refusal saying which one it is about. */
+				const at = <T>(index: number, run: () => T): T => {
+					try {
+						return run();
+					} catch (error) {
+						const item = (args.entities as unknown[])[index] as { name?: unknown } | null;
+						throw error instanceof ToolError ? new ToolError(`entities[${index}] ("${String(item?.name)}"): ${error.message}`) : error;
+					}
+				};
+				const given = args.entities.map((item, index) =>
+					at(index, () => {
+						const fields = record(item, `entities[${index}]`);
+						return { fields, id: ulid(), typeId: typeOf(store.data, fields.type).id, name: text(fields.name, "name").trim() };
+					}),
 				);
-				return answerSaved(store, { entity: describeEntity(store.data, entity) });
+				// What the references may point to: the entities there are, and the ones of this call.
+				const candidates = [...store.data.entities, ...given];
+				const items = given.map(({ fields, id }, index) => at(index, () => ({ ...newEntity(store.data, fields, candidates), id })));
+				const created = store.addEntities(items);
+				return answerSaved(store, {
+					created: created.map((e) => {
+						const { id, type, name, missing } = describeEntity(store.data, e);
+						return { id, type, name, ...(missing ? { missing } : {}) };
+					}),
+				});
 			},
 		},
 		{
@@ -320,6 +441,25 @@ const VALUES = {
 	description: "Property name → text, option, or name/id of a referenced entity (a list where several are allowed); null clears.",
 	additionalProperties: { type: ["string", "array", "null"], items: { type: "string" } },
 };
+/** What create_entity and each entity of create_entities are given. */
+const ENTITY_FIELDS = {
+	type: { type: "string", description: "Name or id of the entity type." },
+	name: { type: "string" },
+	content: { type: "string", description: "Short text shown on the entity's cards." },
+	description: { type: "string", description: "Longer text, Markdown." },
+	tags: { type: "array", items: { type: "string" } },
+	values: VALUES,
+};
+const ANALYSIS = { type: "string", description: "Name or id of the analysis." };
+const PATH_LIST = {
+	type: "array",
+	items: { anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }] },
+	description: "Paths: each a list of steps, or the steps in one text joined by ›.",
+};
+const PATHS =
+	"A path goes from the row type step by step: a property's name (a reference leads on to the entities it points to, a text or " +
+	"options property ends the path), or for the entities referencing these, the reference's inverse label or Type.Property. " +
+	"`Owner › Role` is the role of the owner; describe_workspace and run_analysis write paths the same way.";
 const PROPERTY = {
 	type: "object",
 	properties: {
@@ -453,9 +593,34 @@ function valueMatches(data: AppData, prop: PropertyDef, value: PropertyValue | u
 	return values.some((v) => (prop.kind === "options" ? sameName(v, wanted) : v.toLocaleLowerCase().includes(wanted.trim().toLocaleLowerCase())));
 }
 
-/** The values the model gave, keyed by property id, each checked the way the entity form checks it. */
-function valuesOf(data: AppData, type: EntityType, given: Record<string, unknown>): Record<string, PropertyValue> {
-	const entityTypes = entityTypeMap(data);
+/** What a reference can name: an entity there is, or one about to be created. */
+type Candidate = Pick<Entity, "id" | "typeId" | "name">;
+
+/** The entity the model described (as create_entity is given it), checked; a reference names one of `entities`.
+ * Without a description it starts with its type's template. */
+function newEntity(data: AppData, given: Record<string, unknown>, entities: readonly Candidate[]): NewEntity {
+	const type = typeOf(data, given.type);
+	const name = text(given.name, "name");
+	if (name.trim() === "") throw new ToolError("An entity needs a name.");
+	return {
+		typeId: type.id,
+		name,
+		content: given.content === undefined ? "" : text(given.content, "content"),
+		values: given.values === undefined ? {} : valuesOf(data, type, record(given.values, "values"), entities),
+		description: given.description === undefined ? type.contentTemplate : text(given.description, "description"),
+		tags: given.tags === undefined ? [] : texts(given.tags, "tags"),
+	};
+}
+
+/** The values the model gave, keyed by property id, each checked the way the entity form checks it; a reference
+ * names one of `entities`. */
+function valuesOf(
+	data: AppData,
+	type: EntityType,
+	given: Record<string, unknown>,
+	entities: readonly Candidate[] = data.entities,
+): Record<string, PropertyValue> {
+	const entityTypes = new Map(entities.map((e) => [e.id, e.typeId]));
 	const values: Record<string, PropertyValue> = {};
 	for (const [name, raw] of Object.entries(given)) {
 		const prop = propertyOf(type, name);
@@ -474,7 +639,7 @@ function valuesOf(data: AppData, type: EntityType, given: Record<string, unknown
 		const refs = typeof raw === "string" ? [raw] : texts(raw, prop.name);
 		if (refs.length > 1 && !prop.reference?.multiple) throw new ToolError(`${prop.name} references one entity only.`);
 		const targets = prop.reference?.typeIds ?? [];
-		const candidates = data.entities.filter((e) => targets.includes(e.typeId));
+		const candidates = entities.filter((e) => targets.includes(e.typeId));
 		const ids = refs.map((ref) => {
 			const byId = candidates.find((e) => e.id === ref);
 			if (byId) return byId.id;
@@ -553,8 +718,63 @@ function problem(error: ValidationError): string {
 /** How a path reads: its steps' names, an inverse step by its label or the referencing type and property. */
 function pathLabel(data: AppData, typeId: string, path: readonly PathStep[]): string {
 	return resolvePath(data.types, typeId, path)
-		.options.map((o) =>
-			o.step.direction === "inverse" ? o.prop.reference?.inverseLabel || `${typeName(data, o.ownerTypeId)}.${o.prop.name} (inverse)` : o.prop.name,
-		)
+		.options.map((o) => stepLabel(data, o))
 		.join(" › ");
+}
+
+const stepLabel = (data: AppData, o: PathOption) =>
+	o.step.direction === "inverse" ? o.prop.reference?.inverseLabel || `${typeName(data, o.ownerTypeId)}.${o.prop.name} (inverse)` : o.prop.name;
+
+/** The paths the model gave from entities of `typeId`, each step named the way `stepLabel` reads it (an inverse
+ * one also as Type.Property). */
+function paths(data: AppData, typeId: string, raw: unknown, what: string): PathStep[][] {
+	if (!Array.isArray(raw)) throw new ToolError(`\`${what}\` must be a list of paths.`);
+	return raw.map((item, index) => {
+		const steps = typeof item === "string" ? item.split("›") : texts(item, `${what}[${index}]`);
+		if (steps.every((s) => s.trim() === "")) throw new ToolError(`${what}[${index}] needs at least one step.`);
+		let from = [typeId];
+		return steps.map((step, i) => {
+			const wanted = step.trim();
+			if (from.length === 0) throw new ToolError(`${what}[${index}]: "${steps[i - 1]!.trim()}" is a text or options property; the path ends there.`);
+			const options = pathOptions(data.types, from);
+			const fits = options.filter((o) =>
+				o.step.direction === "forward"
+					? o.prop.id === wanted || sameName(o.prop.name, wanted)
+					: sameName(stepLabel(data, o), wanted) || sameName(`${typeName(data, o.ownerTypeId)}.${o.prop.name}`, wanted),
+			);
+			if (fits.length !== 1) {
+				const known = options.map((o) => stepLabel(data, o)).join(", ") || "none";
+				throw new ToolError(`${what}[${index}]: ${fits.length > 1 ? `"${wanted}" is ambiguous` : `there is no step "${wanted}"`} here. Steps: ${known}.`);
+			}
+			from = fits[0]!.typeIds;
+			return fits[0]!.step;
+		});
+	});
+}
+
+/** The analysis `ref` names by id or name. */
+function analysisOf(data: AppData, ref: unknown): Analysis {
+	const wanted = text(ref, "analysis");
+	const analysis = data.analyses.find((a) => a.id === wanted) ?? data.analyses.find((a) => sameName(a.name, wanted));
+	if (!analysis) throw new ToolError(`There is no analysis "${wanted}". Analyses: ${data.analyses.map((a) => a.name).join(", ") || "none"}.`);
+	return analysis;
+}
+
+/** `raw` as the name of an analysis, refused when empty or another one (than `selfId`) has it. */
+function analysisName(data: AppData, raw: unknown, selfId: string | null): string {
+	const name = text(raw, "name");
+	if (name.trim() === "") throw new ToolError("An analysis needs a name.");
+	if (data.analyses.some((a) => a.id !== selfId && sameName(a.name, name))) throw new ToolError(`There is an analysis "${name}" already.`);
+	return name;
+}
+
+function describeAnalysis(data: AppData, analysis: Analysis) {
+	const typeId = analysis.typeId;
+	return {
+		id: analysis.id,
+		name: analysis.name,
+		type: typeName(data, typeId),
+		groupedBy: typeId === null ? [] : analysis.groups.map((path) => pathLabel(data, typeId, path)),
+		columns: typeId === null ? [] : analysis.columns.map((path) => pathLabel(data, typeId, path)),
+	};
 }
