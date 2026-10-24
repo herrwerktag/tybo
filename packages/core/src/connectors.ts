@@ -91,6 +91,9 @@ export interface Connector {
 	path: string;
 	/** Middle of the curve, for the label. */
 	mid: Point;
+	/** Where the curve starts and ends (before the arrowhead, if any). */
+	start: Point;
+	end: Point;
 	/** Arrowhead triangle at the target, as SVG polygon points; null without an arrow. */
 	arrow: string | null;
 }
@@ -120,6 +123,8 @@ export function connector(from: Rect, to: Rect, withArrow = true): Connector {
 	return {
 		path: `M ${fmt(start)} C ${fmt(c1)} ${fmt(c2)} ${fmt(lineEnd)}`,
 		mid,
+		start,
+		end: lineEnd,
 		arrow: withArrow ? `${fmt(end)} ${fmt(left)} ${fmt(right)}` : null,
 	};
 }

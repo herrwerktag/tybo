@@ -57,6 +57,10 @@ const ACTIVE_BOARD_KEY = "canvas-active-board";
 const EDIT_FRAMES_KEY = "canvas-edit-frames";
 /** The story last shown in the editor, per board (empty: the whole board). */
 const activeStoryKey = (boardId: string) => `canvas-active-story:${boardId}`;
+/** The connector lines' color (as in the stylesheet), for a gradient's end at a card whose type has no color. */
+const LINE_COLOR = "#8a8a8a";
+/** Canvases made so far (see gradientPrefix). */
+let canvasCount = 0;
 /** The page last shown in the editor, per story. (A board's steps from before became a story with the board's id, so
  * the key then is the one the board used.) */
 const activePageKey = (storyId: string) => `canvas-active-page:${storyId}`;
@@ -1073,15 +1077,21 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		return chain;
 	}
 
-	/** With one card selected, everything on the board fades but its chain: the cards linked to it and their lines. */
+	/**
+	 * With one card selected, everything on the board fades but its chain: the cards linked to it and their lines.
+	 * Its own lines (and their labels) stand out further, as `direct`.
+	 */
 	function markChain(): void {
-		const chain = selected?.cardId && !group ? chainOf(selected.cardId) : null;
+		const cardId = !group ? selected?.cardId : null;
+		const chain = cardId ? chainOf(cardId) : null;
 		layer.classList.toggle("focusing", chain !== null);
 		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card[data-card-id]")) {
 			node.classList.toggle("in-chain", !!chain?.has(node.dataset.cardId!));
 		}
 		for (const node of layer.querySelectorAll<HTMLElement | SVGElement>(".connector, .connector-label")) {
-			node.classList.toggle("in-chain", !!chain?.has(node.dataset.from!) && !!chain?.has(node.dataset.to!));
+			const { from, to } = node.dataset;
+			node.classList.toggle("in-chain", !!chain?.has(from!) && !!chain?.has(to!));
+			node.classList.toggle("direct", !!cardId && (from === cardId || to === cardId));
 		}
 	}
 
@@ -1373,7 +1383,17 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	/** Card positions and sizes by card id; updated live while dragging or resizing. */
 	let cardRects = new Map<string, Rect>();
 	/** One entry per drawn reference: from a card to the nearest of the target entity's cards. */
-	let links: { fromCardId: string; targetCardIds: string[]; label: string; color: string; arrow: LineArrow }[] = [];
+	let links: {
+		fromCardId: string;
+		targetCardIds: string[];
+		label: string;
+		/** The source's and the target's type colors. */
+		fromColor: string;
+		color: string;
+		arrow: LineArrow;
+	}[] = [];
+	/** Makes the lines' gradient ids unique in the document, should it show more than one canvas. */
+	const gradientPrefix = `connector-gradient-${++canvasCount}`;
 	/** Cards that just came onto the page shown, so they fade in; set when changing pages. */
 	let appearing = new Set<string>();
 	/** The lines drawn, as the cards they link (see drawConnectors). */
@@ -1411,6 +1431,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 							fromCardId: card.id,
 							targetCardIds: targets.map((c) => c.id),
 							label: prop.reference?.lineLabel || prop.name,
+							fromColor: type?.color ?? "",
 							color,
 							arrow: prop.reference?.arrow ?? "to",
 						});
@@ -1470,11 +1491,12 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 
 	function drawConnectors(): void {
 		const lines: SVGElement[] = [];
+		const gradients: SVGElement[] = [];
 		const labels: HTMLElement[] = [];
 		edges = [];
 		// A line touching a dimmed card is dimmed with it.
 		const dimmed = new Set(currentPage()?.dimmedCardIds);
-		for (const { fromCardId, targetCardIds, label, color, arrow } of links) {
+		for (const { fromCardId, targetCardIds, label, fromColor, color, arrow } of links) {
 			const from = cardRects.get(fromCardId);
 			const to = from && nearest(from, targetCardIds.flatMap((id) => cardRects.get(id) ?? []));
 			if (!from || !to) continue;
@@ -1483,11 +1505,28 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			const faded = dimmed.has(fromCardId) || dimmed.has(toCardId);
 			// "from" draws the same curve the other way round, so the arrowhead lands on this card.
 			const shape = arrow === "from" ? connector(to, from) : connector(from, to, arrow === "to");
-			const { path, mid } = shape;
+			const { path, mid, start, end } = shape;
+			// The selected card's own lines are drawn in a gradient along the curve, from the start card's color to
+			// the end card's (see .connector.direct).
+			const gradientId = `${gradientPrefix}-${gradients.length}`;
+			const [startColor, endColor] = arrow === "from" ? [color, fromColor] : [fromColor, color];
+			gradients.push(
+				svgEl(
+					"linearGradient",
+					{ id: gradientId, gradientUnits: "userSpaceOnUse", x1: start.x, y1: start.y, x2: end.x, y2: end.y },
+					svgEl("stop", { offset: 0, "stop-color": startColor || LINE_COLOR }),
+					svgEl("stop", { offset: 1, "stop-color": endColor || LINE_COLOR }),
+				),
+			);
 			lines.push(
 				svgEl(
 					"g",
-					{ class: faded ? "connector dimmed" : "connector", "data-from": fromCardId, "data-to": toCardId },
+					{
+						class: faded ? "connector dimmed" : "connector",
+						"data-from": fromCardId,
+						"data-to": toCardId,
+						style: `--line-gradient: url(#${gradientId})`,
+					},
 					svgEl("path", { class: "connector-line", d: path }),
 					...(shape.arrow
 						? [svgEl("polygon", { class: "connector-arrow", points: shape.arrow, fill: color || "currentColor" })]
@@ -1499,7 +1538,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			Object.assign(tag.dataset, { from: fromCardId, to: toCardId });
 			labels.push(tag);
 		}
-		connectorLayer.replaceChildren(...lines);
+		connectorLayer.replaceChildren(svgEl("defs", {}, ...gradients), ...lines);
 		connectorLabels.replaceChildren(...labels);
 		markChain();
 	}

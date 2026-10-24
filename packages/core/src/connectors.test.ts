@@ -23,6 +23,7 @@ test("connector runs from the source's right edge to just before the target's le
 	assert.match(c.path, /^M 100,25 C .* 290,25$/);
 	assert.equal(c.arrow, "300,25 290,20 290,30");
 	assert.deepEqual(c.mid, { x: 195, y: 25 });
+	assert.deepEqual([c.start, c.end], [{ x: 100, y: 25 }, { x: 290, y: 25 }]);
 });
 
 test("connector runs straight between overlapping sides of cards of different sizes, from the middle of the overlap", () => {
@@ -38,5 +39,6 @@ test("connector runs straight between overlapping sides of cards of different si
 test("connector without an arrow runs all the way to the target's edge", () => {
 	const c = connector(box(0, 0), box(300, 0), false);
 	assert.match(c.path, / 300,25$/);
+	assert.deepEqual(c.end, { x: 300, y: 25 });
 	assert.equal(c.arrow, null);
 });
