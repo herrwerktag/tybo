@@ -29,12 +29,19 @@ pnpm-Monorepo mit TypeScript:
 ## Einrichten
 
 ```sh
-pnpm install
+pnpm install --frozen-lockfile
 cp .env.example .env                       # DATABASE_URL, TEST_DATABASE_URL, optional PORT, LOCAL_DB_PATH
 cp apps/demo/.env.example apps/demo/.env   # VITE_API_URL, Standard http://localhost:3001
 ```
 
 Die `.env`-Dateien bleiben aus Git heraus; eingecheckt sind nur die Vorlagen.
+
+`--frozen-lockfile` installiert genau die Versionen aus `pnpm-lock.yaml` und bricht ab, wenn der Lockfile
+nicht zur `package.json` passt, statt still neu aufzuloesen. Vorher prueft pnpm den Lockfile gegen die Regeln
+in `pnpm-workspace.yaml`: Paketversionen erst ab 7 Tagen Alter (`minimumReleaseAge`), kein schwaecherer
+Herkunftsnachweis als bei frueheren Versionen (`trustPolicy`), transitive Abhaengigkeiten nur aus der Registry
+(`blockExoticSubdeps`), Install-Skripte nur fuer freigegebene Pakete (`allowBuilds`). `pnpm dev` installiert
+nichts, auf einem neuen Rechner also zuerst `pnpm install --frozen-lockfile`.
 
 ## Starten
 
