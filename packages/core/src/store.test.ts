@@ -59,6 +59,29 @@ test("data persists across store instances", async () => {
 	assert.equal(reloaded.data.entities[0]?.values[prop.id], "Dune");
 });
 
+test("addEntities adds several entities as one change, keeping the ids given", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
+	const type = store.addType("Book", [titleDraft], "");
+	const prop = type.properties[0]!;
+	await store.saved();
+	const saves = storage.saves.length;
+
+	const [a, b] = store.addEntities([
+		{ id: "01JABCDEFGHJKMNPQRSTVWXYZ0", typeId: type.id, name: " A ", content: "", values: { [prop.id]: "A" }, tags: ["x, y"] },
+		{ typeId: type.id, name: "B", content: "", values: {} },
+	]);
+	assert.equal(a!.id, "01JABCDEFGHJKMNPQRSTVWXYZ0");
+	assert.equal(a!.name, "A");
+	assert.deepEqual(a!.tags, ["x", "y"]);
+	assert.ok(isUlid(b!.id));
+	await store.saved();
+	assert.equal(storage.saves.length, saves + 1);
+
+	assert.ok(store.undo());
+	assert.deepEqual(store.data.entities, []);
+});
+
 test("addEntity assigns a ULID; updateEntity keeps it", async () => {
 	const store = await open(memoryStorage());
 	const type = store.addType("Book", [titleDraft], "");

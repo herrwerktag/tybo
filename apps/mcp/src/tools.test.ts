@@ -118,8 +118,95 @@ test("update_type keeps listed properties with their values, removes the ones le
 	assert.deepEqual(alan.values.Mentor.map((e: { name: string }) => e.name), ["Ada"]);
 	assert.equal((await call("get_entity", { entity: "Ada" })).values.Role, "Lead");
 
-	await call("update_type", { type: "Person", properties: [{ name: "Mentor" }] });
+	await call("update_type", { type: "Person", properties: [{ name: "Mentor" }], confirm: true });
 	assert.deepEqual((await call("get_entity", { entity: "Ada" })).values, {});
+});
+
+test("update_type removes properties only with confirm, saying what would go", async () => {
+	const { call, refusal, storage } = await withPeople();
+	const saves = storage.saves.length;
+	assert.match(
+		await refusal("update_type", { type: "Person", properties: [{ name: "Nickname", kind: "text" }] }),
+		/removes "Role" from Person, with the values of 2 entities.*confirm: true/,
+	);
+	assert.equal(storage.saves.length, saves);
+	// Renaming the type or changing its template leaves the properties alone, and needs no confirm.
+	await call("update_type", { type: "Person", name: "Human" });
+	assert.equal((await call("get_entity", { entity: "Ada" })).values.Role, "Lead");
+});
+
+test("create_entities creates all in one save, references naming entities of the same call", async () => {
+	const { call, storage } = await withPeople();
+	const saves = storage.saves.length;
+	const { created } = await call("create_entities", {
+		entities: [
+			{ type: "Task", name: "Deploy", values: { Owner: "Grace" } },
+			{ type: "Person", name: "Grace", values: { Role: "Dev" }, tags: ["new"] },
+			{ type: "Task", name: "Plan" },
+		],
+	});
+	assert.deepEqual(created.map((e: { name: string }) => e.name), ["Deploy", "Grace", "Plan"]);
+	assert.equal(storage.saves.length, saves + 1);
+	const deploy = await call("get_entity", { entity: "Deploy" });
+	assert.deepEqual(deploy.values.Owner, [{ id: created[1].id, name: "Grace" }]);
+});
+
+test("create_entities creates none when one doesn't fit, saying which", async () => {
+	const { refusal, storage, call } = await withPeople();
+	const saves = storage.saves.length;
+	const message = await refusal("create_entities", {
+		entities: [
+			{ type: "Person", name: "Grace" },
+			{ type: "Person", name: "Linus", values: { Role: "CEO" } },
+		],
+	});
+	assert.match(message, /^entities\[1\] \("Linus"\): "CEO" isn't an option of Role/);
+	assert.match(await refusal("create_entities", { entities: [{ type: "Robot", name: "R2" }] }), /^entities\[0\] \("R2"\): There is no type "Robot"/);
+	assert.equal(storage.saves.length, saves);
+	assert.equal((await call("find_entities", { type: "Person" })).total, 2);
+});
+
+test("find_entities with missing: true lists the entities lacking a required reference", async () => {
+	const { call } = await withPeople();
+	await call("update_type", { type: "Task", properties: [{ name: "Owner", required: true }] });
+	await call("create_entity", { type: "Task", name: "Review" });
+	const found = await call("find_entities", { missing: true });
+	assert.deepEqual(found.entities.map((e: { name: string; missing: string[] }) => [e.name, e.missing]), [["Review", ["Owner"]]]);
+});
+
+test("analyses are made, changed and deleted with their paths named the way run_analysis writes them", async () => {
+	const { call, refusal } = await withPeople();
+	await call("create_entity", { type: "Task", name: "Test it", values: { Owner: "Alan" } });
+	const { analysis } = await call("create_analysis", { name: "Tasks by role", type: "Task", groups: ["Owner › Role"], columns: [["Owner"]] });
+	assert.deepEqual([analysis.type, analysis.groupedBy, analysis.columns], ["Task", ["Owner › Role"], ["Owner"]]);
+	let result = await call("run_analysis", { analysis: "Tasks by role" });
+	assert.deepEqual(result.groups.map((g: { value: string; count: number }) => [g.value, g.count]), [["Dev", 1], ["Lead", 1]]);
+
+	// An inverse step by its label, or by Type.Property.
+	await call("update_analysis", { analysis: "Tasks by role", name: "People", type: "Person", columns: ["owns", "Task.Owner"] });
+	result = await call("run_analysis", { analysis: "people" });
+	assert.deepEqual(result.groupedBy, []);
+	assert.deepEqual(result.columns, ["owns", "owns"]);
+	assert.deepEqual(result.rows.map((r: { cells: string[][] }) => r.cells[0]), [["Write the spec"], ["Test it"]]);
+	assert.deepEqual((await call("describe_workspace")).analyses.map((a: { name: string }) => a.name), ["People"]);
+
+	assert.match(await refusal("update_analysis", { analysis: "People", columns: ["Role › Name"] }), /"Role" is a text or options property/);
+	assert.match(await refusal("update_analysis", { analysis: "People", columns: ["Boss"] }), /no step "Boss" here. Steps: Role, owns/);
+	assert.match(await refusal("create_analysis", { name: "people", type: "Task" }), /already/);
+	assert.match(await refusal("delete_analysis", { analysis: "People", confirm: false }), /confirm: true/);
+	await call("delete_analysis", { analysis: "People", confirm: true });
+	assert.deepEqual((await call("describe_workspace")).analyses, []);
+});
+
+test("run_analysis shows at most `limit` rows, keeping the groups' counts whole", async () => {
+	const { call } = await withPeople();
+	await call("create_entities", { entities: ["A", "B", "C"].map((name) => ({ type: "Task", name, values: { Owner: "Alan" } })) });
+	await call("create_analysis", { name: "By owner", type: "Task", groups: ["Owner"] });
+	const result = await call("run_analysis", { analysis: "By owner", limit: 2 });
+	assert.equal(result.count, 4);
+	assert.deepEqual(result.groups.map((g: { value: string; count: number; rows: unknown[] }) => [g.value, g.count, g.rows.length]), [["Ada", 1, 1], ["Alan", 3, 1]]);
+	assert.match(result.truncated, /first 2 rows/);
+	assert.equal((await call("run_analysis", { analysis: "By owner" })).truncated, undefined);
 });
 
 test("a required reference is saved without an entity, and the entity lists it as missing until it has one", async () => {
