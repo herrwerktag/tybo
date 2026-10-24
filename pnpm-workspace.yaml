@@ -4,3 +4,8 @@ packages:
 
 allowBuilds:
   esbuild: true
+
+# 7 Tage (in Minuten)
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade
+blockExoticSubdeps: true
