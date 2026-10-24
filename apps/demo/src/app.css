@@ -2088,6 +2088,28 @@ button.ref-tag {
 	filter: grayscale(1);
 }
 
+/* The selected card's own lines: thicker, dashed and running in the direction of flow, in a gradient from the start
+ * card's color to the end card's (set per line in drawConnectors); their labels in bold. */
+.focusing .connector.direct .connector-line {
+	stroke: var(--line-gradient);
+	stroke-width: 3;
+	stroke-dasharray: 8 6;
+	animation: connector-flow 0.6s linear infinite;
+}
+
+.focusing .connector-label.direct {
+	font-weight: 600;
+}
+
+@keyframes connector-flow {
+	from {
+		stroke-dashoffset: 14;
+	}
+	to {
+		stroke-dashoffset: 0;
+	}
+}
+
 /* The dim toggle sits right, next to ×. */
 .card-dim {
 	margin-left: auto;
@@ -2121,7 +2143,8 @@ button.ref-tag {
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.canvas-card.appear {
+	.canvas-card.appear,
+	.focusing .connector.direct .connector-line {
 		animation: none;
 	}
 }

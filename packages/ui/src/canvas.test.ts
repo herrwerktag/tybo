@@ -823,6 +823,16 @@ test("selecting a card fades the board but its chain: the cards linked to it eit
 	assert.ok(board.classList.contains("focusing"));
 	assert.deepEqual(inChain(), [card.id, frankCard.id, sequelCard.id]);
 	assert.equal(view.querySelectorAll(".connector.in-chain").length, 2);
+	// Only Dune's own line (and its label) stands out further, drawn in its gradient.
+	const direct = () => [...view.querySelectorAll<SVGElement>(".connector.direct")].map((g) => g.dataset.from);
+	assert.deepEqual(direct(), [card.id]);
+	assert.equal(view.querySelectorAll(".connector-label.direct").length, 1);
+	const gradient = view.querySelector<SVGElement>(".connector.direct")!.getAttribute("style")!.match(/url\(#(.+)\)/)![1]!;
+	assert.equal(view.querySelector(`.connectors linearGradient[id="${gradient}"]`)?.querySelectorAll("stop").length, 2);
+
+	// Frank's lines are both its own.
+	cardNode(view, frankCard.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	assert.deepEqual(direct().sort(), [card.id, sequelCard.id].sort());
 
 	cardNode(view, otherCard.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	assert.deepEqual(inChain(), [otherCard.id]);
@@ -830,6 +840,7 @@ test("selecting a card fades the board but its chain: the cards linked to it eit
 
 	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 	assert.ok(!board.classList.contains("focusing"));
+	assert.equal(view.querySelectorAll(".direct").length, 0);
 });
 
 test("Connect links an existing entity, found by name, and the other way round too", async () => {
