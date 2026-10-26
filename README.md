@@ -101,7 +101,9 @@ Warnung, nichts wird still verworfen.
 `apps/mcp` ist ein MCP-Server, ueber den ein LLM-Client (Claude Code, Claude Desktop, …) mit den Daten arbeitet:
 Arbeitsbereiche und ihr Schema lesen, Entitaeten suchen (auch die ohne Pflicht-Referenz) und ansehen, Typen und
 Entitaeten anlegen und aendern (auch viele Entitaeten auf einmal, als eine Aenderung), Auswertungen anlegen, aendern
-und ausfuehren. Was Daten wegnimmt, braucht `confirm: true`: Entitaeten und Auswertungen loeschen, Eigenschaften
+und ausfuehren, Entitaeten als Karten auf ein Board legen (ohne Positionen geschichtet in Spalten entlang der Verweise,
+je Typ ein eigener Bereich, so sortiert, dass sich moeglichst wenige Linien kreuzen; ein Board des Namens wird
+angelegt, wenn es keins gibt). Was Daten wegnimmt, braucht `confirm: true`: Entitaeten und Auswertungen loeschen, Eigenschaften
 aus einem Typ entfernen. Er schreibt ueber denselben
 Store wie die Anwendung, es gelten also dieselben Regeln wie in den Formularen. Typen, Eigenschaften, Optionen
 und Entitaeten nennt das LLM beim Namen.
