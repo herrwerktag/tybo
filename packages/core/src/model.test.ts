@@ -6,7 +6,6 @@ import {
 	frameShape,
 	TYPE_COLORS,
 	cardRows,
-	columnLayout,
 	detailRows,
 	entityTags,
 	filterEntities,
@@ -301,37 +300,6 @@ test("placeBeside puts a card right of the source, moved down past the cards in 
 	assert.deepEqual(placeBeside(source, [source, { x: 288, y: 0, width: 240, height: 168 }], size), { x: 288, y: 192 });
 	// Off the grid, the source still leads to a place on it.
 	assert.deepEqual(placeBeside({ x: 10, y: 13, width: 240, height: 80 }, [], size), { x: 288, y: 24 });
-});
-
-test("columnLayout: a column per type in the direction of the references, the entities one below the other", () => {
-	const points = (typeId: string): PropertyDef => ({ ...author, id: `to-${typeId}`, reference: { ...author.reference!, typeIds: [typeId] } });
-	// Requirement → Component → Team; the Component referencing itself stays in its column.
-	const types = [
-		{ id: "team", properties: [] },
-		{ id: "component", properties: [points("team"), points("component")] },
-		{ id: "requirement", properties: [points("component")] },
-		{ id: "note", properties: [] },
-	];
-	const entities = [
-		{ id: "t1", typeId: "team" },
-		{ id: "c1", typeId: "component" },
-		{ id: "r1", typeId: "requirement" },
-		{ id: "c2", typeId: "component" },
-	];
-	assert.deepEqual(columnLayout(types, entities, { x: 10, y: 13 }), [
-		{ entityId: "t1", x: 2 * 336, y: 24 },
-		{ entityId: "c1", x: 336, y: 24 },
-		{ entityId: "r1", x: 0, y: 24 },
-		{ entityId: "c2", x: 336, y: 24 + 216 },
-	]);
-	// Types without entities leave no gap; a loop between types ends without running away.
-	const loop = [
-		{ id: "a", properties: [points("b")] },
-		{ id: "b", properties: [points("a")] },
-	];
-	const placed = columnLayout(loop, [{ id: "a1", typeId: "a" }, { id: "b1", typeId: "b" }], { x: 0, y: 0 });
-	assert.deepEqual(placed.map((p) => p.x).sort((x, y) => x - y), [0, 336]);
-	assert.deepEqual(columnLayout(types, [{ id: "c1", typeId: "component" }], { x: 0, y: 0 }), [{ entityId: "c1", x: 0, y: 0 }]);
 });
 
 test("missingRequired: required references without an entity, in property order", () => {

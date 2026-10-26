@@ -387,42 +387,6 @@ export function placeBeside(source: Rect, cards: readonly Rect[], size: { width:
 }
 
 /**
- * Where the cards of `entities` go when laid out from `start`: a column per type, in the direction of the references
- * (a type is right of the types referencing it, as far as the longest such chain goes; references to the type itself
- * and around a loop don't move it further), and in each column the entities in the order given, one below the other.
- * Columns without entities are left out.
- */
-export function columnLayout(
-	types: readonly Pick<EntityType, "id" | "properties">[],
-	entities: readonly Pick<Entity, "id" | "typeId">[],
-	start: Point,
-): { entityId: string; x: number; y: number }[] {
-	const depth = new Map(types.map((t) => [t.id, 0]));
-	// Each round lengthens the chains by one step; a chain without loops has fewer steps than there are types.
-	for (let round = 1; round < types.length; round++) {
-		for (const type of types) {
-			for (const prop of type.properties) {
-				for (const target of prop.reference?.typeIds ?? []) {
-					if (target !== type.id && depth.has(target)) depth.set(target, Math.max(depth.get(target)!, depth.get(type.id)! + 1));
-				}
-			}
-		}
-	}
-	const used = [...new Set(entities.map((e) => depth.get(e.typeId) ?? 0))].sort((a, b) => a - b);
-	const rows = new Map<number, number>();
-	return entities.map((e) => {
-		const column = used.indexOf(depth.get(e.typeId) ?? 0);
-		const row = rows.get(column) ?? 0;
-		rows.set(column, row + 1);
-		return {
-			entityId: e.id,
-			x: snapToGrid(start.x) + column * (DEFAULT_CARD_SIZE.width + 4 * GRID_SIZE),
-			y: snapToGrid(start.y) + row * (DEFAULT_CARD_SIZE.height + 2 * GRID_SIZE),
-		};
-	});
-}
-
-/**
  * A way two entities can be linked, seen from one of them: through one of its own reference properties
  * (`forward`, it holds the reference), or through a property of another type that can reference it (`inverse`,
  * the other entity holds it).

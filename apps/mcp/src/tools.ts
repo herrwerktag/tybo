@@ -2,10 +2,10 @@ import {
 	CARD_DISPLAYS,
 	GRID_SIZE,
 	PROPERTY_KINDS,
-	columnLayout,
 	createStore,
 	entityTags,
 	filterEntities,
+	layeredLayout,
 	missingRequired,
 	newReference,
 	parseValue,
@@ -436,8 +436,9 @@ export function tyboTools(port: DataPort): Tool[] {
 				"Puts entities on a board as cards, so they can be seen with their references drawn between them. Names a board " +
 				"by name or id; one of that name is made when there is none. `types` puts all entities of those types there, " +
 				"`entities` the ones named (each a name or id, or { entity, type, x, y }). An entity with `x` and `y` goes there " +
-				"(its card moves when it's on the board already); the others are laid out right of what's on the board, a column " +
-				"per type in the direction of the references; ones on the board already stay where they are.",
+				"(its card moves when it's on the board already); the others are laid out right of what's on the board, in columns " +
+				"in the direction of the references (each type a band of its own), sorted so their lines cross as little as " +
+				"possible; ones on the board already stay where they are.",
 			inputSchema: object(
 				{
 					workspace: WORKSPACE,
@@ -486,7 +487,7 @@ export function tyboTools(port: DataPort): Tool[] {
 						: { x: Math.max(...board.cards.map((c) => c.x + c.width)) + 4 * GRID_SIZE, y: Math.min(...board.cards.map((c) => c.y)) };
 				const placements = [
 					...[...given.values()].flatMap((g) => (g.at ? [{ entityId: g.entity.id, ...g.at }] : [])),
-					...columnLayout(store.data.types, toLayOut, start),
+					...layeredLayout(store.data.types, toLayOut, start),
 				];
 				const cards = store.placeCards(board.id, placements);
 				const name = (entityId: string) => store.data.entities.find((e) => e.id === entityId)!.name;

@@ -1,6 +1,7 @@
 export * from "./analysis.js";
 export * from "./changes.js";
 export * from "./connectors.js";
+export * from "./layout.js";
 export * from "./model.js";
 export * from "./ports.js";
 export * from "./store.js";
