@@ -566,6 +566,28 @@ test("addEntityWithCard creates an entity with its card at the first free spot, 
 	assert.equal(store.data.entities.some((e) => e.id === made.entity.id), false);
 });
 
+test("placeCards moves an entity's card that's there and adds the others on top, in one undo step", async () => {
+	const store = await open(memoryStorage());
+	const note = store.addType("Note", [], "");
+	const boardId = firstBoard(store).id;
+	const [a, b, c] = ["A", "B", "C"].map((name) => store.addEntity(note.id, name, "", {}));
+	const aCard = store.addCard(boardId, a!.id, 0, 0);
+	const before = store.data;
+
+	const placed = store.placeCards(boardId, [
+		{ entityId: b!.id, x: 48, y: 0 },
+		{ entityId: a!.id, x: 24, y: 24 },
+		{ entityId: c!.id, x: 96, y: 0 },
+		{ entityId: b!.id, x: 48, y: 96 },
+	]);
+	assert.deepEqual(placed.map((card) => [card.entityId, card.x, card.y]), [[b!.id, 48, 96], [a!.id, 24, 24], [c!.id, 96, 0]], "B where it's given last");
+	assert.equal(placed[1]!.id, aCard.id, "A's card moved, none added");
+	assert.deepEqual(firstBoard(store).cards.map((card) => card.entityId), [a!.id, b!.id, c!.id]);
+	store.undo();
+	assert.deepEqual(store.data, before);
+	assert.deepEqual(store.placeCards("no-board", [{ entityId: a!.id, x: 0, y: 0 }]), []);
+});
+
 test("moveItems moves several cards and drawings together, in one undo step", async () => {
 	const store = await open(memoryStorage());
 	const note = store.addType("Note", [], "");

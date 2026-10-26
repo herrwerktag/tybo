@@ -1073,6 +1073,23 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			return card;
 		},
 
+		/** Puts the cards of several entities on the board as one change: an entity with a card there already has its
+		 * first card moved to (x, y), the others get a new one on top. An entity given twice goes where it's given
+		 * last. Answers the cards, one per entity in the order given. */
+		placeCards(boardId: string, placements: readonly { entityId: string; x: number; y: number }[]): CanvasCard[] {
+			const board = data.boards.find((b) => b.id === boardId);
+			if (!board || placements.length === 0) return [];
+			const last = new Map(placements.map((p) => [p.entityId, p]));
+			const cards = [...last.values()].map(({ entityId, x, y }): CanvasCard => {
+				const existing = board.cards.find((c) => c.entityId === entityId);
+				return existing ? { ...existing, x, y } : { id: ulid(), entityId, x, y, ...DEFAULT_CARD_SIZE };
+			});
+			const byId = new Map(cards.map((c) => [c.id, c]));
+			const added = cards.filter((c) => !board.cards.some((b) => b.id === c.id));
+			updateBoard(boardId, (b) => ({ ...b, cards: [...b.cards.map((c) => byId.get(c.id) ?? c), ...added] }));
+			return cards;
+		},
+
 		/**
 		 * Creates an entity of type `typeId` named `name` and links it with the entity of the card `sourceCardId`
 		 * through `link` (seen from that entity; see linkOnBoard, which also places its card). It gets the type's
