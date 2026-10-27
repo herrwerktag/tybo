@@ -7,7 +7,7 @@ import { text } from "./i18n.js";
 import { createStore, DATA_VERSION, fitRect, frameInside, newReference, snapToGrid, visibleRect, type Store } from "@tybo/core";
 import { memoryDataPort } from "@tybo/core/testing";
 
-/** A board with one card for Dune (with content, so it can be resized) and one for Herbert. */
+/** A board with one card for Dune (with content) and one for Herbert. */
 async function setup({ readOnly = false } = {}) {
 	freshDom();
 	const store = await createStore(memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } }).port, "ws");
@@ -122,32 +122,65 @@ test("the viewer's details have no Edit", async () => {
 	assert.ok(![...details(view).querySelectorAll("button")].some((b) => b.textContent === text.edit));
 });
 
-test("resizing saves the new size on the grid, but never below the minimum", async () => {
-	const { store, view, card } = await setup();
-	dragBy(cardNode(view, card.id).querySelector(".card-resize")!, 60, 40);
-	assert.deepEqual([savedCard(store, card.id)?.width, savedCard(store, card.id)?.height], [312, 216]);
-
-	dragBy(cardNode(view, card.id).querySelector(".card-resize")!, -1000, -1000);
-	assert.deepEqual([savedCard(store, card.id)?.width, savedCard(store, card.id)?.height], [160, 80]);
-});
-
-test("a card without content can only be made wider or narrower; it is as tall as what it shows, rounded up to the grid", async () => {
-	const { store, view, card } = await setup();
-	const herbert = store.data.boards[0]!.cards.find((c) => c.id !== card.id)!;
-	const node = cardNode(view, herbert.id);
-	assert.ok(node.classList.contains("compact"));
-	// happy-dom has no layout: what it shows is 100 tall, unless a height is set.
-	Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
-		configurable: true,
-		get(this: HTMLElement) {
-			return this.style.height ? parseFloat(this.style.height) : 100;
+/**
+ * happy-dom has no layout: here a card's contents are `natural` wide on one line (by its name), and it's two grid steps
+ * plus one per line tall, unless a height is set. Returns a function restoring happy-dom's own.
+ */
+function fakeCardLayout(natural: Record<string, number>): () => void {
+	const proto = HTMLElement.prototype;
+	const own = ["offsetWidth", "offsetHeight"].map((name) => [name, Object.getOwnPropertyDescriptor(proto, name)] as const);
+	const naturalWidth = (node: HTMLElement) => natural[node.querySelector(".card-title")?.textContent ?? ""] ?? 0;
+	const width = (node: HTMLElement) => (node.style.width === "max-content" ? naturalWidth(node) : parseFloat(node.style.width));
+	Object.defineProperties(proto, {
+		offsetWidth: {
+			configurable: true,
+			get(this: HTMLElement) {
+				return this.classList.contains("canvas-card") ? width(this) : 0;
+			},
+		},
+		offsetHeight: {
+			configurable: true,
+			get(this: HTMLElement) {
+				if (!this.classList.contains("canvas-card")) return 0;
+				return this.style.height ? parseFloat(this.style.height) : 48 + 24 * Math.ceil(naturalWidth(this) / width(this));
+			},
 		},
 	});
+	return () => {
+		for (const [name, descriptor] of own) {
+			if (descriptor) Object.defineProperty(proto, name, descriptor);
+			else delete (proto as unknown as Record<string, unknown>)[name];
+		}
+	};
+}
 
-	dragBy(node.querySelector(".card-resize")!, 60, 40);
-	assert.deepEqual([savedCard(store, herbert.id)?.width, savedCard(store, herbert.id)?.height], [312, herbert.height]);
-	assert.equal(cardNode(view, herbert.id).style.width, "312px");
-	assert.equal(cardNode(view, herbert.id).style.height, "120px");
+test("cards are sized to what they show: as narrow as they get without more lines, and saved outside the undo history", async () => {
+	const restore = fakeCardLayout({ Dune: 600, Herbert: 100 });
+	try {
+		const { store, view, card } = await setup();
+		const herbert = store.data.boards[0]!.cards.find((c) => c.id !== card.id)!;
+		// Dune takes two lines at the widest (384); 312 is the narrowest width on the grid still taking two.
+		assert.deepEqual([savedCard(store, card.id)?.width, savedCard(store, card.id)?.height], [312, 96]);
+		assert.deepEqual([cardNode(view, card.id).style.width, cardNode(view, card.id).style.height], ["312px", "96px"]);
+		// Herbert fits on one line, but a card is never narrower than the minimum.
+		assert.deepEqual([savedCard(store, herbert.id)?.width, savedCard(store, herbert.id)?.height], [168, 72]);
+		assert.equal(cardNode(view, card.id).querySelector(".card-resize"), null, "nothing to resize by hand");
+		store.undo(); // the measuring isn't undone: adding Herbert's card is
+		assert.equal(store.data.boards[0]!.cards.length, 1);
+	} finally {
+		restore();
+	}
+});
+
+test("a long text makes a card as tall as it needs at its widest; the viewer measures but saves nothing", async () => {
+	const restore = fakeCardLayout({ Dune: 10000, Herbert: 100 });
+	try {
+		const { store, view, card } = await setup({ readOnly: true });
+		assert.deepEqual([cardNode(view, card.id).style.width, cardNode(view, card.id).style.height], ["384px", "696px"]);
+		assert.deepEqual([savedCard(store, card.id)?.width, savedCard(store, card.id)?.height], [240, 168]);
+	} finally {
+		restore();
+	}
 });
 
 test("× takes the card off the board; the entity stays", async () => {

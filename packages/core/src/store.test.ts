@@ -467,7 +467,7 @@ test("an entity can have several cards; moveCard brings a card to the front", as
 	const a2 = store.addCard(firstBoard(store).id, a.id, 70, 80);
 	assert.notEqual(a1.id, a2.id);
 
-	store.resizeCard(a1.id, 300, 200);
+	store.fitCards(new Map([[a1.id, { width: 300, height: 200 }]]));
 	store.moveCard(a1.id, 50, 60);
 
 	assert.deepEqual(firstBoard(store).cards, [
@@ -607,15 +607,18 @@ test("moveItems moves several cards and drawings together, in one undo step", as
 	assert.deepEqual([firstBoard(store).cards[0]!.x, firstBoard(store).drawings], [0, [box, line]]);
 });
 
-test("resizeCard enforces the minimum size; removeCard removes one card and keeps the entity", async () => {
+test("fitCards saves measured sizes outside the undo history; removeCard removes one card and keeps the entity", async () => {
 	const store = await open(memoryStorage());
 	const note = store.addType("Note", [], "");
 	const a = store.addEntity(note.id, "A", "", {});
 	const first = store.addCard(firstBoard(store).id, a.id, 0, 0);
 	const second = store.addCard(firstBoard(store).id, a.id, 100, 0);
 
-	store.resizeCard(first.id, 10, 10);
-	assert.deepEqual(firstBoard(store).cards[0], { id: first.id, entityId: a.id, x: 0, y: 0, width: 160, height: 80 });
+	store.fitCards(new Map([[first.id, { width: 192, height: 96 }]]));
+	assert.deepEqual(firstBoard(store).cards[0], { id: first.id, entityId: a.id, x: 0, y: 0, width: 192, height: 96 });
+	store.undo(); // not the measuring, but the change before: adding the second card
+	assert.equal(firstBoard(store).cards.length, 1);
+	store.redo();
 
 	store.removeCard(first.id);
 	assert.deepEqual(
@@ -714,7 +717,7 @@ test("each board has its own cards and viewport; card changes stay on their boar
 	const onOne = store.addCard(one.id, a.id, 0, 0);
 	const onTwo = store.addCard(two.id, a.id, 10, 10);
 	store.moveCard(onTwo.id, 99, 99);
-	store.resizeCard(onTwo.id, 400, 300);
+	store.fitCards(new Map([[onTwo.id, { width: 400, height: 300 }]]));
 	store.setViewport(two.id, { x: 5, y: 5, zoom: 1.5 });
 
 	const [b1, b2] = store.data.boards;

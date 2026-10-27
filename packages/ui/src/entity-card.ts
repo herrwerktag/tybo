@@ -1,4 +1,6 @@
 import {
+	CARD_WIDTH,
+	GRID_SIZE,
 	cardRows,
 	detailRows,
 	entityTypeMap,
@@ -41,12 +43,14 @@ export function createCardPreview(store: Store, container: HTMLElement): CardPre
 		preview.replaceChildren(header, ...(body ? [body] : []));
 		preview.hidden = false;
 
-		// The whole card, as tall as the container's visible part allows.
+		// As wide as a card of it on the board, as tall as the container's visible part allows.
 		const gap = 6;
 		const margin = 8;
 		const area = container.getBoundingClientRect();
 		const tag = anchor.getBoundingClientRect();
-		preview.style.maxHeight = `${area.height - 2 * margin}px`;
+		preview.style.maxHeight = "";
+		const size = cardSize(preview);
+		Object.assign(preview.style, { width: size ? `${size.width}px` : "", height: "", maxHeight: `${area.height - 2 * margin}px` });
 		const { offsetWidth: width, offsetHeight: height } = preview;
 		// Fade the bottom only if even the full height isn't enough.
 		preview.classList.toggle("clipped", !!body && body.scrollHeight > body.clientHeight);
@@ -88,6 +92,46 @@ export function createCardPreview(store: Store, container: HTMLElement): CardPre
 }
 
 /**
+ * The size a card (or preview) shows what it has in: as narrow as it gets on the grid without growing taller or
+ * cutting more off than at its widest (CARD_WIDTH), and exactly as tall as it then needs to show all of it (rounding
+ * up to the grid would leave room empty at the bottom). Null while the card isn't laid out. Measuring leaves the
+ * card's width and height set to anything: set them afterwards. (offsetWidth and offsetHeight ignore the zoom, so
+ * on the board they're in world units.)
+ */
+export function cardSize(node: HTMLElement): { width: number; height: number } | null {
+	// What's cut off with … (labels, tags, the type) or after three lines (the name) doesn't make the card taller:
+	// how much of it is hidden, in pixels.
+	const cutOff = () =>
+		[...node.querySelectorAll(".card-type, .card-title, .card-props dt, .card-props .chip, .card-props .ref-tag")].reduce(
+			(sum, e) => sum + e.scrollWidth - e.clientWidth + e.scrollHeight - e.clientHeight,
+			0,
+		);
+	const heightAt = (width: number) => {
+		Object.assign(node.style, { width: `${width}px`, height: "" });
+		return node.offsetHeight;
+	};
+	node.style.height = "";
+	node.style.width = "max-content";
+	if (node.offsetWidth === 0) return null;
+	const up = (value: number) => Math.ceil(value / GRID_SIZE) * GRID_SIZE;
+	// Fits on one line each: as wide as the longest. Otherwise the narrowest width wrapping into as few lines as the
+	// widest does, so no room is left empty at the right.
+	let width = Math.min(CARD_WIDTH.max, Math.max(CARD_WIDTH.min, up(node.offsetWidth)));
+	if (width === CARD_WIDTH.max) {
+		const lowest = heightAt(CARD_WIDTH.max);
+		const leastCut = cutOff();
+		let [narrow, wide] = [CARD_WIDTH.min / GRID_SIZE - 1, CARD_WIDTH.max / GRID_SIZE]; // in grid steps; wide fits
+		while (wide - narrow > 1) {
+			const middle = Math.floor((narrow + wide) / 2);
+			if (heightAt(middle * GRID_SIZE) <= lowest && cutOff() <= leastCut) wide = middle;
+			else narrow = middle;
+		}
+		width = wide * GRID_SIZE;
+	}
+	return { width, height: heightAt(width) };
+}
+
+/**
  * Label/value rows: text as plain text, options as a grey chip, references as tags in their entity's type color.
  * With a `preview`, hovering or focusing a reference tag shows that entity's card.
  */
@@ -98,7 +142,7 @@ function propertyList(store: Store, rows: CardRow[], preview: CardPreview | null
 		...rows.flatMap((row) => {
 			const value =
 				row.kind === "text"
-					? el("dd", { className: "prop-text", title: row.values.join("") }, ...row.values)
+					? el("dd", { className: "prop-text" }, ...row.values)
 					: el(
 							"dd",
 							{ className: "prop-chips" },

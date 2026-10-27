@@ -6,7 +6,6 @@ import { text } from "./i18n.js";
 import {
 	DEFAULT_CARD_SIZE,
 	GRID_SIZE,
-	MIN_CARD_SIZE,
 	MIN_DESCRIPTION_SIZE,
 	FRAME_ASPECT,
 	MIN_FRAME_SIZE,
@@ -33,7 +32,7 @@ import {
 	type ViewFrame,
 } from "@tybo/core";
 import { renderMarkdown } from "./markdown.js";
-import { cardParts, createCardPreview, entityDetails } from "./entity-card.js";
+import { cardParts, cardSize, createCardPreview, entityDetails } from "./entity-card.js";
 import { showEntityEditor } from "./entity-form.js";
 import { readPreference, readSession, writePreference, writeSession } from "./preferences.js";
 import type { Store } from "@tybo/core";
@@ -1158,8 +1157,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 					node.classList.add("dragging");
 					node.style.left = `${card.x + o.x}px`;
 					node.style.top = `${card.y + o.y}px`;
-					const height = node.classList.contains("compact") ? node.offsetHeight : card.height;
-					cardRects.set(card.id, { x: card.x + o.x, y: card.y + o.y, width: card.width, height });
+					cardRects.set(card.id, { ...(cardRects.get(card.id) ?? card), x: card.x + o.x, y: card.y + o.y });
 				}
 				drawing.previewMove(drawingIds, o.x, o.y);
 				drawConnectors();
@@ -1448,45 +1446,52 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		for (const node of [...layer.childNodes]) if (node !== description && node !== frameLayer) node.remove();
 		frameLayer.before(drawing.element, connectorLayer, connectorLabels, ...cardNodes);
 		drawing.render();
-		measureCompactCards();
+		measureCards();
 		drawConnectors();
-		// On the first render the canvas isn't on the page yet, so heights can only be measured a frame later.
+		// On the first render the canvas isn't on the page yet, so sizes can only be measured a frame later.
 		requestAnimationFrame(() => {
-			if (measureCompactCards()) drawConnectors();
+			if (measureCards()) drawConnectors();
 		});
 		if (selected?.cardId && !shown.some((c) => c.id === selected!.cardId)) selected = { ...selected, cardId: null };
 		renderDetails(); // the entity may have changed or been removed
 	}
 
-	/**
-	 * Sets a compact card's height to what its contents need, rounded up to the grid, so its bottom edge is
-	 * on the grid too. Returns that height, or 0 while the card isn't laid out. (offsetHeight ignores the zoom,
-	 * so it's in world units.)
-	 */
-	function fitCompactCard(node: HTMLElement): number {
-		node.style.height = "";
-		if (node.offsetHeight === 0) return 0;
-		const height = Math.ceil(node.offsetHeight / GRID_SIZE) * GRID_SIZE;
-		node.style.height = `${height}px`;
-		return height;
+	/** Sizes measured before, by the card's HTML: a card only has to be measured again when what it shows changed. */
+	const fittedSizes = new Map<string, { width: number; height: number }>();
+
+	/** Sizes a card to what it shows (see cardSize), measured once per HTML. Returns that size, or null while the
+	 * card isn't laid out. */
+	function fitCard(node: HTMLElement): { width: number; height: number } | null {
+		const key = node.innerHTML;
+		const size = fittedSizes.get(key) ?? cardSize(node);
+		if (!size) return null;
+		fittedSizes.set(key, size);
+		Object.assign(node.style, { width: `${size.width}px`, height: `${size.height}px` });
+		return size;
 	}
 
 	/**
-	 * Compact cards are as tall as their contents need, not their saved height, so lines must attach to the
-	 * fitted height. Returns whether any height changed.
+	 * Sizes the cards to what they show (see fitCard), so lines attach to them, and saves the sizes that changed (not in
+	 * the viewer, which only looks). Returns whether the size of any card the lines attach to changed.
 	 */
-	function measureCompactCards(): boolean {
-		let changed = false;
-		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card.compact")) {
+	function measureCards(): boolean {
+		const changed = new Map<string, { width: number; height: number }>();
+		const saved = new Map(currentBoard().cards.map((c) => [c.id, c]));
+		let resized = false;
+		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card[data-card-id]")) {
 			const id = node.dataset.cardId ?? "";
+			const size = fitCard(node);
+			const card = saved.get(id);
+			if (!size || !card) continue;
 			const rect = cardRects.get(id);
-			const height = fitCompactCard(node);
-			if (rect && height > 0 && rect.height !== height) {
-				cardRects.set(id, { ...rect, height });
-				changed = true;
+			if (rect && (rect.width !== size.width || rect.height !== size.height)) {
+				cardRects.set(id, { ...rect, ...size });
+				resized = true;
 			}
+			if (card.width !== size.width || card.height !== size.height) changed.set(id, size);
 		}
-		return changed;
+		if (changed.size > 0 && !readOnly) store.fitCards(changed);
+		return resized;
 	}
 
 	function drawConnectors(): void {
@@ -1612,11 +1617,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			buttons: [...dimButton, ...(removeButton ? [removeButton] : [])],
 			preview,
 		});
-		// Without content a card is as tall as what it shows (bar, name, maybe properties), rounded up to the
-		// grid: only its width can be changed. Only cards with content keep a saved height, so long text can be given more or less room.
-		const compact = !entity.content.trim();
+		// Sized to what it shows once laid out (see fitCard); until then as last measured.
 		const node = el("article", { className: "canvas-card" }, header, ...(body ? [body] : []));
-		node.classList.toggle("compact", compact);
 		node.classList.toggle("selected", isCardSelected(card.id));
 		node.classList.toggle("ghost", ghost);
 		node.classList.toggle("dimmed", dimmed);
@@ -1629,7 +1631,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				delete node.dataset.dragged;
 				return;
 			}
-			if ((e.target as Element).closest("button, .ref-tag, .card-resize")) return;
+			if ((e.target as Element).closest("button, .ref-tag")) return;
 			// Shift+click adds the card to the selection or takes it out (not in the viewer, nor other pages' cards).
 			if (e.shiftKey && !readOnly && !ghost) toggleSelected("cardIds", card.id);
 			else select(entity.id, card.id);
@@ -1638,13 +1640,10 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			left: `${card.x}px`,
 			top: `${card.y}px`,
 			width: `${card.width}px`,
-			...(compact ? {} : { height: `${card.height}px` }),
+			height: `${card.height}px`,
 		});
-		// The viewer only looks: no moving or resizing; nor are other pages' cards moved from here.
+		// The viewer only looks: no moving; nor are other pages' cards moved from here.
 		if (readOnly || ghost) return node;
-
-		const resize = el("div", { className: "card-resize", title: text.resize });
-		node.append(resize);
 
 		header.addEventListener("pointerdown", (e) => {
 			if (e.button !== 0 || e.shiftKey || (e.target as Element).closest("button")) return; // Shift: a click (see above)
@@ -1665,39 +1664,13 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 					const y = snapToGrid(card.y + dy / zoom);
 					node.style.left = `${x}px`;
 					node.style.top = `${y}px`;
-					cardRects.set(card.id, { x, y, width: card.width, height: compact ? node.offsetHeight : card.height });
+					cardRects.set(card.id, { ...(cardRects.get(card.id) ?? card), x, y });
 					drawConnectors();
 				},
 				(dx, dy) => {
 					if (!dragging) return; // a click: the click handler selects the card
 					node.dataset.dragged = "true";
 					store.moveCard(card.id, snapToGrid(card.x + dx / zoom), snapToGrid(card.y + dy / zoom));
-					renderCards();
-				},
-			);
-		});
-
-		resize.addEventListener("pointerdown", (e) => {
-			if (e.button !== 0) return;
-			e.preventDefault();
-			e.stopPropagation();
-			const { zoom } = viewport;
-			const size = (dx: number, dy: number) => ({
-				width: Math.max(MIN_CARD_SIZE.width, snapToGrid(card.width + dx / zoom)),
-				height: compact ? card.height : Math.max(MIN_CARD_SIZE.height, snapToGrid(card.height + dy / zoom)),
-			});
-			trackPointer(
-				e,
-				(dx, dy) => {
-					const { width, height } = size(dx, dy);
-					node.style.width = `${width}px`;
-					if (!compact) node.style.height = `${height}px`;
-					cardRects.set(card.id, { x: card.x, y: card.y, width, height: compact ? fitCompactCard(node) : height });
-					drawConnectors();
-				},
-				(dx, dy) => {
-					const { width, height } = size(dx, dy);
-					store.resizeCard(card.id, width, height);
 					renderCards();
 				},
 			);
