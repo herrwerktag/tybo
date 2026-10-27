@@ -452,7 +452,7 @@ export function tyboTools(port: DataPort): Tool[] {
 								object({ entity: ENTITY, type: TYPE_HINT, x: { type: "number" }, y: { type: "number" } }, ["entity"]),
 							],
 						},
-						description: "Entities by name or id, or with where their card goes (x to the right, y down; a card is 240 × 168).",
+						description: "Entities by name or id, or with where their card goes (x to the right, y down; a new card is 240 × 168 until the editor sizes it to what it shows: 168 to 384 wide, as tall as needed).",
 					},
 				},
 				["workspace", "board"],

@@ -120,7 +120,10 @@ export interface Entity {
 	values: Record<string, PropertyValue>;
 }
 
-/** An entity placed on the canvas, in world coordinates. An entity can have several cards. */
+/**
+ * An entity placed on the canvas, in world coordinates. An entity can have several cards. Its size follows from what
+ * it shows: the editor measures it and saves it here, so exports and layouts know it too.
+ */
 export interface CanvasCard {
 	id: string;
 	entityId: string;
@@ -351,8 +354,11 @@ export function parseTags(input: string): string[] {
 	});
 }
 
+/** A card's size until the editor has measured what it shows (see CanvasCard). */
 export const DEFAULT_CARD_SIZE = { width: 240, height: 168 } as const;
-export const MIN_CARD_SIZE = { width: 160, height: 80 } as const;
+/** How narrow and how wide a card gets: short contents make it narrower, longer ones wrap at the widest (about 50
+ * characters a line, easy to read). */
+export const CARD_WIDTH = { min: 168, max: 384 } as const;
 
 /** Spacing of the board's grid, in world units: cards are placed and sized on it. */
 export const GRID_SIZE = 24;

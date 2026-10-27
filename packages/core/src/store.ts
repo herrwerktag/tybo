@@ -9,7 +9,6 @@ import {
 	MIN_DESCRIPTION_SIZE,
 	frameShape,
 	descriptionInView,
-	MIN_CARD_SIZE,
 	CARD_DISPLAYS,
 	LINE_ARROWS,
 	PROPERTY_KINDS,
@@ -1164,9 +1163,16 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			}));
 		},
 
-		resizeCard(cardId: string, width: number, height: number): void {
-			const size = { width: Math.max(MIN_CARD_SIZE.width, width), height: Math.max(MIN_CARD_SIZE.height, height) };
-			updateCardBoard(cardId, (b) => ({ ...b, cards: b.cards.map((c) => (c.id === cardId ? { ...c, ...size } : c)) }));
+		/** The sizes cards were measured at, by card id. Saved, but like pan and zoom not part of the undo history:
+		 * they follow from what the cards show. */
+		fitCards(sizes: ReadonlyMap<string, { width: number; height: number }>): void {
+			data = {
+				...data,
+				boards: data.boards.map((b) =>
+					b.cards.some((c) => sizes.has(c.id)) ? { ...b, cards: b.cards.map((c) => ({ ...c, ...sizes.get(c.id) })) } : b,
+				),
+			};
+			save();
 		},
 
 		/** Takes the card off its board; the entity itself stays. With `pageId`, only off that story page:

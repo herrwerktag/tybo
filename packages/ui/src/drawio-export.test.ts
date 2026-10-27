@@ -87,15 +87,13 @@ test("the board is one diagram page named after it", () => {
 	assert.equal(doc.querySelector("mxGraphModel")!.getAttribute("gridSize"), "24");
 });
 
-test("cards are boxes where they are on the board; without content, as tall as what they show", () => {
+test("cards are boxes where they are on the board, as large as the editor measured them", () => {
 	const doc = parse(boardDrawio(data, "b"));
 	const geometry = (id: string) => cell(doc, id).querySelector("mxGeometry")!;
 	assert.deepEqual(
 		["x", "y", "width", "height"].map((a) => geometry("card-ca").getAttribute(a)),
 		["0", "0", "240", "168"],
 	);
-	// Bar and name only: three grid steps.
-	assert.equal(geometry("card-cr").getAttribute("height"), "72");
 	assert.equal(geometry("card-cr").getAttribute("x"), "480");
 });
 

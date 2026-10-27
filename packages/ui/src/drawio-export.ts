@@ -41,7 +41,7 @@ export function boardDrawio(data: Pick<AppData, "types" | "entities" | "boards">
 export function boardDrawioFiles(data: Pick<AppData, "types" | "entities" | "boards">, boardId: string): { name: string; contents: string }[] {
 	const board = findBoard(data, boardId);
 	const areas = board.drawings.filter(isArea);
-	const cards = exportCards(data, board.cards).map(({ card, height }) => ({ ...card, height }));
+	const cards = exportCards(data, board.cards).map(({ card }) => card);
 	let unnamed = 0;
 	const files = [
 		{ name: board.name, contents: boardDrawio(data, boardId) },
@@ -62,8 +62,8 @@ function findBoard(data: Pick<AppData, "boards">, boardId: string): Board {
 }
 
 /**
- * The cards (of entities that still exist) as they're exported: with their entity, type, the rows they show and their
- * height. Lines only go to cards among `cards`; references to other cards are listed instead.
+ * The cards (of entities that still exist) as they're exported: with their entity, type and the rows they show, at
+ * the size the editor measured. Lines only go to cards among `cards`; references to other cards are listed instead.
  */
 function exportCards(data: Pick<AppData, "types" | "entities">, cards: readonly CanvasCard[]) {
 	const types = new Map(data.types.map((t) => [t.id, t]));
@@ -79,10 +79,7 @@ function exportCards(data: Pick<AppData, "types" | "entities">, cards: readonly 
 		const targetCards = (entityId: string) => (cardsByEntity.get(entityId) ?? []).filter((c) => c.id !== card.id);
 		const isLinked = (entityId: string) => targetCards(entityId).length > 0;
 		const rows = [...(type ? cardRows(type, entity, entityNames, isLinked) : []), ...inverseCardRows(data, entity, entityNames, isLinked)];
-		// Cards without content are as tall as what they show, which the editor measures: here it's counted in grid
-		// steps like in the stylesheet (bar, one line of name, the property rows with half a step above and below).
-		const height = entity.content.trim() ? card.height : 72 + (rows.length > 0 ? 24 * (rows.length + 1) : 0);
-		return { card, entity, type, rows, height, targetCards };
+		return { card, entity, type, rows, targetCards };
 	});
 }
 
@@ -125,9 +122,9 @@ function drawioFile(
 		});
 	const vertices: string[] = [];
 	const edges: string[] = [];
-	for (const { card, entity, type, rows, height, targetCards } of exportCards(data, cards)) {
+	for (const { card, entity, type, rows, targetCards } of exportCards(data, cards)) {
 		const label = cardLabel(entity, type, rows, (id) => types.get(entities.get(id)?.typeId ?? "")?.color ?? "#ebebeb");
-		const { parent, xml } = geometry({ ...card, height });
+		const { parent, xml } = geometry(card);
 		vertices.push(
 			`<UserObject id="${attr(cellId(card.id))}" label="${attr(label)}" tooltip="${attr(description(entity, type, entityNames))}">` +
 				`<mxCell style="${CARD_STYLE}" vertex="1" parent="${attr(parent)}">${xml}</mxCell></UserObject>`,

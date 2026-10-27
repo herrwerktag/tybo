@@ -776,3 +776,19 @@ test("the settings switch the theme: dark or light on <html>, or none to follow 
 	assert.equal(document.documentElement.dataset.theme, undefined);
 	assert.equal(localStorage.getItem("ui-theme"), "system");
 });
+
+test("the settings let references on cards wrap instead of being cut off, remembered in this browser", async () => {
+	const root = await startApp();
+	const checkbox = () => byText(root, "#settings-menu label", text.wrapReferences).querySelector("input")!;
+	assert.equal(checkbox().checked, false);
+	assert.equal(document.documentElement.dataset.wrapReferences, undefined);
+
+	checkbox().click();
+	assert.equal(document.documentElement.dataset.wrapReferences, "");
+	assert.equal(localStorage.getItem("wrap-references"), "true");
+	assert.equal(checkbox().checked, true, "still checked once drawn anew");
+
+	checkbox().click();
+	assert.equal(document.documentElement.dataset.wrapReferences, undefined);
+	assert.equal(localStorage.getItem("wrap-references"), "false");
+});
