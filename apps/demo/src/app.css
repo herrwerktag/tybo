@@ -2078,11 +2078,12 @@ button.ref-tag {
 	opacity: 0.2;
 }
 
-/* With one card selected, the rest of the board fades to grey so the chain of cards linked to it stands out. */
+/* With one card selected, the rest of the board fades to grey so the chain of cards linked to it stands out (and the
+ * areas it lies in). */
 .focusing .canvas-card:not(.in-chain),
 .focusing .connector:not(.in-chain),
 .focusing .connector-label:not(.in-chain),
-.focusing .drawing {
+.focusing .drawing:not(.in-chain) {
 	opacity: 0.2;
 	filter: grayscale(1);
 }

@@ -232,6 +232,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	/** Two or more cards and drawings selected together, to move at once (Shift+click, or a frame dragged around
 	 * them); meanwhile neither the details nor a drawing's handles are shown. */
 	let group: { cardIds: Set<string>; drawingIds: Set<string> } | null = null;
+	/** The areas the selected card lies in, kept from fading along with the rest of the board (see markChain). */
+	let focusedAreas = new Set<string>();
 
 	// Shapes, lines, text and pen strokes: below the connector lines and cards.
 	const drawing = createDrawingLayer({
@@ -250,6 +252,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			if (drawingId) select(null);
 		},
 		group: () => group?.drawingIds ?? new Set(),
+		inFocus: () => focusedAreas,
 		onGroupPress: (e, drawingId) => {
 			if (e.shiftKey) toggleSelected("drawingIds", drawingId);
 			else dragGroup(e, { drawingId });
@@ -1076,14 +1079,27 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		return chain;
 	}
 
+	/** The areas the card lies in. */
+	function areasOf(cardId: string): Set<string> {
+		const board = currentBoard();
+		const cards = board.cards.map((c) => ({ ...c, ...cardRects.get(c.id) }));
+		return new Set(
+			board.drawings.filter((d) => isArea(d) && areaContents(d, cards, board.drawings).cardIds.has(cardId)).map((d) => d.id),
+		);
+	}
+
 	/**
-	 * With one card selected, everything on the board fades but its chain: the cards linked to it and their lines.
-	 * Its own lines (and their labels) stand out further, as `direct`.
+	 * With one card selected, everything on the board fades but its chain: the cards linked to it and their lines,
+	 * and the areas it lies in. Its own lines (and their labels) stand out further, as `direct`.
 	 */
 	function markChain(): void {
 		const cardId = !group ? selected?.cardId : null;
 		const chain = cardId ? chainOf(cardId) : null;
 		layer.classList.toggle("focusing", chain !== null);
+		focusedAreas = cardId ? areasOf(cardId) : new Set();
+		for (const node of layer.querySelectorAll<SVGElement>(".drawing[data-id]")) {
+			node.classList.toggle("in-chain", focusedAreas.has(node.dataset.id!));
+		}
 		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card[data-card-id]")) {
 			node.classList.toggle("in-chain", !!chain?.has(node.dataset.cardId!));
 		}

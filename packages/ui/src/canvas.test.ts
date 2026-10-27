@@ -876,6 +876,24 @@ test("selecting a card fades the board but its chain: the cards linked to it eit
 	assert.equal(view.querySelectorAll(".direct").length, 0);
 });
 
+test("selecting a card keeps the areas it lies in from fading, and only those", async () => {
+	const { store, card } = await connectable();
+	const boardId = store.data.boards[0]!.id;
+	const around = store.addDrawing(boardId, { kind: "area", x: -48, y: -48, width: 600, height: 600, color: "#c4dafa", text: "Team", textSize: "m" });
+	store.addDrawing(boardId, { kind: "area", x: 1200, y: 0, width: 240, height: 240, color: "#c4dafa", text: "", textSize: "m" });
+	store.addDrawing(boardId, { kind: "rect", x: 0, y: 0, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
+	freshDom();
+	const view = canvasView(store, { readOnly: false });
+	document.body.append(view);
+	const inFocus = () => [...view.querySelectorAll(".drawings g.drawing.in-chain")].map((g) => g.getAttribute("data-id"));
+
+	cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	assert.deepEqual(inFocus(), [around.id]);
+
+	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+	assert.deepEqual(inFocus(), []);
+});
+
 test("Connect links an existing entity, found by name, and the other way round too", async () => {
 	const { store, view, person, book, author, dune } = await connectable();
 	const frank = store.addEntity(person.id, "Frank", "", {});

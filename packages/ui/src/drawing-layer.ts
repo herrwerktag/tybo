@@ -238,6 +238,8 @@ export function createDrawingLayer(options: {
 	onSelect: (drawingId: string | null) => void;
 	/** Drawings selected together with others (several items to move at once): outlined, without handles. */
 	group?: () => ReadonlySet<string>;
+	/** With a card selected, the rest of the board fades: the drawings that don't (the areas the card lies in). */
+	inFocus?: () => ReadonlySet<string>;
 	/** A press on a drawing with Shift, or on one in the group: handled by the owner (adding it to the selection
 	 * or moving the group) instead of selecting and moving the drawing alone. */
 	onGroupPress?: (e: PointerEvent, drawingId: string) => void;
@@ -319,6 +321,7 @@ export function createDrawingLayer(options: {
 			{ class: onPage(d.id) || d.id === "draft" ? "drawing" : "drawing ghost", "data-id": d.id },
 			...drawingShape(d, store.data.library, d.id !== editingId),
 		);
+		if (options.inFocus?.().has(d.id)) group.classList.add("in-chain");
 		if (!readOnly) attachHandlers(group, d.id);
 		return group;
 	}
