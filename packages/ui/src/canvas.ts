@@ -52,6 +52,9 @@ const ZOOM_SETTLE_DELAY = 150;
 const ZOOM_SETTLE_ANIMATION = 120;
 /** Room (screen px) around a frame the editor goes to. */
 const FIT_MARGIN = 48;
+/** The pickers' row actions, drawn: a pencil (rename) and a bin (delete). */
+const RENAME_ICON = "M10.5 2.5l3 3-8 8h-3v-3z M9 4l3 3";
+const DELETE_ICON = "M2.5 4.5h11 M6 4.5V2.5h4v2 M4 4.5l.7 9h6.6l.7-9 M6.8 7v4 M9.2 7v4";
 
 interface CanvasOptions {
 	readOnly: boolean;
@@ -359,6 +362,15 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		};
 	}
 
+	/** A row's rename or delete in a picker: a small drawn icon, its name in the tooltip. */
+	function pickerAction(title: string, icon: string, onclick: () => void): HTMLButtonElement {
+		return el(
+			"button",
+			{ type: "button", className: "picker-action", title, ariaLabel: title, onclick },
+			svgEl("svg", { viewBox: "0 0 16 16", "aria-hidden": "true" }, svgEl("path", { d: icon })),
+		);
+	}
+
 	function renderPicker({ dialog, title, items, currentId, renamingId, pick, rerender, editing }: Picker): void {
 		const rows = items.map((item, i) => {
 			if (editing && item.id === renamingId) {
@@ -394,6 +406,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				{
 					type: "button",
 					className: "picker-option",
+					title: item.name,
 					onclick: () => {
 						dialog.close();
 						if (item.id !== currentId) pick(item.id);
@@ -410,8 +423,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				{},
 				...(handle ? [handle] : []),
 				option,
-				el("button", { type: "button", title: editing.renameTitle, onclick: () => rerender(item.id) }, text.renameButton),
-				el("button", { type: "button", title: editing.deleteTitle, onclick: () => editing.remove(item.id) }, text.delete),
+				pickerAction(editing.renameTitle, RENAME_ICON, () => rerender(item.id)),
+				pickerAction(editing.deleteTitle, DELETE_ICON, () => editing.remove(item.id)),
 			);
 			if (handle && move) {
 				reorderable(row, handle, {

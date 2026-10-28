@@ -475,7 +475,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 			...workspaces.list.map((w, i) => {
 				const option = el(
 					"button",
-					{ type: "button", className: "workspace-option", onclick: () => switchWorkspace(w.id) },
+					{ type: "button", className: "workspace-option", title: w.name, onclick: () => switchWorkspace(w.id) },
 					w.name,
 				);
 				if (w.id === current.id) option.setAttribute("aria-current", "true");
@@ -536,18 +536,19 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 		});
 		const transfer = el(
 			"div",
-			{ className: "row" },
+			{ className: "menu-actions" },
 			el(
 				"button",
 				{
 					type: "button",
+					className: "menu-item",
 					title: text.exportWorkspace,
 					onclick: exportActiveWorkspace,
 				},
 				text.exportButton,
 			),
-			el("button", { type: "button", title: text.exportText, onclick: exportActiveWorkspaceText }, text.exportTextButton),
-			el("button", { type: "button", title: text.importWorkspace, onclick: () => fileInput.click() }, text.importButton),
+			el("button", { type: "button", className: "menu-item", title: text.exportText, onclick: exportActiveWorkspaceText }, text.exportTextButton),
+			el("button", { type: "button", className: "menu-item", title: text.importWorkspace, onclick: () => fileInput.click() }, text.importButton),
 			fileInput,
 		);
 
@@ -564,13 +565,15 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 			text.workspaces,
 			el("h2", {}, text.workspaces),
 			list,
+			// The current workspace's actions, then its transfer, as menu entries.
 			el(
 				"div",
-				{ className: "row" },
+				{ className: "menu-actions" },
 				el(
 					"button",
 					{
 						type: "button",
+						className: "menu-item",
 						title: text.renameWorkspace,
 						onclick: () => {
 							const name = prompt(text.renameWorkspace, current.name);
@@ -585,6 +588,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 					"button",
 					{
 						type: "button",
+						className: "menu-item",
 						disabled: isLast,
 						title: isLast ? text.lastWorkspace : text.deleteWorkspace,
 						onclick: () => {
