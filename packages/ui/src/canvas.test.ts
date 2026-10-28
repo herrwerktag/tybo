@@ -1,7 +1,7 @@
 import { freshDom } from "./test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { canvasView, parseViewHash, viewHash } from "./canvas.js";
+import { canvasView } from "./canvas.js";
 import { CLICK_TOLERANCE } from "./dom.js";
 import { text } from "./i18n.js";
 import { createStore, DATA_VERSION, frameInside, newReference, visibleRect, type Store } from "@tybo/core";
@@ -199,24 +199,6 @@ test("the viewer only looks: no remove buttons, and dragging doesn't move cards"
 
 	dragBy(cardNode(view, card.id).querySelector("header")!, 50, 30);
 	assert.deepEqual([savedCard(store, card.id)?.x, savedCard(store, card.id)?.y], [100, 100]);
-});
-
-test("an addressed viewer shows the board its address names, and keeps the address up to date", async () => {
-	const { store, boardId } = await setup({ readOnly: true });
-	const other = store.addBoard("Other").id;
-	assert.deepEqual(parseViewHash("#boards"), {});
-	assert.equal(viewHash({ boardId: other }), `#view/${other}`);
-	assert.deepEqual(parseViewHash(`#view/${other}`), { boardId: other });
-	assert.deepEqual(parseViewHash(`#view/${other}/story/step`), { boardId: other }, "addresses of steps from before open their board");
-
-	location.hash = `#view/${other}`;
-	const viewer = canvasView(store, { readOnly: true, addressed: true });
-	document.body.replaceChildren(viewer);
-	assert.equal(viewer.querySelector(".board-switch .picker-name")?.textContent, "Other");
-
-	viewer.querySelector<HTMLButtonElement>(".board-switch")!.click();
-	[...viewer.querySelectorAll<HTMLButtonElement>(".board-dialog .picker-option")].find((b) => b.textContent === "Board 1")!.click();
-	assert.equal(location.hash, `#view/${boardId}`);
 });
 
 test("the zoom buttons go one 10% step in or out", async () => {

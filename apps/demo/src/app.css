@@ -81,16 +81,34 @@ main.standalone {
 	grid-template-rows: minmax(0, 1fr);
 }
 
+/* The top bar: the workspace, the tabs, then undo, redo and settings at the right end. */
 .app-nav {
 	display: flex;
 	align-items: center;
-	gap: 0.25rem;
+	gap: 0.5rem;
 	padding: 0.5rem 1rem;
 	background: var(--surface);
 	border-bottom: 1px solid var(--border);
 }
 
-/* Top-bar menus (workspace, settings) at the right end, each a button with a panel below it. */
+.app-tabs {
+	display: flex;
+	gap: 0.25rem;
+	min-width: 0;
+}
+
+/* The workspace sets what every tab shows, so it leads, set off from the tabs. */
+.app-nav > .menu {
+	padding-right: 0.5rem;
+	border-right: 1px solid var(--border);
+}
+
+.app-nav > .menu .menu-panel {
+	left: 0;
+	right: auto;
+}
+
+/* Top-bar menus, each a button with a panel below it (the workspace's leads, see above). */
 .nav-menus {
 	display: flex;
 	align-items: center;
@@ -114,17 +132,32 @@ main.standalone {
 	padding: 0.35rem 0.75rem;
 }
 
-/* Undo and redo, left of the menus. */
+/* Settings: only the gear, its name in the tooltip. */
+.settings-button {
+	font-size: 1.2rem;
+	line-height: 1;
+}
+
+/* Undo and redo, left of the settings. */
 .history-buttons {
 	display: flex;
 }
 
 .history-button {
+	display: inline-flex;
 	border: none;
 	background: transparent;
-	padding: 0.35rem 0.6rem;
-	font-size: 1.1rem;
-	line-height: 1;
+	padding: 0.4rem 0.5rem;
+}
+
+.history-icon {
+	width: 1.1rem;
+	height: 1.1rem;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.6;
+	stroke-linecap: round;
+	stroke-linejoin: round;
 }
 
 .menu-panel {
@@ -156,6 +189,7 @@ main.standalone {
 
 /* Workspace menu: long names are cut in the top bar (full name in the list). */
 .workspace-name {
+	font-weight: 600;
 	max-width: 14rem;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -163,17 +197,30 @@ main.standalone {
 }
 
 /* Narrow screens: two rows. The workspace on the left with undo, redo and settings on the right, then the tabs
-   sharing the width. The menus' panels span the screen below the top bar instead of hanging off its left edge. */
+   sharing the width, each as wide as its name needs. The menus' panels span the screen below the top bar instead
+   of hanging off its edge. */
 @media (max-width: 40rem) {
 	.app-nav {
 		position: relative;
 		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
+		grid-template-columns: minmax(0, 1fr) auto;
 		padding-inline: 0.5rem;
 	}
 
-	.app-nav > .tab {
+	.app-nav > .menu {
+		padding-right: 0;
+		border-right: none;
+	}
+
+	.app-tabs {
 		grid-row: 2;
+		grid-column: 1 / -1;
+		display: grid;
+		grid-auto-flow: column;
+		grid-auto-columns: minmax(0, auto);
+	}
+
+	.app-tabs > .tab {
 		padding-inline: 0.25rem;
 		text-align: center;
 		overflow: hidden;
@@ -181,17 +228,7 @@ main.standalone {
 		white-space: nowrap;
 	}
 
-	.nav-menus {
-		grid-column: 1 / -1;
-		margin-left: 0;
-	}
-
-	.nav-menus > .menu:has(> #workspace-menu) {
-		order: -1;
-		margin-right: auto;
-	}
-
-	.nav-menus .menu-button {
+	.app-nav .menu-button {
 		padding-inline: 0.5rem;
 	}
 
@@ -199,7 +236,8 @@ main.standalone {
 		position: static;
 	}
 
-	.menu-panel {
+	.menu-panel,
+	.app-nav > .menu .menu-panel {
 		left: 0.5rem;
 		right: 0.5rem;
 		top: calc(100% + 0.25rem);
@@ -265,19 +303,31 @@ main.standalone {
 	color: var(--on-accent);
 }
 
-/* The Entities tab's pages (types, entities), in a row below the top bar. */
-.sub-nav {
-	display: flex;
+/* The data pages' heading: a switch between them (entity types, entities), the current one in front. */
+.data-switch {
+	display: inline-flex;
 	gap: 0.25rem;
-	padding: 0.35rem 1rem;
-	background: var(--surface);
-	border-bottom: 1px solid var(--border);
+	padding: 0.2rem;
+	background: var(--surface-inset);
+	border-radius: 6px;
+	font-size: 1.05rem;
 }
 
-.sub-nav .tab.current {
-	background: var(--surface-inset);
+.data-switch > a {
+	padding: 0.3rem 0.75rem;
+	border-radius: 4px;
+	color: var(--muted);
+}
+
+.data-switch > a:hover:not(.current) {
+	color: inherit;
+}
+
+.data-switch > .current {
+	background: var(--surface);
 	color: inherit;
 	font-weight: 600;
+	box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
 }
 
 .data-view {
@@ -663,11 +713,16 @@ th {
 		padding: 1rem;
 	}
 
-	.data-view .section-header > h2 {
+	.data-view .section-header > .data-switch {
 		flex-basis: 100%;
 	}
 
-	.data-view .section-header > :not(h2) {
+	.data-switch > a {
+		flex: 1;
+		text-align: center;
+	}
+
+	.data-view .section-header > :not(.data-switch) {
 		flex: 1 1 auto;
 	}
 
@@ -1676,7 +1731,7 @@ button.ref-tag {
 	/* Kept out of the way until ⋯. */
 	.canvas-view:not(.show-more)
 		:is(
-			.board-controls > :not(.picker-switch),
+			.board-controls > :not(.board-switch),
 			.drawing-tools,
 			.canvas-zoom > button:last-child
 		) {
