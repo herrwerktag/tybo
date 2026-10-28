@@ -245,7 +245,7 @@ test("library drawings are dragged from the side panel onto the board, and alway
 	const store = await createStore(memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } }).port, "ws");
 	const star = store.addLibraryDrawing("Star");
 	store.updateLibraryDrawing(star.id, { tags: ["sky"] });
-	const circle = store.addToLibraryDrawing(star.id, { kind: "ellipse", x: 0, y: 0, width: 80, height: 40, color: "#f6e8a6", text: "", textSize: "m" });
+	const sun = store.addToLibraryDrawing(star.id, { kind: "textbox", x: 0, y: 0, width: 80, height: 40, color: "#f6e8a6", text: "Sun", textSize: "m" });
 	const edits: string[] = [];
 	const view = canvasView(store, { readOnly: false, onEditLibraryDrawing: (id) => edits.push(id) });
 	document.body.append(view);
@@ -261,7 +261,7 @@ test("library drawings are dragged from the side panel onto the board, and alway
 	assert.equal(placed?.kind === "symbol" && placed.libraryId, star.id);
 	// Its content's size, with a little room around it.
 	assert.deepEqual(placed?.kind === "symbol" && [placed.width, placed.height], [96, 56]);
-	assert.equal(view.querySelectorAll(".drawings .library-picture ellipse").length, 1);
+	assert.equal(view.querySelector(".drawings .library-picture .drawing-label")?.textContent, "Sun");
 	assert.match(view.querySelector(".library-item")!.textContent ?? "", /On canvas/);
 
 	// Selected right away: its style bar opens it in the library.
@@ -269,65 +269,26 @@ test("library drawings are dragged from the side panel onto the board, and alway
 	assert.deepEqual(edits, [star.id]);
 
 	// Changed in the library, the board shows the change: it holds no copy.
-	store.replaceDrawing({ ...circle, kind: "rect" } as typeof circle);
+	store.replaceDrawing({ ...sun, text: "Moon" } as typeof sun);
 	const again = canvasView(store, { readOnly: true });
 	document.body.append(again);
-	assert.equal(again.querySelectorAll(".drawings .library-picture ellipse").length, 0);
-	assert.equal(again.querySelectorAll(".drawings .library-picture rect.drawing-shape").length, 1);
+	assert.equal(again.querySelector(".drawings .library-picture .drawing-label")?.textContent, "Moon");
 });
 
-test("the pen draws smoothed strokes in the style picked for it", async () => {
+test("the drawing tools are select, text box and group; a text box is drawn with its tool and selected", async () => {
 	const { store, view } = await setup();
-	const button = (label: string) => [...view.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.ariaLabel === label || b.textContent === label)!;
-	button("Pen").click();
-	button("Highlighter").click();
-	assert.equal(button("Highlighter").ariaPressed, "true");
+	assert.deepEqual(
+		[...view.querySelectorAll<HTMLButtonElement>(".drawing-tools button:not(.tools-toggle)")].map((b) => b.ariaLabel),
+		["Select", "Textbox", "Group"],
+	);
+	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "t", bubbles: true }));
+	press(view.querySelector<HTMLElement>(".canvas-surface")!, 10, 10, 200, 100);
 
-	// A shaky horizontal stroke comes out flatter than it was drawn.
-	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;
-	const at = (type: string, x: number, y: number) =>
-		surface.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, clientX: x, clientY: y }));
-	at("pointerdown", 0, 0);
-	[10, 20, 30, 40, 50, 60].forEach((x, i) => at("pointermove", x, i % 2 === 0 ? 8 : -8));
-	at("pointerup", 60, -8);
-
-	const [stroke] = store.data.boards[0]!.drawings;
-	assert.equal(stroke?.kind === "pen" && stroke.penStyle, "highlighter");
-	const ys = stroke?.kind === "pen" ? stroke.points.slice(1).map((p) => p.y) : [];
-	assert.ok(ys.every((y) => Math.abs(y) < 8));
-	const path = view.querySelector<SVGElement>(".drawings path.drawing-stroke.pen-highlighter");
-	// In the light color itself, like all pen strokes.
-	assert.equal(path?.style.stroke, stroke?.kind === "pen" ? stroke.color : "");
-});
-
-test("the eraser rubs out the part of a pen stroke it passes over, in one change that undo brings back", async () => {
-	const { store, view } = await setup();
-	const boardId = store.data.boards[0]!.id;
-	const stroke = store.addDrawing(boardId, { kind: "pen", points: [{ x: -200, y: 0 }, { x: 200, y: 0 }], color: "#4a4a4a", penStyle: "fineliner" });
-	const line = store.addDrawing(boardId, { kind: "line", points: [{ x: -200, y: 10 }, { x: 200, y: 10 }], color: "#4a4a4a" });
-	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "e", bubbles: true }));
-
-	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;
-	const at = (type: string, x: number, y: number) =>
-		surface.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, clientX: x, clientY: y }));
-	// The world's origin, on the screen (the board is at zoom 1).
-	const origin = { x: store.data.boards[0]!.viewport.x, y: store.data.boards[0]!.viewport.y };
-	at("pointerdown", origin.x, origin.y - 30);
-	at("pointermove", origin.x, origin.y + 5);
-	assert.ok(view.querySelector(".drawings .eraser-outline"));
-	at("pointerup", origin.x, origin.y + 5);
-
-	const drawings = store.data.boards[0]!.drawings;
-	// Cut in two around x = 0, beyond the eraser's reach; both pieces keep the stroke's look. The line isn't a pen
-	// stroke: it stays.
-	assert.equal(drawings.length, 3);
-	const pieces = drawings.filter((d) => d.kind === "pen");
-	assert.deepEqual(pieces.map((d) => d.kind === "pen" && [d.points[0]!.x, d.points.at(-1)!.x, d.penStyle]), [[-200, -15, "fineliner"], [15, 200, "fineliner"]]);
-	assert.ok(drawings.some((d) => d.id === line.id));
-	assert.equal(view.querySelector(".drawings .eraser-outline"), null);
-
-	store.undo();
-	assert.deepEqual(store.data.boards[0]!.drawings.map((d) => d.id), [stroke.id, line.id]);
+	const [box] = store.data.boards[0]!.drawings;
+	assert.deepEqual(box && [box.kind, "width" in box && box.width, "height" in box && box.height], ["textbox", 200, 100]);
+	assert.equal(view.querySelectorAll(".drawings rect.drawing-shape").length, 1);
+	assert.equal(view.querySelectorAll(".drawings .selection-handle").length, 4, "selected right away");
+	assert.ok([...view.querySelectorAll(".drawing-style button")].some((b) => b.textContent === "L"), "with its text sizes");
 });
 
 test("a mouse wheel notch zooms in or out by about 10% around the pointer", async () => {
@@ -497,8 +458,8 @@ test("Shift+click selects several cards; dragging one moves them all in one undo
 test("dragging on the empty board frames cards and drawings to select them; a click there clears the selection", async () => {
 	const { store, view, card } = await setup();
 	const boardId = store.data.boards[0]!.id;
-	const box = store.addDrawing(boardId, { kind: "rect", x: 120, y: 300, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
-	store.addDrawing(boardId, { kind: "rect", x: 900, y: 900, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
+	const box = store.addDrawing(boardId, { kind: "textbox", x: 120, y: 300, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
+	store.addDrawing(boardId, { kind: "textbox", x: 900, y: 900, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
 	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;
 	const { x, y } = store.data.boards[0]!.viewport; // where the world's origin is on the screen (zoom 1)
 
@@ -534,7 +495,7 @@ test("dragging a group moves the cards and drawings lying in it along, in one un
 	const { store, view: first, card } = await setup();
 	const boardId = store.data.boards[0]!.id;
 	const other = store.data.boards[0]!.cards.find((c) => c.id !== card.id)!; // Herbert's card at (400, 100): outside
-	const box = store.addDrawing(boardId, { kind: "rect", x: 120, y: 300, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
+	const box = store.addDrawing(boardId, { kind: "textbox", x: 120, y: 300, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
 	// Made last, the group is still drawn below the box.
 	const area = store.addDrawing(boardId, { kind: "area", x: 72, y: 72, width: 312, height: 312, color: "#c4dafa", text: "Team", textSize: "m" });
 	first.remove();
@@ -684,7 +645,7 @@ test("selecting a card keeps the areas it lies in from fading, and only those", 
 	const boardId = store.data.boards[0]!.id;
 	const around = store.addDrawing(boardId, { kind: "area", x: -48, y: -48, width: 600, height: 600, color: "#c4dafa", text: "Team", textSize: "m" });
 	store.addDrawing(boardId, { kind: "area", x: 1200, y: 0, width: 240, height: 240, color: "#c4dafa", text: "", textSize: "m" });
-	store.addDrawing(boardId, { kind: "rect", x: 0, y: 0, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
+	store.addDrawing(boardId, { kind: "textbox", x: 0, y: 0, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
 	freshDom();
 	const view = canvasView(store, { readOnly: false });
 	document.body.append(view);

@@ -39,7 +39,7 @@ function state(): AppData {
 				viewport: { x: 0, y: 0, zoom: 1 },
 				viewFrame: { x: 0.5, y: -24, width: 960, height: 540 },
 				drawings: [
-					{ id: "draw-line", kind: "line", points: [{ x: 0, y: 0 }, { x: 5.5, y: 5.25 }], color: "#4a4a4a" },
+					{ id: "draw-box", kind: "textbox", x: 0, y: 0, width: 5.5, height: 5.25, color: "#4a4a4a", text: "", textSize: "m" },
 					{ id: "draw-star", kind: "symbol", libraryId: "lib-star", x: 40, y: 40.5, width: 96, height: 48 },
 				],
 			},
@@ -49,7 +49,7 @@ function state(): AppData {
 				id: "lib-star",
 				name: "Stern",
 				tags: ["Form", "Himmel"],
-				drawings: [{ id: "lib-rect", kind: "rect", x: 0, y: 0, width: 20, height: 10.5, color: "#f6e8a6", text: "★", textSize: "l" }],
+				drawings: [{ id: "lib-box", kind: "textbox", x: 0, y: 0, width: 20, height: 10.5, color: "#f6e8a6", text: "★", textSize: "l" }],
 			},
 		],
 		analyses: [
@@ -237,25 +237,25 @@ test("New and deleted: units appear and disappear in the tables and in every ans
 		grown.entities.push({ id: "ent-new", typeId: "type-person", name: "Neu", content: "", description: "", tags: [], values: { "p-note": "neu hier" } });
 		const board = grown.boards[0]!;
 		board.cards = [board.cards[0]!, { id: "card-new", entityId: "ent-new", x: 660, y: 12.5, width: 240, height: 160 }];
-		board.drawings = board.drawings.filter((d) => d.id !== "draw-line");
+		board.drawings = board.drawings.filter((d) => d.id !== "draw-box");
 		const changes = changesBetween(base, grown);
-		// draw-star moved up into draw-line's place: a change of its position.
+		// draw-star moved up into draw-box's place: a change of its position.
 		assert.deepEqual(changes.map((c) => `${c.kind}:${c.id}`), [
 			"entity:ent-new",
 			"card:card-bob",
 			"card:card-new",
-			"drawing:draw-line",
+			"drawing:draw-box",
 			"drawing:draw-star",
 		]);
 		const byId = new Map(changes.map((change) => [`${change.kind}:${change.id}` as string, change]));
 		assert.equal(byId.get("entity:ent-new")!.before, null, "the new entity wasn't there before");
 		assert.equal(byId.get("card:card-new")!.before, null, "the new card wasn't there before either");
 		assert.equal(byId.get("card:card-bob")!.after, null, "the card is gone");
-		assert.equal(byId.get("drawing:draw-line")!.after, null, "the drawing is gone");
+		assert.equal(byId.get("drawing:draw-box")!.after, null, "the drawing is gone");
 
 		const saved = await saveChanges(app, changes);
 		assert.deepEqual(saved.collided, []);
-		await assertServes(app, grown, saved.version); // there they are — card-bob and draw-line gone
+		await assertServes(app, grown, saved.version); // there they are — card-bob and draw-box gone
 
 		// What the rows themselves say about it:
 		const [counts] = await app.sql`select
@@ -293,7 +293,7 @@ test("The library: a drawing edited there is its one row; deleted with its place
 		const edited = structuredClone(base);
 		const star = edited.library[0]!;
 		star.tags = ["Form"];
-		star.drawings.push({ id: "lib-pen", kind: "pen", points: [{ x: 0, y: 0 }, { x: 1.5, y: 2 }, { x: 3, y: 1 }], color: "#4a4a4a" });
+		star.drawings.push({ id: "lib-area", kind: "area", x: 0, y: 0, width: 1.5, height: 2, color: "#4a4a4a", text: "", textSize: "s" });
 		const editing = changesBetween(base, edited);
 		assert.deepEqual(editing.map((c) => `${c.kind}:${c.id}`), ["library:lib-star"], "the boards it's placed on aren't touched");
 		const savedEdit = await saveChanges(app, editing);

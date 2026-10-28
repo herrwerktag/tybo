@@ -22,9 +22,7 @@ import {
 	type AppData,
 	type Analysis,
 	type PathStep,
-	PEN_STYLES,
 	TEXT_SIZES,
-	hasRect,
 	isSymbol,
 	parseTags,
 	type Board,
@@ -34,8 +32,6 @@ import {
 	type ImageDrawing,
 	type LibraryDrawing,
 	type NewDrawing,
-	type PathDrawing,
-	type PenStyle,
 	type TextSize,
 	type DraftProperty,
 	type SymbolDrawing,
@@ -155,13 +151,15 @@ function emptyData(): AppData {
 
 const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
-const isPoint = (p: unknown): p is Point => isNumber((p as Point | null)?.x) && isNumber((p as Point | null)?.y);
+/** Kinds of drawing from before text boxes, read as text boxes: rectangles, ellipses and free text. */
+const OLD_TEXTBOX_KINDS: readonly unknown[] = ["rect", "ellipse", "text"];
 
-/** A well-formed drawing, or null. Boards saved before drawings existed have none. */
+/**
+ * A well-formed drawing, or null. Boards saved before drawings existed have none. Rectangles, ellipses and free text
+ * saved before text boxes are read as text boxes; lines, arrows and pen strokes from then are left out.
+ */
 function normalizeDrawing(raw: unknown): Drawing | null {
-	const d = raw as Partial<Omit<BoxDrawing, "kind">> &
-		Partial<Omit<PathDrawing, "kind">> &
-		Partial<Pick<ImageDrawing, "src">> & { kind?: unknown };
+	const d = raw as Partial<Omit<BoxDrawing, "kind">> & Partial<Pick<ImageDrawing, "src">> & { kind?: unknown };
 	if (typeof d?.id !== "string") return null;
 	if (d.kind === "symbol") {
 		const { libraryId } = raw as Partial<SymbolDrawing>;
@@ -173,11 +171,11 @@ function normalizeDrawing(raw: unknown): Drawing | null {
 		return { id: d.id, kind: d.kind, x: d.x!, y: d.y!, width: d.width!, height: d.height!, src: d.src };
 	}
 	if (typeof d.color !== "string") return null;
-	if (d.kind === "rect" || d.kind === "ellipse" || d.kind === "text" || d.kind === "area") {
+	if (d.kind === "textbox" || d.kind === "area" || OLD_TEXTBOX_KINDS.includes(d.kind)) {
 		if (![d.x, d.y, d.width, d.height].every(isNumber)) return null;
 		return {
 			id: d.id,
-			kind: d.kind,
+			kind: d.kind === "area" ? "area" : "textbox",
 			x: d.x!,
 			y: d.y!,
 			width: d.width!,
@@ -186,13 +184,6 @@ function normalizeDrawing(raw: unknown): Drawing | null {
 			text: typeof d.text === "string" ? d.text : "",
 			textSize: TEXT_SIZES.includes(d.textSize as TextSize) ? (d.textSize as TextSize) : "m",
 		};
-	}
-	if (d.kind === "line" || d.kind === "arrow" || d.kind === "pen") {
-		const points = Array.isArray(d.points) ? d.points.filter(isPoint).map((p) => ({ x: p.x, y: p.y })) : [];
-		if (points.length < 2 || (d.kind !== "pen" && points.length !== 2)) return null;
-		if (d.kind !== "pen") return { id: d.id, kind: d.kind, points, color: d.color };
-		const penStyle = PEN_STYLES.includes(d.penStyle as PenStyle) ? (d.penStyle as PenStyle) : "pen";
-		return { id: d.id, kind: d.kind, points, color: d.color, penStyle };
 	}
 	return null;
 }
@@ -882,8 +873,7 @@ export async function createStore(port: DataPort, workspaceId: string) {
 		moveItems(boardId: string, cardIds: readonly string[], drawingIds: readonly string[], dx: number, dy: number): void {
 			const cards = new Set(cardIds);
 			const drawings = new Set(drawingIds);
-			const move = (d: Drawing): Drawing =>
-				hasRect(d) ? { ...d, x: d.x + dx, y: d.y + dy } : { ...d, points: d.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) };
+			const move = (d: Drawing): Drawing => ({ ...d, x: d.x + dx, y: d.y + dy });
 			updateBoard(boardId, (b) => ({
 				...b,
 				cards: b.cards.map((c) => (cards.has(c.id) ? { ...c, x: c.x + dx, y: c.y + dy } : c)),
@@ -926,21 +916,6 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			updateDrawingBoard(drawingId, (b) => takeOff(b, "drawings", drawingId));
 		},
 
-		/**
-		 * Replaces each drawing named in `pieces` with its pieces, where it was (no pieces remove it), all in one change:
-		 * what the eraser leaves of pen strokes.
-		 */
-		splitDrawings(pieces: ReadonlyMap<string, readonly NewDrawing[]>): void {
-			if (pieces.size === 0) return;
-			const added = new Map([...pieces].map(([id, list]) => [id, list.map((d) => ({ ...d, id: ulid() }) as Drawing)]));
-			const split = (drawings: Drawing[]) => drawings.flatMap((d) => added.get(d.id) ?? [d]);
-			change({
-				...data,
-				boards: data.boards.map((b) => ({ ...b, drawings: split(b.drawings) })),
-				library: data.library.map((item) => ({ ...item, drawings: split(item.drawings) })),
-			});
-		},
-
 		/** Adds an empty drawing to the library. */
 		addLibraryDrawing(name: string): LibraryDrawing {
 			const item: LibraryDrawing = { id: ulid(), name: name.trim() || `Drawing ${data.library.length + 1}`, tags: [], drawings: [] };
@@ -974,7 +949,7 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			});
 		},
 
-		/** Adds a shape, line, text, pen stroke or image to the library drawing. A placed library drawing is not added:
+		/** Adds a text box or image to the library drawing. A placed library drawing is not added:
 		 * library drawings don't contain each other. */
 		addToLibraryDrawing(libraryId: string, drawing: NewDrawing): Drawing {
 			const added = { ...drawing, id: ulid() } as Drawing;

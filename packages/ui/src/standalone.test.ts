@@ -30,7 +30,7 @@ const data = {
 		{ id: "authors", name: "Authors", cards: [card("c2", HERBERT)], viewport, drawings: [] },
 	],
 	library: [
-		{ id: "star", name: "Star", tags: [], drawings: [{ id: "s1", kind: "ellipse", x: 0, y: 0, width: 20, height: 20, color: "#f6e8a6", text: "", textSize: "m" }] },
+		{ id: "star", name: "Star", tags: [], drawings: [{ id: "s1", kind: "textbox", x: 0, y: 0, width: 20, height: 20, color: "#f6e8a6", text: "", textSize: "m" }] },
 		{ id: "moon", name: "Moon", tags: [], drawings: [] },
 	],
 } as unknown as AppData;
@@ -69,7 +69,7 @@ test("an exported view shows its board read-only in its language, and a click on
 	assert.equal(root.querySelector(".app-nav"), null);
 	assert.equal(root.querySelector(".canvas-view.read-only .canvas-panel"), null);
 	assert.ok(root.querySelector(".canvas-zoom")); // pan and zoom as in the View tab
-	assert.equal(root.querySelectorAll(".drawings .library-picture ellipse").length, 1, "the placed library drawing is drawn");
+	assert.equal(root.querySelectorAll(".drawings .library-picture rect.drawing-shape").length, 1, "the placed library drawing is drawn");
 	const cards = root.querySelectorAll<HTMLElement>(".canvas-board .canvas-card");
 	assert.deepEqual([...cards].map((c) => c.dataset.cardId), ["c1"]);
 	assert.equal(root.querySelector(".canvas-card .card-remove"), null);

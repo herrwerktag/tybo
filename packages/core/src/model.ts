@@ -160,7 +160,7 @@ export interface Board {
 	viewport: Viewport;
 	/** The board's frame, always there: the viewer shows the board in it. In a frame's shape (see frameShape). */
 	viewFrame: Rect;
-	/** Shapes, lines, text and pen strokes, drawn behind the cards; later ones on top. */
+	/** Text boxes, groups, images and placed library drawings, drawn behind the cards; later ones on top. */
 	drawings: Drawing[];
 }
 
@@ -168,12 +168,12 @@ export type TextSize = "s" | "m" | "l";
 export const TEXT_SIZES: readonly TextSize[] = ["s", "m", "l"];
 
 /**
- * A rectangle, ellipse or free text box; all can hold text. An area is a named group: the cards and drawings lying in
- * it move along when it's moved; its text is the name.
+ * A text box (a colored box with its text centered) or an area. An area is a named group: the cards and drawings lying
+ * in it move along when it's moved; its text is the name.
  */
 export interface BoxDrawing {
 	id: string;
-	kind: "rect" | "ellipse" | "text" | "area";
+	kind: "textbox" | "area";
 	x: number;
 	y: number;
 	width: number;
@@ -182,21 +182,6 @@ export interface BoxDrawing {
 	color: string;
 	text: string;
 	textSize: TextSize;
-}
-
-/** How a pen stroke looks: a thin fine liner, the regular pen, or a wide, see-through highlighter (flat or round tip). */
-export type PenStyle = "fineliner" | "pen" | "highlighter" | "roundHighlighter";
-export const PEN_STYLES: readonly PenStyle[] = ["fineliner", "pen", "highlighter", "roundHighlighter"];
-
-/** A line or arrow (two points) or a freehand pen stroke. */
-export interface PathDrawing {
-	id: string;
-	kind: "line" | "arrow" | "pen";
-	points: Point[];
-	/** A value from DRAWING_COLORS. */
-	color: string;
-	/** Pen strokes only. */
-	penStyle?: PenStyle;
 }
 
 /** A picture pasted or dropped onto the board; it keeps its aspect ratio when resized. */
@@ -226,11 +211,11 @@ export interface SymbolDrawing {
 	height: number;
 }
 
-export type Drawing = BoxDrawing | PathDrawing | ImageDrawing | SymbolDrawing;
+export type Drawing = BoxDrawing | ImageDrawing | SymbolDrawing;
 
-/** Rectangles, ellipses, text boxes and areas (as opposed to lines, arrows, pen strokes, images and library drawings). */
+/** Text boxes and areas (as opposed to images and library drawings). */
 export function isBox(drawing: Drawing): drawing is BoxDrawing {
-	return drawing.kind === "rect" || drawing.kind === "ellipse" || drawing.kind === "text" || drawing.kind === "area";
+	return drawing.kind === "textbox" || drawing.kind === "area";
 }
 
 export function isArea(drawing: Drawing): drawing is BoxDrawing & { kind: "area" } {
@@ -245,20 +230,11 @@ export function isSymbol(drawing: Drawing): drawing is SymbolDrawing {
 	return drawing.kind === "symbol";
 }
 
-/** Drawings with a position and size: boxes, images and library drawings (as opposed to lines, arrows and pen strokes). */
-export function hasRect(drawing: Drawing): drawing is BoxDrawing | ImageDrawing | SymbolDrawing {
-	return isBox(drawing) || isImage(drawing) || isSymbol(drawing);
-}
-
-export type NewDrawing =
-	| Omit<BoxDrawing, "id">
-	| Omit<PathDrawing, "id">
-	| Omit<ImageDrawing, "id">
-	| Omit<SymbolDrawing, "id">;
+export type NewDrawing = Omit<BoxDrawing, "id"> | Omit<ImageDrawing, "id"> | Omit<SymbolDrawing, "id">;
 
 /**
  * A named drawing of its own, kept in the workspace's library and placed on boards from there (as SymbolDrawings).
- * It's made of the same shapes, lines, text, pen strokes and images as a board's drawings — never of other library
+ * It's made of the same text boxes and images as a board's drawings — never of other library
  * drawings, so one can't end up containing itself.
  */
 export interface LibraryDrawing {
