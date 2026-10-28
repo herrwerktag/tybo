@@ -1,6 +1,15 @@
 import postgres from "postgres";
 import { applyChanges } from "./changes.js";
-import { createWorkspace, deleteWorkspace, listWorkspaces, moveWorkspace, readWorkspace, renameWorkspace, workspaceRevision } from "./data.js";
+import {
+	createWorkspace,
+	deleteWorkspace,
+	listWorkspaces,
+	moveWorkspace,
+	readWorkspace,
+	recordBaselines,
+	renameWorkspace,
+	workspaceRevision,
+} from "./data.js";
 import { readHistory } from "./history.js";
 import type { Api } from "./http.js";
 import { migrateSchema } from "./schema.js";
@@ -13,6 +22,8 @@ export interface PostgresStorage extends Api {
 	/** Brings the schema up to date (see `migrateSchema`); calling it again changes nothing. Answers the
 	 * versions of the steps it ran. */
 	init(): Promise<number[]>;
+	/** Gives each workspace made before the history its starting point (see `recordBaselines`); answers how many. */
+	recordBaselines(): Promise<number>;
 	/** Closes the connections; the data stays. */
 	close(): Promise<void>;
 }
@@ -30,6 +41,7 @@ export function postgresStorage(url: string): PostgresStorage {
 
 	return {
 		init: () => migrateSchema(sql),
+		recordBaselines: () => recordBaselines(sql),
 		listWorkspaces: () => listWorkspaces(sql),
 		createWorkspace: (info, dataVersion, source = null) => createWorkspace(sql, info, dataVersion, source),
 		renameWorkspace: (id, name, source = null) => renameWorkspace(sql, id, name, source),

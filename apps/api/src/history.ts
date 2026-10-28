@@ -1,4 +1,4 @@
-import { jsonEqual, type BoardMeta, type Change, type UnitStand, type UnitStands } from "@tybo/core";
+import { DATA_VERSION, jsonEqual, type BoardMeta, type Change, type UnitStand, type UnitStands } from "@tybo/core";
 import type { Queries } from "./schema.js";
 
 /**
@@ -11,10 +11,19 @@ import type { Queries } from "./schema.js";
  *
  * The history has no reference to its workspace, so it outlives it: a deleted workspace's entries stay, the
  * last one with everything the workspace held when it went.
+ *
+ * Every entry names the format its stands are in (`dataVersion`, the app's DATA_VERSION when it was written):
+ * the format the API reads and writes units in, and the only one a save is taken in (see `X-Tybo-Data-Version`
+ * in http.ts). Once the model changes, an older entry is read the way the app reads saved data of its format —
+ * through its migrations from that version on.
+ *
+ * Every workspace's history starts from a known stand: a new one's with its making (empty), one made before
+ * the history with its baseline — so any later stand is that start plus the entries after it.
  */
 
-/** What was written: a unit of the data (`change`), or the workspace itself. */
-export type HistoryOperation = "change" | "create" | "rename" | "move" | "delete";
+/** What was written: a unit of the data (`change`), or the workspace itself. `baseline` is no write: it is where
+ * the history of a workspace made before there was one starts — everything it held then (see `recordBaselines`). */
+export type HistoryOperation = "change" | "create" | "rename" | "move" | "delete" | "baseline";
 
 /** One entry as the history answers it. `id` orders the entries (newest is highest) and pages through them;
  * `revision` is the workspace's after the write — the same for every unit of one save. */
@@ -26,6 +35,8 @@ export interface HistoryEntry {
 	/** Who wrote, as the request named itself (`X-Tybo-Source`); null when it didn't. */
 	source: string | null;
 	operation: HistoryOperation;
+	/** The format `before` and `after` are in — the app's DATA_VERSION when the entry was written. */
+	dataVersion: number;
 	/** For `change`: which unit — its kind, its id, and the board a card or drawing stands on. */
 	kind: Change["kind"] | null;
 	unitId: string | null;
@@ -83,15 +94,15 @@ function jsonbParameter(queries: Queries, value: unknown) {
 /** Adds the entries for the workspace, within the transaction of the write they tell of. */
 export async function recordHistory(tx: Queries, workspaceId: string, source: string | null, entries: readonly NewEntry[]): Promise<void> {
 	for (const entry of entries) {
-		await tx`insert into history (workspace_id, revision, source, operation, kind, unit_id, board_id, before, after, collided)
-			values (${workspaceId}, ${entry.revision ?? null}, ${source}, ${entry.operation}, ${entry.kind ?? null}, ${entry.unitId ?? null},
+		await tx`insert into history (workspace_id, revision, source, operation, data_version, kind, unit_id, board_id, before, after, collided)
+			values (${workspaceId}, ${entry.revision ?? null}, ${source}, ${entry.operation}, ${DATA_VERSION}, ${entry.kind ?? null}, ${entry.unitId ?? null},
 				${entry.boardId ?? null}, ${jsonbParameter(tx, entry.before)}, ${jsonbParameter(tx, entry.after)}, ${entry.collided ?? false})`;
 	}
 }
 
 /** The workspace's entries, newest first — also of a workspace that is gone. */
 export async function readHistory(queries: Queries, workspaceId: string, page: HistoryPage): Promise<HistoryEntry[]> {
-	const rows = await queries`select id::text as id, workspace_id, revision::text as revision, at, source, operation, kind, unit_id, board_id,
+	const rows = await queries`select id::text as id, workspace_id, revision::text as revision, at, source, operation, data_version, kind, unit_id, board_id,
 			before, after, collided
 		from history
 		where workspace_id = ${workspaceId} ${page.before === undefined ? queries`` : queries`and id < ${page.before}`}
@@ -104,6 +115,7 @@ export async function readHistory(queries: Queries, workspaceId: string, page: H
 		at: (row.at as Date).toISOString(),
 		source: (row.source as string | null) ?? null,
 		operation: row.operation as HistoryOperation,
+		dataVersion: row.data_version as number,
 		kind: (row.kind as Change["kind"] | null) ?? null,
 		unitId: (row.unit_id as string | null) ?? null,
 		boardId: (row.board_id as string | null) ?? null,

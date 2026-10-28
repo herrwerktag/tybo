@@ -19,6 +19,8 @@ try {
 	const ran = await storage.init();
 	if (localPath) console.log(`Using the local SQLite database ${localPath}.`);
 	if (ran.length > 0) console.log(`The schema was brought up to date (steps ${ran.join(", ")}).`);
+	const started = await storage.recordBaselines();
+	if (started > 0) console.log(`The history of ${started} workspace(s) made before it starts from what they hold now.`);
 } catch (error) {
 	// What went wrong stays out — errors about connecting can quote parts of the URL. Whether it was the
 	// connection or a step of the schema, the step left the schema as it was. A mismatch names only steps.
@@ -27,8 +29,8 @@ try {
 		process.exit(1);
 	}
 	console.error(localPath
-		? "The local SQLite database couldn't be opened, or its schema couldn't be brought up to date."
-		: "The Postgres database isn't reachable, or its schema couldn't be brought up to date.");
+		? "The local SQLite database couldn't be opened, or its schema or history couldn't be brought up to date."
+		: "The Postgres database isn't reachable, or its schema or history couldn't be brought up to date.");
 	process.exit(1);
 }
 

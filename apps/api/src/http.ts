@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize } from "node:path";
-import type { Change, SavedChanges, WorkspaceInfo } from "@tybo/core";
+import { DATA_VERSION, type Change, type SavedChanges, type WorkspaceInfo } from "@tybo/core";
 import { parseChanges } from "./changes.js";
 import type { StoredWorkspace } from "./data.js";
 import type { HistoryEntry, HistoryPage } from "./history.js";
@@ -67,7 +67,10 @@ export interface Api {
  * PUT /workspaces/{id}/changes saves a change set (JSON): only the rows of the units it names are written,
  * so units decide for themselves which of them collided with someone else's in-between save — the answer
  * says which, and writes them anyway (last one wins): 200 with `{ version, collided }`, the new revision in
- * `etag`. A body that isn't a change set answers 400 and writes nothing; no workspace of that id, 404.
+ * `etag`. A body that isn't a change set answers 400 and writes nothing; no workspace of that id, 404. The
+ * saver names the format its units are in (`X-Tybo-Data-Version`): one other than the API's own answers 409 and
+ * writes nothing — a tab still running an older app, which has to reload first, so no units of an older format
+ * end up in the tables, or in the history as the current one. A save that names none is taken as the API's own.
  *
  * GET /workspaces/{id}/history answers the workspace's history as JSON, newest first: every write of its
  * data, unit by unit, and of the workspace itself — also once it is deleted. `limit` (1 to 1000, 100 when
@@ -135,7 +138,7 @@ async function serveClient(res: ServerResponse, clientDir: string, pathname: str
 function allowCrossOrigin(res: ServerResponse, origin: string): void {
 	res.setHeader("access-control-allow-origin", origin);
 	res.setHeader("access-control-allow-methods", "GET, HEAD, POST, PUT, PATCH, DELETE");
-	res.setHeader("access-control-allow-headers", "Content-Type, X-Tybo-Source");
+	res.setHeader("access-control-allow-headers", "Content-Type, X-Tybo-Source, X-Tybo-Data-Version");
 	// etag isn't among the headers a cross-origin answer shows JavaScript by default; say it may be seen.
 	res.setHeader("access-control-expose-headers", "ETag");
 }
@@ -210,6 +213,7 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api, client
 				if (method !== "PUT") return notAllowed(res, "PUT");
 				const changes = parseChanges(await readJson(req));
 				if (changes === null) return sendEmpty(res, 400);
+				if (!inOwnFormat(req)) return sendEmpty(res, 409);
 				const answer = await api.writeChanges(id, changes, source);
 				if (!answer) return sendEmpty(res, 404);
 				res.setHeader("etag", answer.version);
@@ -257,6 +261,13 @@ function sourceOf(req: IncomingMessage): string | null {
 	const raw = req.headers["x-tybo-source"];
 	const source = (Array.isArray(raw) ? raw[0] : raw)?.trim() ?? "";
 	return source !== "" && source.length <= MAX_SOURCE_LENGTH ? source : null;
+}
+
+/** Whether the request's units are in the API's data format, as `X-Tybo-Data-Version` names it — or it names none. */
+function inOwnFormat(req: IncomingMessage): boolean {
+	const raw = req.headers["x-tybo-data-version"];
+	const named = Array.isArray(raw) ? raw[0] : raw;
+	return named === undefined || named.trim() === String(DATA_VERSION);
 }
 
 /** How many entries a history read answers when it doesn't say, and at most. */

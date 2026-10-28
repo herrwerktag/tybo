@@ -1,4 +1,4 @@
-import type { Change, DataPort, SavedChanges, WorkspaceInfo } from "@tybo/core";
+import { DATA_VERSION, type Change, type DataPort, type SavedChanges, type WorkspaceInfo } from "@tybo/core";
 
 /**
  * The browser app's port into the storage API (apps/api), which keeps the workspaces and their data in
@@ -9,7 +9,8 @@ import type { Change, DataPort, SavedChanges, WorkspaceInfo } from "@tybo/core";
  * keeps it, and asks for it anew (a HEAD) to see whether someone else saved in between.
  *
  * `source` names who writes (say "demo" or "mcp"): every write carries it in `X-Tybo-Source`, and the API's
- * history keeps it with each entry. Reads don't carry it — they write nothing.
+ * history keeps it with each entry. Reads don't carry it — they write nothing. A save also names the format its
+ * units are in (`X-Tybo-Data-Version`); the API refuses one in another format than its own.
  */
 export function httpData(apiUrl: string, source?: string): DataPort {
 	// One call after the other, in the order they came in: a request, once started, keeps running — without
@@ -37,6 +38,12 @@ export function httpData(apiUrl: string, source?: string): DataPort {
 		method,
 		body: JSON.stringify(body),
 		headers: { "content-type": "application/json", ...named },
+	});
+
+	/** The request, naming the data format its units are in. */
+	const inFormat = (init: RequestInit): RequestInit => ({
+		...init,
+		headers: { ...(init.headers as Record<string, string>), "x-tybo-data-version": String(DATA_VERSION) },
 	});
 
 	return {
@@ -83,7 +90,7 @@ export function httpData(apiUrl: string, source?: string): DataPort {
 		/** PUTs the change set to the workspace's changes route; settles with the API's own answer: the new
 		 * version and the units that collided (written anyway, the last save wins). */
 		saveChanges(id, changes: Change[]) {
-			return inOrder(async () => (await takeOrReject(await fetch(at("workspaces", id, "changes"), json("PUT", changes)))).json() as Promise<SavedChanges>);
+			return inOrder(async () => (await takeOrReject(await fetch(at("workspaces", id, "changes"), inFormat(json("PUT", changes))))).json() as Promise<SavedChanges>);
 		},
 	};
 }

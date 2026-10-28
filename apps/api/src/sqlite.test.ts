@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { changesBetween, type AppData } from "@tybo/core";
+import { DATA_VERSION, changesBetween, type AppData } from "@tybo/core";
 import { DatabaseSync } from "node:sqlite";
 import { SQLITE_MIGRATIONS, sqliteStorage } from "./sqlite.js";
 import { call, startApp } from "./test-server.js";
@@ -56,7 +56,7 @@ async function fresh() {
 test("sqlite: the schema is made once, and survives reopening the file", async () => {
 	const { storage, path, close } = await fresh();
 	try {
-		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 		assert.deepEqual(await storage.init(), [], "the second start has nothing left to do");
 		assert.equal(await storage.healthy(), true);
 		await storage.createWorkspace({ id: "ws", name: "Bleibt" }, 1);
@@ -172,7 +172,7 @@ test("sqlite: what was saved of stories, by any version before, is dropped; the 
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7, 8, 9]);
+		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7, 8, 9, 10]);
 		const { data } = (await storage.readWorkspace("ws"))!;
 		// Null, not missing: the app makes the frame of the board's pan/zoom.
 		assert.deepEqual(
@@ -206,7 +206,7 @@ test("sqlite: step 8 drops the library and the library drawings placed on boards
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [8, 9]);
+		assert.deepEqual(await storage.init(), [8, 9, 10]);
 		await storage.close();
 		const check = new DatabaseSync(path);
 		assert.deepEqual(check.prepare("select name from sqlite_master where name = 'library_drawings'").all(), []);
@@ -268,6 +268,7 @@ test("sqlite: every write goes into the history, newest first, with the stand th
 			],
 			"one entry per unit written; nothing for the empty save",
 		);
+		assert.ok(history.every((e) => e.dataVersion === DATA_VERSION), "each entry names its format");
 		const ids = history.map((e) => Number(e.id));
 		assert.deepEqual(ids, [...ids].sort((a, b) => b - a));
 		assert.match(history[0]!.at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
@@ -305,7 +306,7 @@ test("sqlite: a deleted workspace's history stays, ending with everything it hel
 		assert.equal(deleted!.operation, "delete");
 		assert.equal(deleted!.source, "mcp");
 		assert.equal(deleted!.after, null);
-		assert.deepEqual(deleted!.before, { name: "Weg", dataVersion: 1, revision: "1", data: sample() });
+		assert.deepEqual(deleted!.before, { name: "Weg", revision: "1", data: sample() });
 		assert.equal(await storage.renameWorkspace("ws", "Wieder"), false);
 		assert.equal((await storage.readHistory("ws", { limit: 100 })).length, 8);
 	} finally {
@@ -337,6 +338,49 @@ test("sqlite: a board that only panned or zoomed leaves no entry in the history;
 		assert.equal(entry!.kind, "board");
 		assert.deepEqual(entry!.after, { value: { id: "board-1", name: "Neu", viewport: { x: 0, y: 0, zoom: 1 }, viewFrame: base.boards[0]!.viewFrame }, position: 0 });
 		assert.equal(await entries(), before + 1);
+	} finally {
+		await close();
+	}
+});
+
+test("sqlite: a workspace made before the history gets a baseline of everything it holds, once; a new one needs none", async () => {
+	const { storage, path, close } = await fresh();
+	try {
+		await storage.init();
+		// As before the history: the workspace's row is there, its making never recorded.
+		const raw = new DatabaseSync(path);
+		raw.prepare("insert into workspaces (id, position, name, data_version) values ('old', 0, 'Alt', 1)").run();
+		raw.close();
+		await storage.writeChanges("old", changesBetween(empty(), sample()), "demo");
+		await storage.createWorkspace({ id: "new", name: "Neu" }, 1);
+
+		assert.equal(await storage.recordBaselines(), 1);
+		assert.equal(await storage.recordBaselines(), 0, "each has its start now");
+
+		const [baseline, ...saved] = await storage.readHistory("old", { limit: 100 });
+		assert.equal(baseline!.operation, "baseline");
+		assert.equal(baseline!.source, null);
+		assert.equal(baseline!.before, null);
+		assert.deepEqual(baseline!.after, { name: "Alt", revision: "1", data: sample() });
+		assert.ok(saved.every((e) => e.operation === "change"), "entries already there stay before it");
+		assert.deepEqual((await storage.readHistory("new", { limit: 100 })).map((e) => e.operation), ["create"]);
+	} finally {
+		await close();
+	}
+});
+
+test("sqlite: step 10 gives the entries written before it their format, 9", async () => {
+	const { storage, path, close } = await fresh();
+	try {
+		// As a file whose history came before its entries named their format.
+		const raw = new DatabaseSync(path);
+		for (const migration of SQLITE_MIGRATIONS.filter((m) => m.version < 10)) migration.up(raw);
+		raw.exec("pragma user_version = 9");
+		raw.prepare("insert into history (workspace_id, operation) values ('ws', 'create')").run();
+		raw.close();
+
+		assert.deepEqual(await storage.init(), [10]);
+		assert.deepEqual((await storage.readHistory("ws", { limit: 10 })).map((e) => e.dataVersion), [9]);
 	} finally {
 		await close();
 	}

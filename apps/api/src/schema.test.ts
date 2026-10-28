@@ -176,3 +176,17 @@ test("step 11 drops the library and the library drawings placed on boards; other
 		await sql.end({ timeout: 5 });
 	}
 });
+
+test("step 13 gives the entries written before it their format, 9", { skip: !url }, async () => {
+	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
+	try {
+		await wipe(sql);
+		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 13));
+		await sql`insert into history (workspace_id, operation) values ('ws', 'create')`;
+
+		assert.deepEqual(await migrateSchema(sql), [13]);
+		assert.deepEqual([...(await sql`select data_version from history`)], [{ data_version: 9 }]);
+	} finally {
+		await sql.end({ timeout: 5 });
+	}
+});

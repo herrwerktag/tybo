@@ -248,6 +248,17 @@ export const MIGRATIONS: readonly Migration[] = [
 			await tx`create index history_workspace on history (workspace_id, id desc)`;
 		},
 	},
+	{
+		version: 13,
+		name: "history data versions",
+		async up(tx) {
+			// The format each entry's stands are in. Every entry before this step was written in format 9 — the
+			// history came with it — so that is theirs; a literal on purpose, a step never changes.
+			await tx`alter table history add column data_version int`;
+			await tx`update history set data_version = 9`;
+			await tx`alter table history alter column data_version set not null`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */
