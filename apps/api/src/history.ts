@@ -11,10 +11,14 @@ import type { Queries } from "./schema.js";
  *
  * The history has no reference to its workspace, so it outlives it: a deleted workspace's entries stay, the
  * last one with everything the workspace held when it went.
+ *
+ * Every workspace's history starts from a known stand: a new one's with its making (empty), one made before
+ * the history with its baseline — so any later stand is that start plus the entries after it.
  */
 
-/** What was written: a unit of the data (`change`), or the workspace itself. */
-export type HistoryOperation = "change" | "create" | "rename" | "move" | "delete";
+/** What was written: a unit of the data (`change`), or the workspace itself. `baseline` is no write: it is where
+ * the history of a workspace made before there was one starts — everything it held then (see `recordBaselines`). */
+export type HistoryOperation = "change" | "create" | "rename" | "move" | "delete" | "baseline";
 
 /** One entry as the history answers it. `id` orders the entries (newest is highest) and pages through them;
  * `revision` is the workspace's after the write — the same for every unit of one save. */

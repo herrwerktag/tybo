@@ -341,3 +341,29 @@ test("sqlite: a board that only panned or zoomed leaves no entry in the history;
 		await close();
 	}
 });
+
+test("sqlite: a workspace made before the history gets a baseline of everything it holds, once; a new one needs none", async () => {
+	const { storage, path, close } = await fresh();
+	try {
+		await storage.init();
+		// As before the history: the workspace's row is there, its making never recorded.
+		const raw = new DatabaseSync(path);
+		raw.prepare("insert into workspaces (id, position, name, data_version) values ('old', 0, 'Alt', 1)").run();
+		raw.close();
+		await storage.writeChanges("old", changesBetween(empty(), sample()), "demo");
+		await storage.createWorkspace({ id: "new", name: "Neu" }, 1);
+
+		assert.equal(await storage.recordBaselines(), 1);
+		assert.equal(await storage.recordBaselines(), 0, "each has its start now");
+
+		const [baseline, ...saved] = await storage.readHistory("old", { limit: 100 });
+		assert.equal(baseline!.operation, "baseline");
+		assert.equal(baseline!.source, null);
+		assert.equal(baseline!.before, null);
+		assert.deepEqual(baseline!.after, { name: "Alt", dataVersion: 1, revision: "1", data: sample() });
+		assert.ok(saved.every((e) => e.operation === "change"), "entries already there stay before it");
+		assert.deepEqual((await storage.readHistory("new", { limit: 100 })).map((e) => e.operation), ["create"]);
+	} finally {
+		await close();
+	}
+});

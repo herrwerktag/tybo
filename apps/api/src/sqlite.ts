@@ -10,6 +10,8 @@ import type { Api } from "./http.js";
 export interface SqliteStorage extends Api {
 	/** Brings the schema up to date; calling it again changes nothing. Answers the versions of the steps it ran. */
 	init(): Promise<number[]>;
+	/** Gives each workspace made before the history its starting point (see `recordBaselines` in data.ts); answers how many. */
+	recordBaselines(): Promise<number>;
 	/** Closes the file; the data stays. */
 	close(): Promise<void>;
 }
@@ -430,6 +432,13 @@ export function sqliteStorage(path: string): SqliteStorage {
 	/** The workspace's revision and name, or undefined when there is none of that id. */
 	const workspaceRow = (id: string) => db.prepare("select name, data_version, revision from workspaces where id = ?").get(id);
 
+	/** Everything the workspace holds — its name, data format, revision and data; null when there is none of that id. */
+	const snapshot = (id: string) => {
+		const row = workspaceRow(id);
+		if (!row) return null;
+		return { name: row.name as string, dataVersion: Number(row.data_version), revision: String(row.revision), data: readAppData(id) };
+	};
+
 	return {
 		async init() {
 			return transaction(db, () => {
@@ -498,19 +507,29 @@ export function sqliteStorage(path: string): SqliteStorage {
 
 		async deleteWorkspace(id, source = null) {
 			transaction(db, () => {
-				const was = workspaceRow(id);
+				const was = snapshot(id);
 				if (!was) return;
-				const data = readAppData(id);
 				db.prepare("delete from workspaces where id = ?").run(id);
-				const revision = String(was.revision);
-				recordHistory(id, source, [
-					{
-						operation: "delete",
-						revision,
-						before: { name: was.name as string, dataVersion: Number(was.data_version), revision, data },
-						after: null,
-					},
-				]);
+				recordHistory(id, source, [{ operation: "delete", revision: was.revision, before: was, after: null }]);
+			});
+		},
+
+		async recordBaselines() {
+			// One transaction for all: the file has one writer at a time anyway, and no save lands in between.
+			return transaction(db, () => {
+				const ids = db
+					.prepare(
+						`select id from workspaces
+						where not exists (select 1 from history where workspace_id = workspaces.id and operation in ('create', 'baseline'))
+						order by position, created_at, id`,
+					)
+					.all()
+					.map((row) => row.id as string);
+				for (const id of ids) {
+					const now = snapshot(id)!;
+					recordHistory(id, null, [{ operation: "baseline", revision: now.revision, before: null, after: now }]);
+				}
+				return ids.length;
 			});
 		},
 

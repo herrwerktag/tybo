@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { changesBetween, type AppData } from "@tybo/core";
+import postgres from "postgres";
 import { postgresStorage } from "./postgres.js";
 import { call, startApp } from "./test-server.js";
 
@@ -204,6 +205,31 @@ test("every write goes into the history, which outlives the workspace — also o
 		assert.equal((await storage.readHistory(id, { limit: 100 })).length, history.length + 1);
 	} finally {
 		await api.close();
+		await storage.deleteWorkspace(id);
+		await storage.close();
+	}
+});
+
+test("a workspace made before the history gets a baseline of everything it holds, once", { skip: !url }, async () => {
+	const storage = postgresStorage(url!);
+	const raw = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
+	const id = freshId();
+	try {
+		await storage.init();
+		// As before the history: the workspace's row is there, its making never recorded.
+		await raw`insert into workspaces (id, position, name, data_version) values (${id}, 0, 'Alt', 1)`;
+		await storage.writeChanges(id, changesBetween(empty(), sample()), "demo");
+
+		assert.ok((await storage.recordBaselines()) >= 1);
+		await storage.recordBaselines();
+
+		const history = await storage.readHistory(id, { limit: 100 });
+		assert.deepEqual(history.filter((e) => e.operation === "baseline").length, 1, "once");
+		const [baseline] = history;
+		assert.equal(baseline!.operation, "baseline");
+		assert.deepEqual(baseline!.after, { name: "Alt", dataVersion: 1, revision: "1", data: sample() });
+	} finally {
+		await raw.end({ timeout: 5 });
 		await storage.deleteWorkspace(id);
 		await storage.close();
 	}

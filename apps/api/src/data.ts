@@ -67,19 +67,42 @@ export async function moveWorkspace(sql: Sql, id: string, to: number, source: st
  * stays, and gains the deletion with everything the workspace held — so what went can still be found. */
 export async function deleteWorkspace(sql: Sql, id: string, source: string | null = null): Promise<void> {
 	await sql.begin(async (tx) => {
-		const [was] = await tx`select name, data_version, revision::text as revision from workspaces where id = ${id} for update`;
+		const was = await snapshot(tx, id);
 		if (!was) return;
-		const data = await readAppData(tx, id);
 		await tx`delete from workspaces where id = ${id}`;
-		await recordHistory(tx, id, source, [
-			{
-				operation: "delete",
-				revision: was.revision as string,
-				before: { name: was.name as string, dataVersion: was.data_version as number, revision: was.revision as string, data },
-				after: null,
-			},
-		]);
+		await recordHistory(tx, id, source, [{ operation: "delete", revision: was.revision, before: was, after: null }]);
 	});
+}
+
+/** Gives every workspace whose history has no start yet — one made before there was a history — its baseline:
+ * everything it holds now. Each in a transaction of its own, the workspace locked against saves meanwhile;
+ * entries of saves already there stay before it. Answers how many it recorded — none once each has its start. */
+export async function recordBaselines(sql: Sql): Promise<number> {
+	const rows = await sql`select id from workspaces
+		where not exists (select 1 from history where workspace_id = workspaces.id and operation in ('create', 'baseline'))
+		order by position, created_at, id`;
+	let recorded = 0;
+	for (const { id } of rows) {
+		const done = await sql.begin(async (tx) => {
+			const now = await snapshot(tx, id as string);
+			// Gone, or given its start meanwhile (another server starting at once).
+			if (!now) return false;
+			const [started] = await tx`select 1 from history where workspace_id = ${id} and operation in ('create', 'baseline') limit 1`;
+			if (started) return false;
+			await recordHistory(tx, id as string, null, [{ operation: "baseline", revision: now.revision, before: null, after: now }]);
+			return true;
+		});
+		if (done) recorded++;
+	}
+	return recorded;
+}
+
+/** Everything the workspace holds — its name, data format, revision and data — read with the workspace locked
+ * for the rest of the transaction; null when there is none of that id. */
+async function snapshot(tx: Queries, id: string): Promise<{ name: string; dataVersion: number; revision: string; data: AppData } | null> {
+	const [row] = await tx`select name, data_version, revision::text as revision from workspaces where id = ${id} for update`;
+	if (!row) return null;
+	return { name: row.name as string, dataVersion: row.data_version as number, revision: row.revision as string, data: await readAppData(tx, id) };
 }
 
 /** The revision the workspace is at, or null when there is none of that id. */

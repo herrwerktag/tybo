@@ -101,6 +101,8 @@ davor und danach, dazu Anlegen, Umbenennen, Verschieben und Loeschen eines Arbei
 und Zoomen eines Boards (`viewport`) wird gespeichert, aber nicht in den Verlauf geschrieben. Wer schreibt,
 nennt sich im Header `X-Tybo-Source` (die Demo als `demo`, der MCP-Server als `mcp`). Der Verlauf bleibt
 auch nach dem Loeschen eines Arbeitsbereichs erhalten; der letzte Eintrag enthaelt dann dessen komplette Daten.
+Arbeitsbereiche, die es schon vor dem Verlauf gab, bekommen beim Start der API einmalig einen Eintrag `baseline`
+mit ihren kompletten Daten als Ausgangspunkt; neue beginnen mit ihrem `create`.
 
 ## MCP
 
