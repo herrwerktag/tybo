@@ -1,10 +1,11 @@
-import type { Change, UnitStands } from "@tybo/core";
+import { jsonEqual, type BoardMeta, type Change, type UnitStand, type UnitStands } from "@tybo/core";
 import type { Queries } from "./schema.js";
 
 /**
  * The history: every write, kept. A save leaves one entry per unit it wrote — with the stand the tables held
  * before (not the one the saver believed in, so a collision shows what was really written over) and the one
- * it wrote — and every write of a workspace itself (made, renamed, moved, deleted) one entry too. Entries are
+ * it wrote — and every write of a workspace itself (made, renamed, moved, deleted) one entry too. Only pan and
+ * zoom of a board aren't kept: they change all the time, and nobody looks back at them. Entries are
  * only ever added, in the same transaction as the write they tell of: no write without its entry, no entry
  * of a write that was rolled back.
  *
@@ -46,17 +47,32 @@ export interface HistoryPage {
 }
 
 /** The entries of a save: each unit with the stand the tables held before (`stands`, read in the save's own
- * transaction) and the one written, and whether it collided. */
+ * transaction) and the one written, and whether it collided. A board that only panned or zoomed leaves no
+ * entry: pan and zoom are saved, but they are no part of the undo history either, and would flood this one. */
 export function changeEntries(stands: UnitStands, changes: readonly Change[], collided: readonly string[]): NewEntry[] {
-	return changes.map((unit) => ({
-		operation: "change",
-		kind: unit.kind,
-		unitId: unit.id,
-		boardId: "boardId" in unit ? unit.boardId : null,
-		before: stands.get(`${unit.kind}:${unit.id}`)?.stand ?? null,
-		after: unit.after,
-		collided: collided.includes(unit.id),
-	}));
+	return changes.flatMap((unit): NewEntry[] => {
+		const before = stands.get(`${unit.kind}:${unit.id}`)?.stand ?? null;
+		if (unit.kind === "board" && onlyViewport(before as UnitStand<BoardMeta> | null, unit.after)) return [];
+		return [
+			{
+				operation: "change",
+				kind: unit.kind,
+				unitId: unit.id,
+				boardId: "boardId" in unit ? unit.boardId : null,
+				before,
+				after: unit.after,
+				collided: collided.includes(unit.id),
+			},
+		];
+	});
+}
+
+/** Whether two stands of a board differ in nothing but its viewport — same place, same name, same frame. */
+function onlyViewport(before: UnitStand<BoardMeta> | null, after: UnitStand<BoardMeta> | null): boolean {
+	if (before === null || after === null || before.position !== after.position) return false;
+	const { viewport: _was, ...was } = before.value;
+	const { viewport: _now, ...now } = after.value;
+	return jsonEqual(was, now);
 }
 
 /** The jsonb parameter the driver makes (`null` stays SQL null, not jsonb `null`). */

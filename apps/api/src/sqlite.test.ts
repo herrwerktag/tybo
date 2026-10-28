@@ -312,3 +312,32 @@ test("sqlite: a deleted workspace's history stays, ending with everything it hel
 		await close();
 	}
 });
+
+test("sqlite: a board that only panned or zoomed leaves no entry in the history; one renamed with it does", async () => {
+	const { storage, close } = await fresh();
+	try {
+		await storage.init();
+		await storage.createWorkspace({ id: "ws", name: "Test" }, 1);
+		const base = sample();
+		await storage.writeChanges("ws", changesBetween(empty(), base));
+		const entries = async () => (await storage.readHistory("ws", { limit: 100 })).length;
+		const before = await entries();
+
+		const panned = structuredClone(base);
+		panned.boards[0]!.viewport = { x: 120, y: -40, zoom: 2 };
+		assert.deepEqual(await storage.writeChanges("ws", changesBetween(base, panned)), { version: "2", collided: [] }, "saved all the same");
+		assert.deepEqual((await storage.readWorkspace("ws"))?.data.boards[0]!.viewport, { x: 120, y: -40, zoom: 2 });
+		assert.equal(await entries(), before, "no entry for pan and zoom");
+
+		const renamed = structuredClone(panned);
+		renamed.boards[0]!.name = "Neu";
+		renamed.boards[0]!.viewport = { x: 0, y: 0, zoom: 1 };
+		await storage.writeChanges("ws", changesBetween(panned, renamed));
+		const [entry] = await storage.readHistory("ws", { limit: 1 });
+		assert.equal(entry!.kind, "board");
+		assert.deepEqual(entry!.after, { value: { id: "board-1", name: "Neu", viewport: { x: 0, y: 0, zoom: 1 }, viewFrame: base.boards[0]!.viewFrame }, position: 0 });
+		assert.equal(await entries(), before + 1);
+	} finally {
+		await close();
+	}
+});
