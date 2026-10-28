@@ -6,7 +6,7 @@ import { MIGRATIONS, SchemaMismatch, migrateSchema } from "./schema.js";
 /** The test database these tests run against (never the productive DATABASE_URL); without it they are skipped, not failed. */
 const url = process.env.TEST_DATABASE_URL;
 
-/** Every table of the schema. */
+/** Every table of the schema, and the library's, which only steps 4 to 10 have. */
 const ALL_TABLES = ["schema_migrations", "workspaces", "entity_types", "properties", "entities", "entity_values", "boards", "cards", "drawings", "library_drawings", "analyses"];
 
 /** Takes the test database back to before any schema: none of its tables there. */
@@ -29,7 +29,7 @@ test("an empty database gets the whole schema, and a second run has nothing left
 	try {
 		await wipe(sql);
 		assert.deepEqual(await migrateSchema(sql), MIGRATIONS.map((m) => m.version));
-		assert.deepEqual(await tables(sql), ["analyses", "boards", "cards", "drawings", "entities", "entity_types", "entity_values", "library_drawings", "properties", "schema_migrations", "workspaces"]);
+		assert.deepEqual(await tables(sql), ["analyses", "boards", "cards", "drawings", "entities", "entity_types", "entity_values", "properties", "schema_migrations", "workspaces"]);
 		assert.deepEqual(await migrateSchema(sql), []);
 	} finally {
 		await sql.end({ timeout: 5 });
@@ -145,13 +145,33 @@ test("step 10 drops what was saved of stories and their frames; the board's own 
 		await sql`insert into boards (workspace_id, id, position, name, view_frame, frames, stories)
 			values ('ws', 'b', 0, 'Flow', ${sql.json({ x: 0, y: 0, width: 1280, height: 720 })}, '[]', ${sql.json([{ id: "s", name: "Story 1", pages: [] }])})`;
 
-		assert.deepEqual(await migrateSchema(sql), [10]);
+		assert.deepEqual(await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 11)), [10]);
 		const columns = await sql`select column_name from information_schema.columns where table_name = 'boards' order by column_name`;
 		assert.deepEqual(
 			columns.map((row) => row.column_name),
 			["id", "name", "position", "updated_at", "view_frame", "viewport", "workspace_id"],
 		);
 		assert.deepEqual([...(await sql`select id, view_frame from boards`)], [{ id: "b", view_frame: { x: 0, y: 0, width: 1280, height: 720 } }]);
+	} finally {
+		await sql.end({ timeout: 5 });
+	}
+});
+
+test("step 11 drops the library and the library drawings placed on boards; other drawings stay", { skip: !url }, async () => {
+	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
+	try {
+		await wipe(sql);
+		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 11));
+		await sql`insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 8)`;
+		await sql`insert into boards (workspace_id, id, position, name) values ('ws', 'b', 0, 'Flow')`;
+		await sql`insert into drawings (workspace_id, id, board_id, position, kind, body) values
+			('ws', 'box', 'b', 0, 'textbox', ${sql.json({ id: "box", kind: "textbox" })}),
+			('ws', 'placed', 'b', 1, 'symbol', ${sql.json({ id: "placed", kind: "symbol", libraryId: "lib" })})`;
+		await sql`insert into library_drawings (workspace_id, id, position, name) values ('ws', 'lib', 0, 'Stern')`;
+
+		assert.deepEqual(await migrateSchema(sql), [11]);
+		assert.equal(await tables(sql).then((names) => names.includes("library_drawings")), false);
+		assert.deepEqual([...(await sql`select id from drawings`)], [{ id: "box" }]);
 	} finally {
 		await sql.end({ timeout: 5 });
 	}

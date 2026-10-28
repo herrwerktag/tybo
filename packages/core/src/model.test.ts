@@ -9,7 +9,6 @@ import {
 	detailRows,
 	entityTags,
 	filterEntities,
-	filterLibrary,
 	fillPlaceholders,
 	parseTags,
 	placeholderProperty,
@@ -356,18 +355,6 @@ test("snapToGrid rounds to the nearest grid line", () => {
 test("parseTags splits at commas, trims, and drops empty tags and duplicates ignoring case", () => {
 	assert.deepEqual(parseTags(" Sky, sky ,, Shape,Über "), ["Sky", "Shape", "Über"]);
 	assert.deepEqual(parseTags(""), []);
-});
-
-test("filterLibrary matches names and tags ignoring case and accents", () => {
-	const items = [
-		{ name: "Sun", tags: ["Sky"] },
-		{ name: "Tree", tags: ["Natur", "Grün"] },
-	];
-	const names = (query: string) => filterLibrary(items, query).map((item) => item.name);
-	assert.deepEqual(names(""), ["Sun", "Tree"]);
-	assert.deepEqual(names("sky"), ["Sun"]);
-	assert.deepEqual(names("grun"), ["Tree"]);
-	assert.deepEqual(names("TRE"), ["Tree"]);
 });
 
 test("frames have a screen's shape: frameShape keeps the width (at least the minimum), frameInside the largest fitting", () => {

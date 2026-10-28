@@ -217,6 +217,15 @@ export const MIGRATIONS: readonly Migration[] = [
 			await tx`alter table boards drop column stories, drop column frames`;
 		},
 	},
+	{
+		version: 11,
+		name: "no more library",
+		async up(tx) {
+			// The library is gone from the app; its drawings go, and so do the places they were put on boards.
+			await tx`delete from drawings where kind = 'symbol'`;
+			await tx`drop table library_drawings`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */

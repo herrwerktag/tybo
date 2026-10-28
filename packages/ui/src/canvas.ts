@@ -1,5 +1,5 @@
 import { connector, nearest, type Rect } from "@tybo/core";
-import { createDrawingLayer, libraryPicture } from "./drawing-layer.js";
+import { createDrawingLayer } from "./drawing-layer.js";
 import { areaContents, drawingBounds } from "./drawings.js";
 import { CLICK_TOLERANCE, dragHandle, el, reorderable, resizeHandle, svgEl, tagFilter, trackPointer, typeDot, wheelGesture } from "./dom.js";
 import { text } from "./i18n.js";
@@ -14,9 +14,7 @@ import {
 	filterEntities,
 	linkCandidates,
 	relationsOf,
-	filterLibrary,
 	isArea,
-	isSymbol,
 	referencedIds,
 	snapToGrid,
 	type Board,
@@ -33,18 +31,13 @@ import type { Store } from "@tybo/core";
 import { defaultViewport, fitRect, screenToWorld, snapZoom, stepZoom, visibleRect, zoomAt, type Viewport } from "@tybo/core";
 
 const ENTITY_MIME = "application/x-entity-id";
-const LIBRARY_MIME = "application/x-library-drawing-id";
 const PICKER_MIME = "application/x-picker-index";
 const PANEL_COLLAPSED_KEY = "canvas-panel-collapsed";
 /** The widths of the side panel and the details panel, if changed by dragging. */
 export const PANEL_WIDTH_KEY = "canvas-panel-width";
 export const DETAILS_WIDTH_KEY = "details-panel-width";
-/** What the side panel shows: entities or library drawings. */
-const PANEL_TAB_KEY = "canvas-panel-tab";
 /** The tag the side panel's entities are filtered by, if any. */
 const PANEL_TAG_KEY = "canvas-panel-tag";
-/** The size of the library drawings' thumbnails in the side panel, in px. */
-const THUMBNAIL_SIZE = 40;
 const ACTIVE_BOARD_KEY = "canvas-active-board";
 /** Whether the editor is editing the frames: only then are they shown, with their controls. */
 const EDIT_FRAMES_KEY = "canvas-edit-frames";
@@ -81,7 +74,6 @@ interface CanvasOptions {
 	addressed?: boolean;
 	onExportView?: (boardId: string) => void;
 	onExportDrawio?: (boardId: string) => void;
-	onEditLibraryDrawing?: (libraryId: string) => void;
 }
 
 /** Instead of the canvas while there's no board: a button that creates the first one and opens it. */
@@ -109,15 +101,14 @@ function firstBoardView(store: Store, options: CanvasOptions): HTMLElement {
 /**
  * The board canvas. With `readOnly` (the Viewer) it only displays: no side panel, no board editing,
  * no moving, resizing, removing or dropping cards, and pan/zoom are never saved. With `onExportView` and
- * `onExportDrawio`, the viewer offers to export the current board (as HTML, for draw.io). With
- * `onEditLibraryDrawing`, a placed library drawing can be opened in the library.
+ * `onExportDrawio`, the viewer offers to export the current board (as HTML, for draw.io).
  *
  * The viewer shows the board in its frame, fitted into the screen. The editor keeps one pan/zoom per board, and
  * shows the frame as an outline to move and resize.
  */
 export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	if (store.data.boards.length === 0) return firstBoardView(store, options);
-	const { readOnly, onExportView, onExportDrawio, onEditLibraryDrawing } = options;
+	const { readOnly, onExportView, onExportDrawio } = options;
 	const addressed = readOnly && options.addressed === true;
 	const target = addressed ? parseViewHash(location.hash) : {};
 	let boardId = target.boardId ?? readPreference(ACTIVE_BOARD_KEY) ?? "";
@@ -188,7 +179,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	const drawing = createDrawingLayer({
 		store,
 		readOnly,
-		owner: () => ({ boardId }),
+		boardId: () => boardId,
 		zoom: () => viewport.zoom,
 		toWorld: (clientX, clientY) => {
 			const rect = surface.getBoundingClientRect();
@@ -216,7 +207,6 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			dragGroup(e, { drawingId }, { cardIds, drawingIds: drawingIds.add(drawingId) });
 		},
 		onToolChange: (tool) => surface.classList.toggle("drawing-tool", tool !== "select"),
-		...(onEditLibraryDrawing && { onEditSymbol: onEditLibraryDrawing }),
 	});
 	/** The zoom the drawings' selection handles were last drawn for (they keep their screen size). */
 	let drawnZoom = viewport.zoom;
@@ -667,12 +657,10 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	let panelQuery = "";
 	let panelTypeId: string | null = null;
 	let panelTag: string | null = null;
-	let libraryQuery = "";
-	let panelTab: "entities" | "library" = readPreference(PANEL_TAB_KEY) === "library" ? "library" : "entities";
 	/** The list below the panel's controls; re-rendered on its own, so typing in the search keeps focus. */
 	const panelList = el("div", { className: "panel-list" });
 
-	/** Builds the panel once (header with the tabs, hint, filters); the list itself is drawn by renderPanel. */
+	/** Builds the panel once (header, hint, filters); the list itself is drawn by renderPanel. */
 	function buildPanel(): void {
 		const toggle = el(
 			"button",
@@ -714,79 +702,16 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		});
 		panelTag = byTag.tag;
 		const entityFilters = el("div", { className: "panel-filters" }, search, typeFilter, ...(tags.length > 0 ? [byTag.select] : []));
-		const librarySearch = el("input", {
-			type: "search",
-			placeholder: text.searchLibrary,
-			ariaLabel: text.searchLibrary,
-			oninput: () => {
-				libraryQuery = librarySearch.value;
-				renderPanel();
-			},
-		});
-		const libraryFilters = el("div", { className: "panel-filters" }, librarySearch);
-		const tab = (id: typeof panelTab, label: string) =>
-			el("button", { type: "button", className: "panel-tab", ariaPressed: String(panelTab === id), onclick: () => showTab(id) }, label);
-		const tabs = el("div", { className: "panel-tabs", role: "group", ariaLabel: text.sidePanelContent });
-		function showTab(id: typeof panelTab): void {
-			panelTab = id;
-			writePreference(PANEL_TAB_KEY, id);
-			tabs.replaceChildren(tab("entities", text.entities), tab("library", text.libraryDrawings));
-			entityFilters.hidden = id !== "entities";
-			libraryFilters.hidden = id !== "library";
-			renderPanel();
-		}
-		showTab(panelTab);
 		panel.replaceChildren(
-			el("div", { className: "panel-header" }, tabs, toggle),
+			el("div", { className: "panel-header" }, el("h2", {}, text.entities), toggle),
 			el("p", { className: "muted" }, text.dragOntoCanvas),
 			entityFilters,
-			libraryFilters,
 			panelList,
-		);
-	}
-
-	/** The library drawings in the side panel, each with a thumbnail, to drag onto the board. */
-	function renderLibraryPanel(): void {
-		const placed = new Map<string, number>();
-		for (const d of currentBoard().drawings) {
-			if (isSymbol(d)) placed.set(d.libraryId, (placed.get(d.libraryId) ?? 0) + 1);
-		}
-		const matches = filterLibrary(store.data.library, libraryQuery);
-		const empty = store.data.library.length === 0 ? text.noLibraryYet : text.noLibraryMatches;
-		panelList.replaceChildren(
-			...(matches.length === 0 ? [el("p", { className: "muted" }, empty)] : []),
-			el(
-				"ul",
-				{ className: "panel-group" },
-				...matches.map((item) => {
-					const count = placed.get(item.id) ?? 0;
-					const li = el(
-						"li",
-						{ className: count > 0 ? "panel-item library-item placed" : "panel-item library-item", draggable: true },
-						libraryPicture(item.drawings, { x: 0, y: 0, width: THUMBNAIL_SIZE, height: THUMBNAIL_SIZE }),
-						el(
-							"span",
-							{ className: "library-item-text" },
-							el("span", {}, item.name),
-							...(item.tags.length > 0 ? [el("span", { className: "panel-item-note muted" }, item.tags.join(", "))] : []),
-							...(count > 0 ? [el("span", { className: "panel-item-note muted" }, text.onCanvas(count))] : []),
-						),
-					);
-					li.dataset.libraryId = item.id;
-					li.addEventListener("dragstart", (e) => {
-						if (!e.dataTransfer) return;
-						e.dataTransfer.setData(LIBRARY_MIME, item.id);
-						e.dataTransfer.effectAllowed = "copy";
-					});
-					return li;
-				}),
-			),
 		);
 	}
 
 	function renderPanel(): void {
 		if (readOnly) return; // no side panel in the viewer
-		if (panelTab === "library") return renderLibraryPanel();
 		const cardCounts = new Map<string, number>();
 		for (const card of currentBoard().cards) cardCounts.set(card.entityId, (cardCounts.get(card.entityId) ?? 0) + 1);
 		const matches = filterEntities(store.data.entities, { query: panelQuery, typeId: panelTypeId, tag: panelTag });
@@ -1582,10 +1507,10 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 
 	const imageFiles = (files: FileList | undefined): File[] => [...(files ?? [])].filter((f) => f.type.startsWith("image/"));
 
-	// Drop entities or library drawings from the side panel, or image files (editor only).
+	// Drop entities from the side panel, or image files (editor only).
 	if (!readOnly) {
 		surface.addEventListener("dragover", (e) => {
-			if (!e.dataTransfer || ![ENTITY_MIME, LIBRARY_MIME, "Files"].some((type) => e.dataTransfer!.types.includes(type))) return;
+			if (!e.dataTransfer || ![ENTITY_MIME, "Files"].some((type) => e.dataTransfer!.types.includes(type))) return;
 			e.preventDefault();
 			e.dataTransfer.dropEffect = "copy";
 		});
@@ -1598,13 +1523,6 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			}
 			const rect = surface.getBoundingClientRect();
 			const world = screenToWorld(viewport, e.clientX - rect.left, e.clientY - rect.top);
-			const libraryId = e.dataTransfer?.getData(LIBRARY_MIME);
-			if (libraryId) {
-				e.preventDefault();
-				drawing.addSymbol(libraryId, world);
-				renderPanel();
-				return;
-			}
 			const entityId = e.dataTransfer?.getData(ENTITY_MIME);
 			if (!entityId) return;
 			e.preventDefault();

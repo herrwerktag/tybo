@@ -73,7 +73,7 @@ export async function readWorkspace(sql: Sql, id: string): Promise<StoredWorkspa
  * every list's order; floats come back bit for bit, the way Postgres stores and answers them.
  */
 export async function readAppData(queries: Queries, workspaceId: string): Promise<AppData> {
-	const [types, properties, entities, values, boards, cards, drawings, library, analyses] = await Promise.all([
+	const [types, properties, entities, values, boards, cards, drawings, analyses] = await Promise.all([
 		queries`select id, name, content_template, color from entity_types where workspace_id = ${workspaceId} order by position, id`,
 		queries`select id, type_id, name, kind, options, reference, card_display from properties where workspace_id = ${workspaceId} order by type_id, position, id`,
 		queries`select id, type_id, name, content, description, tags from entities where workspace_id = ${workspaceId} order by position, id`,
@@ -81,10 +81,9 @@ export async function readAppData(queries: Queries, workspaceId: string): Promis
 		queries`select id, name, viewport, view_frame from boards where workspace_id = ${workspaceId} order by position, id`,
 		queries`select id, board_id, entity_id, x, y, width, height from cards where workspace_id = ${workspaceId} order by board_id, position, id`,
 		queries`select board_id, body from drawings where workspace_id = ${workspaceId} order by board_id, position, id`,
-		queries`select id, name, tags, drawings from library_drawings where workspace_id = ${workspaceId} order by position, id`,
 		queries`select id, name, type_id, group_paths, column_paths from analyses where workspace_id = ${workspaceId} order by position, id`,
 	]);
-	return assembleAppData({ types, properties, entities, values, boards, cards, drawings, library, analyses });
+	return assembleAppData({ types, properties, entities, values, boards, cards, drawings, analyses });
 }
 
 /** A workspace's rows, table by table, in the order `readAppData` reads them — the JSON columns already
@@ -97,12 +96,11 @@ export interface WorkspaceRows {
 	boards: readonly Record<string, any>[];
 	cards: readonly Record<string, any>[];
 	drawings: readonly Record<string, any>[];
-	library: readonly Record<string, any>[];
 	analyses: readonly Record<string, any>[];
 }
 
 /** Puts a workspace's rows together into the app's data. */
-export function assembleAppData({ types, properties, entities, values, boards, cards, drawings, library, analyses }: WorkspaceRows): AppData {
+export function assembleAppData({ types, properties, entities, values, boards, cards, drawings, analyses }: WorkspaceRows): AppData {
 	const propertiesOf = groupBy(properties, "type_id", (property) => ({
 		id: property.id,
 		name: property.name,
@@ -147,7 +145,6 @@ export function assembleAppData({ types, properties, entities, values, boards, c
 			viewFrame: view_frame ?? null,
 			drawings: drawingsOf.get(id) ?? [],
 		})),
-		library: library.map(({ id, name, tags, drawings }) => ({ id, name, tags: tags ?? [], drawings: drawings ?? [] })),
 		analyses: analyses.map(({ id, name, type_id, group_paths, column_paths }) => ({
 			id,
 			name,

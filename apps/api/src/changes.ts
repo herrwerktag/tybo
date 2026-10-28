@@ -23,7 +23,6 @@ import type { Queries, Sql } from "./schema.js";
 const TABLES: Record<Change["kind"], string> = {
 	type: "entity_types",
 	entity: "entities",
-	library: "library_drawings",
 	analysis: "analyses",
 	board: "boards",
 	card: "cards",
@@ -165,16 +164,6 @@ async function writeUnit(tx: Queries, ws: string, unit: Change): Promise<void> {
 					values (${ws}, ${entity.id}, ${propertyId}, ${index}, ${jsonbParameter(tx, value)})
 					on conflict (workspace_id, entity_id, property_id) do update set position = excluded.position, value = excluded.value`;
 			}
-			return;
-		}
-		case "library": {
-			const item = unit.after.value;
-			await tx`insert into library_drawings (workspace_id, id, position, name, tags, drawings, updated_at)
-				values (${ws}, ${item.id}, ${unit.after.position}, ${item.name}, ${jsonbParameter(tx, item.tags)},
-					${jsonbParameter(tx, item.drawings)}, now())
-				on conflict (workspace_id, id) do update set
-					position = excluded.position, name = excluded.name, tags = excluded.tags, drawings = excluded.drawings,
-					updated_at = now()`;
 			return;
 		}
 		case "analysis": {

@@ -2,7 +2,6 @@ import type { Point } from "@tybo/core";
 import { CLICK_TOLERANCE, el, svgEl, trackPointer } from "./dom.js";
 import {
 	MIN_BOX_SIZE,
-	contentBounds,
 	drawingBounds,
 	imageRect,
 	moveDrawing,
@@ -20,10 +19,8 @@ import {
 	isArea,
 	isBox,
 	isImage,
-	isSymbol,
 	type BoxDrawing,
 	type Drawing,
-	type LibraryDrawing,
 	type NewDrawing,
 	type Rect,
 } from "@tybo/core";
@@ -46,36 +43,15 @@ const DOUBLE_CLICK_TIME = 400;
 const DOUBLE_CLICK_DISTANCE = 6;
 /** Pictures larger than this (in pixels, on the longer side) are scaled down before they're stored. */
 const MAX_STORED_IMAGE_PIXELS = 1600;
-/** Room around a library drawing's content where it's shown (in its own units), so borders at the edge aren't cut
- * off. */
-const PICTURE_PADDING = 8;
-/** The size a library drawing without any content is placed at. */
-const EMPTY_SYMBOL_SIZE = 96;
-
-/** Whose drawings a layer shows and edits: a board's, or a library drawing's (in the library's editor). */
-export type DrawingOwner = { boardId: string } | { libraryId: string };
-
 /** Boxes are filled with a light tint of their color; outlines and text use a darker shade. */
 export const fillFor = (color: string) => `color-mix(in srgb, ${color} 40%, white)`;
 export const strokeFor = (color: string) => `color-mix(in srgb, ${color} 55%, black)`;
 
-/** The SVG elements showing a drawing, without any handlers. A placed library drawing shows that drawing as it is now
- * in `library`, fitted into its box. Text is left out with `withText: false` (while it's being edited). */
-function drawingShape(d: Drawing, library: readonly LibraryDrawing[], withText = true): SVGElement[] {
+/** The SVG elements showing a drawing, without any handlers. Text is left out with `withText: false` (while it's
+ * being edited). */
+function drawingShape(d: Drawing, withText = true): SVGElement[] {
 	if (isImage(d)) {
 		return [svgEl("image", { class: "drawing-image", href: d.src, x: d.x, y: d.y, width: d.width, height: d.height, preserveAspectRatio: "none" })];
-	}
-	if (isSymbol(d)) {
-		const content = library.find((item) => item.id === d.libraryId)?.drawings ?? [];
-		// Invisible, but makes the whole box grabbable (and outlines a library drawing without content).
-		const box = svgEl("rect", {
-			class: content.length > 0 ? "drawing-symbol-box" : "drawing-symbol-box empty",
-			x: d.x,
-			y: d.y,
-			width: d.width,
-			height: d.height,
-		});
-		return [box, libraryPicture(content, d)];
 	}
 	const area = isArea(d);
 	const shape = svgEl("rect", { x: d.x, y: d.y, width: d.width, height: d.height, rx: area ? 0 : 6 });
@@ -100,42 +76,6 @@ function textNode(box: BoxDrawing): SVGForeignObjectElement {
 	return svgEl("foreignObject", { x: box.x, y: box.y, width: box.width, height: box.height }, label);
 }
 
-/** The area a library drawing's content takes up where it's shown: its bounds with some room around them. */
-function pictureArea(drawings: readonly Drawing[]): Rect | null {
-	const bounds = contentBounds(drawings);
-	if (!bounds) return null;
-	const pad = PICTURE_PADDING;
-	return { x: bounds.x - pad, y: bounds.y - pad, width: bounds.width + 2 * pad, height: bounds.height + 2 * pad };
-}
-
-/** The size a library drawing is placed at: the size of its content (or a square while it has none). */
-function symbolSize(item: LibraryDrawing): { width: number; height: number } {
-	const area = pictureArea(item.drawings);
-	return area ? { width: area.width, height: area.height } : { width: EMPTY_SYMBOL_SIZE, height: EMPTY_SYMBOL_SIZE };
-}
-
-/**
- * A library drawing's content fitted into `rect`, keeping its aspect ratio (centered): in a placed library drawing on a
- * board, or as a thumbnail in the library lists (where the CSS sizes it).
- */
-export function libraryPicture(drawings: readonly Drawing[], rect: Rect): SVGSVGElement {
-	const area = pictureArea(drawings) ?? { x: 0, y: 0, width: 1, height: 1 };
-	return svgEl(
-		"svg",
-		{
-			class: "library-picture",
-			x: rect.x,
-			y: rect.y,
-			width: rect.width,
-			height: rect.height,
-			viewBox: `${area.x} ${area.y} ${area.width} ${area.height}`,
-			preserveAspectRatio: "xMidYMid meet",
-			"aria-hidden": "true",
-		},
-		...drawings.flatMap((d) => drawingShape(d, [])),
-	);
-}
-
 export interface DrawingLayer {
 	/** The SVG with all drawings; goes into the canvas layer below connectors and cards. */
 	readonly element: SVGSVGElement;
@@ -149,8 +89,6 @@ export interface DrawingLayer {
 	startCreate(e: PointerEvent): boolean;
 	/** Puts an image file on the board, centered on `center` (world coordinates), and selects it. */
 	addImage(file: File, center: Point): Promise<void>;
-	/** Places a library drawing on the board, centered on `center` (world coordinates), and selects it. */
-	addSymbol(libraryId: string, center: Point): void;
 	/** Selects one drawing (with its handles and style bar), or none. */
 	select(id: string | null): void;
 	deselect(): void;
@@ -164,13 +102,12 @@ export interface DrawingLayer {
 const TOOLS_COLLAPSED_KEY = "drawing-tools-collapsed";
 
 /**
- * Text boxes, groups, images and placed library drawings on a board, or the content of a library
- * drawing: drawing them, and (unless read-only) creating, selecting, moving, resizing, recoloring, editing text and
+ * Text boxes, groups and images on a board: drawing them, and (unless read-only) creating, selecting, moving, resizing, recoloring, editing text and
  * deleting them.
  */
 export function createDrawingLayer(options: {
 	store: Store;
-	owner: () => DrawingOwner;
+	boardId: () => string;
 	zoom: () => number;
 	/** World coordinates of a point on the screen. */
 	toWorld: (clientX: number, clientY: number) => Point;
@@ -189,8 +126,6 @@ export function createDrawingLayer(options: {
 	/** A press on an area (a named group) alone: handled by the owner, moving it together with what lies in it. */
 	onAreaPress?: (e: PointerEvent, drawingId: string) => void;
 	onToolChange: (tool: Tool) => void;
-	/** Opens a placed library drawing in the library (its style bar button, or a double-click). */
-	onEditSymbol?: (libraryId: string) => void;
 }): DrawingLayer {
 	const { store, readOnly } = options;
 	const svg = svgEl("svg", { class: "drawings", "aria-hidden": "true" });
@@ -209,21 +144,8 @@ export function createDrawingLayer(options: {
 	/** While a group is dragged: its drawings and how far they've moved so far (see previewMove). */
 	let groupMove: { ids: ReadonlySet<string>; dx: number; dy: number } | null = null;
 
-	const drawings = (): Drawing[] => {
-		const owner = options.owner();
-		return "boardId" in owner
-			? (store.data.boards.find((b) => b.id === owner.boardId)?.drawings ?? [])
-			: (store.data.library.find((item) => item.id === owner.libraryId)?.drawings ?? []);
-	};
-	/** Adds a drawing to the owner. */
-	const add = (drawing: NewDrawing): Drawing => {
-		const owner = options.owner();
-		return "boardId" in owner
-			? store.addDrawing(owner.boardId, drawing)
-			: store.addToLibraryDrawing(owner.libraryId, drawing);
-	};
-	/** The tools for the owner: areas group cards, so only boards have them. */
-	const tools = () => ("boardId" in options.owner() ? TOOLS : TOOLS.filter((t) => t.tool !== "area"));
+	const drawings = (): Drawing[] => store.data.boards.find((b) => b.id === options.boardId())?.drawings ?? [];
+	const add = (drawing: NewDrawing): Drawing => store.addDrawing(options.boardId(), drawing);
 	const find = (id: string): Drawing | undefined => (draft?.id === id ? draft : drawings().find((d) => d.id === id));
 
 	function render(): void {
@@ -250,7 +172,7 @@ export function createDrawingLayer(options: {
 		const group = svgEl(
 			"g",
 			{ class: "drawing", "data-id": d.id },
-			...drawingShape(d, store.data.library, d.id !== editingId),
+			...drawingShape(d, d.id !== editingId),
 		);
 		if (options.inFocus?.().has(d.id)) group.classList.add("in-chain");
 		if (!readOnly) attachHandlers(group, d.id);
@@ -279,7 +201,6 @@ export function createDrawingLayer(options: {
 			if (isDoubleClick) {
 				const d = find(id);
 				if (d && isBox(d)) startEditing(id);
-				if (d && isSymbol(d)) options.onEditSymbol?.(d.libraryId);
 				return;
 			}
 
@@ -462,13 +383,6 @@ export function createDrawingLayer(options: {
 		placed(add({ kind: "image", ...imageRect(center, image.width, image.height), src: image.src }));
 	}
 
-	function addSymbol(libraryId: string, center: Point): void {
-		const item = store.data.library.find((i) => i.id === libraryId);
-		if (readOnly || !item) return;
-		const { width, height } = symbolSize(item);
-		placed(add({ kind: "symbol", libraryId, ...imageRect(center, width, height) }));
-	}
-
 	/** Selects a drawing just put there (with the select tool, to move it right away). */
 	function placed(added: Drawing): void {
 		if (tool !== "select") setTool("select");
@@ -512,7 +426,7 @@ export function createDrawingLayer(options: {
 				toolsCollapsed ? "▾" : "▴",
 			),
 			// Folded, CSS shows only the current tool (the shortcut keys still switch tools).
-			...tools().map(({ tool: t, icon, key }) => {
+			...TOOLS.map(({ tool: t, icon, key }) => {
 				const button = el(
 					"button",
 					{
@@ -532,8 +446,8 @@ export function createDrawingLayer(options: {
 		// The color applies to the selected drawing, or else to the next one drawn. The bar is only shown
 		// while drawing or with a drawing selected, so it isn't in the way while arranging cards.
 		const selected = selectedId ? find(selectedId) : undefined;
-		// Images and library drawings have no color of their own.
-		const colorless = selected !== undefined && (isImage(selected) || isSymbol(selected));
+		// Images have no color of their own.
+		const colorless = selected !== undefined && isImage(selected);
 		const current = selected && "color" in selected ? selected.color : color;
 		styleBar.hidden = tool === "select" && !selected;
 		styleBar.replaceChildren(
@@ -567,9 +481,6 @@ export function createDrawingLayer(options: {
 						),
 					)
 				: []),
-			...(selected && isSymbol(selected) && options.onEditSymbol
-				? [el("button", { type: "button", onclick: () => options.onEditSymbol?.(selected.libraryId) }, text.editInLibrary)]
-				: []),
 			...(selected
 				? [el("button", { type: "button", title: text.deleteDrawing, onclick: () => removeSelected() }, text.delete)]
 				: []),
@@ -588,7 +499,7 @@ export function createDrawingLayer(options: {
 			if (tool !== "select") setTool("select");
 			else if (selectedId) select(null);
 		} else {
-			const shortcut = tools().find((t) => t.key === e.key.toLowerCase());
+			const shortcut = TOOLS.find((t) => t.key === e.key.toLowerCase());
 			if (shortcut) setTool(shortcut.tool);
 		}
 	}
@@ -602,7 +513,6 @@ export function createDrawingLayer(options: {
 		render,
 		startCreate,
 		addImage,
-		addSymbol,
 		select,
 		deselect(): void {
 			if (!selectedId) return;

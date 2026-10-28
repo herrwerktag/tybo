@@ -4,7 +4,6 @@ import {
 	MAX_IMAGE_SIZE,
 	MIN_BOX_SIZE,
 	areaContents,
-	contentBounds,
 	drawingBounds,
 	imageRect,
 	moveDrawing,
@@ -12,7 +11,7 @@ import {
 	resizeBox,
 	resizeImage,
 } from "./drawings.js";
-import type { BoxDrawing, ImageDrawing, SymbolDrawing } from "@tybo/core";
+import type { BoxDrawing, ImageDrawing } from "@tybo/core";
 
 const box: BoxDrawing = { id: "b", kind: "textbox", x: 100, y: 100, width: 200, height: 100, color: "#dcdcdc", text: "", textSize: "m" };
 const image: ImageDrawing = { id: "i", kind: "image", x: 100, y: 100, width: 200, height: 100, src: "data:image/png;base64," };
@@ -69,18 +68,6 @@ test("imageRect centers a new image, scaling large ones down", () => {
 test("drawingBounds is the box of boxes and images", () => {
 	assert.deepEqual(drawingBounds(box), { x: 100, y: 100, width: 200, height: 100 });
 	assert.deepEqual(drawingBounds(image), { x: 100, y: 100, width: 200, height: 100 });
-});
-
-test("placed library drawings move like boxes and resize keeping their aspect ratio, like images", () => {
-	const symbol: SymbolDrawing = { id: "s", kind: "symbol", libraryId: "lib", x: 100, y: 100, width: 200, height: 100 };
-	assert.deepEqual(moveDrawing(symbol, 5, -10), { ...symbol, x: 105, y: 90 });
-	assert.deepEqual(resizeImage(symbol, "se", 100, 0), { ...symbol, width: 300, height: 150 });
-	assert.deepEqual(drawingBounds(symbol), { x: 100, y: 100, width: 200, height: 100 });
-});
-
-test("contentBounds spans all drawings, or is null without any", () => {
-	assert.equal(contentBounds([]), null);
-	assert.deepEqual(contentBounds([box, small]), { x: 0, y: 0, width: 300, height: 200 });
 });
 
 test("areaContents finds the cards and drawings whose middle is in the area, nested areas included", () => {

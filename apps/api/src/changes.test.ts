@@ -11,8 +11,7 @@ import { call, startApp } from "./test-server.js";
 const url = process.env.TEST_DATABASE_URL;
 
 /** A state of the app's data: one type with a text property, two entities, one board with two cards and
- * two drawings (one of them placed from the library), and one library drawing — enough of every unit to change, add
- * or delete one without touching the others. */
+ * two drawings, and one analysis — enough of every unit to change, add or delete one without touching the others. */
 function state(): AppData {
 	return {
 		types: [
@@ -40,16 +39,8 @@ function state(): AppData {
 				viewFrame: { x: 0.5, y: -24, width: 960, height: 540 },
 				drawings: [
 					{ id: "draw-box", kind: "textbox", x: 0, y: 0, width: 5.5, height: 5.25, color: "#4a4a4a", text: "", textSize: "m" },
-					{ id: "draw-star", kind: "symbol", libraryId: "lib-star", x: 40, y: 40.5, width: 96, height: 48 },
+					{ id: "draw-star", kind: "textbox", x: 40, y: 40.5, width: 96, height: 48, color: "#f6e8a6", text: "★", textSize: "l" },
 				],
-			},
-		],
-		library: [
-			{
-				id: "lib-star",
-				name: "Stern",
-				tags: ["Form", "Himmel"],
-				drawings: [{ id: "lib-box", kind: "textbox", x: 0, y: 0, width: 20, height: 10.5, color: "#f6e8a6", text: "★", textSize: "l" }],
 			},
 		],
 		analyses: [
@@ -59,7 +50,7 @@ function state(): AppData {
 }
 
 /** A workspace before its first save: nothing in it, not even a board. */
-const empty = (): AppData => ({ types: [], entities: [], boards: [], library: [], analyses: [] });
+const empty = (): AppData => ({ types: [], entities: [], boards: [], analyses: [] });
 
 /** The whole situation of a test: the storage against the database, the API over it, a workspace of the
  * test's own (no other test sees its rows), and a connection of the tests' own to look into the tables
@@ -278,40 +269,6 @@ test("New and deleted: units appear and disappear in the tables and in every ans
 			(select count(*)::int from cards where workspace_id = ${app.ws}) as cards,
 			(select count(*)::int from entity_values where workspace_id = ${app.ws}) as values`;
 		assert.deepEqual(afterCounts, { entities: 2, cards: 1, values: 1 });
-	} finally {
-		await app.close();
-	}
-});
-
-test("The library: a drawing edited there is its one row; deleted with its placed drawings, both rows go", { skip: !url }, async () => {
-	assert.ok(url);
-	const base = state();
-	const app = await theApp();
-	try {
-		await firstSave(app, base);
-
-		const edited = structuredClone(base);
-		const star = edited.library[0]!;
-		star.tags = ["Form"];
-		star.drawings.push({ id: "lib-area", kind: "area", x: 0, y: 0, width: 1.5, height: 2, color: "#4a4a4a", text: "", textSize: "s" });
-		const editing = changesBetween(base, edited);
-		assert.deepEqual(editing.map((c) => `${c.kind}:${c.id}`), ["library:lib-star"], "the boards it's placed on aren't touched");
-		const savedEdit = await saveChanges(app, editing);
-		assert.deepEqual(savedEdit.collided, []);
-		await assertServes(app, edited, savedEdit.version);
-
-		const gone = structuredClone(edited);
-		gone.library = [];
-		gone.boards[0]!.drawings = gone.boards[0]!.drawings.filter((d) => d.id !== "draw-star");
-		const deleting = changesBetween(edited, gone);
-		assert.deepEqual(deleting.map((c) => `${c.kind}:${c.id}`), ["library:lib-star", "drawing:draw-star"]);
-		const savedDelete = await saveChanges(app, deleting);
-		assert.deepEqual(savedDelete.collided, []);
-		await assertServes(app, gone, savedDelete.version);
-		const [counts] = await app.sql`select
-			(select count(*)::int from library_drawings where workspace_id = ${app.ws}) as library,
-			(select count(*)::int from drawings where workspace_id = ${app.ws}) as drawings`;
-		assert.deepEqual(counts, { library: 0, drawings: 1 });
 	} finally {
 		await app.close();
 	}

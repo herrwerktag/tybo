@@ -28,7 +28,6 @@ import {
 import { canvasView } from "./canvas.js";
 import { entityForm } from "./entity-form.js";
 import { analysisView } from "./analysis.js";
-import { libraryView, selectLibraryDrawing } from "./library.js";
 import { downloadFile, dragHandle, el, reorderable, safeFileName, tagFilter, typeDot } from "./dom.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
 import { THEMES, setTheme, theme, type Theme } from "./theme.js";
@@ -75,9 +74,9 @@ const WORKSPACE_MIME = "application/x-workspace-index";
 /** The tag the Entities page is filtered by, if any. */
 const ENTITIES_TAG_KEY = "entities-tag";
 
-/** The page shown, from the URL hash: entity types, entities, board editing (boards), the library of drawings,
- * analyses, or read-only boards (view, maybe followed by the board shown: see parseViewHash). */
-type Route = "types" | "entities" | "boards" | "library" | "analysis" | "view";
+/** The page shown, from the URL hash: entity types, entities, board editing (boards), analyses,
+ * or read-only boards (view, maybe followed by the board shown: see parseViewHash). */
+type Route = "types" | "entities" | "boards" | "analysis" | "view";
 
 /** Entities is the default page, so old links (e.g. "#data") still land there; "#canvas" and "#viewer" are the
  * board pages' former names. */
@@ -85,7 +84,7 @@ function routeFromHash(hash: string): Route {
 	const route = hash.slice(1).split("/")[0];
 	if (route === "canvas") return "boards";
 	if (route === "viewer") return "view";
-	return route === "types" || route === "boards" || route === "library" || route === "analysis" || route === "view" ? route : "entities";
+	return route === "types" || route === "boards" || route === "analysis" || route === "view" ? route : "entities";
 }
 
 /** How often to look, in the background, for a stand of the open workspace that someone else saved in between:
@@ -326,20 +325,14 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 			el("header", {}, navBar(route), ...(entitiesTab ? [subNav(route)] : []), banner),
 			entitiesTab
 				? el("div", { className: "data-view" }, route === "types" ? typesSection() : entitiesSection())
-				: route === "library"
-					? libraryView(store)
-					: route === "analysis"
-						? analysisView(store)
-						: canvasView(store, {
-							readOnly: route === "view",
-							addressed: true,
-							...(viewScript ? { onExportView: (boardId: string) => exportView(viewScript, boardId) } : {}),
-							onExportDrawio: exportDrawio,
-							onEditLibraryDrawing: (libraryId) => {
-								selectLibraryDrawing(libraryId);
-								location.hash = "#library";
-							},
-						}),
+				: route === "analysis"
+					? analysisView(store)
+					: canvasView(store, {
+						readOnly: route === "view",
+						addressed: true,
+						...(viewScript ? { onExportView: (boardId: string) => exportView(viewScript, boardId) } : {}),
+						onExportDrawio: exportDrawio,
+					}),
 		);
 		if (state.focusHandle !== null) {
 			root.querySelector<HTMLElement>(`.drag-handle[data-focus-key="${state.focusHandle}"]`)?.focus();
@@ -361,7 +354,6 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 			{ className: "app-nav" },
 			tab("entities", text.tabEntities, route === "entities" || route === "types"),
 			tab("boards", text.tabBoards),
-			tab("library", text.tabLibrary),
 			tab("analysis", text.tabAnalysis),
 			tab("view", text.tabView),
 			el("div", { className: "nav-menus" }, historyButtons, workspaceMenu(), settingsMenu()),
