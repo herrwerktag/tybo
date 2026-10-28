@@ -2,19 +2,13 @@ import type { Point } from "@tybo/core";
 import { CLICK_TOLERANCE, el, svgEl, trackPointer } from "./dom.js";
 import {
 	MIN_BOX_SIZE,
-	arrowGeometry,
 	contentBounds,
 	drawingBounds,
-	eraseStroke,
 	imageRect,
 	moveDrawing,
-	moveEndpoint,
 	normalizeRect,
 	resizeBox,
 	resizeImage,
-	simplifyStroke,
-	streamline,
-	strokePath,
 	type Corner,
 	type Tool,
 } from "./drawings.js";
@@ -22,9 +16,7 @@ import { text } from "./i18n.js";
 import { readPreference, writePreference } from "./preferences.js";
 import {
 	DRAWING_COLORS,
-	PEN_STYLES,
 	TEXT_SIZES,
-	hasRect,
 	isArea,
 	isBox,
 	isImage,
@@ -33,46 +25,29 @@ import {
 	type Drawing,
 	type LibraryDrawing,
 	type NewDrawing,
-	type PathDrawing,
-	type PenStyle,
 	type Rect,
 } from "@tybo/core";
 import type { Store } from "@tybo/core";
 
 const TOOLS: readonly { tool: Tool; icon: string; key: string }[] = [
 	{ tool: "select", icon: "↖", key: "v" },
-	{ tool: "rect", icon: "▭", key: "r" },
-	{ tool: "ellipse", icon: "◯", key: "o" },
+	{ tool: "textbox", icon: "T", key: "t" },
 	{ tool: "area", icon: "⬚", key: "g" },
-	{ tool: "line", icon: "╱", key: "l" },
-	{ tool: "arrow", icon: "→", key: "a" },
-	{ tool: "text", icon: "T", key: "t" },
-	{ tool: "pen", icon: "✎", key: "p" },
-	{ tool: "eraser", icon: "⌫", key: "e" },
 ];
 
-/** How far around the pointer the eraser reaches, in screen pixels. */
-const ERASER_RADIUS = 10;
-/** Half a highlighter stroke's width (see .pen-highlighter in the CSS): the eraser reaches its edges, too. */
-const HIGHLIGHTER_HALF_WIDTH = 8;
-
-/** Size of a shape or text box created with a click instead of a drag. */
+/** Size of a text box or group created with a click instead of a drag. */
 const DEFAULT_SIZE = {
-	rect: { width: 160, height: 100 },
-	ellipse: { width: 160, height: 100 },
+	textbox: { width: 160, height: 100 },
 	area: { width: 480, height: 312 },
-	text: { width: 200, height: 40 },
 };
-/** Length of a line or arrow created with a click instead of a drag. */
-const DEFAULT_LINE_LENGTH = 120;
 const CORNERS: readonly Corner[] = ["nw", "ne", "sw", "se"];
 /** Two presses on the same drawing within this time (ms) and distance (px) are a double-click. */
 const DOUBLE_CLICK_TIME = 400;
 const DOUBLE_CLICK_DISTANCE = 6;
 /** Pictures larger than this (in pixels, on the longer side) are scaled down before they're stored. */
 const MAX_STORED_IMAGE_PIXELS = 1600;
-/** Room around a library drawing's content where it's shown (in its own units), so strokes and arrowheads at the
- * edge aren't cut off. */
+/** Room around a library drawing's content where it's shown (in its own units), so borders at the edge aren't cut
+ * off. */
 const PICTURE_PADDING = 8;
 /** The size a library drawing without any content is placed at. */
 const EMPTY_SYMBOL_SIZE = 96;
@@ -80,7 +55,7 @@ const EMPTY_SYMBOL_SIZE = 96;
 /** Whose drawings a layer shows and edits: a board's, or a library drawing's (in the library's editor). */
 export type DrawingOwner = { boardId: string } | { libraryId: string };
 
-/** Shapes are filled with a light tint of their color; outlines, lines and text use a darker shade. */
+/** Boxes are filled with a light tint of their color; outlines and text use a darker shade. */
 export const fillFor = (color: string) => `color-mix(in srgb, ${color} 40%, white)`;
 export const strokeFor = (color: string) => `color-mix(in srgb, ${color} 55%, black)`;
 
@@ -102,46 +77,17 @@ function drawingShape(d: Drawing, library: readonly LibraryDrawing[], withText =
 		});
 		return [box, libraryPicture(content, d)];
 	}
-	const stroke = strokeFor(d.color);
-	if (isBox(d)) {
-		const shape =
-			d.kind === "ellipse"
-				? svgEl("ellipse", { cx: d.x + d.width / 2, cy: d.y + d.height / 2, rx: d.width / 2, ry: d.height / 2 })
-				: svgEl("rect", { x: d.x, y: d.y, width: d.width, height: d.height, rx: d.kind === "rect" ? 6 : 0 });
-		if (d.kind === "text") {
-			shape.classList.add("drawing-textbox"); // invisible, but makes the whole box grabbable
-		} else if (d.kind === "area") {
-			shape.classList.add("drawing-area");
-			shape.style.fill = fillFor(d.color);
-			shape.style.stroke = stroke;
-		} else {
-			shape.classList.add("drawing-shape");
-			shape.style.fill = fillFor(d.color);
-			shape.style.stroke = stroke;
-		}
-		return d.text && withText ? [shape, textNode(d)] : [shape];
-	}
-	const [from, to] = d.points as [Point, Point];
-	const arrow = d.kind === "arrow" ? arrowGeometry(from, to) : null;
-	const path = arrow ? strokePath([from, arrow.lineEnd], false) : strokePath(d.points, d.kind === "pen");
-	const penStyle = d.kind === "pen" ? (d.penStyle ?? "pen") : null;
-	const line = svgEl("path", { class: penStyle ? `drawing-stroke pen-${penStyle}` : "drawing-stroke", d: path });
-	// Pen strokes keep the light color (lines and arrows use the darker shade).
-	line.style.stroke = penStyle ? d.color : stroke;
-	// A wide invisible copy, so thin lines are easy to click.
-	const shapes: SVGElement[] = [svgEl("path", { class: "drawing-hit", d: strokePath(d.points, d.kind === "pen") }), line];
-	if (arrow) {
-		const head = svgEl("polygon", { class: "drawing-arrowhead", points: arrow.head });
-		head.style.fill = stroke;
-		head.style.stroke = stroke;
-		shapes.push(head);
-	}
-	return shapes;
+	const area = isArea(d);
+	const shape = svgEl("rect", { x: d.x, y: d.y, width: d.width, height: d.height, rx: area ? 0 : 6 });
+	shape.classList.add(area ? "drawing-area" : "drawing-shape");
+	shape.style.fill = fillFor(d.color);
+	shape.style.stroke = strokeFor(d.color);
+	return d.text && withText ? [shape, textNode(d)] : [shape];
 }
 
-/** Text in shapes is centered; free text starts at the top left, and so does an area's name (as its title). */
+/** Text in a text box is centered; an area's name starts at the top left (as its title). */
 function textPlacement(box: BoxDrawing): string {
-	return box.kind === "text" ? "free" : box.kind === "area" ? "free area-name" : "centered";
+	return box.kind === "area" ? "area-name" : "centered";
 }
 
 function textNode(box: BoxDrawing): SVGForeignObjectElement {
@@ -218,7 +164,7 @@ export interface DrawingLayer {
 const TOOLS_COLLAPSED_KEY = "drawing-tools-collapsed";
 
 /**
- * Shapes, lines, text, pen strokes, images and placed library drawings on a board, or the content of a library
+ * Text boxes, groups, images and placed library drawings on a board, or the content of a library
  * drawing: drawing them, and (unless read-only) creating, selecting, moving, resizing, recoloring, editing text and
  * deleting them.
  */
@@ -254,17 +200,12 @@ export function createDrawingLayer(options: {
 	let tool: Tool = "select";
 	/** The color for new drawings: the last one picked. */
 	let color = DRAWING_COLORS.find((c) => c.name === "Gray")?.value ?? DRAWING_COLORS[0]!.value;
-	/** The style for new pen strokes: the last one picked. */
-	let penStyle: PenStyle = "pen";
 	let selectedId: string | null = null;
 	/** Whether the tool column is folded to the current tool, out of the way of the board; remembered. */
 	let toolsCollapsed = readPreference(TOOLS_COLLAPSED_KEY) === "true";
 	let editingId: string | null = null;
 	/** While dragging: the drawing as it looks right now, not saved yet (a new one has the id "draft"). */
 	let draft: Drawing | null = null;
-	/** While erasing: what's left so far of each pen stroke the eraser touched (not saved yet), and where it is. */
-	let erased: Map<string, Point[][]> | null = null;
-	let eraser: Point | null = null;
 	/** While a group is dragged: its drawings and how far they've moved so far (see previewMove). */
 	let groupMove: { ids: ReadonlySet<string>; dx: number; dy: number } | null = null;
 
@@ -294,15 +235,13 @@ export function createDrawingLayer(options: {
 		// Areas lie below the other drawings, so they never cover what's in them.
 		const all = drawings();
 		const shown = [...all.filter(isArea), ...all.filter((d) => !isArea(d))]
-			.map((d) => (draft?.id === d.id ? draft : groupMove?.ids.has(d.id) ? moveDrawing(d, groupMove.dx, groupMove.dy) : d))
-			.flatMap((d) => erased?.get(d.id)?.map((points) => ({ ...d, points })) ?? [d]);
+			.map((d) => (draft?.id === d.id ? draft : groupMove?.ids.has(d.id) ? moveDrawing(d, groupMove.dx, groupMove.dy) : d));
 		if (draft && !shown.some((d) => d.id === draft!.id)) shown.push(draft);
 		svg.replaceChildren(
 			...shown.map(drawingNode),
 			...(readOnly ? [] : shown.filter((d) => options.group?.().has(d.id)).map(outlineOf)),
 			...selectionOverlay(),
 			...(editingId ? [editor(editingId)] : []),
-			...(eraser ? [svgEl("circle", { class: "eraser-outline", cx: eraser.x, cy: eraser.y, r: ERASER_RADIUS / options.zoom() })] : []),
 		);
 		renderToolbars();
 	}
@@ -385,7 +324,7 @@ export function createDrawingLayer(options: {
 		return node;
 	}
 
-	/** Outline around the selected drawing, with handles to resize boxes or move line ends. */
+	/** Outline around the selected drawing, with handles to resize it. */
 	function selectionOverlay(): SVGElement[] {
 		const found = selectedId ? find(selectedId) : undefined;
 		if (readOnly || !found) return [];
@@ -420,34 +359,27 @@ export function createDrawingLayer(options: {
 			return node;
 		};
 
-		if (hasRect(selected)) {
-			const corner = (c: Corner): Point => ({
-				x: c.endsWith("w") ? selected.x : selected.x + selected.width,
-				y: c.startsWith("n") ? selected.y : selected.y + selected.height,
-			});
-			const resize = (c: Corner, dx: number, dy: number): Drawing =>
-				isBox(selected) ? resizeBox(selected, c, dx, dy) : resizeImage(selected, c, dx, dy);
-			return [
-				outline,
-				...CORNERS.map((c) =>
-					handle(corner(c), c === "nw" || c === "se" ? "nwse-resize" : "nesw-resize", (dx, dy) => resize(c, dx, dy)),
-				),
-			];
-		}
-		if (selected.kind === "pen") return [outline]; // strokes can be moved, not reshaped
+		const corner = (c: Corner): Point => ({
+			x: c.endsWith("w") ? selected.x : selected.x + selected.width,
+			y: c.startsWith("n") ? selected.y : selected.y + selected.height,
+		});
+		const resize = (c: Corner, dx: number, dy: number): Drawing =>
+			isBox(selected) ? resizeBox(selected, c, dx, dy) : resizeImage(selected, c, dx, dy);
 		return [
 			outline,
-			...([0, 1] as const).map((i) => handle(selected.points[i]!, "move", (dx, dy) => moveEndpoint(selected, i, dx, dy))),
+			...CORNERS.map((c) =>
+				handle(corner(c), c === "nw" || c === "se" ? "nwse-resize" : "nesw-resize", (dx, dy) => resize(c, dx, dy)),
+			),
 		];
 	}
 
-	/** A textarea over the box; leaving it saves the text (an empty free text box is removed). */
+	/** A textarea over the box; leaving it saves the text. */
 	function editor(id: string): SVGForeignObjectElement {
 		const box = find(id) as BoxDrawing;
 		const input = el("textarea", {
 			className: `drawing-editor size-${box.textSize} ${textPlacement(box)}`,
 			value: box.text,
-			ariaLabel: text.tools.text,
+			ariaLabel: text.tools.textbox,
 		});
 		input.style.color = strokeFor(box.color);
 		input.addEventListener("keydown", (e) => {
@@ -458,14 +390,7 @@ export function createDrawingLayer(options: {
 			if (editingId !== id) return;
 			editingId = null;
 			const latest = find(id);
-			if (latest && isBox(latest)) {
-				if (latest.kind === "text" && input.value.trim() === "") {
-					store.removeDrawing(id);
-					if (selectedId === id) selectedId = null;
-				} else {
-					store.replaceDrawing({ ...latest, text: input.value });
-				}
-			}
+			if (latest && isBox(latest)) store.replaceDrawing({ ...latest, text: input.value });
 			draw();
 		});
 		// Focus once it's in the page (right after this render).
@@ -503,131 +428,31 @@ export function createDrawingLayer(options: {
 		select(null);
 		const kind = tool;
 		const start = options.toWorld(e.clientX, e.clientY);
-		if (kind === "eraser") {
-			erase(e, start);
-			return true;
-		}
-
-		if (kind === "text") {
-			const added = add({
-				kind: "text",
-				x: start.x,
-				y: start.y - DEFAULT_SIZE.text.height / 2,
-				...DEFAULT_SIZE.text,
-				color,
-				text: "",
-				textSize: "m",
-			});
-			setTool("select");
-			startEditing(added.id);
-			return true;
-		}
-
 		const zoom = options.zoom();
-		const pen: Point[] = [start];
 		const at = (dx: number, dy: number): Point => ({ x: start.x + dx / zoom, y: start.y + dy / zoom });
-		const shape = (end: Point): NewDrawing => {
-			if (kind === "rect" || kind === "ellipse" || kind === "area") {
-				return { kind, ...normalizeRect(start, end), color, text: "", textSize: "m" };
-			}
-			return kind === "pen" ? { kind, points: [...pen], color, penStyle } : { kind, points: [start, end], color };
-		};
+		const box = (rect: Rect): NewDrawing => ({ kind, ...rect, color, text: "", textSize: "m" });
 		trackPointer(
 			e,
-			(dx, dy, event) => {
-				const end = at(dx, dy);
-				if (kind === "pen") {
-					// All the pointer positions since the last event (browsers send fewer events than they track), each
-					// streamlined, so the stroke follows the hand closely but without its jitter.
-					const samples = event.getCoalescedEvents?.() ?? [];
-					for (const sample of samples.length > 0 ? samples : [event]) {
-						pen.push(streamline(pen[pen.length - 1]!, options.toWorld(sample.clientX, sample.clientY)));
-					}
-				}
-				draft = { ...shape(end), id: "draft" } as Drawing;
+			(dx, dy) => {
+				draft = { ...box(normalizeRect(start, at(dx, dy))), id: "draft" } as Drawing;
 				draw();
 			},
 			(dx, dy) => {
 				draft = null;
 				const dragged = Math.hypot(dx, dy) >= CLICK_TOLERANCE;
-				let created: NewDrawing | null;
-				if (kind === "pen") {
-					// Simplified by screen distance, so strokes drawn zoomed in keep their detail.
-					created = dragged ? { kind, points: simplifyStroke(pen, 2 / zoom), color, penStyle } : null;
-				} else if (kind === "rect" || kind === "ellipse" || kind === "area") {
-					const box = dragged ? normalizeRect(start, at(dx, dy)) : { ...start, ...DEFAULT_SIZE[kind] };
-					created = {
-						kind,
-						...box,
-						width: Math.max(MIN_BOX_SIZE, box.width),
-						height: Math.max(MIN_BOX_SIZE, box.height),
-						color,
-						text: "",
-						textSize: "m",
-					};
-				} else {
-					created = { kind, points: [start, dragged ? at(dx, dy) : { x: start.x + DEFAULT_LINE_LENGTH, y: start.y }], color };
-				}
-				const added = created && add(created);
-				if (kind === "pen") {
-					draw(); // the pen stays active for the next stroke
-				} else if (added && kind === "area") {
-					setTool("select");
+				const rect = dragged ? normalizeRect(start, at(dx, dy)) : { ...start, ...DEFAULT_SIZE[kind] };
+				const added = add(box({ ...rect, width: Math.max(MIN_BOX_SIZE, rect.width), height: Math.max(MIN_BOX_SIZE, rect.height) }));
+				setTool("select");
+				if (kind === "area") {
 					startEditing(added.id); // name it right away
 				} else {
-					setTool("select");
-					if (added) select(added.id);
+					select(added.id);
 					draw();
 				}
 			},
 			options.captureTarget(),
 		);
 		return true;
-	}
-
-	/** Rubs out the parts of pen strokes the pointer passes over; saved as one change on release. */
-	function erase(e: PointerEvent, start: Point): void {
-		const radius = ERASER_RADIUS / options.zoom();
-		const strokes = drawings().filter((d) => d.kind === "pen") as PathDrawing[];
-		const left = new Map<string, Point[][]>();
-		let from = start;
-		const rub = (to: Point) => {
-			for (const stroke of strokes) {
-				const reach = radius + (stroke.penStyle === "highlighter" || stroke.penStyle === "roundHighlighter" ? HIGHLIGHTER_HALF_WIDTH : 0);
-				const pieces = left.get(stroke.id) ?? [stroke.points];
-				let touched = false;
-				const next = pieces.flatMap((piece) => {
-					const rest = eraseStroke(piece, from, to, reach);
-					if (rest) touched = true;
-					return rest ?? [piece];
-				});
-				if (touched) left.set(stroke.id, next);
-			}
-			from = to;
-			erased = left;
-			eraser = to;
-			draw();
-		};
-		rub(start);
-		trackPointer(
-			e,
-			(_dx, _dy, event) => rub(options.toWorld(event.clientX, event.clientY)),
-			() => {
-				erased = null;
-				eraser = null;
-				const byId = new Map(strokes.map((s) => [s.id, s]));
-				store.splitDrawings(
-					new Map(
-						[...left].map(([id, pieces]) => {
-							const { color, penStyle } = byId.get(id)!;
-							return [id, pieces.map((points): NewDrawing => ({ kind: "pen", points, color, penStyle: penStyle ?? "pen" }))];
-						}),
-					),
-				);
-				draw(); // the eraser stays active
-			},
-			options.captureTarget(),
-		);
 	}
 
 	async function addImage(file: File, center: Point): Promise<void> {
@@ -710,7 +535,7 @@ export function createDrawingLayer(options: {
 		// Images and library drawings have no color of their own.
 		const colorless = selected !== undefined && (isImage(selected) || isSymbol(selected));
 		const current = selected && "color" in selected ? selected.color : color;
-		styleBar.hidden = (tool === "select" || tool === "eraser") && !selected;
+		styleBar.hidden = tool === "select" && !selected;
 		styleBar.replaceChildren(
 			...(colorless ? [] : DRAWING_COLORS).map(({ name, value }) => {
 				const swatch = el("button", {
@@ -741,26 +566,6 @@ export function createDrawingLayer(options: {
 							size.toUpperCase(),
 						),
 					)
-				: []),
-			// The pen's style applies to the selected stroke, or else to the next one drawn.
-			...((selected ? selected.kind === "pen" : tool === "pen")
-				? PEN_STYLES.map((style) => {
-						const current = selected?.kind === "pen" ? (selected.penStyle ?? "pen") : penStyle;
-						return el(
-							"button",
-							{
-								type: "button",
-								className: "tool-button",
-								title: `${text.penStyle}: ${text.penStyles[style]}`,
-								ariaPressed: String(style === current),
-								onclick: () => {
-									penStyle = style;
-									update((d) => (d.kind === "pen" ? { ...d, penStyle: style } : d));
-								},
-							},
-							text.penStyles[style],
-						);
-					})
 				: []),
 			...(selected && isSymbol(selected) && options.onEditSymbol
 				? [el("button", { type: "button", onclick: () => options.onEditSymbol?.(selected.libraryId) }, text.editInLibrary)]

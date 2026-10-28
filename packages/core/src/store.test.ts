@@ -590,17 +590,17 @@ test("moveItems moves several cards and drawings together, in one undo step", as
 	const boardId = firstBoard(store).id;
 	const a = store.addCard(boardId, store.addEntity(note.id, "A", "", {}).id, 0, 0);
 	const b = store.addCard(boardId, store.addEntity(note.id, "B", "", {}).id, 48, 0);
-	const box = store.addDrawing(boardId, { kind: "rect", x: 10, y: 10, width: 50, height: 50, color: "#4a4a4a", text: "", textSize: "m" });
-	const line = store.addDrawing(boardId, { kind: "line", points: [{ x: 0, y: 0 }, { x: 5, y: 5 }], color: "#4a4a4a" });
+	const box = store.addDrawing(boardId, { kind: "textbox", x: 10, y: 10, width: 50, height: 50, color: "#4a4a4a", text: "", textSize: "m" });
+	const other = store.addDrawing(boardId, { kind: "textbox", x: 0, y: 0, width: 5, height: 5, color: "#4a4a4a", text: "", textSize: "m" });
 
-	store.moveItems(boardId, [a.id], [box.id, line.id], 24, -48);
+	store.moveItems(boardId, [a.id], [box.id, other.id], 24, -48);
 	assert.deepEqual(firstBoard(store).cards.map((c) => [c.id, c.x, c.y]), [[a.id, 24, -48], [b.id, 48, 0]], "order kept, B stays");
 	assert.deepEqual(firstBoard(store).drawings, [
 		{ ...box, x: 34, y: -38 },
-		{ ...line, points: [{ x: 24, y: -48 }, { x: 29, y: -43 }] },
+		{ ...other, x: 24, y: -48 },
 	]);
 	store.undo();
-	assert.deepEqual([firstBoard(store).cards[0]!.x, firstBoard(store).drawings], [0, [box, line]]);
+	assert.deepEqual([firstBoard(store).cards[0]!.x, firstBoard(store).drawings], [0, [box, other]]);
 });
 
 test("fitCards saves measured sizes outside the undo history; removeCard removes one card and keeps the entity", async () => {
@@ -893,7 +893,7 @@ test("drawings: added, replaced and removed on their own board", async () => {
 	const one = firstBoard(store);
 	const two = store.addBoard("Two");
 	const rect = store.addDrawing(one.id, {
-		kind: "rect",
+		kind: "textbox",
 		x: 0,
 		y: 0,
 		width: 100,
@@ -902,50 +902,17 @@ test("drawings: added, replaced and removed on their own board", async () => {
 		text: "Phase 1",
 		textSize: "m",
 	});
-	const arrow = store.addDrawing(two.id, { kind: "arrow", points: [{ x: 0, y: 0 }, { x: 10, y: 10 }], color: "#4a4a4a" });
+	const area = store.addDrawing(two.id, { kind: "area", x: 0, y: 0, width: 10, height: 10, color: "#4a4a4a", text: "", textSize: "m" });
 
 	store.replaceDrawing({ ...rect, text: "Phase A" } as typeof rect);
 	assert.deepEqual(
 		(await open(storage)).data.boards.map((b) => b.drawings),
-		[[{ ...rect, text: "Phase A" }], [arrow]],
+		[[{ ...rect, text: "Phase A" }], [area]],
 	);
 
-	store.removeDrawing(arrow.id);
+	store.removeDrawing(area.id);
 	assert.deepEqual(store.data.boards[1]?.drawings, []);
 	assert.equal(store.data.boards[0]?.drawings.length, 1);
-});
-
-test("splitting drawings replaces them where they were, as one change", async () => {
-	const storage = memoryStorage();
-	const store = await open(storage);
-	const board = store.addBoard("Sketch");
-	const points = [{ x: 0, y: 0 }, { x: 5, y: 0 }];
-	const first = store.addDrawing(board.id, { kind: "pen", points, color: "#4a4a4a", penStyle: "pen" });
-	const gone = store.addDrawing(board.id, { kind: "pen", points, color: "#4a4a4a", penStyle: "pen" });
-	const last = store.addDrawing(board.id, { kind: "line", points, color: "#4a4a4a" });
-	const piece = { kind: "pen", points, color: "#f9c9c9", penStyle: "fineliner" } as const;
-
-	store.splitDrawings(new Map([[first.id, [piece, piece]], [gone.id, []]]));
-	const saved = (await open(storage)).data.boards.find((b) => b.id === board.id)!;
-	assert.deepEqual(saved.drawings.map(({ id: _, ...d }) => d), [piece, piece, { kind: "line", points, color: "#4a4a4a" }]);
-	assert.equal(saved.drawings[2]?.id, last.id);
-
-	store.undo();
-	assert.deepEqual(store.data.boards.find((b) => b.id === board.id)!.drawings.map((d) => d.id), [first.id, gone.id, last.id]);
-});
-
-test("pen strokes keep their style; strokes saved without one (or an unknown one) are drawn with the regular pen", async () => {
-	const storage = memoryStorage();
-	const store = await open(storage);
-	const board = firstBoard(store);
-	const points = [{ x: 0, y: 0 }, { x: 5, y: 2 }, { x: 10, y: 0 }];
-	const marker = store.addDrawing(board.id, { kind: "pen", points, color: "#f6e8a6", penStyle: "highlighter" });
-	const round = store.addDrawing(board.id, { kind: "pen", points, color: "#f6e8a6", penStyle: "roundHighlighter" });
-	store.addDrawing(board.id, { kind: "pen", points, color: "#4a4a4a" });
-	store.addDrawing(board.id, { kind: "pen", points, color: "#4a4a4a", penStyle: "crayon" as never });
-	const reopened = firstBoard(await open(storage)).drawings;
-	assert.deepEqual(reopened.slice(0, 2), [marker, round]);
-	assert.deepEqual(reopened.slice(2).map((d) => "penStyle" in d && d.penStyle), ["pen", "pen"]);
 });
 
 test("library: drawings made, named, tagged and edited there are saved; placed ones only point to them", async () => {
@@ -953,13 +920,13 @@ test("library: drawings made, named, tagged and edited there are saved; placed o
 	const store = await open(storage);
 	const star = store.addLibraryDrawing(" Star ");
 	assert.equal(star.name, "Star");
-	const line = store.addToLibraryDrawing(star.id, { kind: "line", points: [{ x: 0, y: 0 }, { x: 10, y: 0 }], color: "#4a4a4a" });
+	const box = store.addToLibraryDrawing(star.id, { kind: "textbox", x: 0, y: 0, width: 10, height: 10, color: "#4a4a4a", text: "", textSize: "m" });
 	store.updateLibraryDrawing(star.id, { name: "Sun", tags: [" sky", "Sky", "", "shape "] });
-	store.replaceDrawing({ ...line, color: "#f9c9c9" } as typeof line);
+	store.replaceDrawing({ ...box, color: "#f9c9c9" } as typeof box);
 	const placed = store.addDrawing(firstBoard(store).id, { kind: "symbol", libraryId: star.id, x: 5, y: 5, width: 40, height: 40 });
 
 	const reopened = await open(storage);
-	assert.deepEqual(reopened.data.library, [{ id: star.id, name: "Sun", tags: ["sky", "shape"], drawings: [{ ...line, color: "#f9c9c9" }] }]);
+	assert.deepEqual(reopened.data.library, [{ id: star.id, name: "Sun", tags: ["sky", "shape"], drawings: [{ ...box, color: "#f9c9c9" }] }]);
 	assert.deepEqual(firstBoard(reopened).drawings, [placed]);
 
 	// Library drawings don't contain each other, and an empty name keeps the old one.
@@ -968,7 +935,7 @@ test("library: drawings made, named, tagged and edited there are saved; placed o
 	assert.equal(store.data.library[0]!.drawings.length, 1);
 	assert.equal(store.data.library[0]!.name, "Sun");
 
-	store.removeDrawing(line.id);
+	store.removeDrawing(box.id);
 	assert.deepEqual(store.data.library[0]!.drawings, []);
 	assert.equal(firstBoard(store).drawings.length, 1, "removing from the library drawing leaves the boards alone");
 });
@@ -1018,7 +985,9 @@ test("library: data from version 3 gets an empty library; malformed library draw
 				name: "",
 				tags: ["a", 3, "a", "b"],
 				drawings: [
-					{ id: "ok", kind: "line", points: [{ x: 0, y: 0 }, { x: 1, y: 1 }], color: "#4a4a4a" },
+					{ id: "ok", kind: "textbox", x: 0, y: 0, width: 1, height: 1, color: "#4a4a4a", text: "Hi", textSize: "l" },
+					{ id: "old-pen", kind: "pen", points: [{ x: 0, y: 0 }, { x: 1, y: 1 }], color: "#4a4a4a" },
+					{ id: "old-rect", kind: "rect", x: 0, y: 0, width: 1, height: 1, color: "#4a4a4a", text: "Box", textSize: "s" },
 					{ id: "nested", kind: "symbol", libraryId: "lib", x: 0, y: 0, width: 10, height: 10 },
 					{ id: "broken", kind: "rect" },
 				],
@@ -1029,7 +998,15 @@ test("library: data from version 3 gets an empty library; malformed library draw
 	};
 	const store = await open(memoryStorage(saved));
 	assert.deepEqual(store.data.library, [
-		{ id: "lib", name: "Drawing 1", tags: ["a", "b"], drawings: [{ id: "ok", kind: "line", points: [{ x: 0, y: 0 }, { x: 1, y: 1 }], color: "#4a4a4a" }] },
+		{
+			id: "lib",
+			name: "Drawing 1",
+			tags: ["a", "b"],
+			drawings: [
+				{ id: "ok", kind: "textbox", x: 0, y: 0, width: 1, height: 1, color: "#4a4a4a", text: "Hi", textSize: "l" },
+				{ id: "old-rect", kind: "textbox", x: 0, y: 0, width: 1, height: 1, color: "#4a4a4a", text: "Box", textSize: "s" },
+			],
+		},
 	]);
 	assert.deepEqual(firstBoard(store).drawings.map((d) => d.id), ["placed"]);
 });
@@ -1046,11 +1023,8 @@ test("older boards load without drawings; malformed drawings are dropped", async
 				cards: [],
 				viewport: { x: 0, y: 0, zoom: 1 },
 				drawings: [
-					{ id: "ok", kind: "ellipse", x: 1, y: 2, width: 3, height: 4, color: "#c4dafa" },
-					{ id: "no-size", kind: "rect", x: 1, y: 2, color: "#c4dafa" },
-					{ id: "one-point", kind: "line", points: [{ x: 0, y: 0 }], color: "#c4dafa" },
-					{ id: "three-points", kind: "arrow", points: [{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 2 }], color: "#c4dafa" },
-					{ id: "pen", kind: "pen", points: [{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 2 }], color: "#c4dafa" },
+					{ id: "ok", kind: "textbox", x: 1, y: 2, width: 3, height: 4, color: "#c4dafa" },
+					{ id: "no-size", kind: "textbox", x: 1, y: 2, color: "#c4dafa" },
 					{ id: "unknown", kind: "star", color: "#c4dafa" },
 					{ id: "image", kind: "image", x: 1, y: 2, width: 3, height: 4, src: "data:image/png;base64,AAAA" },
 					{ id: "image-no-src", kind: "image", x: 1, y: 2, width: 3, height: 4 },
@@ -1064,12 +1038,42 @@ test("older boards load without drawings; malformed drawings are dropped", async
 	assert.deepEqual(old?.drawings, []);
 	assert.deepEqual(
 		mixed?.drawings.map((d) => d.id),
-		["ok", "pen", "image", "area"],
+		["ok", "image", "area"],
 	);
-	assert.deepEqual(mixed?.drawings[3], { id: "area", kind: "area", x: 1, y: 2, width: 3, height: 4, color: "#c4dafa", text: "Team", textSize: "m" });
-	assert.deepEqual(mixed?.drawings[2], { id: "image", kind: "image", x: 1, y: 2, width: 3, height: 4, src: "data:image/png;base64,AAAA" });
+	assert.deepEqual(mixed?.drawings[2], { id: "area", kind: "area", x: 1, y: 2, width: 3, height: 4, color: "#c4dafa", text: "Team", textSize: "m" });
+	assert.deepEqual(mixed?.drawings[1], { id: "image", kind: "image", x: 1, y: 2, width: 3, height: 4, src: "data:image/png;base64,AAAA" });
 	// Missing text fields get defaults.
-	assert.deepEqual(mixed?.drawings[0], { id: "ok", kind: "ellipse", x: 1, y: 2, width: 3, height: 4, color: "#c4dafa", text: "", textSize: "m" });
+	assert.deepEqual(mixed?.drawings[0], { id: "ok", kind: "textbox", x: 1, y: 2, width: 3, height: 4, color: "#c4dafa", text: "", textSize: "m" });
+});
+
+test("rectangles, ellipses and free text saved before text boxes load as text boxes; lines, arrows and pen strokes are dropped", async () => {
+	const at = { x: 1, y: 2, width: 3, height: 4, color: "#c4dafa", textSize: "l" };
+	const points = [{ x: 0, y: 0 }, { x: 1, y: 1 }];
+	const saved = {
+		types: [],
+		entities: [],
+		boards: [
+			{
+				id: "old",
+				name: "Old",
+				cards: [],
+				viewport: { x: 0, y: 0, zoom: 1 },
+				drawings: [
+					{ id: "rect", kind: "rect", ...at, text: "Phase 1" },
+					{ id: "line", kind: "line", points, color: "#c4dafa" },
+					{ id: "ellipse", kind: "ellipse", ...at, text: "Idea" },
+					{ id: "arrow", kind: "arrow", points, color: "#c4dafa" },
+					{ id: "text", kind: "text", ...at, text: "Note" },
+					{ id: "pen", kind: "pen", points, color: "#c4dafa", penStyle: "pen" },
+				],
+			},
+		],
+	};
+	assert.deepEqual(firstBoard(await open(memoryStorage(saved))).drawings, [
+		{ id: "rect", kind: "textbox", ...at, text: "Phase 1" },
+		{ id: "ellipse", kind: "textbox", ...at, text: "Idea" },
+		{ id: "text", kind: "textbox", ...at, text: "Note" },
+	]);
 });
 
 test("reload takes over what another tab saved, so saving here keeps it", async () => {

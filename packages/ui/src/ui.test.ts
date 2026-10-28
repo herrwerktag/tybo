@@ -582,8 +582,8 @@ test("the Library tab: drawings are made, named, tagged, found, drawn with the b
 	tags!.dispatchEvent(new Event("change"));
 	assert.equal(tags!.value, "night, sky");
 
-	// The board's drawing tools: a click with the rectangle tool makes one in the library drawing.
-	byText<HTMLButtonElement>(root, ".library-canvas .drawing-tools button", "▭").click();
+	// The board's drawing tools: a click with the text box tool makes one in the library drawing.
+	byText<HTMLButtonElement>(root, ".library-canvas .drawing-tools button", "T").click();
 	const surface = root.querySelector<HTMLElement>(".library-canvas .canvas-surface")!;
 	const at = (type: string) =>
 		surface.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, clientX: 10, clientY: 10 }));
@@ -592,7 +592,7 @@ test("the Library tab: drawings are made, named, tagged, found, drawn with the b
 
 	let saved = await readSaved();
 	assert.deepEqual(saved.library.map(({ name, tags }) => ({ name, tags })), [{ name: "Star", tags: [] }, { name: "Moon", tags: ["night", "sky"] }]);
-	assert.deepEqual(saved.library[1]!.drawings.map((d) => d.kind), ["rect"]);
+	assert.deepEqual(saved.library[1]!.drawings.map((d) => d.kind), ["textbox"]);
 	assert.equal(root.querySelectorAll(".library-entry")[1]!.querySelectorAll(".library-picture rect.drawing-shape").length, 1, "the thumbnail follows");
 
 	const search = root.querySelector<HTMLInputElement>(".library-panel input[type=search]")!;

@@ -32,7 +32,7 @@ function sample(): AppData {
 				drawings: [{ id: "draw-star", kind: "symbol", libraryId: "lib-star", x: 40, y: 40.5, width: 96, height: 48 }],
 			},
 		],
-		library: [{ id: "lib-star", name: "Stern", tags: ["Form"], drawings: [{ id: "lib-rect", kind: "rect", x: 0, y: 0, width: 20, height: 10.5, color: "#f6e8a6", text: "★", textSize: "l" }] }],
+		library: [{ id: "lib-star", name: "Stern", tags: ["Form"], drawings: [{ id: "lib-box", kind: "textbox", x: 0, y: 0, width: 20, height: 10.5, color: "#f6e8a6", text: "★", textSize: "l" }] }],
 		analyses: [{ id: "ana-1", name: "Rollen", typeId: null, groups: [[{ propertyId: "gone", direction: "inverse" }]], columns: [[]] }],
 	};
 }

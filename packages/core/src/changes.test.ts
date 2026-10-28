@@ -31,7 +31,7 @@ function state(): AppData {
 		width: 240,
 		height: 160,
 	});
-	const drawing: Drawing = { id: "draw-line", kind: "line", points: [{ x: 0, y: 0 }, { x: 9, y: 9 }], color: "#4a4a4a" };
+	const drawing: Drawing = { id: "draw-box", kind: "textbox", x: 0, y: 0, width: 9, height: 9, color: "#4a4a4a", text: "", textSize: "m" };
 	return {
 		types: [type],
 		entities: [entity("ent-ada", "mit Ruhe"), entity("ent-bob", null)],
@@ -45,7 +45,7 @@ function state(): AppData {
 				drawings: [drawing],
 			},
 		],
-		library: [{ id: "lib-star", name: "Stern", tags: ["Form"], drawings: [{ ...drawing, id: "lib-line" }] }],
+		library: [{ id: "lib-star", name: "Stern", tags: ["Form"], drawings: [{ ...drawing, id: "lib-box-1" }] }],
 		analyses: [{ id: "ana-notes", name: "Notizen", typeId: type.id, groups: [], columns: [[{ propertyId: "p-note", direction: "forward" }]] }],
 	};
 }
@@ -123,11 +123,11 @@ test("a new unit has no before; a deleted one has no after; both say what was th
 	};
 	after.entities = [...after.entities, added];
 	const drawn = after.boards[0]!.drawings[0]!;
-	assert.equal(drawn.id, "draw-line");
+	assert.equal(drawn.id, "draw-box");
 	after.boards[0]!.drawings = [];
 
 	const changes = changesBetween(before, after);
-	assert.deepEqual(outline(changes), ["entity:ent-chef", "drawing:draw-line:board-1"]);
+	assert.deepEqual(outline(changes), ["entity:ent-chef", "drawing:draw-box:board-1"]);
 	const [entityChange, drawingChange] = changes as [Extract<Change, { kind: "entity" }>, Extract<Change, { kind: "drawing" }>];
 	assert.equal(entityChange.before, null);
 	assert.deepEqual(entityChange.after!.value, added);
@@ -162,13 +162,13 @@ test("a library drawing is one unit with its drawings; editing it never touches 
 	before.boards[0]!.drawings.push({ id: "draw-star", kind: "symbol", libraryId: "lib-star", x: 0, y: 0, width: 50, height: 50 });
 	const after = structuredClone(before);
 	const star = after.library[0]!;
-	star.drawings = [...star.drawings, { id: "lib-arrow", kind: "arrow", points: [{ x: 0, y: 0 }, { x: 5, y: 5 }], color: "#4a4a4a" }];
+	star.drawings = [...star.drawings, { id: "lib-box-2", kind: "textbox", x: 0, y: 0, width: 5, height: 5, color: "#4a4a4a", text: "", textSize: "m" }];
 	star.tags = ["Form", "Himmel"];
 
 	const changes = changesBetween(before, after);
 	assert.deepEqual(outline(changes), ["library:lib-star"]);
 	const [libraryChange] = changes as [Extract<Change, { kind: "library" }>];
-	assert.deepEqual(libraryChange.after!.value.drawings.map((d) => d.id), ["lib-line", "lib-arrow"]);
+	assert.deepEqual(libraryChange.after!.value.drawings.map((d) => d.id), ["lib-box-1", "lib-box-2"]);
 });
 
 test("library drawings come before the boards whose drawings name them", () => {

@@ -4,34 +4,27 @@ import {
 	MAX_IMAGE_SIZE,
 	MIN_BOX_SIZE,
 	areaContents,
-	arrowGeometry,
 	contentBounds,
 	drawingBounds,
-	eraseStroke,
 	imageRect,
 	moveDrawing,
-	moveEndpoint,
 	normalizeRect,
 	resizeBox,
 	resizeImage,
-	simplifyStroke,
-	streamline,
-	strokePath,
 } from "./drawings.js";
-import type { BoxDrawing, ImageDrawing, PathDrawing, SymbolDrawing } from "@tybo/core";
+import type { BoxDrawing, ImageDrawing, SymbolDrawing } from "@tybo/core";
 
-const box: BoxDrawing = { id: "b", kind: "rect", x: 100, y: 100, width: 200, height: 100, color: "#dcdcdc", text: "", textSize: "m" };
+const box: BoxDrawing = { id: "b", kind: "textbox", x: 100, y: 100, width: 200, height: 100, color: "#dcdcdc", text: "", textSize: "m" };
 const image: ImageDrawing = { id: "i", kind: "image", x: 100, y: 100, width: 200, height: 100, src: "data:image/png;base64," };
-const line: PathDrawing = { id: "l", kind: "line", points: [{ x: 0, y: 0 }, { x: 100, y: 50 }], color: "#4a4a4a" };
+const small: BoxDrawing = { ...box, id: "l", x: 0, y: 0, width: 100, height: 50 };
 
 test("normalizeRect spans two corners in any drag direction", () => {
 	assert.deepEqual(normalizeRect({ x: 50, y: 80 }, { x: 10, y: 20 }), { x: 10, y: 20, width: 40, height: 60 });
 });
 
-test("moveDrawing moves boxes and every point of paths", () => {
+test("moveDrawing moves boxes and images", () => {
 	assert.deepEqual(moveDrawing(box, 5, -10), { ...box, x: 105, y: 90 });
 	assert.deepEqual(moveDrawing(image, 5, -10), { ...image, x: 105, y: 90 });
-	assert.deepEqual(moveDrawing(line, 1, 2).points, [{ x: 1, y: 2 }, { x: 101, y: 52 }]);
 });
 
 test("resizeBox moves one corner and keeps the opposite one", () => {
@@ -73,60 +66,9 @@ test("imageRect centers a new image, scaling large ones down", () => {
 	});
 });
 
-test("moveEndpoint moves only the chosen end", () => {
-	assert.deepEqual(moveEndpoint(line, 1, -100, 0).points, [{ x: 0, y: 0 }, { x: 0, y: 50 }]);
-});
-
-test("drawingBounds covers boxes and all path points", () => {
+test("drawingBounds is the box of boxes and images", () => {
 	assert.deepEqual(drawingBounds(box), { x: 100, y: 100, width: 200, height: 100 });
 	assert.deepEqual(drawingBounds(image), { x: 100, y: 100, width: 200, height: 100 });
-	const pen: PathDrawing = { ...line, kind: "pen", points: [{ x: 5, y: 9 }, { x: -3, y: 4 }, { x: 8, y: 1 }] };
-	assert.deepEqual(drawingBounds(pen), { x: -3, y: 1, width: 11, height: 8 });
-});
-
-test("simplifyStroke drops points that are too close, keeping both ends", () => {
-	const points = [
-		{ x: 0, y: 0 },
-		{ x: 1, y: 0 },
-		{ x: 3, y: 0 },
-		{ x: 4, y: 0 },
-		{ x: 4.5, y: 0 },
-	];
-	assert.deepEqual(simplifyStroke(points), [{ x: 0, y: 0 }, { x: 3, y: 0 }, { x: 4.5, y: 0 }]);
-});
-
-test("streamline moves part of the way to the pointer, evening out jitter", () => {
-	assert.deepEqual(streamline({ x: 0, y: 0 }, { x: 10, y: -4 }), { x: 5, y: -2 });
-	assert.deepEqual(streamline({ x: 0, y: 0 }, { x: 10, y: 0 }, 1), { x: 10, y: 0 });
-});
-
-test("eraseStroke cuts out what the eraser passes over, keeping the stroke's own points elsewhere", () => {
-	const stroke = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }];
-	// Through the middle of the long first segment: two pieces, cut where the eraser's reach ends.
-	assert.deepEqual(eraseStroke(stroke, { x: 50, y: -20 }, { x: 50, y: 20 }, 10), [
-		[{ x: 0, y: 0 }, { x: 35, y: 0 }],
-		[{ x: 65, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }],
-	]);
-	// Rubbed over a whole end: only the rest is left.
-	assert.deepEqual(eraseStroke(stroke, { x: 100, y: 60 }, { x: 100, y: 20 }, 5), [
-		[{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 12.5 }],
-	]);
-	assert.deepEqual(eraseStroke(stroke, { x: 0, y: 0 }, { x: 100, y: 50 }, 200), []);
-	assert.equal(eraseStroke(stroke, { x: 50, y: 30 }, { x: 60, y: 30 }, 10), null);
-});
-
-test("strokePath draws straight segments, or a smoothed curve for pen strokes", () => {
-	assert.equal(strokePath(line.points, false), "M 0,0 L 100,50");
-	assert.equal(
-		strokePath([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 10 }], true),
-		"M 0,0 Q 10,0 15,5 L 20,10",
-	);
-});
-
-test("arrowGeometry ends the line at the arrowhead's base", () => {
-	const { lineEnd, head } = arrowGeometry({ x: 0, y: 0 }, { x: 100, y: 0 });
-	assert.deepEqual(lineEnd, { x: 88, y: 0 });
-	assert.equal(head, "100,0 88,6 88,-6");
 });
 
 test("placed library drawings move like boxes and resize keeping their aspect ratio, like images", () => {
@@ -138,7 +80,7 @@ test("placed library drawings move like boxes and resize keeping their aspect ra
 
 test("contentBounds spans all drawings, or is null without any", () => {
 	assert.equal(contentBounds([]), null);
-	assert.deepEqual(contentBounds([box, line]), { x: 0, y: 0, width: 300, height: 200 });
+	assert.deepEqual(contentBounds([box, small]), { x: 0, y: 0, width: 300, height: 200 });
 });
 
 test("areaContents finds the cards and drawings whose middle is in the area, nested areas included", () => {
@@ -148,7 +90,7 @@ test("areaContents finds the cards and drawings whose middle is in the area, nes
 		{ id: "in", x: 100, y: 100, width: 160, height: 80 }, // reaches out on the right, but its middle is inside
 		{ id: "out", x: 250, y: 100, width: 160, height: 80 },
 	];
-	const contents = areaContents(area, cards, [area, nested, line, { ...image, x: 400 }]);
+	const contents = areaContents(area, cards, [area, nested, small, { ...image, x: 400 }]);
 	assert.deepEqual([...contents.cardIds], ["in"]);
 	assert.deepEqual([...contents.drawingIds], ["n", "l"], "not the area itself, nor the image outside it");
 });
