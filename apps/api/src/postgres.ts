@@ -1,6 +1,7 @@
 import postgres from "postgres";
 import { applyChanges } from "./changes.js";
 import { createWorkspace, deleteWorkspace, listWorkspaces, moveWorkspace, readWorkspace, renameWorkspace, workspaceRevision } from "./data.js";
+import { readHistory } from "./history.js";
 import type { Api } from "./http.js";
 import { migrateSchema } from "./schema.js";
 
@@ -30,13 +31,14 @@ export function postgresStorage(url: string): PostgresStorage {
 	return {
 		init: () => migrateSchema(sql),
 		listWorkspaces: () => listWorkspaces(sql),
-		createWorkspace: (info, dataVersion) => createWorkspace(sql, info, dataVersion),
-		renameWorkspace: (id, name) => renameWorkspace(sql, id, name),
-		moveWorkspace: (id, to) => moveWorkspace(sql, id, to),
-		deleteWorkspace: (id) => deleteWorkspace(sql, id),
+		createWorkspace: (info, dataVersion, source = null) => createWorkspace(sql, info, dataVersion, source),
+		renameWorkspace: (id, name, source = null) => renameWorkspace(sql, id, name, source),
+		moveWorkspace: (id, to, source = null) => moveWorkspace(sql, id, to, source),
+		deleteWorkspace: (id, source = null) => deleteWorkspace(sql, id, source),
 		readWorkspace: (id) => readWorkspace(sql, id),
 		workspaceRevision: (id) => workspaceRevision(sql, id),
-		writeChanges: (id, changes) => applyChanges(sql, id, changes),
+		writeChanges: (id, changes, source = null) => applyChanges(sql, id, changes, source),
+		readHistory: (id, page) => readHistory(sql, id, page),
 
 		async healthy() {
 			try {

@@ -226,6 +226,28 @@ export const MIGRATIONS: readonly Migration[] = [
 			await tx`drop table library_drawings`;
 		},
 	},
+	{
+		version: 12,
+		name: "history",
+		async up(tx) {
+			// Every write, kept (see history.ts). No reference to the workspace: its history outlives it.
+			await tx`create table history (
+				id bigserial primary key,
+				workspace_id text not null,
+				revision bigint,
+				at timestamptz not null default now(),
+				source text,
+				operation text not null,
+				kind text,
+				unit_id text,
+				board_id text,
+				before jsonb,
+				after jsonb,
+				collided boolean not null default false
+			)`;
+			await tx`create index history_workspace on history (workspace_id, id desc)`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */

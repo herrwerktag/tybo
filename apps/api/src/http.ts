@@ -4,6 +4,7 @@ import { extname, join, normalize } from "node:path";
 import type { Change, SavedChanges, WorkspaceInfo } from "@tybo/core";
 import { parseChanges } from "./changes.js";
 import type { StoredWorkspace } from "./data.js";
+import type { HistoryEntry, HistoryPage } from "./history.js";
 
 /** The port the server listens on when the PORT environment variable doesn't say otherwise.
  * Not 3000: that one is taken by Forgejo on this host. */
@@ -24,20 +25,21 @@ export const DEFAULT_CORS_ORIGIN = "http://localhost:5173";
  * answers only its own routes, the way it does in development, where Vite serves the demo itself. */
 export const DEFAULT_CLIENT_DIR = process.env.CLIENT_DIR ?? "";
 
-/** What createApp needs besides the routing: the workspaces and their data, and whether their storage answers. */
+/** What createApp needs besides the routing: the workspaces and their data, and whether their storage answers.
+ * Every write goes into the history, under the `source` the request named itself with (null when it didn't). */
 export interface Api {
 	/** Resolves once it's known whether the database answers; /health says ok only then. */
 	healthy(): Promise<boolean>;
 	/** The workspaces, in their order. */
 	listWorkspaces(): Promise<WorkspaceInfo[]>;
 	/** Makes an empty workspace; false when one of that id is there already (nothing written then). */
-	createWorkspace(info: WorkspaceInfo, dataVersion: number): Promise<boolean>;
+	createWorkspace(info: WorkspaceInfo, dataVersion: number, source?: string | null): Promise<boolean>;
 	/** Renames a workspace; false when there is none of that id. */
-	renameWorkspace(id: string, name: string): Promise<boolean>;
+	renameWorkspace(id: string, name: string, source?: string | null): Promise<boolean>;
 	/** Moves a workspace to index `to` in the list; false when there is none of that id. */
-	moveWorkspace(id: string, to: number): Promise<boolean>;
+	moveWorkspace(id: string, to: number, source?: string | null): Promise<boolean>;
 	/** Deletes a workspace and all its data; there being none of that id is no error. */
-	deleteWorkspace(id: string): Promise<void>;
+	deleteWorkspace(id: string, source?: string | null): Promise<void>;
 	/** The workspace's data with its revision, read as one — or null when there is none of that id. */
 	readWorkspace(id: string): Promise<StoredWorkspace | null>;
 	/** The revision the workspace is at, or null when there is none of that id. */
@@ -45,7 +47,9 @@ export interface Api {
 	/** Writes a change set — only the rows of the units it names — into the workspace. The units' `before`
 	 * stands decide, one at a time, which of them collided: answered, written anyway (last one wins).
 	 * Null when there is no workspace of that id. */
-	writeChanges(id: string, changes: Change[]): Promise<SavedChanges | null>;
+	writeChanges(id: string, changes: Change[], source?: string | null): Promise<SavedChanges | null>;
+	/** The workspace's history, newest first — also of a workspace that is gone; empty when there is none. */
+	readHistory(id: string, page: HistoryPage): Promise<HistoryEntry[]>;
 }
 
 /** The HTTP interface of the app's data.
@@ -64,6 +68,11 @@ export interface Api {
  * so units decide for themselves which of them collided with someone else's in-between save — the answer
  * says which, and writes them anyway (last one wins): 200 with `{ version, collided }`, the new revision in
  * `etag`. A body that isn't a change set answers 400 and writes nothing; no workspace of that id, 404.
+ *
+ * GET /workspaces/{id}/history answers the workspace's history as JSON, newest first: every write of its
+ * data, unit by unit, and of the workspace itself — also once it is deleted. `limit` (1 to 1000, 100 when
+ * not given) says how many entries, `before` (an entry's id) where to go on from; anything else there
+ * answers 400. Writes name who makes them in the `X-Tybo-Source` header, which the history keeps.
  *
  * GET /health answers 200 while the database answers, 503 when it doesn't.
  *
@@ -126,7 +135,7 @@ async function serveClient(res: ServerResponse, clientDir: string, pathname: str
 function allowCrossOrigin(res: ServerResponse, origin: string): void {
 	res.setHeader("access-control-allow-origin", origin);
 	res.setHeader("access-control-allow-methods", "GET, HEAD, POST, PUT, PATCH, DELETE");
-	res.setHeader("access-control-allow-headers", "Content-Type");
+	res.setHeader("access-control-allow-headers", "Content-Type, X-Tybo-Source");
 	// etag isn't among the headers a cross-origin answer shows JavaScript by default; say it may be seen.
 	res.setHeader("access-control-expose-headers", "ETag");
 }
@@ -153,7 +162,7 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api, client
 				case "POST": {
 					const created = parseCreate(await readJson(req));
 					if (!created) return sendEmpty(res, 400);
-					const made = await api.createWorkspace({ id: created.id, name: created.name }, created.dataVersion);
+					const made = await api.createWorkspace({ id: created.id, name: created.name }, created.dataVersion, sourceOf(req));
 					return sendEmpty(res, made ? 201 : 409);
 				}
 				default:
@@ -162,19 +171,20 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api, client
 		}
 
 		const { id } = route;
+		const source = sourceOf(req);
 		switch (route.part) {
 			case null:
 				switch (method) {
 					case "PATCH": {
 						const body = await readJson(req);
 						const position = parsePosition(body);
-						if (position !== null) return sendEmpty(res, (await api.moveWorkspace(id, position)) ? 204 : 404);
+						if (position !== null) return sendEmpty(res, (await api.moveWorkspace(id, position, source)) ? 204 : 404);
 						const name = parseName(body);
 						if (name === null) return sendEmpty(res, 400);
-						return sendEmpty(res, (await api.renameWorkspace(id, name)) ? 204 : 404);
+						return sendEmpty(res, (await api.renameWorkspace(id, name, source)) ? 204 : 404);
 					}
 					case "DELETE":
-						await api.deleteWorkspace(id);
+						await api.deleteWorkspace(id, source);
 						return sendEmpty(res, 204);
 					default:
 						return notAllowed(res, "PATCH, DELETE");
@@ -200,10 +210,16 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api, client
 				if (method !== "PUT") return notAllowed(res, "PUT");
 				const changes = parseChanges(await readJson(req));
 				if (changes === null) return sendEmpty(res, 400);
-				const answer = await api.writeChanges(id, changes);
+				const answer = await api.writeChanges(id, changes, source);
 				if (!answer) return sendEmpty(res, 404);
 				res.setHeader("etag", answer.version);
 				return sendJson(res, 200, answer);
+			}
+			case "history": {
+				if (method !== "GET") return notAllowed(res, "GET");
+				const page = parsePage(url.searchParams);
+				if (!page) return sendEmpty(res, 400);
+				return sendJson(res, 200, await api.readHistory(id, page));
 			}
 		}
 	} catch {
@@ -213,9 +229,9 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api, client
 	}
 }
 
-/** Where a path leads: the workspaces (`id` null), one workspace (`part` null), or its data or changes.
+/** Where a path leads: the workspaces (`id` null), one workspace (`part` null), or its data, changes or history.
  * Null for a path that leads nowhere. Ids are percent-decoded, so any id can name its workspace. */
-function routeOf(pathname: string): { id: null } | { id: string; part: null | "data" | "changes" } | null {
+function routeOf(pathname: string): { id: null } | { id: string; part: null | "data" | "changes" | "history" } | null {
 	const segments = pathname.split("/").slice(1);
 	if (segments[0] !== "workspaces") return null;
 	if (segments.length === 1) return { id: null };
@@ -227,8 +243,35 @@ function routeOf(pathname: string): { id: null } | { id: string; part: null | "d
 	}
 	if (id === "") return null;
 	if (segments.length === 2) return { id, part: null };
-	if (segments.length === 3 && (segments[2] === "data" || segments[2] === "changes")) return { id, part: segments[2] };
+	if (segments.length === 3 && (segments[2] === "data" || segments[2] === "changes" || segments[2] === "history")) {
+		return { id, part: segments[2] };
+	}
 	return null;
+}
+
+/** The longest source the history keeps; a longer one is taken as none. */
+const MAX_SOURCE_LENGTH = 64;
+
+/** Who makes the request, as it names itself in `X-Tybo-Source` (say "demo" or "mcp"); null when it doesn't. */
+function sourceOf(req: IncomingMessage): string | null {
+	const raw = req.headers["x-tybo-source"];
+	const source = (Array.isArray(raw) ? raw[0] : raw)?.trim() ?? "";
+	return source !== "" && source.length <= MAX_SOURCE_LENGTH ? source : null;
+}
+
+/** How many entries a history read answers when it doesn't say, and at most. */
+const DEFAULT_HISTORY_LIMIT = 100;
+const MAX_HISTORY_LIMIT = 1000;
+
+/** The page a history read asks for; null when `limit` or `before` say something else than a count and an id. */
+function parsePage(params: URLSearchParams): HistoryPage | null {
+	const count = (raw: string) => (/^\d{1,18}$/.test(raw) ? Number(raw) : null);
+	const rawLimit = params.get("limit");
+	const limit = rawLimit === null ? DEFAULT_HISTORY_LIMIT : count(rawLimit);
+	if (limit === null || limit < 1 || limit > MAX_HISTORY_LIMIT) return null;
+	const before = params.get("before");
+	if (before === null) return { limit };
+	return count(before) === null ? null : { before, limit };
 }
 
 /** A workspace's name as a request names it: a string with something in it; null otherwise. */

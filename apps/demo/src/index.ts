@@ -15,7 +15,7 @@ if (!apiUrl) {
 	renderServerUnreachable(root);
 } else {
 	try {
-		const workspaces = await createWorkspaces(httpData(apiUrl), (n) => text.defaultWorkspaceName(n), activeWorkspacePreference);
+		const workspaces = await createWorkspaces(httpData(apiUrl, "demo"), (n) => text.defaultWorkspaceName(n), activeWorkspacePreference);
 		await render(root, workspaces, { viewScript });
 	} catch (error) {
 		console.error(error);

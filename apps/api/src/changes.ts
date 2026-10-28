@@ -1,6 +1,7 @@
 import type { Change, SavedChanges } from "@tybo/core";
 import { CHANGE_KINDS, unitStands, untouched } from "@tybo/core";
 import { readAppData } from "./data.js";
+import { changeEntries, recordHistory } from "./history.js";
 import type { Queries, Sql } from "./schema.js";
 
 /**
@@ -16,7 +17,8 @@ import type { Queries, Sql } from "./schema.js";
  * touched at all.
  *
  * All-or-nothing: the whole save runs in one transaction, which also raises the workspace's revision by
- * one, so the rows and the version can't disagree afterwards.
+ * one and adds the save's entries to the history, so the rows, the version and the history can't disagree
+ * afterwards.
  */
 
 /** The table holding each kind of unit, one row per unit. */
@@ -75,8 +77,9 @@ function stand(raw: unknown): { value: object; position: number } | null | undef
  * everything — a failure writes nothing half. Answers the new revision and the ids of the units that
  * collided (written anyway — the last save wins). A change set without a unit writes nothing at all, and
  * says where the revision stands. Null when there is no workspace of that id; refused (thrown) when it
- * couldn't be written honestly — then it changed nothing. */
-export async function applyChanges(sql: Sql, workspaceId: string, changes: readonly Change[]): Promise<SavedChanges | null> {
+ * couldn't be written honestly — then it changed nothing. Every unit written leaves its entry in the history,
+ * under `source`. */
+export async function applyChanges(sql: Sql, workspaceId: string, changes: readonly Change[], source: string | null = null): Promise<SavedChanges | null> {
 	if (changes.length === 0) {
 		// Nothing changed: nothing is written, not even the revision.
 		const [row] = await sql`select revision::text as version from workspaces where id = ${workspaceId}`;
@@ -100,7 +103,10 @@ export async function applyChanges(sql: Sql, workspaceId: string, changes: reado
 		const [stored] = await tx`update workspaces set revision = revision + 1, updated_at = now()
 			where id = ${workspaceId}
 			returning revision::text as version`;
-		return { version: stored!.version as string, collided };
+		const version = stored!.version as string;
+		const entries = changeEntries(stands, ordered, collided).map((entry) => ({ ...entry, revision: version }));
+		await recordHistory(tx, workspaceId, source, entries);
+		return { version, collided };
 	});
 }
 

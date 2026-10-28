@@ -147,3 +147,64 @@ test("the served API answers end to end against Postgres", { skip: !url }, async
 		await storage.close();
 	}
 });
+
+test("every write goes into the history, which outlives the workspace — also over HTTP, with its source", { skip: !url }, async () => {
+	const storage = postgresStorage(url!);
+	await storage.init();
+	const api = await startApp(storage);
+	const id = freshId();
+	const path = `workspaces/${encodeURIComponent(id)}`;
+	try {
+		await storage.createWorkspace({ id, name: "Erst" }, 1, "demo");
+		const base = sample();
+		await storage.writeChanges(id, changesBetween(empty(), base), "demo");
+		await storage.writeChanges(id, [], "demo");
+
+		const mine = structuredClone(base);
+		mine.entities[0]!.name = "Ada A";
+		const theirs = structuredClone(base);
+		theirs.entities[0]!.name = "Ada B";
+		await storage.writeChanges(id, changesBetween(base, mine), "demo");
+		const put = await call(api.url, `${path}/changes`, {
+			method: "PUT",
+			headers: { "x-tybo-source": "mcp" },
+			body: JSON.stringify(changesBetween(base, theirs)),
+		});
+		assert.deepEqual(JSON.parse(put.text), { version: "3", collided: ["ent-1"] });
+		await storage.renameWorkspace(id, "Zweit");
+		await storage.moveWorkspace(id, 0);
+
+		const history = await storage.readHistory(id, { limit: 100 });
+		assert.deepEqual(
+			history.map((e) => [e.operation, e.kind, e.revision, e.source]),
+			[
+				["move", null, "3", null],
+				["rename", null, "3", null],
+				["change", "entity", "3", "mcp"],
+				["change", "entity", "2", "demo"],
+				...["type", "entity", "board", "card"].map((kind) => ["change", kind, "1", "demo"]).reverse(),
+				["create", null, "0", "demo"],
+			],
+		);
+		const [, rename, theirSave, mySave] = history;
+		assert.deepEqual([rename!.before, rename!.after], [{ name: "Erst" }, { name: "Zweit" }]);
+		assert.equal(mySave!.collided, false);
+		assert.equal(theirSave!.collided, true);
+		assert.deepEqual(theirSave!.before, { value: mine.entities[0], position: 0 }, "what the tables held, not what the saver thought");
+		assert.equal(history.find((e) => e.kind === "card")!.boardId, "board-1");
+		assert.ok(!Number.isNaN(Date.parse(history[0]!.at)));
+
+		const page = await call(api.url, `${path}/history?limit=2&before=${rename!.id}`);
+		assert.deepEqual(JSON.parse(page.text).map((e: { id: string }) => e.id), [theirSave!.id, mySave!.id]);
+
+		await storage.deleteWorkspace(id, "mcp");
+		const [deleted] = await storage.readHistory(id, { limit: 1 });
+		assert.equal(deleted!.operation, "delete");
+		assert.deepEqual(deleted!.before, { name: "Zweit", dataVersion: 1, revision: "3", data: theirs });
+		assert.equal((await storage.readHistory(id, { limit: 100 })).length, history.length + 1);
+	} finally {
+		await api.close();
+		await storage.deleteWorkspace(id);
+		await storage.close();
+	}
+});

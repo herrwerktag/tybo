@@ -2,6 +2,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type { AppData, Change, SavedChanges } from "@tybo/core";
 import { CHANGE_KINDS, moveItem, unitStands, untouched } from "@tybo/core";
 import { assembleAppData, type StoredWorkspace } from "./data.js";
+import { changeEntries, type HistoryEntry, type HistoryOperation, type NewEntry } from "./history.js";
 import type { Api } from "./http.js";
 
 /** The API's storage in a local SQLite file, plus what running the server against it takes — the same as
@@ -199,6 +200,29 @@ export const SQLITE_MIGRATIONS: readonly Migration[] = [
 			db.exec("delete from drawings where kind = 'symbol'; drop table library_drawings;");
 		},
 	},
+	{
+		version: 9,
+		up(db) {
+			// As Postgres's step 12; the time with milliseconds, in the form Postgres answers it.
+			db.exec(`
+				create table history (
+					id integer primary key autoincrement,
+					workspace_id text not null,
+					revision integer,
+					at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+					source text,
+					operation text not null,
+					kind text,
+					unit_id text,
+					board_id text,
+					before text,
+					after text,
+					collided integer not null default 0
+				);
+				create index history_workspace on history (workspace_id, id desc);
+			`);
+		},
+	},
 ];
 
 /** The table holding each kind of unit, one row per unit. */
@@ -389,6 +413,23 @@ export function sqliteStorage(path: string): SqliteStorage {
 		}
 	};
 
+	/** Adds the entries for the workspace, within the transaction of the write they tell of (see `history.ts`). */
+	const recordHistory = (ws: string, source: string | null, entries: readonly NewEntry[]): void => {
+		const insert = db.prepare(
+			`insert into history (workspace_id, revision, source, operation, kind, unit_id, board_id, before, after, collided)
+			values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		);
+		for (const entry of entries) {
+			insert.run(
+				ws, plain(entry.revision === undefined || entry.revision === null ? null : Number(entry.revision)), source, entry.operation,
+				plain(entry.kind), plain(entry.unitId), plain(entry.boardId), json(entry.before), json(entry.after), entry.collided ? 1 : 0,
+			);
+		}
+	};
+
+	/** The workspace's revision and name, or undefined when there is none of that id. */
+	const workspaceRow = (id: string) => db.prepare("select name, data_version, revision from workspaces where id = ?").get(id);
+
 	return {
 		async init() {
 			return transaction(db, () => {
@@ -409,24 +450,35 @@ export function sqliteStorage(path: string): SqliteStorage {
 			return rows.map(({ id, name }) => ({ id: id as string, name: name as string }));
 		},
 
-		async createWorkspace(info, dataVersion) {
-			const inserted = db
-				.prepare(
-					`insert into workspaces (id, position, name, data_version)
-					values (?, (select coalesce(max(position) + 1, 0) from workspaces), ?, ?)
-					on conflict (id) do nothing
-					returning id`,
-				)
-				.all(info.id, info.name, dataVersion);
-			return inserted.length > 0;
+		async createWorkspace(info, dataVersion, source = null) {
+			return transaction(db, () => {
+				const [inserted] = db
+					.prepare(
+						`insert into workspaces (id, position, name, data_version)
+						values (?, (select coalesce(max(position) + 1, 0) from workspaces), ?, ?)
+						on conflict (id) do nothing
+						returning position`,
+					)
+					.all(info.id, info.name, dataVersion);
+				if (!inserted) return false;
+				recordHistory(info.id, source, [
+					{ operation: "create", revision: "0", before: null, after: { name: info.name, position: Number(inserted.position), dataVersion } },
+				]);
+				return true;
+			});
 		},
 
-		async renameWorkspace(id, name) {
-			const updated = db.prepare("update workspaces set name = ?, updated_at = current_timestamp where id = ? returning id").all(name, id);
-			return updated.length > 0;
+		async renameWorkspace(id, name, source = null) {
+			return transaction(db, () => {
+				const was = workspaceRow(id);
+				if (!was) return false;
+				db.prepare("update workspaces set name = ?, updated_at = current_timestamp where id = ?").run(name, id);
+				recordHistory(id, source, [{ operation: "rename", revision: String(was.revision), before: { name: was.name as string }, after: { name } }]);
+				return true;
+			});
 		},
 
-		async moveWorkspace(id, to) {
+		async moveWorkspace(id, to, source = null) {
 			return transaction(db, () => {
 				const ids = db
 					.prepare("select id from workspaces order by position, created_at, id")
@@ -435,13 +487,31 @@ export function sqliteStorage(path: string): SqliteStorage {
 				const from = ids.indexOf(id);
 				if (from < 0) return false;
 				const update = db.prepare("update workspaces set position = ? where id = ?");
-				moveItem(ids, from, to).forEach((each, position) => update.run(position, each));
+				const moved = moveItem(ids, from, to);
+				moved.forEach((each, position) => update.run(position, each));
+				recordHistory(id, source, [
+					{ operation: "move", revision: revisionOf(id), before: { position: from }, after: { position: moved.indexOf(id) } },
+				]);
 				return true;
 			});
 		},
 
-		async deleteWorkspace(id) {
-			db.prepare("delete from workspaces where id = ?").run(id);
+		async deleteWorkspace(id, source = null) {
+			transaction(db, () => {
+				const was = workspaceRow(id);
+				if (!was) return;
+				const data = readAppData(id);
+				db.prepare("delete from workspaces where id = ?").run(id);
+				const revision = String(was.revision);
+				recordHistory(id, source, [
+					{
+						operation: "delete",
+						revision,
+						before: { name: was.name as string, dataVersion: Number(was.data_version), revision, data },
+						after: null,
+					},
+				]);
+			});
 		},
 
 		async readWorkspace(id): Promise<StoredWorkspace | null> {
@@ -457,7 +527,7 @@ export function sqliteStorage(path: string): SqliteStorage {
 			return revisionOf(id);
 		},
 
-		async writeChanges(id, changes): Promise<SavedChanges | null> {
+		async writeChanges(id, changes, source = null): Promise<SavedChanges | null> {
 			if (changes.length === 0) {
 				const version = revisionOf(id);
 				return version === null ? null : { version, collided: [] };
@@ -472,8 +542,33 @@ export function sqliteStorage(path: string): SqliteStorage {
 					writeUnit(id, unit);
 				}
 				db.prepare("update workspaces set revision = revision + 1, updated_at = current_timestamp where id = ?").run(id);
-				return { version: revisionOf(id)!, collided };
+				const version = revisionOf(id)!;
+				recordHistory(id, source, changeEntries(stands, ordered, collided).map((entry) => ({ ...entry, revision: version })));
+				return { version, collided };
 			});
+		},
+
+		async readHistory(id, page): Promise<HistoryEntry[]> {
+			const rows = db
+				.prepare(
+					`select id, workspace_id, revision, at, source, operation, kind, unit_id, board_id, before, after, collided
+					from history where workspace_id = ? and id < ? order by id desc limit ?`,
+				)
+				.all(id, page.before === undefined ? Number.MAX_SAFE_INTEGER : Number(page.before), page.limit);
+			return rows.map((row) => ({
+				id: String(row.id),
+				workspaceId: row.workspace_id as string,
+				revision: row.revision === null ? null : String(row.revision),
+				at: row.at as string,
+				source: (row.source as string | null) ?? null,
+				operation: row.operation as HistoryOperation,
+				kind: (row.kind as HistoryEntry["kind"]) ?? null,
+				unitId: (row.unit_id as string | null) ?? null,
+				boardId: (row.board_id as string | null) ?? null,
+				before: parsed(row.before),
+				after: parsed(row.after),
+				collided: row.collided === 1,
+			}));
 		},
 
 		async healthy() {

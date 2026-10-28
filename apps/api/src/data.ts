@@ -1,4 +1,5 @@
 import { moveItem, type AppData, type Drawing, type WorkspaceInfo } from "@tybo/core";
+import { recordHistory } from "./history.js";
 import type { Queries, Sql } from "./schema.js";
 
 /** A workspace's data as a read answers it: its rows put together the way the app holds them, marked with
@@ -15,39 +16,70 @@ export async function listWorkspaces(sql: Queries): Promise<WorkspaceInfo[]> {
 }
 
 /** Makes an empty workspace at the end of the list. False when a workspace of that id is there already —
- * then nothing was written. */
-export async function createWorkspace(sql: Queries, info: WorkspaceInfo, dataVersion: number): Promise<boolean> {
-	const inserted = await sql`insert into workspaces (id, position, name, data_version)
-		values (${info.id}, (select coalesce(max(position) + 1, 0) from workspaces), ${info.name}, ${dataVersion})
-		on conflict (id) do nothing
-		returning id`;
-	return inserted.length > 0;
-}
-
-/** Renames the workspace; false when there is none of that id. */
-export async function renameWorkspace(sql: Queries, id: string, name: string): Promise<boolean> {
-	const updated = await sql`update workspaces set name = ${name}, updated_at = now() where id = ${id} returning id`;
-	return updated.length > 0;
-}
-
-/** Moves the workspace to index `to` in the list, renumbering the positions of all; false when there is none of
- * that id. */
-export async function moveWorkspace(sql: Sql, id: string, to: number): Promise<boolean> {
+ * then nothing was written. Its making goes into the history, under `source`. */
+export async function createWorkspace(sql: Sql, info: WorkspaceInfo, dataVersion: number, source: string | null = null): Promise<boolean> {
 	return sql.begin(async (tx) => {
-		const rows = await tx`select id from workspaces order by position, created_at, id for update`;
-		const ids = rows.map((row) => row.id as string);
-		const from = ids.indexOf(id);
-		if (from < 0) return false;
-		for (const [position, each] of moveItem(ids, from, to).entries()) {
-			await tx`update workspaces set position = ${position} where id = ${each}`;
-		}
+		const [inserted] = await tx`insert into workspaces (id, position, name, data_version)
+			values (${info.id}, (select coalesce(max(position) + 1, 0) from workspaces), ${info.name}, ${dataVersion})
+			on conflict (id) do nothing
+			returning position`;
+		if (!inserted) return false;
+		await recordHistory(tx, info.id, source, [
+			{ operation: "create", revision: "0", before: null, after: { name: info.name, position: inserted.position as number, dataVersion } },
+		]);
 		return true;
 	});
 }
 
-/** Deletes the workspace, and with it every row of its data (the tables' references cascade). */
-export async function deleteWorkspace(sql: Queries, id: string): Promise<void> {
-	await sql`delete from workspaces where id = ${id}`;
+/** Renames the workspace; false when there is none of that id. The renaming goes into the history. */
+export async function renameWorkspace(sql: Sql, id: string, name: string, source: string | null = null): Promise<boolean> {
+	return sql.begin(async (tx) => {
+		const [was] = await tx`select name, revision::text as revision from workspaces where id = ${id} for update`;
+		if (!was) return false;
+		await tx`update workspaces set name = ${name}, updated_at = now() where id = ${id}`;
+		await recordHistory(tx, id, source, [
+			{ operation: "rename", revision: was.revision as string, before: { name: was.name as string }, after: { name } },
+		]);
+		return true;
+	});
+}
+
+/** Moves the workspace to index `to` in the list, renumbering the positions of all; false when there is none of
+ * that id. The move — of this one workspace, from its index to its new one — goes into the history. */
+export async function moveWorkspace(sql: Sql, id: string, to: number, source: string | null = null): Promise<boolean> {
+	return sql.begin(async (tx) => {
+		const rows = await tx`select id, revision::text as revision from workspaces order by position, created_at, id for update`;
+		const ids = rows.map((row) => row.id as string);
+		const from = ids.indexOf(id);
+		if (from < 0) return false;
+		const moved = moveItem(ids, from, to);
+		for (const [position, each] of moved.entries()) {
+			await tx`update workspaces set position = ${position} where id = ${each}`;
+		}
+		await recordHistory(tx, id, source, [
+			{ operation: "move", revision: rows[from]!.revision as string, before: { position: from }, after: { position: moved.indexOf(id) } },
+		]);
+		return true;
+	});
+}
+
+/** Deletes the workspace, and with it every row of its data (the tables' references cascade). Its history
+ * stays, and gains the deletion with everything the workspace held — so what went can still be found. */
+export async function deleteWorkspace(sql: Sql, id: string, source: string | null = null): Promise<void> {
+	await sql.begin(async (tx) => {
+		const [was] = await tx`select name, data_version, revision::text as revision from workspaces where id = ${id} for update`;
+		if (!was) return;
+		const data = await readAppData(tx, id);
+		await tx`delete from workspaces where id = ${id}`;
+		await recordHistory(tx, id, source, [
+			{
+				operation: "delete",
+				revision: was.revision as string,
+				before: { name: was.name as string, dataVersion: was.data_version as number, revision: was.revision as string, data },
+				after: null,
+			},
+		]);
+	});
 }
 
 /** The revision the workspace is at, or null when there is none of that id. */

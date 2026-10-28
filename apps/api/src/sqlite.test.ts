@@ -56,7 +56,7 @@ async function fresh() {
 test("sqlite: the schema is made once, and survives reopening the file", async () => {
 	const { storage, path, close } = await fresh();
 	try {
-		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7, 8]);
+		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
 		assert.deepEqual(await storage.init(), [], "the second start has nothing left to do");
 		assert.equal(await storage.healthy(), true);
 		await storage.createWorkspace({ id: "ws", name: "Bleibt" }, 1);
@@ -146,6 +146,7 @@ test("sqlite: a change set the tables refuse writes nothing half — 503 over HT
 			]),
 		});
 		assert.equal(refused.status, 503);
+		assert.equal((await storage.readHistory("ws", { limit: 100 })).filter((e) => e.revision === "2").length, 0, "no history of what wasn't written");
 
 		const got = await call(api.url, "workspaces/ws/data");
 		assert.deepEqual(JSON.parse(got.text), { version: 1, ...sample() });
@@ -171,7 +172,7 @@ test("sqlite: what was saved of stories, by any version before, is dropped; the 
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7, 8]);
+		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7, 8, 9]);
 		const { data } = (await storage.readWorkspace("ws"))!;
 		// Null, not missing: the app makes the frame of the board's pan/zoom.
 		assert.deepEqual(
@@ -205,7 +206,7 @@ test("sqlite: step 8 drops the library and the library drawings placed on boards
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [8]);
+		assert.deepEqual(await storage.init(), [8, 9]);
 		await storage.close();
 		const check = new DatabaseSync(path);
 		assert.deepEqual(check.prepare("select name from sqlite_master where name = 'library_drawings'").all(), []);
@@ -231,5 +232,83 @@ test("sqlite: step 5 gives boards their own frame, whichever form step 4 ran in"
 		}
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("sqlite: every write goes into the history, newest first, with the stand that was really written over", async () => {
+	const { storage, close } = await fresh();
+	try {
+		await storage.init();
+		await storage.createWorkspace({ id: "ws", name: "Erst" }, 1, "demo");
+		const base = sample();
+		await storage.writeChanges("ws", changesBetween(empty(), base), "demo");
+		await storage.writeChanges("ws", [], "demo");
+
+		const mine = structuredClone(base);
+		mine.entities[0]!.name = "Ada A";
+		const theirs = structuredClone(base);
+		theirs.entities[0]!.name = "Ada B";
+		await storage.writeChanges("ws", changesBetween(base, mine), "demo");
+		await storage.writeChanges("ws", changesBetween(base, theirs), "mcp");
+
+		await storage.renameWorkspace("ws", "Zweit");
+		await storage.createWorkspace({ id: "other", name: "Andere" }, 1);
+		await storage.moveWorkspace("ws", 1);
+
+		const history = await storage.readHistory("ws", { limit: 100 });
+		assert.deepEqual(
+			history.map((e) => [e.operation, e.kind, e.revision, e.source]),
+			[
+				["move", null, "3", null],
+				["rename", null, "3", null],
+				["change", "entity", "3", "mcp"],
+				["change", "entity", "2", "demo"],
+				...["type", "entity", "analysis", "board", "card", "drawing"].map((kind) => ["change", kind, "1", "demo"]).reverse(),
+				["create", null, "0", "demo"],
+			],
+			"one entry per unit written; nothing for the empty save",
+		);
+		const ids = history.map((e) => Number(e.id));
+		assert.deepEqual(ids, [...ids].sort((a, b) => b - a));
+		assert.match(history[0]!.at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+
+		const [move, rename, theirSave, mySave] = history;
+		assert.deepEqual([move!.before, move!.after], [{ position: 0 }, { position: 1 }]);
+		assert.deepEqual([rename!.before, rename!.after], [{ name: "Erst" }, { name: "Zweit" }]);
+		assert.equal(mySave!.collided, false);
+		assert.equal(theirSave!.collided, true);
+		assert.deepEqual(theirSave!.before, { value: mine.entities[0], position: 0 }, "what the tables held, not what the saver thought");
+		assert.deepEqual(theirSave!.after, { value: theirs.entities[0], position: 0 });
+		assert.equal(history.find((e) => e.kind === "card")!.boardId, "board-1");
+		assert.deepEqual(history.at(-1)!.after, { name: "Erst", position: 0, dataVersion: 1 });
+
+		const page = await storage.readHistory("ws", { limit: 2, before: rename!.id });
+		assert.deepEqual(page.map((e) => e.id), [theirSave!.id, mySave!.id]);
+		assert.deepEqual((await storage.readHistory("other", { limit: 100 })).map((e) => e.operation), ["create"], "each workspace its own");
+	} finally {
+		await close();
+	}
+});
+
+test("sqlite: a deleted workspace's history stays, ending with everything it held", async () => {
+	const { storage, close } = await fresh();
+	try {
+		await storage.init();
+		await storage.createWorkspace({ id: "ws", name: "Weg" }, 1);
+		await storage.writeChanges("ws", changesBetween(empty(), sample()));
+		await storage.deleteWorkspace("ws", "mcp");
+		await storage.deleteWorkspace("ws", "mcp");
+
+		const history = await storage.readHistory("ws", { limit: 100 });
+		assert.equal(history.length, 8, "the second delete found nothing to delete, and wrote nothing");
+		const [deleted] = history;
+		assert.equal(deleted!.operation, "delete");
+		assert.equal(deleted!.source, "mcp");
+		assert.equal(deleted!.after, null);
+		assert.deepEqual(deleted!.before, { name: "Weg", dataVersion: 1, revision: "1", data: sample() });
+		assert.equal(await storage.renameWorkspace("ws", "Wieder"), false);
+		assert.equal((await storage.readHistory("ws", { limit: 100 })).length, 8);
+	} finally {
+		await close();
 	}
 });
