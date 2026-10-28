@@ -97,7 +97,8 @@ Beim Schreiben gewinnt die letzte Aenderung; bei einer Kollision mit einem neuer
 Warnung, nichts wird still verworfen.
 
 Jedes Schreiben landet im Verlauf (Tabelle `history`): je geschriebener Einheit ein Eintrag mit dem Stand
-davor und danach, dazu Anlegen, Umbenennen, Verschieben und Loeschen eines Arbeitsbereichs. Wer schreibt,
+davor und danach, dazu Anlegen, Umbenennen, Verschieben und Loeschen eines Arbeitsbereichs. Nur Verschieben
+und Zoomen eines Boards (`viewport`) wird gespeichert, aber nicht in den Verlauf geschrieben. Wer schreibt,
 nennt sich im Header `X-Tybo-Source` (die Demo als `demo`, der MCP-Server als `mcp`). Der Verlauf bleibt
 auch nach dem Loeschen eines Arbeitsbereichs erhalten; der letzte Eintrag enthaelt dann dessen komplette Daten.
 
