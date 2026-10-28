@@ -6,4 +6,4 @@ import { tyboTools } from "./tools.js";
 // stdin/stdout, so nothing else may write to stdout. It reaches the data through the running API, like the app.
 const apiUrl = process.env.TYBO_API_URL ?? "http://localhost:3001";
 
-serve(process.stdin, process.stdout, tyboTools(httpData(apiUrl)), { name: "tybo", version: "1.0.0" });
+serve(process.stdin, process.stdout, tyboTools(httpData(apiUrl, "mcp")), { name: "tybo", version: "1.0.0" });

@@ -1,37 +1,47 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { moveItem } from "@tybo/core";
+import type { HistoryPage } from "./history.js";
 import { DEFAULT_PORT, portFromEnv, type Api } from "./http.js";
 import { call, startApp } from "./test-server.js";
 
 /** The API on workspaces held in memory — what the database does, without needing one. A change set isn't
  * applied (the database tests cover that); it only grows the revision by one, the way a save does, and
- * reports every unit it deletes as collided, so the answer has something to carry. */
-function memoryApi(healthy: () => Promise<boolean> = async () => true): Api & { writes: () => number } {
+ * reports every unit it deletes as collided, so the answer has something to carry. It keeps the source each
+ * write named (`sources`) and the pages the history was asked for (`pages`), answering no entries. */
+function memoryApi(
+	healthy: () => Promise<boolean> = async () => true,
+): Api & { writes: () => number; sources: (string | null | undefined)[]; pages: { id: string; page: HistoryPage }[] } {
 	let workspaces = new Map<string, { name: string; dataVersion: number; revision: number }>();
 	let written = 0;
+	const sources: (string | null | undefined)[] = [];
+	const pages: { id: string; page: HistoryPage }[] = [];
 	return {
 		healthy,
 		listWorkspaces: async () => [...workspaces].map(([id, { name }]) => ({ id, name })),
-		createWorkspace: async ({ id, name }, dataVersion) => {
+		createWorkspace: async ({ id, name }, dataVersion, source) => {
+			sources.push(source);
 			if (workspaces.has(id)) return false;
 			workspaces.set(id, { name, dataVersion, revision: 0 });
 			return true;
 		},
-		renameWorkspace: async (id, name) => {
+		renameWorkspace: async (id, name, source) => {
+			sources.push(source);
 			const workspace = workspaces.get(id);
 			if (!workspace) return false;
 			workspace.name = name;
 			return true;
 		},
-		moveWorkspace: async (id, to) => {
+		moveWorkspace: async (id, to, source) => {
+			sources.push(source);
 			const entries = [...workspaces];
 			const from = entries.findIndex(([key]) => key === id);
 			if (from < 0) return false;
 			workspaces = new Map(moveItem(entries, from, to));
 			return true;
 		},
-		deleteWorkspace: async (id) => {
+		deleteWorkspace: async (id, source) => {
+			sources.push(source);
 			workspaces.delete(id);
 		},
 		readWorkspace: async (id) => {
@@ -43,14 +53,21 @@ function memoryApi(healthy: () => Promise<boolean> = async () => true): Api & { 
 			const workspace = workspaces.get(id);
 			return workspace ? String(workspace.revision) : null;
 		},
-		writeChanges: async (id, changes) => {
+		writeChanges: async (id, changes, source) => {
+			sources.push(source);
 			const workspace = workspaces.get(id);
 			if (!workspace) return null;
 			written++;
 			workspace.revision++;
 			return { version: String(workspace.revision), collided: changes.flatMap((c) => (c.after === null ? [c.id] : [])) };
 		},
+		readHistory: async (id, page) => {
+			pages.push({ id, page });
+			return [];
+		},
 		writes: () => written,
+		sources,
+		pages,
 	};
 }
 
@@ -69,6 +86,7 @@ function failingApi(): Api {
 		readWorkspace: gone,
 		workspaceRevision: gone,
 		writeChanges: gone,
+		readHistory: gone,
 	};
 }
 
@@ -210,6 +228,45 @@ test("a change set that isn't one answers 400 and writes nothing", async () => {
 	}
 });
 
+test("every write hands the storage the source the request named itself with, or null", async () => {
+	const behind = memoryApi();
+	const api = await startApp(behind);
+	try {
+		const from = (source: string) => ({ "x-tybo-source": source });
+		await call(api.url, "workspaces", { method: "POST", headers: from("demo"), body: JSON.stringify({ id: "ws-1", name: "A", dataVersion: 1 }) });
+		await call(api.url, "workspaces/ws-1", { method: "PATCH", headers: from(" mcp "), body: '{"name":"B"}' });
+		await call(api.url, "workspaces/ws-1", { method: "PATCH", headers: from(""), body: '{"position":0}' });
+		await call(api.url, "workspaces/ws-1/changes", { method: "PUT", headers: from("x".repeat(65)), body: oneNewEntity });
+		await call(api.url, "workspaces/ws-1", { method: "DELETE" });
+		assert.deepEqual(behind.sources, ["demo", "mcp", null, null, null], "trimmed; empty, overlong or missing is none");
+	} finally {
+		await api.close();
+	}
+});
+
+test("the history route answers the storage's entries for the page asked, and 400 for a page that isn't one", async () => {
+	const behind = memoryApi();
+	const api = await startApp(behind);
+	try {
+		const all = await call(api.url, "workspaces/gone/history");
+		assert.equal(all.status, 200, "also for a workspace that isn't there (anymore)");
+		assert.deepEqual(JSON.parse(all.text), []);
+		assert.equal((await call(api.url, "workspaces/ws-1/history?limit=5&before=42")).status, 200);
+		assert.equal((await call(api.url, "workspaces/ws-1/history?limit=1000")).status, 200);
+		assert.deepEqual(behind.pages, [
+			{ id: "gone", page: { limit: 100 } },
+			{ id: "ws-1", page: { limit: 5, before: "42" } },
+			{ id: "ws-1", page: { limit: 1000 } },
+		]);
+		for (const query of ["limit=0", "limit=1001", "limit=x", "limit=1.5", "before=-1", "before=abc", "before="]) {
+			assert.equal((await call(api.url, `workspaces/ws-1/history?${query}`)).status, 400, `${query} isn't a page`);
+		}
+		assert.equal(behind.pages.length, 3);
+	} finally {
+		await api.close();
+	}
+});
+
 test("/health says 200 while the storage answers, and 503 once it doesn't", async () => {
 	const api = await startApp(memoryApi());
 	try {
@@ -236,6 +293,7 @@ test("requests the API doesn't serve answer 404, or 405 where only the method is
 		assert.equal((await call(api.url, "workspaces/ws-1")).status, 405);
 		assert.equal((await call(api.url, "workspaces/ws-1/data", { method: "PUT", body: "{}" })).status, 405);
 		assert.equal((await call(api.url, "workspaces/ws-1/changes")).status, 405);
+		assert.equal((await call(api.url, "workspaces/ws-1/history", { method: "DELETE" })).status, 405);
 		assert.equal((await call(api.url, "health", { method: "PUT", body: "x" })).status, 405);
 	} finally {
 		await api.close();
@@ -253,6 +311,7 @@ test("a failing storage answers 503, without anything that could explain why", a
 		assert.equal((await call(api.url, "workspaces/ws-1/data", { method: "HEAD" })).status, 503);
 		assert.equal((await call(api.url, "workspaces/ws-1/changes", { method: "PUT", body: oneNewEntity })).status, 503);
 		assert.equal((await call(api.url, "workspaces/ws-1", { method: "DELETE" })).status, 503);
+		assert.equal((await call(api.url, "workspaces/ws-1/history")).status, 503);
 	} finally {
 		await api.close();
 	}
@@ -273,7 +332,7 @@ const demoOrigin = "http://the-demo.example:5173";
 function assertCrossOriginAllowed(response: Awaited<ReturnType<typeof call>>, origin: string): void {
 	assert.equal(response.header("access-control-allow-origin"), origin);
 	assert.equal(response.header("access-control-allow-methods"), "GET, HEAD, POST, PUT, PATCH, DELETE");
-	assert.equal(response.header("access-control-allow-headers"), "Content-Type");
+	assert.equal(response.header("access-control-allow-headers"), "Content-Type, X-Tybo-Source");
 	assert.equal(response.header("access-control-expose-headers"), "ETag");
 }
 
@@ -282,7 +341,7 @@ test("the browser's preflight is answered 204 with what it asks for", async () =
 	try {
 		const preflight = await call(api.url, "workspaces/ws-1/changes", {
 			method: "OPTIONS",
-			headers: { "access-control-request-method": "PUT", "access-control-request-headers": "content-type" },
+			headers: { "access-control-request-method": "PUT", "access-control-request-headers": "content-type, x-tybo-source" },
 		});
 		assert.equal(preflight.status, 204);
 		assertCrossOriginAllowed(preflight, demoOrigin);

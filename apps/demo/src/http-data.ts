@@ -7,8 +7,11 @@ import type { Change, DataPort, SavedChanges, WorkspaceInfo } from "@tybo/core";
  *
  * The API answers each workspace's version (the `etag` header) with its data, and with every save: the core
  * keeps it, and asks for it anew (a HEAD) to see whether someone else saved in between.
+ *
+ * `source` names who writes (say "demo" or "mcp"): every write carries it in `X-Tybo-Source`, and the API's
+ * history keeps it with each entry. Reads don't carry it — they write nothing.
  */
-export function httpData(apiUrl: string): DataPort {
+export function httpData(apiUrl: string, source?: string): DataPort {
 	// One call after the other, in the order they came in: a request, once started, keeps running — without
 	// waiting, a later save could arrive before an earlier one and leave older data behind as the saved state.
 	let settled: Promise<unknown> = Promise.resolve();
@@ -26,11 +29,14 @@ export function httpData(apiUrl: string): DataPort {
 	/** The API's address of `path` — the workspace ids in it escaped, so any id winds into one path. */
 	const at = (...path: string[]) => new URL(path.map(encodeURIComponent).join("/"), apiUrl);
 
-	/** Sends `body` as JSON, the way the API reads it. */
+	/** The header naming who writes, when the port was told. */
+	const named: Record<string, string> = source ? { "x-tybo-source": source } : {};
+
+	/** Sends `body` as JSON, the way the API reads it — a write, so it names who writes. */
 	const json = (method: string, body: unknown): RequestInit => ({
 		method,
 		body: JSON.stringify(body),
-		headers: { "content-type": "application/json" },
+		headers: { "content-type": "application/json", ...named },
 	});
 
 	return {
@@ -51,7 +57,7 @@ export function httpData(apiUrl: string): DataPort {
 		},
 
 		deleteWorkspace(id) {
-			return inOrder(async () => void takeOrReject(await fetch(at("workspaces", id), { method: "DELETE" })));
+			return inOrder(async () => void takeOrReject(await fetch(at("workspaces", id), { method: "DELETE", headers: named })));
 		},
 
 		/** GET answers the workspace's data with its version in etag — the API's 404 says there is no such workspace. */

@@ -7,7 +7,7 @@ import { MIGRATIONS, SchemaMismatch, migrateSchema } from "./schema.js";
 const url = process.env.TEST_DATABASE_URL;
 
 /** Every table of the schema, and the library's, which only steps 4 to 10 have. */
-const ALL_TABLES = ["schema_migrations", "workspaces", "entity_types", "properties", "entities", "entity_values", "boards", "cards", "drawings", "library_drawings", "analyses"];
+const ALL_TABLES = ["schema_migrations", "workspaces", "entity_types", "properties", "entities", "entity_values", "boards", "cards", "drawings", "library_drawings", "analyses", "history"];
 
 /** Takes the test database back to before any schema: none of its tables there. */
 async function wipe(sql: postgres.Sql<{}>): Promise<void> {
@@ -29,7 +29,7 @@ test("an empty database gets the whole schema, and a second run has nothing left
 	try {
 		await wipe(sql);
 		assert.deepEqual(await migrateSchema(sql), MIGRATIONS.map((m) => m.version));
-		assert.deepEqual(await tables(sql), ["analyses", "boards", "cards", "drawings", "entities", "entity_types", "entity_values", "properties", "schema_migrations", "workspaces"]);
+		assert.deepEqual(await tables(sql), ["analyses", "boards", "cards", "drawings", "entities", "entity_types", "entity_values", "history", "properties", "schema_migrations", "workspaces"]);
 		assert.deepEqual(await migrateSchema(sql), []);
 	} finally {
 		await sql.end({ timeout: 5 });
@@ -169,7 +169,7 @@ test("step 11 drops the library and the library drawings placed on boards; other
 			('ws', 'placed', 'b', 1, 'symbol', ${sql.json({ id: "placed", kind: "symbol", libraryId: "lib" })})`;
 		await sql`insert into library_drawings (workspace_id, id, position, name) values ('ws', 'lib', 0, 'Stern')`;
 
-		assert.deepEqual(await migrateSchema(sql), [11]);
+		assert.deepEqual(await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 12)), [11]);
 		assert.equal(await tables(sql).then((names) => names.includes("library_drawings")), false);
 		assert.deepEqual([...(await sql`select id from drawings`)], [{ id: "box" }]);
 	} finally {

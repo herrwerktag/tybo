@@ -62,6 +62,29 @@ test("the workspaces are listed, made, renamed, moved and deleted at their addre
 	}
 });
 
+test("a port told who writes names it on every write, and on no read", async () => {
+	const api = fakeFetch((sent) =>
+		sent.method === "GET" ? jsonAnswer([], { etag: "1" }) : sent.method === "HEAD" ? answer(200, "", { etag: "1" }) : sent.method === "PUT" ? jsonAnswer({ version: "2", collided: [] }) : answer(204),
+	);
+	const port = httpData("http://api.local/", "mcp");
+	try {
+		await port.listWorkspaces();
+		await port.load("ws");
+		await port.version("ws");
+		await port.createWorkspace({ id: "ws", name: "Eins" }, 1);
+		await port.renameWorkspace("ws", "Neu");
+		await port.moveWorkspace("ws", 0);
+		await port.saveChanges("ws", []);
+		await port.deleteWorkspace("ws");
+		assert.deepEqual(
+			api.sent.map((sent) => [sent.method, sent.headers["x-tybo-source"] ?? null]),
+			[["GET", null], ["GET", null], ["HEAD", null], ["POST", "mcp"], ["PATCH", "mcp"], ["PATCH", "mcp"], ["PUT", "mcp"], ["DELETE", "mcp"]],
+		);
+	} finally {
+		api.restore();
+	}
+});
+
 test("load brings the workspace's data with the version its etag names; the API's 404 says null", async () => {
 	const data = { version: 1, types: [], entities: [], boards: [] };
 	const api = fakeFetch((sent) => (sent.url.includes("missing") ? answer(404) : jsonAnswer(data, { etag: "7" })));

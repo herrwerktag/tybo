@@ -91,9 +91,15 @@ laufen immer, jeweils auf einer eigenen temporaeren Datei.
 | `PATCH` / `DELETE` | `/workspaces/:id` | umbenennen (`{ name }`) oder verschieben (`{ position }`) / loeschen |
 | `GET` / `HEAD` | `/workspaces/:id/data` | Daten lesen / nur Stand (ETag) |
 | `PUT` | `/workspaces/:id/changes` | Aenderungen je Einheit schreiben |
+| `GET` | `/workspaces/:id/history` | Verlauf, neueste zuerst (`limit` 1–1000, Standard 100; `before` = Eintrags-ID) |
 
 Beim Schreiben gewinnt die letzte Aenderung; bei einer Kollision mit einem neueren Stand gibt es eine
 Warnung, nichts wird still verworfen.
+
+Jedes Schreiben landet im Verlauf (Tabelle `history`): je geschriebener Einheit ein Eintrag mit dem Stand
+davor und danach, dazu Anlegen, Umbenennen, Verschieben und Loeschen eines Arbeitsbereichs. Wer schreibt,
+nennt sich im Header `X-Tybo-Source` (die Demo als `demo`, der MCP-Server als `mcp`). Der Verlauf bleibt
+auch nach dem Loeschen eines Arbeitsbereichs erhalten; der letzte Eintrag enthaelt dann dessen komplette Daten.
 
 ## MCP
 
