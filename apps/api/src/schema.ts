@@ -259,6 +259,16 @@ export const MIGRATIONS: readonly Migration[] = [
 			await tx`alter table history alter column data_version set not null`;
 		},
 	},
+	{
+		version: 14,
+		name: "workspaces in the current data format",
+		async up(tx) {
+			// `data_version` stayed what a workspace was made with: saves write only the units that changed, never
+			// the format. The steps before brought every row to format 9, so that is every workspace's now. From
+			// here on, a step that changes the format of the rows also sets it (see DATA_VERSION in the core).
+			await tx`update workspaces set data_version = 9`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */

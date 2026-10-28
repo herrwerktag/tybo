@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { test } from "node:test";
+import { DATA_VERSION } from "@tybo/core";
 import { MIGRATIONS, SchemaMismatch, migrateSchema } from "./schema.js";
 
 /** The test database these tests run against (never the productive DATABASE_URL); without it they are skipped, not failed. */
@@ -184,8 +185,24 @@ test("step 13 gives the entries written before it their format, 9", { skip: !url
 		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 13));
 		await sql`insert into history (workspace_id, operation) values ('ws', 'create')`;
 
-		assert.deepEqual(await migrateSchema(sql), [13]);
+		assert.deepEqual(await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 14)), [13]);
 		assert.deepEqual([...(await sql`select data_version from history`)], [{ data_version: 9 }]);
+	} finally {
+		await sql.end({ timeout: 5 });
+	}
+});
+
+test("after the schema is up to date, every workspace says the app's data format — whatever it was made with", { skip: !url }, async () => {
+	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
+	try {
+		// Made long ago, its rows brought along by the steps since. Fails once DATA_VERSION is raised without a step
+		// that brings the rows to the new format and says so (see DATA_VERSION in the core).
+		await wipe(sql);
+		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 14));
+		await sql`insert into workspaces (id, position, name, data_version) values ('old', 0, 'Alt', 4)`;
+
+		await migrateSchema(sql);
+		assert.deepEqual([...(await sql`select data_version from workspaces`)], [{ data_version: DATA_VERSION }]);
 	} finally {
 		await sql.end({ timeout: 5 });
 	}
