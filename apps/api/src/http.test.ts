@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { moveItem } from "@tybo/core";
+import { DATA_VERSION, moveItem } from "@tybo/core";
 import type { HistoryPage } from "./history.js";
 import { DEFAULT_PORT, portFromEnv, type Api } from "./http.js";
 import { call, startApp } from "./test-server.js";
@@ -267,6 +267,23 @@ test("the history route answers the storage's entries for the page asked, and 40
 	}
 });
 
+test("a change set in another data format than the API's answers 409 and writes nothing; one naming none is taken", async () => {
+	const behind = memoryApi();
+	const api = await startApp(behind);
+	try {
+		await create(api.url, "ws-1");
+		const put = (headers: Record<string, string>) => call(api.url, "workspaces/ws-1/changes", { method: "PUT", headers, body: oneNewEntity });
+		assert.equal((await put({ "x-tybo-data-version": String(DATA_VERSION - 1) })).status, 409, "an older tab");
+		assert.equal((await put({ "x-tybo-data-version": "neu" })).status, 409);
+		assert.equal(behind.writes(), 0);
+		assert.equal((await put({ "x-tybo-data-version": String(DATA_VERSION) })).status, 200);
+		assert.equal((await put({})).status, 200);
+		assert.equal(behind.writes(), 2);
+	} finally {
+		await api.close();
+	}
+});
+
 test("/health says 200 while the storage answers, and 503 once it doesn't", async () => {
 	const api = await startApp(memoryApi());
 	try {
@@ -332,7 +349,7 @@ const demoOrigin = "http://the-demo.example:5173";
 function assertCrossOriginAllowed(response: Awaited<ReturnType<typeof call>>, origin: string): void {
 	assert.equal(response.header("access-control-allow-origin"), origin);
 	assert.equal(response.header("access-control-allow-methods"), "GET, HEAD, POST, PUT, PATCH, DELETE");
-	assert.equal(response.header("access-control-allow-headers"), "Content-Type, X-Tybo-Source");
+	assert.equal(response.header("access-control-allow-headers"), "Content-Type, X-Tybo-Source, X-Tybo-Data-Version");
 	assert.equal(response.header("access-control-expose-headers"), "ETag");
 }
 

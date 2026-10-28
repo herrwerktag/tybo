@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Change } from "@tybo/core";
+import { DATA_VERSION, type Change } from "@tybo/core";
 import { httpData } from "./http-data.js";
 
 /** One request the port made to the API. */
@@ -122,13 +122,13 @@ test("an answer without a version is none the API gives: load and version reject
 	}
 });
 
-test("saveChanges PUTs the change set to the workspace's changes route, settling with the API's answer", async () => {
+test("saveChanges PUTs the change set, in the app's data format, to the workspace's changes route, settling with the API's answer", async () => {
 	const api = fakeFetch(() => jsonAnswer({ version: "9", collided: ["ent-1"] }, { etag: "9" }));
 	const port = httpData("http://api.local/");
 	const changes: Change[] = [{ kind: "entity", id: "ent-1", before: null, after: { value: { id: "ent-1", typeId: "t", name: "Ada", content: "", description: "", tags: [], values: {} }, position: 0 } }];
 	try {
 		assert.deepEqual(await port.saveChanges("ws-1", changes), { version: "9", collided: ["ent-1"] });
-		assert.deepEqual(api.sent, [{ method: "PUT", url: "http://api.local/workspaces/ws-1/changes", body: JSON.stringify(changes), headers: JSON_BODY }]);
+		assert.deepEqual(api.sent, [{ method: "PUT", url: "http://api.local/workspaces/ws-1/changes", body: JSON.stringify(changes), headers: { ...JSON_BODY, "x-tybo-data-version": String(DATA_VERSION) } }]);
 	} finally {
 		api.restore();
 	}

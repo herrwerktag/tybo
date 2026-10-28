@@ -97,12 +97,13 @@ export async function recordBaselines(sql: Sql): Promise<number> {
 	return recorded;
 }
 
-/** Everything the workspace holds — its name, data format, revision and data — read with the workspace locked
- * for the rest of the transaction; null when there is none of that id. */
-async function snapshot(tx: Queries, id: string): Promise<{ name: string; dataVersion: number; revision: string; data: AppData } | null> {
-	const [row] = await tx`select name, data_version, revision::text as revision from workspaces where id = ${id} for update`;
+/** Everything the workspace holds — its name, revision and data — read with the workspace locked for the rest of
+ * the transaction; null when there is none of that id. The data's format is the entry's own (`data_version`): the
+ * workspace's column keeps the one it was made with, which the app has migrated past since. */
+async function snapshot(tx: Queries, id: string): Promise<{ name: string; revision: string; data: AppData } | null> {
+	const [row] = await tx`select name, revision::text as revision from workspaces where id = ${id} for update`;
 	if (!row) return null;
-	return { name: row.name as string, dataVersion: row.data_version as number, revision: row.revision as string, data: await readAppData(tx, id) };
+	return { name: row.name as string, revision: row.revision as string, data: await readAppData(tx, id) };
 }
 
 /** The revision the workspace is at, or null when there is none of that id. */

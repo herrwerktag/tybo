@@ -1,6 +1,6 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type { AppData, Change, SavedChanges } from "@tybo/core";
-import { CHANGE_KINDS, moveItem, unitStands, untouched } from "@tybo/core";
+import { CHANGE_KINDS, DATA_VERSION, moveItem, unitStands, untouched } from "@tybo/core";
 import { assembleAppData, type StoredWorkspace } from "./data.js";
 import { changeEntries, type HistoryEntry, type HistoryOperation, type NewEntry } from "./history.js";
 import type { Api } from "./http.js";
@@ -225,6 +225,13 @@ export const SQLITE_MIGRATIONS: readonly Migration[] = [
 			`);
 		},
 	},
+	{
+		version: 10,
+		up(db) {
+			// As Postgres's step 13 (SQLite can't make a column not null afterwards; every write sets it).
+			db.exec("alter table history add column data_version integer; update history set data_version = 9;");
+		},
+	},
 ];
 
 /** The table holding each kind of unit, one row per unit. */
@@ -418,12 +425,12 @@ export function sqliteStorage(path: string): SqliteStorage {
 	/** Adds the entries for the workspace, within the transaction of the write they tell of (see `history.ts`). */
 	const recordHistory = (ws: string, source: string | null, entries: readonly NewEntry[]): void => {
 		const insert = db.prepare(
-			`insert into history (workspace_id, revision, source, operation, kind, unit_id, board_id, before, after, collided)
-			values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`insert into history (workspace_id, revision, source, operation, data_version, kind, unit_id, board_id, before, after, collided)
+			values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		);
 		for (const entry of entries) {
 			insert.run(
-				ws, plain(entry.revision === undefined || entry.revision === null ? null : Number(entry.revision)), source, entry.operation,
+				ws, plain(entry.revision === undefined || entry.revision === null ? null : Number(entry.revision)), source, entry.operation, DATA_VERSION,
 				plain(entry.kind), plain(entry.unitId), plain(entry.boardId), json(entry.before), json(entry.after), entry.collided ? 1 : 0,
 			);
 		}
@@ -432,11 +439,12 @@ export function sqliteStorage(path: string): SqliteStorage {
 	/** The workspace's revision and name, or undefined when there is none of that id. */
 	const workspaceRow = (id: string) => db.prepare("select name, data_version, revision from workspaces where id = ?").get(id);
 
-	/** Everything the workspace holds — its name, data format, revision and data; null when there is none of that id. */
+	/** Everything the workspace holds — its name, revision and data; null when there is none of that id. The data's
+	 * format is the entry's own (see `snapshot` in data.ts). */
 	const snapshot = (id: string) => {
 		const row = workspaceRow(id);
 		if (!row) return null;
-		return { name: row.name as string, dataVersion: Number(row.data_version), revision: String(row.revision), data: readAppData(id) };
+		return { name: row.name as string, revision: String(row.revision), data: readAppData(id) };
 	};
 
 	return {
@@ -570,7 +578,7 @@ export function sqliteStorage(path: string): SqliteStorage {
 		async readHistory(id, page): Promise<HistoryEntry[]> {
 			const rows = db
 				.prepare(
-					`select id, workspace_id, revision, at, source, operation, kind, unit_id, board_id, before, after, collided
+					`select id, workspace_id, revision, at, source, operation, data_version, kind, unit_id, board_id, before, after, collided
 					from history where workspace_id = ? and id < ? order by id desc limit ?`,
 				)
 				.all(id, page.before === undefined ? Number.MAX_SAFE_INTEGER : Number(page.before), page.limit);
@@ -581,6 +589,7 @@ export function sqliteStorage(path: string): SqliteStorage {
 				at: row.at as string,
 				source: (row.source as string | null) ?? null,
 				operation: row.operation as HistoryOperation,
+				dataVersion: Number(row.data_version),
 				kind: (row.kind as HistoryEntry["kind"]) ?? null,
 				unitId: (row.unit_id as string | null) ?? null,
 				boardId: (row.board_id as string | null) ?? null,

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
-import { changesBetween, type AppData } from "@tybo/core";
+import { DATA_VERSION, changesBetween, type AppData } from "@tybo/core";
 import postgres from "postgres";
 import { postgresStorage } from "./postgres.js";
 import { call, startApp } from "./test-server.js";
@@ -194,6 +194,7 @@ test("every write goes into the history, which outlives the workspace — also o
 		assert.deepEqual(theirSave!.before, { value: mine.entities[0], position: 0 }, "what the tables held, not what the saver thought");
 		assert.equal(history.find((e) => e.kind === "card")!.boardId, "board-1");
 		assert.ok(!Number.isNaN(Date.parse(history[0]!.at)));
+		assert.ok(history.every((e) => e.dataVersion === DATA_VERSION), "each entry names its format");
 
 		const page = await call(api.url, `${path}/history?limit=2&before=${rename!.id}`);
 		assert.deepEqual(JSON.parse(page.text).map((e: { id: string }) => e.id), [theirSave!.id, mySave!.id]);
@@ -201,7 +202,7 @@ test("every write goes into the history, which outlives the workspace — also o
 		await storage.deleteWorkspace(id, "mcp");
 		const [deleted] = await storage.readHistory(id, { limit: 1 });
 		assert.equal(deleted!.operation, "delete");
-		assert.deepEqual(deleted!.before, { name: "Zweit", dataVersion: 1, revision: "3", data: theirs });
+		assert.deepEqual(deleted!.before, { name: "Zweit", revision: "3", data: theirs });
 		assert.equal((await storage.readHistory(id, { limit: 100 })).length, history.length + 1);
 	} finally {
 		await api.close();
@@ -227,7 +228,7 @@ test("a workspace made before the history gets a baseline of everything it holds
 		assert.deepEqual(history.filter((e) => e.operation === "baseline").length, 1, "once");
 		const [baseline] = history;
 		assert.equal(baseline!.operation, "baseline");
-		assert.deepEqual(baseline!.after, { name: "Alt", dataVersion: 1, revision: "1", data: sample() });
+		assert.deepEqual(baseline!.after, { name: "Alt", revision: "1", data: sample() });
 	} finally {
 		await raw.end({ timeout: 5 });
 		await storage.deleteWorkspace(id);

@@ -103,6 +103,10 @@ nennt sich im Header `X-Tybo-Source` (die Demo als `demo`, der MCP-Server als `m
 auch nach dem Loeschen eines Arbeitsbereichs erhalten; der letzte Eintrag enthaelt dann dessen komplette Daten.
 Arbeitsbereiche, die es schon vor dem Verlauf gab, bekommen beim Start der API einmalig einen Eintrag `baseline`
 mit ihren kompletten Daten als Ausgangspunkt; neue beginnen mit ihrem `create`.
+Jeder Eintrag nennt das Datenformat seiner Staende (`dataVersion`, das `DATA_VERSION` der App beim Schreiben); nach
+einer Aenderung am Modell werden alte Eintraege ueber die Migrationen ab diesem Format gelesen. Damit kein Eintrag
+in einem anderen Format landet, nennt jede Speicherung ihr Format im Header `X-Tybo-Data-Version`; weicht es vom
+Format der API ab (etwa ein Tab mit einer aelteren App), antwortet sie mit 409 und schreibt nichts.
 
 ## MCP
 
