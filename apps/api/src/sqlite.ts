@@ -192,13 +192,19 @@ export const SQLITE_MIGRATIONS: readonly Migration[] = [
 			db.exec("alter table boards drop column stories; alter table boards drop column frames;");
 		},
 	},
+	{
+		version: 8,
+		up(db) {
+			// As Postgres's step 11.
+			db.exec("delete from drawings where kind = 'symbol'; drop table library_drawings;");
+		},
+	},
 ];
 
 /** The table holding each kind of unit, one row per unit. */
 const TABLES: Record<Change["kind"], string> = {
 	type: "entity_types",
 	entity: "entities",
-	library: "library_drawings",
 	analysis: "analyses",
 	board: "boards",
 	card: "cards",
@@ -261,11 +267,6 @@ export function sqliteStorage(path: string): SqliteStorage {
 			drawings: all("select board_id, body from drawings where workspace_id = ? order by board_id, position, id").map((row) => ({
 				...row,
 				body: parsed(row.body),
-			})),
-			library: all("select id, name, tags, drawings from library_drawings where workspace_id = ? order by position, id").map((row) => ({
-				...row,
-				tags: parsed(row.tags),
-				drawings: parsed(row.drawings),
 			})),
 			analyses: all("select id, name, type_id, group_paths, column_paths from analyses where workspace_id = ? order by position, id").map((row) => ({
 				...row,
@@ -336,18 +337,6 @@ export function sqliteStorage(path: string): SqliteStorage {
 						ws, entity.id, propertyId, index, json(value),
 					);
 				}
-				return;
-			}
-			case "library": {
-				const item = unit.after.value;
-				run(
-					`insert into library_drawings (workspace_id, id, position, name, tags, drawings, updated_at)
-					values (?, ?, ?, ?, ?, ?, current_timestamp)
-					on conflict (workspace_id, id) do update set
-						position = excluded.position, name = excluded.name, tags = excluded.tags, drawings = excluded.drawings,
-						updated_at = current_timestamp`,
-					ws, item.id, unit.after.position, plain(item.name), json(item.tags), json(item.drawings),
-				);
 				return;
 			}
 			case "analysis": {

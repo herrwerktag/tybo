@@ -160,7 +160,7 @@ export interface Board {
 	viewport: Viewport;
 	/** The board's frame, always there: the viewer shows the board in it. In a frame's shape (see frameShape). */
 	viewFrame: Rect;
-	/** Text boxes, groups, images and placed library drawings, drawn behind the cards; later ones on top. */
+	/** Text boxes, groups and images, drawn behind the cards; later ones on top. */
 	drawings: Drawing[];
 }
 
@@ -196,24 +196,9 @@ export interface ImageDrawing {
 	src: string;
 }
 
-/**
- * A drawing from the library placed on a board. It holds no copy: it always shows the library drawing as it is now,
- * fitted into its box (keeping its aspect ratio), so changing the library drawing changes every place it's used.
- */
-export interface SymbolDrawing {
-	id: string;
-	kind: "symbol";
-	/** The LibraryDrawing shown. */
-	libraryId: string;
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-}
+export type Drawing = BoxDrawing | ImageDrawing;
 
-export type Drawing = BoxDrawing | ImageDrawing | SymbolDrawing;
-
-/** Text boxes and areas (as opposed to images and library drawings). */
+/** Text boxes and areas (as opposed to images). */
 export function isBox(drawing: Drawing): drawing is BoxDrawing {
 	return drawing.kind === "textbox" || drawing.kind === "area";
 }
@@ -226,25 +211,7 @@ export function isImage(drawing: Drawing): drawing is ImageDrawing {
 	return drawing.kind === "image";
 }
 
-export function isSymbol(drawing: Drawing): drawing is SymbolDrawing {
-	return drawing.kind === "symbol";
-}
-
-export type NewDrawing = Omit<BoxDrawing, "id"> | Omit<ImageDrawing, "id"> | Omit<SymbolDrawing, "id">;
-
-/**
- * A named drawing of its own, kept in the workspace's library and placed on boards from there (as SymbolDrawings).
- * It's made of the same text boxes and images as a board's drawings — never of other library
- * drawings, so one can't end up containing itself.
- */
-export interface LibraryDrawing {
-	id: string;
-	name: string;
-	/** For finding it in the library; trimmed, without duplicates. */
-	tags: string[];
-	/** Later ones on top; their coordinates are the drawing's own (only their bounds matter where it's placed). */
-	drawings: Drawing[];
-}
+export type NewDrawing = Omit<BoxDrawing, "id"> | Omit<ImageDrawing, "id">;
 
 /** Turns comma-separated input into tags: trimmed, without empty ones and duplicates (ignoring case). */
 export function parseTags(input: string): string[] {
@@ -359,8 +326,6 @@ export interface AppData {
 	entities: Entity[];
 	/** Empty once the last board was deleted (a new workspace starts with one). */
 	boards: Board[];
-	/** Drawings to place on boards, in the order they were made. */
-	library: LibraryDrawing[];
 	/** Saved analyses, in the order they were made. */
 	analyses: Analysis[];
 }
@@ -563,12 +528,6 @@ export function filterEntities<T extends Pick<Entity, "name" | "typeId" | "tags"
 /** The tags in use, sorted; spelled as where they first appear (tags differing only in case count as one). */
 export function entityTags(entities: readonly Pick<Entity, "tags">[]): string[] {
 	return parseTags(entities.flatMap((e) => e.tags).join(",")).sort((a, b) => a.localeCompare(b));
-}
-
-/** Library drawings whose name or one of whose tags contains `query` (ignoring case and accents). */
-export function filterLibrary<T extends Pick<LibraryDrawing, "name" | "tags">>(items: readonly T[], query: string): T[] {
-	const key = searchKey(query.trim());
-	return items.filter((item) => [item.name, ...item.tags].some((value) => searchKey(value).includes(key)));
 }
 
 /** Returns a copy of the list with the item at `from` moved to index `to`. */

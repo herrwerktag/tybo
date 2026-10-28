@@ -9,7 +9,7 @@ import { SQLITE_MIGRATIONS, sqliteStorage } from "./sqlite.js";
 import { call, startApp } from "./test-server.js";
 
 /** A state with every kind of unit: a type with a property, an entity with a value, a board with a card, a
- * drawing placed from the library, and that library drawing. */
+ * text box. */
 function sample(): AppData {
 	return {
 		types: [
@@ -29,15 +29,14 @@ function sample(): AppData {
 				cards: [{ id: "card-1", entityId: "ent-1", x: 1.25, y: -2, width: 240, height: 160 }],
 				viewport: { x: 0, y: 0, zoom: 1.5 },
 				viewFrame: { x: -12.5, y: 0, width: 1280, height: 720 },
-				drawings: [{ id: "draw-star", kind: "symbol", libraryId: "lib-star", x: 40, y: 40.5, width: 96, height: 48 }],
+				drawings: [{ id: "draw-star", kind: "textbox", x: 40, y: 40.5, width: 96, height: 48, color: "#f6e8a6", text: "★", textSize: "l" }],
 			},
 		],
-		library: [{ id: "lib-star", name: "Stern", tags: ["Form"], drawings: [{ id: "lib-box", kind: "textbox", x: 0, y: 0, width: 20, height: 10.5, color: "#f6e8a6", text: "★", textSize: "l" }] }],
 		analyses: [{ id: "ana-1", name: "Rollen", typeId: null, groups: [[{ propertyId: "gone", direction: "inverse" }]], columns: [[]] }],
 	};
 }
 
-const empty = (): AppData => ({ types: [], entities: [], boards: [], library: [], analyses: [] });
+const empty = (): AppData => ({ types: [], entities: [], boards: [], analyses: [] });
 
 /** A storage on a fresh file of its own; close() closes it and removes the file. */
 async function fresh() {
@@ -57,7 +56,7 @@ async function fresh() {
 test("sqlite: the schema is made once, and survives reopening the file", async () => {
 	const { storage, path, close } = await fresh();
 	try {
-		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7]);
+		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7, 8]);
 		assert.deepEqual(await storage.init(), [], "the second start has nothing left to do");
 		assert.equal(await storage.healthy(), true);
 		await storage.createWorkspace({ id: "ws", name: "Bleibt" }, 1);
@@ -172,7 +171,7 @@ test("sqlite: what was saved of stories, by any version before, is dropped; the 
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7]);
+		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7, 8]);
 		const { data } = (await storage.readWorkspace("ws"))!;
 		// Null, not missing: the app makes the frame of the board's pan/zoom.
 		assert.deepEqual(
@@ -185,6 +184,33 @@ test("sqlite: what was saved of stories, by any version before, is dropped; the 
 		await storage.close();
 		const columns = (new DatabaseSync(path).prepare("pragma table_info(boards)").all() as { name: string }[]).map((c) => c.name);
 		assert.deepEqual(columns.sort(), ["id", "name", "position", "updated_at", "view_frame", "viewport", "workspace_id"]);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("sqlite: step 8 drops the library and the library drawings placed on boards; other drawings stay", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "tybo-sqlite-"));
+	const path = join(dir, "test.sqlite");
+	try {
+		const db = new DatabaseSync(path);
+		for (const migration of SQLITE_MIGRATIONS.slice(0, 7)) migration.up(db);
+		db.exec("pragma user_version = 7");
+		db.exec("insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 8)");
+		db.exec("insert into boards (workspace_id, id, position, name) values ('ws', 'b', 0, 'Flow')");
+		const insert = db.prepare("insert into drawings (workspace_id, id, board_id, position, kind, body) values ('ws', ?, 'b', ?, ?, ?)");
+		insert.run("box", 0, "textbox", JSON.stringify({ id: "box", kind: "textbox" }));
+		insert.run("placed", 1, "symbol", JSON.stringify({ id: "placed", kind: "symbol", libraryId: "lib" }));
+		db.exec("insert into library_drawings (workspace_id, id, position, name) values ('ws', 'lib', 0, 'Stern')");
+		db.close();
+
+		const storage = sqliteStorage(path);
+		assert.deepEqual(await storage.init(), [8]);
+		await storage.close();
+		const check = new DatabaseSync(path);
+		assert.deepEqual(check.prepare("select name from sqlite_master where name = 'library_drawings'").all(), []);
+		assert.deepEqual(check.prepare("select id from drawings").all().map((row) => row.id), ["box"]);
+		check.close();
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

@@ -34,12 +34,11 @@ function sample(): AppData {
 				drawings: [],
 			},
 		],
-		library: [],
 		analyses: [],
 	};
 }
 
-const empty = (): AppData => ({ types: [], entities: [], boards: [], library: [], analyses: [] });
+const empty = (): AppData => ({ types: [], entities: [], boards: [], analyses: [] });
 
 test("starting again and again leaves the schema as it is — nothing runs twice", { skip: !url }, async () => {
 	const storage = postgresStorage(url!);
@@ -61,7 +60,7 @@ test("a workspace is made empty, renamed, listed, and deleted with every row of 
 		assert.equal(await storage.createWorkspace({ id, name: "Noch mal" }, 1), false, "an id is made once");
 
 		const made = await storage.readWorkspace(id);
-		assert.deepEqual(made, { data: { version: 1, types: [], entities: [], boards: [], library: [], analyses: [] }, revision: "0" });
+		assert.deepEqual(made, { data: { version: 1, types: [], entities: [], boards: [], analyses: [] }, revision: "0" });
 
 		assert.equal(await storage.renameWorkspace(id, "Umbenannt"), true);
 		assert.equal(await storage.renameWorkspace(freshId(), "Niemand"), false);

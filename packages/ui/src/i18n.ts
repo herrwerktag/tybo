@@ -14,7 +14,6 @@ const en = {
 	// Navigation and settings
 	tabEntities: "Entities",
 	tabBoards: "Boards",
-	tabLibrary: "Library",
 	tabAnalysis: "Analyses",
 	tabView: "View",
 	settings: "Settings",
@@ -264,28 +263,9 @@ const en = {
 	textSize: "Text size",
 	textSizes: { s: "small", m: "medium", l: "large" } satisfies Record<TextSize, string>,
 	deleteDrawing: "Delete drawing",
-	editInLibrary: "Edit in library",
 
-	// Library
-	library: "Library",
-	libraryDrawings: "Drawings",
-	sidePanelContent: "Show in the side panel",
-	searchLibrary: "Search names and tags…",
-	noLibraryYet: "No drawings yet. Make some in the Library.",
-	noLibraryMatches: "No matching drawings.",
-	newLibraryDrawing: "New drawing",
-	defaultLibraryName: (n: number) => `Drawing ${n}`,
 	tags: "Tags",
 	tagsHint: "Separated by commas",
-	libraryUses: (count: number, boards: number) =>
-		count === 0 ? "Not placed on any board" : `Placed ${count}× on ${boards} ${boards === 1 ? "board" : "boards"}`,
-	libraryLinkedHint: "Changes show everywhere it's placed.",
-	deleteLibraryDrawing: "Delete from library",
-	confirmDeleteLibraryDrawing: (name: string, count: number, boards: number) =>
-		`Delete "${name}" from the library?` +
-		(count > 0 ? ` It's placed ${count}× on ${boards} ${boards === 1 ? "board" : "boards"}; those go too.` : ""),
-	libraryEmpty: "The library is empty. Make a drawing to place on boards.",
-	libraryCanvas: "Drawing area",
 
 	// Analyses
 	analyses: "Analyses",
@@ -328,7 +308,6 @@ export type Messages = typeof en;
 const de: Messages = {
 	tabEntities: "Entitäten",
 	tabBoards: "Boards",
-	tabLibrary: "Bibliothek",
 	tabAnalysis: "Auswertungen",
 	tabView: "Ansicht",
 	settings: "Einstellungen",
@@ -569,27 +548,9 @@ const de: Messages = {
 	textSize: "Textgröße",
 	textSizes: { s: "klein", m: "mittel", l: "groß" },
 	deleteDrawing: "Zeichnung löschen",
-	editInLibrary: "In der Bibliothek bearbeiten",
 
-	library: "Bibliothek",
-	libraryDrawings: "Zeichnungen",
-	sidePanelContent: "In der Seitenleiste zeigen",
-	searchLibrary: "Namen und Tags suchen…",
-	noLibraryYet: "Noch keine Zeichnungen. Lege welche in der Bibliothek an.",
-	noLibraryMatches: "Keine passenden Zeichnungen.",
-	newLibraryDrawing: "Neue Zeichnung",
-	defaultLibraryName: (n) => `Zeichnung ${n}`,
 	tags: "Tags",
 	tagsHint: "Durch Kommas getrennt",
-	libraryUses: (count, boards) =>
-		count === 0 ? "Auf keinem Board platziert" : `${count}× auf ${boards} ${boards === 1 ? "Board" : "Boards"} platziert`,
-	libraryLinkedHint: "Änderungen erscheinen überall, wo sie platziert ist.",
-	deleteLibraryDrawing: "Aus der Bibliothek löschen",
-	confirmDeleteLibraryDrawing: (name, count, boards) =>
-		`„${name}“ aus der Bibliothek löschen?` +
-		(count > 0 ? ` Sie ist ${count}× auf ${boards} ${boards === 1 ? "Board" : "Boards"} platziert; diese verschwinden mit.` : ""),
-	libraryEmpty: "Die Bibliothek ist leer. Lege eine Zeichnung an, um sie auf Boards zu platzieren.",
-	libraryCanvas: "Zeichenfläche",
 
 	analyses: "Auswertungen",
 	newAnalysis: "Neue Auswertung",

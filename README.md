@@ -2,8 +2,7 @@
 
 Eine Web-Anwendung zum Modellieren eigener Datentypen: Entitaetstypen mit Eigenschaften (Text, Auswahl,
 Verweis) anlegen, Entitaeten dazu erfassen und sie als Karten auf Boards anordnen. Verweise koennen als
-Linien zwischen Karten erscheinen, dazu kommen Textboxen, Gruppen und Bilder. Eigene Zeichnungen mit Namen und
-Tags liegen in der Bibliothek und werden von dort auf Boards gezogen; sie bleiben mit dem Original verbunden.
+Linien zwischen Karten erscheinen, dazu kommen Textboxen, Gruppen und Bilder.
 Auswertungen listen die Entitaeten eines Typs gruppiert nach dem, wohin ihre Verweise fuehren (auch ueber mehrere
 Verweise, vor- und rueckwaerts), mit frei waehlbaren Spalten; das Ergebnis laesst sich samt Beschreibungen als Markdown exportieren (mit Gruppen als ZIP mit je einer Datei pro aeusserster Gruppe). Die Daten liegen in Arbeitsbereichen in Postgres (oder lokal in einer SQLite-Datei).
 

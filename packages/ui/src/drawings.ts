@@ -45,7 +45,7 @@ export function resizeBox<T extends Rect>(box: T, corner: Corner, dx: number, dy
 }
 
 /**
- * Moves one corner of an image (or a placed library drawing) by (dx, dy) while the opposite corner stays put, keeping
+ * Moves one corner of an image by (dx, dy) while the opposite corner stays put, keeping
  * the aspect ratio: the side dragged further decides the size. It never flips, and neither side gets smaller than
  * MIN_BOX_SIZE.
  */
@@ -67,7 +67,7 @@ export function resizeImage<T extends Rect>(image: T, corner: Corner, dx: number
 	};
 }
 
-/** Where a new image (or placed library drawing) goes: centered on `center`, at its own size or scaled down to
+/** Where a new image goes: centered on `center`, at its own size or scaled down to
  * MAX_IMAGE_SIZE. */
 export function imageRect(center: Point, naturalWidth: number, naturalHeight: number): Rect {
 	const scale = Math.min(1, MAX_IMAGE_SIZE / Math.max(naturalWidth, naturalHeight));
@@ -98,19 +98,5 @@ export function areaContents(
 	return {
 		cardIds: new Set(cards.filter(inside).map((c) => c.id)),
 		drawingIds: new Set(drawings.filter((d) => d.id !== area.id && inside(drawingBounds(d))).map((d) => d.id)),
-	};
-}
-
-/** The smallest box containing all the drawings, or null when there are none. */
-export function contentBounds(drawings: readonly Drawing[]): Rect | null {
-	if (drawings.length === 0) return null;
-	const boxes = drawings.map(drawingBounds);
-	const x = Math.min(...boxes.map((b) => b.x));
-	const y = Math.min(...boxes.map((b) => b.y));
-	return {
-		x,
-		y,
-		width: Math.max(...boxes.map((b) => b.x + b.width)) - x,
-		height: Math.max(...boxes.map((b) => b.y + b.height)) - y,
 	};
 }
