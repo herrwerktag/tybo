@@ -1771,46 +1771,6 @@ button.ref-tag {
 	bottom: 0.75rem;
 }
 
-/* Story mode pages: bottom center, only as wide as needed (centered at left: 50%, it would otherwise wrap at half the
-   canvas width). The drawing style bar and the zoom move up above it, by its height as measured (--page-bar-height). */
-.page-bar {
-	position: absolute;
-	left: 50%;
-	bottom: 0.75rem;
-	transform: translateX(-50%);
-	width: max-content;
-	max-width: calc(100% - 1.5rem);
-	flex-wrap: wrap;
-	justify-content: center;
-}
-
-.story-mode :is(.drawing-style, .canvas-zoom) {
-	bottom: calc(var(--page-bar-height, 2.75rem) + 1.25rem);
-}
-
-.page-bar input.page-name {
-	width: 12rem;
-}
-
-.page-bar strong.page-name {
-	max-width: 24rem;
-	padding: 0 0.5rem;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
-.page-counter {
-	min-width: 3rem;
-	text-align: center;
-	font-variant-numeric: tabular-nums;
-}
-
-.page-copy {
-	display: flex;
-	align-items: center;
-	gap: 0.25rem;
-}
-
 /* The button showing the controls kept out of the way on narrow screens; wider ones show them all. */
 .canvas-more {
 	display: none;
@@ -1818,9 +1778,9 @@ button.ref-tag {
 
 /* Narrow screens: too little room for the control groups to float side by side, and how tall each gets depends
    on how it wraps. So they're laid out in a grid over the canvas: boards (and the drawing tools) at the top; the
-   drawing style, then pages and zoom side by side at the bottom. Only what's needed to look around is shown:
-   the board, the step and the zoom. The rest (editing the board and its steps, the drawing tools, resetting the
-   view) waits behind ⋯ (.show-more), so the canvas keeps its room. */
+   drawing style, then the zoom at the bottom. Only what's needed to look around is shown: the board and the zoom.
+   The rest (editing the board, the drawing tools, resetting the view) waits behind ⋯ (.show-more), so the canvas
+   keeps its room. */
 @media (max-width: 40rem) {
 	.canvas-main {
 		display: grid;
@@ -1831,23 +1791,21 @@ button.ref-tag {
 			"tools tools"
 			". ."
 			"style style"
-			"pages zoom";
+			". zoom";
 		column-gap: 0.5rem;
 		padding: 0.5rem;
 	}
 
 	.show-more .canvas-main {
-		grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
 		grid-template-areas:
 			"top top"
 			"tools tools"
 			". ."
 			"style style"
-			"zoom zoom"
-			"pages pages";
+			"zoom zoom";
 	}
 
-	.canvas-main > :is(.canvas-toolbar, .drawing-tools, .drawing-style, .canvas-zoom, .page-bar) {
+	.canvas-main > :is(.canvas-toolbar, .drawing-tools, .drawing-style, .canvas-zoom) {
 		position: relative;
 		z-index: 1;
 		inset: auto;
@@ -1875,13 +1833,6 @@ button.ref-tag {
 		grid-area: zoom;
 	}
 
-	.show-more .canvas-main > .canvas-zoom {
-		margin-bottom: 0.5rem;
-	}
-
-	.canvas-main > .page-bar {
-		grid-area: pages;
-	}
 
 	.canvas-main > .panel-open {
 		top: 0.5rem;
@@ -1898,12 +1849,11 @@ button.ref-tag {
 		flex: none;
 	}
 
-	/* Kept out of the way until ⋯; the viewer keeps its story mode toggle at hand. */
+	/* Kept out of the way until ⋯. */
 	.canvas-view:not(.show-more)
 		:is(
 			.board-controls > :not(.picker-switch),
 			.drawing-tools,
-			.page-bar > :is(input.page-name, .page-copy, button:nth-child(n + 5)),
 			.canvas-zoom > button:last-child
 		) {
 		display: none;
@@ -1922,7 +1872,7 @@ button.ref-tag {
 		flex-wrap: wrap;
 	}
 
-	.canvas-main > :is(.drawing-tools, .canvas-zoom, .page-bar) > :not(.page-counter, .zoom-label),
+	.canvas-main > :is(.drawing-tools, .canvas-zoom) > :not(.zoom-label),
 	.canvas-toolbar .board-controls > * {
 		flex: 1 1 auto;
 	}
@@ -1930,72 +1880,10 @@ button.ref-tag {
 	.canvas-toolbar .picker-switch {
 		max-width: none;
 	}
-
-	.page-bar input.page-name {
-		width: 6rem;
-		min-width: 0;
-	}
 }
 
-/* The step description, on the canvas like a card (see placeDescription), above the cards. Its size is saved
- * with the page (sizeDescription), so it's the same box in the editor and the viewer; the viewer scrolls longer text. */
-.page-description {
-	position: absolute;
-	overflow: auto;
-	padding: 0.5rem 0.75rem;
-	background: var(--surface);
-	border: 1px solid var(--border);
-	border-radius: 6px;
-	box-shadow: 0 2px 6px rgb(0 0 0 / 0.08);
-}
-
-.page-description[hidden] {
-	display: none;
-}
-
-/* In the editor: the text to edit, filling the box like the viewer's text; the handle to move it sits left of it. */
-.page-description:has(textarea) {
-	overflow: visible;
-}
-
-.page-description textarea {
-	display: block;
-	width: 100%;
-	height: 100%;
-	padding: 0;
-	border: none;
-	background: transparent;
-	font: inherit;
-	line-height: 1.55; /* as the viewer's Markdown */
-	resize: none;
-}
-
-.page-description textarea:focus-visible {
-	outline: none;
-}
-
-.page-description:has(textarea:focus-visible) {
-	outline: 2px solid var(--focus);
-	outline-offset: 1px;
-}
-
-.page-description-handle {
-	position: absolute;
-	top: 0.25rem;
-	left: -24px;
-	width: 24px;
-	box-sizing: border-box;
-	text-align: center;
-	padding: 0.25rem;
-	color: var(--muted);
-	cursor: move;
-	touch-action: none;
-	user-select: none;
-}
-
-/* The editor's view frames (see renderFrames): outlines above the cards that let the pointer through, except at their
- * name (to move one, or click to go to it) and corner (to resize it); the steps' dashed, the board's solid. The one of
- * what's shown stands out. */
+/* The editor's view of the board's frame (see renderFrames): an outline above the cards that lets the pointer through,
+ * except at its name (to move it, or click to go to it) and corner (to resize it). */
 .view-frames,
 .view-frame {
 	position: absolute;
@@ -2009,16 +1897,8 @@ button.ref-tag {
 
 .view-frame {
 	box-sizing: border-box;
-	border: 2px dashed var(--border-strong);
+	border: 2px solid var(--focus);
 	border-radius: 6px;
-}
-
-.view-frame.board-frame {
-	border-style: solid;
-}
-
-.view-frame.current {
-	border-color: var(--focus);
 }
 
 .view-frame-label {
@@ -2031,9 +1911,8 @@ button.ref-tag {
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	font-size: 0.8rem;
-	color: var(--muted);
 	background: var(--surface);
-	border: 1px solid var(--border);
+	border: 1px solid var(--focus);
 	border-radius: 6px 6px 0 0;
 	cursor: move;
 	touch-action: none;
@@ -2041,41 +1920,8 @@ button.ref-tag {
 	pointer-events: auto;
 }
 
-.view-frame.current .view-frame-label {
-	color: inherit;
-	border-color: var(--focus);
-}
-
 .view-frame .card-resize {
 	pointer-events: auto;
-}
-
-/* Other pages' cards and drawings, shown faded in the story mode editor so they can be shown here too. */
-.canvas-card.ghost {
-	opacity: 0.35;
-	border-style: dashed;
-}
-
-.canvas-card.ghost:hover {
-	opacity: 0.7;
-}
-
-.drawing.ghost {
-	opacity: 0.3;
-}
-
-/* Cards a step shows out of focus: faded in the viewer, half so in the editor (still to be worked on there). The
- * lines touching them fade along. */
-.canvas-card.dimmed,
-.connector.dimmed,
-.connector-label.dimmed {
-	opacity: 0.55;
-}
-
-.read-only .canvas-card.dimmed,
-.read-only .connector.dimmed,
-.read-only .connector-label.dimmed {
-	opacity: 0.2;
 }
 
 /* With one card selected, the rest of the board fades to grey so the chain of cards linked to it stands out (and the
@@ -2110,11 +1956,6 @@ button.ref-tag {
 	}
 }
 
-/* The dim toggle sits right, next to ×. */
-.card-dim {
-	margin-left: auto;
-}
-
 /* Turns editing the frames on and off (see renderBoardControls); while on, it stands out. */
 .frames-toggle {
 	display: inline-flex;
@@ -2127,11 +1968,7 @@ button.ref-tag {
 	color: var(--focus);
 }
 
-.card-dim[aria-pressed="true"] {
-	color: var(--focus);
-}
-
-/* Cards coming onto a story mode page fade in. */
+/* Cards coming onto the board fade in. */
 .canvas-card.appear {
 	animation: card-appear 350ms ease-out;
 }
@@ -2266,16 +2103,14 @@ button.ref-tag {
 	overflow: hidden;
 }
 
-.card-remove,
-.card-dim {
+.card-remove {
 	border: none;
 	background: transparent;
 	padding: 0 0.35rem;
 	line-height: 1.2;
 }
 
-.card-remove:hover:not(:disabled),
-.card-dim:hover:not(:disabled) {
+.card-remove:hover:not(:disabled) {
 	background: rgb(0 0 0 / 0.08);
 }
 
@@ -2431,7 +2266,7 @@ button.ref-tag {
 	gap: 0.25rem;
 }
 
-/* The current board's or story's name, opening the overlay to pick another. */
+/* The current board's name, opening the overlay to pick another. */
 .picker-switch {
 	display: inline-flex;
 	align-items: center;
@@ -2446,8 +2281,7 @@ button.ref-tag {
 	white-space: nowrap;
 }
 
-/* Overlays over the canvas: the boards and the stories (pick one; in the editor also create, rename and delete),
-   connecting an entity with another, a new entity. */
+/* Overlays over the canvas: connecting an entity with another, a new entity. */
 .canvas-dialog {
 	/* Centered on the screen (the reset takes away the browser's margin: auto). */
 	margin: auto;
@@ -2476,7 +2310,7 @@ button.ref-tag {
 	justify-content: space-between;
 }
 
-/* The board, story and frame pickers: dropdowns under their buttons, like the workspace menu (placed by script). */
+/* The board picker: a dropdown under its button, like the workspace menu (placed by script). */
 .picker-dropdown {
 	position: fixed;
 	z-index: 30;
@@ -2513,7 +2347,7 @@ button.ref-tag {
 	list-style: none;
 }
 
-/* The pickers' dropdowns scroll as a whole; a scrolling list would cut off the drop marker above its first board
+/* The picker's dropdown scrolls as a whole; a scrolling list would cut off the drop marker above its first board
    and below its last. */
 .connect-list {
 	overflow-y: auto;

@@ -82,33 +82,3 @@ test("an exported view shows its board read-only in its language, and a click on
 	setLanguage("en");
 });
 
-test("an exported board starts whole; a story picked from its stories steps through its pages", async () => {
-	setLanguage("en");
-	const page = (id: string, name: string, cardIds: string[]) => ({ id, name, description: "", viewport, cardIds, drawingIds: [] });
-	const story = {
-		...data,
-		boards: [
-			{
-				id: "story",
-				name: "Story",
-				cards: [card("c1", DUNE), card("c2", HERBERT)],
-				viewport,
-				drawings: [],
-				// Steps as saved before boards had several stories: read as one story.
-				story: true,
-				pages: [page("p1", "Book", ["c1"]), page("p2", "Author", ["c1", "c2"])],
-			},
-		],
-	} as unknown as AppData;
-	const root = await openExport(standaloneViewHtml("", story, "story", "en"));
-	const shown = () => [...root.querySelectorAll<HTMLElement>(".canvas-board .canvas-card")].map((c) => c.dataset.cardId);
-
-	assert.deepEqual(shown(), ["c1", "c2"]);
-	root.querySelector<HTMLButtonElement>(".story-switch")!.click();
-	[...root.querySelectorAll<HTMLButtonElement>(".story-dialog .picker-option")].find((b) => b.textContent === "Story 1")!.click();
-	assert.deepEqual(shown(), ["c1"]);
-	assert.equal(root.querySelector(".page-bar .page-name")?.textContent, "Book");
-	root.querySelector<HTMLButtonElement>('.page-bar button[title="Next step"]')!.click();
-	assert.deepEqual(shown(), ["c1", "c2"]);
-	assert.equal(root.querySelector(".page-bar .page-name")?.textContent, "Author");
-});

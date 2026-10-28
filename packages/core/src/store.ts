@@ -5,10 +5,7 @@ import type { DataPort } from "./ports.js";
 import { clampZoom, defaultViewport, visibleRect, type Viewport } from "./viewport.js";
 import {
 	DEFAULT_CARD_SIZE,
-	DEFAULT_DESCRIPTION_SIZE,
-	MIN_DESCRIPTION_SIZE,
 	frameShape,
-	descriptionInView,
 	CARD_DISPLAYS,
 	LINE_ARROWS,
 	PROPERTY_KINDS,
@@ -17,9 +14,7 @@ import {
 	migrateValues,
 	moveItem,
 	nextTypeColor,
-	boardPages,
 	canTakeMore,
-	mapPages,
 	freeSpot,
 	placeBeside,
 	referencedIds,
@@ -49,9 +44,6 @@ import {
 	type PropertyDef,
 	type ReferenceDef,
 	type PropertyValue,
-	type Story,
-	type StoryPage,
-	type ViewFrame,
 } from "./model.js";
 
 export type Store = Awaited<ReturnType<typeof createStore>>;
@@ -71,7 +63,7 @@ export interface NewEntity {
 const HISTORY_LIMIT = 100;
 
 /** The format of the saved data. When it changes, raise this and add the step from the old version to MIGRATIONS. */
-export const DATA_VERSION = 7;
+export const DATA_VERSION = 8;
 
 type SavedData = Record<string, unknown>;
 
@@ -82,28 +74,19 @@ type SavedData = Record<string, unknown>;
  */
 export const MIGRATIONS: Readonly<Record<number, (data: SavedData) => SavedData>> = {
 	0: (data) => data,
-	// Version 2 adds board kinds and storyboard pages; normalize() makes boards without them whiteboards.
+	// Version 2 adds board kinds and storyboard pages, version 3 turns them into story mode; both dropped in version 8.
 	1: (data) => data,
-	// Version 3 turns the board kinds into story mode, which any board can be in: storyboards are boards in it.
-	2: (data) => ({
-		...data,
-		boards: Array.isArray(data.boards)
-			? data.boards.map((board: unknown) => {
-					if (!isObject(board)) return board;
-					const { kind, ...rest } = board;
-					return { ...rest, story: typeof board.story === "boolean" ? board.story : kind === "storyboard" };
-				})
-			: data.boards,
-	}),
+	2: (data) => data,
 	// Version 4 adds the library; normalize() gives data without one an empty library.
 	3: (data) => data,
-	// Version 5 gives boards several stories; normalizeBoard() turns a board's steps from before into one story.
+	// Version 5 gives boards several stories (dropped in version 8).
 	4: (data) => data,
-	// Version 6 shows steps and boards in view frames instead of each step with its own pan/zoom; normalizeBoard()
-	// turns the pan/zoom of the steps from before into frames, and gives each board a frame of its own pan/zoom.
+	// Version 6 shows boards in view frames; normalizeBoard() gives each board a frame of its own pan/zoom.
 	5: (data) => data,
 	// Version 7 adds analyses; normalize() gives data without them none.
 	6: (data) => data,
+	// Version 8 drops stories and the frames of their steps; normalizeBoard() no longer reads them.
+	7: (data) => data,
 };
 
 /** The version saved data says it's in; data without a (valid) version is from before versions existed. */
@@ -123,60 +106,14 @@ export function toSaved(data: AppData): SavedData {
 	return { version: DATA_VERSION, ...data };
 }
 
-/** A new page, with its description in view in `viewport`. */
-function newPage(name: string, viewport = defaultViewport(), frameId: string | null = null): StoryPage {
-	return {
-		id: ulid(),
-		name,
-		description: "",
-		descriptionPosition: descriptionInView(viewport),
-		descriptionSize: { ...DEFAULT_DESCRIPTION_SIZE },
-		frameId,
-		cardIds: [],
-		drawingIds: [],
-		dimmedCardIds: [],
-	};
-}
-
 function newBoard(name: string): Board {
 	const viewFrame = visibleRect(defaultViewport(), REFERENCE_SCREEN.width, REFERENCE_SCREEN.height);
-	return { id: ulid(), name, cards: [], viewport: defaultViewport(), viewFrame, frames: [], drawings: [], stories: [] };
+	return { id: ulid(), name, cards: [], viewport: defaultViewport(), viewFrame, drawings: [] };
 }
 
-/** Keeps only the ids of the cards and drawings the board still has, on every page of its stories. */
-function prunePages(board: Board): Board {
-	if (board.stories.length === 0) return board;
-	const cardIds = new Set(board.cards.map((c) => c.id));
-	const drawingIds = new Set(board.drawings.map((d) => d.id));
-	return mapPages(board, (p) => ({
-		...p,
-		cardIds: p.cardIds.filter((id) => cardIds.has(id)),
-		dimmedCardIds: p.dimmedCardIds.filter((id) => cardIds.has(id)),
-		drawingIds: p.drawingIds.filter((id) => drawingIds.has(id)),
-	}));
-}
-
-/** With `pageId`, takes the card or drawing off that page only: it stays on the board (stories never delete).
- * Without, off the board, and with it off every page. */
-function takeOff(board: Board, list: "cards" | "drawings", id: string, pageId?: string): Board {
-	const key = list === "cards" ? "cardIds" : "drawingIds";
-	const pruned = mapPages(board, (p) =>
-		pageId === undefined || p.id === pageId
-			? { ...p, [key]: p[key].filter((x) => x !== id), dimmedCardIds: p.dimmedCardIds.filter((x) => x !== id) }
-			: p,
-	);
-	if (pageId !== undefined) return pruned;
-	return { ...pruned, [list]: (board[list] as { id: string }[]).filter((x) => x.id !== id) };
-}
-
-/** The board with `card` added, also to the page `pageId` (of one of its stories), if given. */
-function withCard(board: Board, card: CanvasCard, pageId?: string): Board {
-	return mapPages({ ...board, cards: [...board.cards, card] }, (p) => (p.id === pageId ? { ...p, cardIds: [...p.cardIds, card.id] } : p));
-}
-
-/** The board with the page `pageId` seen in the frame `frameId` (null: the board's frame). */
-function withFrame(board: Board, frameId: string | null, pageId: string): Board {
-	return mapPages(board, (p) => (p.id === pageId ? { ...p, frameId } : p));
+/** The board without the card or drawing `id`. */
+function takeOff(board: Board, list: "cards" | "drawings", id: string): Board {
+	return { ...board, [list]: (board[list] as { id: string }[]).filter((x) => x.id !== id) };
 }
 
 /** How two entities get linked, seen from one of them: through which reference property, held by which side. */
@@ -185,11 +122,10 @@ export type Link = { propId: string; direction: Relation["direction"] };
 /**
  * Links the entity of the card `sourceCardId` with `other` through `link` (seen from the card's entity), in `data`,
  * which must hold `other`: the holder of the reference gets the other one added (if it allows several) or set. Then
- * `other` is shown on the card's board: by its card there (on the page shown, if it has one there), or by a new one
- * beside the source card; with `pageId`, that card is also put on the story page. Null if they don't fit
- * together, or are linked already.
+ * `other` is shown on the card's board: by its card there, or by a new one beside the source card. Null if they
+ * don't fit together, or are linked already.
  */
-function linkOnBoard(data: AppData, sourceCardId: string, link: Link, other: Entity, pageId?: string): { data: AppData; card: CanvasCard } | null {
+function linkOnBoard(data: AppData, sourceCardId: string, link: Link, other: Entity): { data: AppData; card: CanvasCard } | null {
 	const board = data.boards.find((b) => b.cards.some((c) => c.id === sourceCardId));
 	const source = board?.cards.find((c) => c.id === sourceCardId);
 	const entity = data.entities.find((e) => e.id === source?.entityId);
@@ -201,22 +137,14 @@ function linkOnBoard(data: AppData, sourceCardId: string, link: Link, other: Ent
 	if (linked.includes(target.id)) return null;
 	const value = prop.reference.multiple ? [...linked, target.id] : target.id;
 
-	const page = boardPages(board).find((p) => p.id === pageId);
-	const theirs = board.cards.filter((c) => c.entityId === other.id);
-	const existing = theirs.find((c) => !page || page.cardIds.includes(c.id)) ?? theirs[0];
+	const existing = board.cards.find((c) => c.entityId === other.id);
 	const card: CanvasCard = existing ?? { id: ulid(), entityId: other.id, ...placeBeside(source, board.cards, DEFAULT_CARD_SIZE), ...DEFAULT_CARD_SIZE };
 	return {
 		card,
 		data: {
 			...data,
 			entities: data.entities.map((e) => (e.id === holder.id ? { ...e, values: { ...e.values, [prop.id]: value } } : e)),
-			boards: data.boards.map((b) =>
-				b.id === board.id
-					? mapPages({ ...b, cards: existing ? b.cards : [...b.cards, card] }, (p) =>
-							p.id === pageId && !p.cardIds.includes(card.id) ? { ...p, cardIds: [...p.cardIds, card.id] } : p,
-						)
-					: b,
-			),
+			boards: existing ? data.boards : data.boards.map((b) => (b.id === board.id ? { ...b, cards: [...b.cards, card] } : b)),
 		},
 	};
 }
@@ -273,114 +201,15 @@ function normalizeViewport(v: Partial<Viewport> | null | undefined): Viewport {
 	return v && isNumber(v.x) && isNumber(v.y) && isNumber(v.zoom) ? { x: v.x, y: v.y, zoom: clampZoom(v.zoom) } : defaultViewport();
 }
 
-
-/** The ids a board's pages may name: its cards, drawings and frames — and, for pages saved before frames, the frame
- * made of each one's pan/zoom (see legacyFrames). */
-interface BoardIds {
-	cardIds: ReadonlySet<string>;
-	drawingIds: ReadonlySet<string>;
-	frameIds: ReadonlySet<string>;
-	legacyFrameIds: ReadonlyMap<string, string>;
-}
-
-/** A well-formed page, or null; its ids only name the board's own cards, drawings and frames. */
-function normalizePage(raw: unknown, { cardIds, drawingIds, frameIds, legacyFrameIds }: BoardIds, fallbackName: string): StoryPage | null {
-	if (!isObject(raw) || typeof raw.id !== "string") return null;
-	const ids = (value: unknown, known: ReadonlySet<string>) =>
-		Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === "string" && known.has(id)))] : [];
-	const position = raw.descriptionPosition as Partial<Point> | undefined;
-	const viewport = normalizeViewport(raw.viewport as Partial<Viewport> | undefined);
-	const size = raw.descriptionSize as { width?: unknown; height?: unknown } | undefined;
-	const shown = ids(raw.cardIds, cardIds);
-	return {
-		id: raw.id,
-		name: typeof raw.name === "string" ? raw.name : fallbackName,
-		description: typeof raw.description === "string" ? raw.description : "",
-		descriptionPosition: isNumber(position?.x) && isNumber(position?.y) ? { x: position.x, y: position.y } : descriptionInView(viewport),
-		descriptionSize:
-			isNumber(size?.width) && isNumber(size?.height)
-				? { width: Math.max(MIN_DESCRIPTION_SIZE.width, size.width), height: Math.max(MIN_DESCRIPTION_SIZE.height, size.height) }
-				: { ...DEFAULT_DESCRIPTION_SIZE },
-		frameId: typeof raw.frameId === "string" && frameIds.has(raw.frameId) ? raw.frameId : (legacyFrameIds.get(raw.id) ?? null),
-		cardIds: shown,
-		drawingIds: ids(raw.drawingIds, drawingIds),
-		dimmedCardIds: ids(raw.dimmedCardIds, new Set(shown)),
-	};
-}
-
-/** A well-formed story with at least one page (a new one, seen like `viewport`, if it has none), or null. Pages whose
- * id another story of the board has already (in `seen`) are left out: page ids are unique on a board. */
-function normalizeStory(
-	raw: unknown,
-	ids: BoardIds,
-	seen: Set<string>,
-	viewport: Viewport,
-	fallbackName: string,
-): Story | null {
-	if (!isObject(raw) || typeof raw.id !== "string") return null;
-	const pages = (Array.isArray(raw.pages) ? raw.pages : []).flatMap((p: unknown, i: number) => {
-		const page = normalizePage(p, ids, `Step ${i + 1}`);
-		if (!page || seen.has(page.id)) return [];
-		seen.add(page.id);
-		return [page];
-	});
-	return {
-		id: raw.id,
-		name: typeof raw.name === "string" && raw.name.trim() !== "" ? raw.name : fallbackName,
-		pages: pages.length > 0 ? pages : [newPage("Step 1", { ...viewport })],
-	};
-}
-
-/** How large a screen is taken where none is at hand: the frames made of a pan/zoom saved before frames show that
- * much, from the top left corner of their view, and a new board's frame is that large. */
+/** How large a screen is taken where none is at hand: the frame of a board saved before frames shows that much,
+ * from the top left corner of its view, and a new board's frame is that large. */
 export const REFERENCE_SCREEN = { width: 1280, height: 720 } as const;
-
-/** A well-formed frame, in a frame's shape (see frameShape), or null. */
-function normalizeFrame(raw: unknown, fallbackName: string): ViewFrame | null {
-	if (!isObject(raw) || typeof raw.id !== "string" || ![raw.x, raw.y, raw.width, raw.height].every(isNumber)) return null;
-	return {
-		id: raw.id,
-		name: typeof raw.name === "string" && raw.name.trim() !== "" ? raw.name : fallbackName,
-		...frameShape({ x: raw.x as number, y: raw.y as number, width: raw.width as number, height: raw.height as number }),
-	};
-}
-
-/**
- * The frames made of the pan/zoom of steps saved before frames, and which frame each step (by id) is seen in. Steps
- * seen alike (a new step took the pan/zoom of the one before) share a frame, named after the first of them and with
- * its id, so reading the same data twice makes the same frames.
- */
-function legacyFrames(rawStories: readonly unknown[]): { frames: ViewFrame[]; frameIds: Map<string, string> } {
-	const byView = new Map<string, ViewFrame>();
-	const frameIds = new Map<string, string>();
-	for (const story of rawStories) {
-		const pages = isObject(story) && Array.isArray(story.pages) ? story.pages : [];
-		for (const page of pages) {
-			if (!isObject(page) || typeof page.id !== "string" || frameIds.has(page.id)) continue;
-			const viewport = normalizeViewport(page.viewport as Partial<Viewport> | undefined);
-			const key = `${viewport.x},${viewport.y},${viewport.zoom}`;
-			let frame = byView.get(key);
-			if (!frame) {
-				const name = typeof page.name === "string" && page.name.trim() !== "" ? page.name : `Frame ${byView.size + 1}`;
-				frame = { id: page.id, name, ...visibleRect(viewport, REFERENCE_SCREEN.width, REFERENCE_SCREEN.height) };
-				byView.set(key, frame);
-			}
-			frameIds.set(page.id, frame.id);
-		}
-	}
-	return { frames: [...byView.values()], frameIds };
-}
 
 /**
  * Keeps only well-formed cards and viewport; anything else falls back to defaults. Cards and boards saved without an
- * id get one. A board saved before boards had several stories had steps (`pages`, kept also while its story mode was
- * off): they become one story, with the board's id (as the server's schema migration does). A board saved before
- * frames gets frames for its steps' pan/zoom (see legacyFrames), and its own frame of its pan/zoom.
+ * id get one. A board saved before frames gets its frame of its pan/zoom. What was saved of stories is left out.
  */
-function normalizeBoard(
-	board: (Omit<Partial<Board>, "frames"> & { frames?: unknown; story?: unknown; pages?: unknown }) | undefined,
-	fallbackName: string,
-): Board {
+function normalizeBoard(board: Partial<Board> | undefined, fallbackName: string): Board {
 	const cards = Array.isArray(board?.cards)
 		? board.cards
 				.filter(
@@ -390,23 +219,9 @@ function normalizeBoard(
 				.map((c: CanvasCard) => ({ ...c, id: typeof c.id === "string" ? c.id : ulid() }))
 		: [];
 	const drawings = Array.isArray(board?.drawings) ? board.drawings.flatMap((d) => normalizeDrawing(d) ?? []) : [];
-	const cardIds = new Set(cards.map((c) => c.id));
-	const drawingIds = new Set(drawings.map((d) => d.id));
-	const id = typeof board?.id === "string" ? board.id : ulid();
 	const viewport = normalizeViewport(board?.viewport);
-	const steps = Array.isArray(board?.pages) ? board.pages : [];
-	const rawStories: unknown[] = Array.isArray(board?.stories)
-		? board.stories
-		: steps.length > 0 || board?.story === true
-			? [{ id, name: "Story 1", pages: steps }]
-			: [];
-	const legacy = Array.isArray(board?.frames) ? null : legacyFrames(rawStories);
-	const frames = legacy?.frames ?? (board!.frames as unknown[]).flatMap((f, i) => normalizeFrame(f, `Frame ${i + 1}`) ?? []);
-	const frameIds = new Set(frames.map((f) => f.id));
-	const ids: BoardIds = { cardIds, drawingIds, frameIds, legacyFrameIds: legacy?.frameIds ?? new Map() };
-	const seen = new Set<string>();
 	return {
-		id,
+		id: typeof board?.id === "string" ? board.id : ulid(),
 		name: typeof board?.name === "string" && board.name.trim() !== "" ? board.name : fallbackName,
 		cards,
 		viewport,
@@ -416,9 +231,7 @@ function normalizeBoard(
 				? { x: board.viewFrame.x, y: board.viewFrame.y, width: board.viewFrame.width, height: board.viewFrame.height }
 				: visibleRect(viewport, REFERENCE_SCREEN.width, REFERENCE_SCREEN.height),
 		),
-		frames,
 		drawings,
-		stories: rawStories.flatMap((raw, i) => normalizeStory(raw, ids, seen, viewport, `Story ${i + 1}`) ?? []),
 	};
 }
 
@@ -494,7 +307,7 @@ function reconcile(data: AppData): AppData {
 			values: migrateValues(e.values, typesById.get(e.typeId)?.properties ?? [], entityTypes),
 		})),
 		boards: data.boards.map((b) =>
-			prunePages({
+({
 				...b,
 				cards: b.cards.filter((c) => entityTypes.has(c.entityId)),
 				drawings: b.drawings.filter((d) => !isSymbol(d) || libraryIds.has(d.libraryId)),
@@ -980,95 +793,10 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			change({ ...data, boards: data.boards.filter((b) => b.id !== boardId) });
 		},
 
-		/** Adds a story to the board, with an empty first page `firstPageName`, its description in the board's view (the
-		 * page is seen in the board's frame). */
-		addStory(boardId: string, name: string, firstPageName: string): Story | null {
-			const board = data.boards.find((b) => b.id === boardId);
-			if (!board) return null;
-			const story: Story = {
-				id: ulid(),
-				name: name.trim() || `Story ${board.stories.length + 1}`,
-				pages: [newPage(firstPageName, { ...board.viewport })],
-			};
-			updateBoard(boardId, (b) => ({ ...b, stories: [...b.stories, story] }));
-			return story;
-		},
-
-		renameStory(boardId: string, storyId: string, name: string): void {
-			if (name.trim() === "") return;
-			updateBoard(boardId, (b) => ({ ...b, stories: b.stories.map((s) => (s.id === storyId ? { ...s, name: name.trim() } : s)) }));
-		},
-
-		/** Deletes a story with its pages; their cards and drawings stay on the board. */
-		removeStory(boardId: string, storyId: string): void {
-			updateBoard(boardId, (b) => ({ ...b, stories: b.stories.filter((s) => s.id !== storyId) }));
-		},
-
-		/** Adds a page after `afterPageId`, in its story, with its frame and description position. With
-		 * `copyPrevious`, it also shows what that page shows. */
-		addPage(boardId: string, afterPageId: string, name: string, copyPrevious: boolean): StoryPage | null {
-			const board = data.boards.find((b) => b.id === boardId);
-			const story = board?.stories.find((s) => s.pages.some((p) => p.id === afterPageId));
-			const index = story?.pages.findIndex((p) => p.id === afterPageId) ?? -1;
-			const previous = story?.pages[index];
-			if (!story || !previous) return null;
-			const page: StoryPage = {
-				...newPage(name.trim(), undefined, previous.frameId),
-				descriptionPosition: { ...previous.descriptionPosition },
-				descriptionSize: { ...previous.descriptionSize },
-				...(copyPrevious && {
-					cardIds: [...previous.cardIds],
-					drawingIds: [...previous.drawingIds],
-					dimmedCardIds: [...previous.dimmedCardIds],
-				}),
-			};
-			updateBoard(boardId, (b) => ({
-				...b,
-				stories: b.stories.map((s) => (s.id === story.id ? { ...s, pages: s.pages.toSpliced(index + 1, 0, page) } : s)),
-			}));
-			return page;
-		},
-
-		updatePage(
-			boardId: string,
-			pageId: string,
-			patch: Partial<Pick<StoryPage, "name" | "description" | "descriptionPosition" | "descriptionSize">>,
-		): void {
-			updateBoard(boardId, (b) => mapPages(b, (p) => (p.id === pageId ? { ...p, ...patch } : p)));
-		},
-
-		/** Deletes a page; its cards and drawings stay on the board. A story's last page can't be deleted. */
-		removePage(boardId: string, pageId: string): void {
-			updateBoard(boardId, (b) => ({
-				...b,
-				stories: b.stories.map((s) => (s.pages.length > 1 ? { ...s, pages: s.pages.filter((p) => p.id !== pageId) } : s)),
-			}));
-		},
-
-		/** Shows a card of the page faded, out of focus, or in focus again. */
-		setDimmed(boardId: string, pageId: string, cardId: string, dimmed: boolean): void {
-			updateBoard(boardId, (b) =>
-				mapPages(b, (p) => {
-					if (p.id !== pageId || !p.cardIds.includes(cardId)) return p;
-					const others = p.dimmedCardIds.filter((id) => id !== cardId);
-					return { ...p, dimmedCardIds: dimmed ? [...others, cardId] : others };
-				}),
-			);
-		},
-
-		/** Shows one of the board's cards or drawings on the page too. */
-		showOnPage(boardId: string, pageId: string, itemId: string): void {
-			updateBoard(boardId, (b) => {
-				const key = b.cards.some((c) => c.id === itemId) ? "cardIds" : b.drawings.some((d) => d.id === itemId) ? "drawingIds" : null;
-				if (!key) return b;
-				return mapPages(b, (p) => (p.id === pageId && !p[key].includes(itemId) ? { ...p, [key]: [...p[key], itemId] } : p));
-			});
-		},
-
-		/** Adds a new card for the entity at (x, y), on top of the board's other cards — and shown on the page `pageId`. */
-		addCard(boardId: string, entityId: string, x: number, y: number, pageId?: string): CanvasCard {
+		/** Adds a new card for the entity at (x, y), on top of the board's other cards. */
+		addCard(boardId: string, entityId: string, x: number, y: number): CanvasCard {
 			const card: CanvasCard = { id: ulid(), entityId, x, y, ...DEFAULT_CARD_SIZE };
-			updateBoard(boardId, (b) => withCard(b, card, pageId));
+			updateBoard(boardId, (b) => ({ ...b, cards: [...b.cards, card] }));
 			return card;
 		},
 
@@ -1095,7 +823,7 @@ export async function createStore(port: DataPort, workspaceId: string) {
 		 * template as description and the source entity's tags (it belongs to the same set). One change, so one
 		 * undo step; null (and no change) if they don't fit together.
 		 */
-		addLinkedEntity(sourceCardId: string, link: Link, typeId: string, name: string, pageId?: string): { entity: Entity; card: CanvasCard } | null {
+		addLinkedEntity(sourceCardId: string, link: Link, typeId: string, name: string): { entity: Entity; card: CanvasCard } | null {
 			const type = data.types.find((t) => t.id === typeId);
 			const sourceEntityId = data.boards.flatMap((b) => b.cards).find((c) => c.id === sourceCardId)?.entityId;
 			const sourceEntity = data.entities.find((e) => e.id === sourceEntityId);
@@ -1109,7 +837,7 @@ export async function createStore(port: DataPort, workspaceId: string) {
 				tags: [...sourceEntity.tags],
 				values: {},
 			};
-			const linked = linkOnBoard({ ...data, entities: [...data.entities, entity] }, sourceCardId, link, entity, pageId);
+			const linked = linkOnBoard({ ...data, entities: [...data.entities, entity] }, sourceCardId, link, entity);
 			if (!linked) return null;
 			change(linked.data);
 			return { entity: linked.data.entities.find((e) => e.id === entity.id)!, card: linked.card }; // with its reference, if it holds it
@@ -1117,17 +845,17 @@ export async function createStore(port: DataPort, workspaceId: string) {
 
 		/** Links an existing entity with the entity of the card `sourceCardId` through `link`, showing its card
 		 * there (see linkOnBoard); one change. Answers that card, or null (and no change) if they don't fit together. */
-		linkEntity(sourceCardId: string, link: Link, otherId: string, pageId?: string): CanvasCard | null {
+		linkEntity(sourceCardId: string, link: Link, otherId: string): CanvasCard | null {
 			const other = data.entities.find((e) => e.id === otherId);
-			const linked = other && linkOnBoard(data, sourceCardId, link, other, pageId);
+			const linked = other && linkOnBoard(data, sourceCardId, link, other);
 			if (!linked) return null;
 			change(linked.data);
 			return linked.card;
 		},
 
 		/** Creates an entity of type `typeId` named `name`, with `tags` and the type's template as description, and its
-		 * card on the board at the first free spot from `at` (also on story page `pageId`); one change. */
-		addEntityWithCard(boardId: string, typeId: string, name: string, at: Point, pageId?: string, tags: readonly string[] = []): { entity: Entity; card: CanvasCard } | null {
+		 * card on the board at the first free spot from `at`; one change. */
+		addEntityWithCard(boardId: string, typeId: string, name: string, at: Point, tags: readonly string[] = []): { entity: Entity; card: CanvasCard } | null {
 			const type = data.types.find((t) => t.id === typeId);
 			const board = data.boards.find((b) => b.id === boardId);
 			if (!type || !board) return null;
@@ -1136,7 +864,7 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			change({
 				...data,
 				entities: [...data.entities, entity],
-				boards: data.boards.map((b) => (b.id === boardId ? withCard(b, card, pageId) : b)),
+				boards: data.boards.map((b) => (b.id === boardId ? { ...b, cards: [...b.cards, card] } : b)),
 			});
 			return { entity, card };
 		},
@@ -1175,18 +903,14 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			save();
 		},
 
-		/** Takes the card off its board; the entity itself stays. With `pageId`, only off that story page:
-		 * it stays on the board. */
-		removeCard(cardId: string, pageId?: string): void {
-			updateCardBoard(cardId, (b) => takeOff(b, "cards", cardId, pageId));
+		/** Takes the card off its board; the entity itself stays. */
+		removeCard(cardId: string): void {
+			updateCardBoard(cardId, (b) => takeOff(b, "cards", cardId));
 		},
 
-		/** With `pageId` (a story page), the drawing is shown on that page. */
-		addDrawing(boardId: string, drawing: NewDrawing, pageId?: string): Drawing {
+		addDrawing(boardId: string, drawing: NewDrawing): Drawing {
 			const added = { ...drawing, id: ulid() } as Drawing;
-			updateBoard(boardId, (b) =>
-				mapPages({ ...b, drawings: [...b.drawings, added] }, (p) => (p.id === pageId ? { ...p, drawingIds: [...p.drawingIds, added.id] } : p)),
-			);
+			updateBoard(boardId, (b) => ({ ...b, drawings: [...b.drawings, added] }));
 			return added;
 		},
 
@@ -1197,24 +921,22 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			updateDrawingBoard(drawing.id, (b) => ({ ...b, drawings: replace(b.drawings) }));
 		},
 
-		/** Like removeCard: with `pageId`, only off that page. */
-		removeDrawing(drawingId: string, pageId?: string): void {
+		removeDrawing(drawingId: string): void {
 			if (updateLibraryHolding(drawingId, (item) => ({ ...item, drawings: item.drawings.filter((d) => d.id !== drawingId) }))) return;
-			updateDrawingBoard(drawingId, (b) => takeOff(b, "drawings", drawingId, pageId));
+			updateDrawingBoard(drawingId, (b) => takeOff(b, "drawings", drawingId));
 		},
 
 		/**
 		 * Replaces each drawing named in `pieces` with its pieces, where it was (no pieces remove it), all in one change:
-		 * what the eraser leaves of pen strokes. The pieces are shown on the story pages the drawing was on.
+		 * what the eraser leaves of pen strokes.
 		 */
 		splitDrawings(pieces: ReadonlyMap<string, readonly NewDrawing[]>): void {
 			if (pieces.size === 0) return;
 			const added = new Map([...pieces].map(([id, list]) => [id, list.map((d) => ({ ...d, id: ulid() }) as Drawing)]));
 			const split = (drawings: Drawing[]) => drawings.flatMap((d) => added.get(d.id) ?? [d]);
-			const ids = (drawingIds: string[]) => drawingIds.flatMap((id) => added.get(id)?.map((d) => d.id) ?? [id]);
 			change({
 				...data,
-				boards: data.boards.map((b) => mapPages({ ...b, drawings: split(b.drawings) }, (p) => ({ ...p, drawingIds: ids(p.drawingIds) }))),
+				boards: data.boards.map((b) => ({ ...b, drawings: split(b.drawings) })),
 				library: data.library.map((item) => ({ ...item, drawings: split(item.drawings) })),
 			});
 		},
@@ -1239,7 +961,7 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			});
 		},
 
-		/** Deletes the library drawing, and with it every place it's used on a board (of every story page too). */
+		/** Deletes the library drawing, and with it every place it's used on a board. */
 		deleteLibraryDrawing(libraryId: string): void {
 			change({
 				...data,
@@ -1294,42 +1016,6 @@ export async function createStore(port: DataPort, workspaceId: string) {
 		setViewport(boardId: string, viewport: Viewport): void {
 			data = withBoard(boardId, (b) => ({ ...b, viewport: { ...viewport, zoom: clampZoom(viewport.zoom) } }));
 			save();
-		},
-
-		/** Adds a frame showing `rect`, in a frame's shape (see frameShape), and lets the page `pageId` be seen in it; one
-		 * change. */
-		addFrame(boardId: string, name: string, rect: Rect, pageId: string): ViewFrame | null {
-			const board = data.boards.find((b) => b.id === boardId);
-			if (!board) return null;
-			const frame: ViewFrame = {
-				id: ulid(),
-				name: name.trim() || `Frame ${board.frames.length + 1}`,
-				...frameShape({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }),
-			};
-			updateBoard(boardId, (b) => withFrame({ ...b, frames: [...b.frames, frame] }, frame.id, pageId));
-			return frame;
-		},
-
-		/** Renames, moves or resizes a frame; an empty name is ignored, the frame keeps a frame's shape (its height
-		 * follows the width, see frameShape). */
-		updateFrame(boardId: string, frameId: string, patch: Partial<Omit<ViewFrame, "id">>): void {
-			const name = patch.name?.trim();
-			updateBoard(boardId, (b) => ({
-				...b,
-				frames: b.frames.map((f) => (f.id === frameId ? frameShape({ ...f, ...patch, name: name || f.name }) : f)),
-			}));
-		},
-
-		/** Deletes a frame; the pages seen in it are then seen in the board's frame. */
-		removeFrame(boardId: string, frameId: string): void {
-			updateBoard(boardId, (b) =>
-				mapPages({ ...b, frames: b.frames.filter((f) => f.id !== frameId) }, (p) => (p.frameId === frameId ? { ...p, frameId: null } : p)),
-			);
-		},
-
-		/** Lets the page `pageId` be seen in one of the board's frames, or in the board's own (null). */
-		setFrame(boardId: string, frameId: string | null, pageId: string): void {
-			updateBoard(boardId, (b) => (frameId === null || b.frames.some((f) => f.id === frameId) ? withFrame(b, frameId, pageId) : b));
 		},
 
 		/** Moves or resizes the board's own frame, in a frame's shape (see frameShape). */

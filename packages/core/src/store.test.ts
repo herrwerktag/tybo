@@ -35,9 +35,7 @@ function assertEmpty(data: AppData) {
 		cards: [],
 		viewport: { x: 0, y: 0, zoom: 1 },
 		viewFrame: { x: 0, y: 0, ...REFERENCE_SCREEN },
-		frames: [],
 		drawings: [],
-		stories: [],
 	});
 }
 
@@ -477,8 +475,7 @@ test("an entity can have several cards; moveCard brings a card to the front", as
 	]);
 });
 
-/** Book (author: one Person, characters: several Persons) and Person; Dune (tagged Classic) with a card on a board
- * in story mode. */
+/** Book (author: one Person, characters: several Persons) and Person; Dune (tagged Classic) with a card on a board. */
 async function linkable() {
 	const store = await open(memoryStorage());
 	const person = store.addType("Person", [], "## Bio");
@@ -493,22 +490,21 @@ async function linkable() {
 	const [author, characters] = book.properties;
 	const dune = store.addEntity(book.id, "Dune", "", {}, "", ["Classic"]);
 	const boardId = firstBoard(store).id;
-	const pageId = store.addStory(boardId, "Story", "Start")!.pages[0]!.id;
-	const card = store.addCard(boardId, dune.id, 0, 0, pageId);
-	return { store, person, book, author: author!, characters: characters!, dune, boardId, pageId, card };
+	const card = store.addCard(boardId, dune.id, 0, 0);
+	return { store, person, book, author: author!, characters: characters!, dune, boardId, card };
 }
 const valueOf = (store: Store, entityId: string, propId: string) => store.data.entities.find((e) => e.id === entityId)?.values[propId];
 
 test("addLinkedEntity creates an entity the card's entity references, with its card beside it, in one undo step", async () => {
-	const { store, person, author, characters, dune, pageId, card } = await linkable();
-	const made = store.addLinkedEntity(card.id, { propId: author.id, direction: "forward" }, person.id, " Frank Herbert ", pageId)!;
+	const { store, person, author, characters, dune, card } = await linkable();
+	const made = store.addLinkedEntity(card.id, { propId: author.id, direction: "forward" }, person.id, " Frank Herbert ")!;
 	assert.deepEqual(
 		{ ...made.entity, id: "" },
 		{ id: "", typeId: person.id, name: "Frank Herbert", content: "", description: "## Bio", tags: ["Classic"], values: {} },
 	);
 	assert.equal(valueOf(store, dune.id, author.id), made.entity.id);
 	assert.deepEqual([made.card.entityId, made.card.x, made.card.y], [made.entity.id, 288, 0]);
-	assert.deepEqual(firstBoard(store).stories[0]!.pages[0]!.cardIds, [card.id, made.card.id]);
+	assert.deepEqual(firstBoard(store).cards.map((c) => c.id), [card.id, made.card.id]);
 
 	// The author is set now: a second one doesn't fit (nothing changes).
 	assert.equal(store.addLinkedEntity(card.id, { propId: author.id, direction: "forward" }, person.id, "Other"), null);
@@ -536,18 +532,18 @@ test("addLinkedEntity also goes the other way: the new entity references the car
 });
 
 test("linkEntity links an existing entity either way, showing its card: the one on the board, or a new one", async () => {
-	const { store, book, author, characters, dune, boardId, pageId, card } = await linkable();
+	const { store, book, author, characters, dune, boardId, card } = await linkable();
 	const person = store.data.types[0]!;
 	const frank = store.addEntity(person.id, "Frank", "", {});
 	const paul = store.addEntity(person.id, "Paul", "", {});
-	const paulCard = store.addCard(boardId, paul.id, 600, 600); // on the board, not on the page
+	const paulCard = store.addCard(boardId, paul.id, 600, 600);
 
-	const placed = store.linkEntity(card.id, { propId: author.id, direction: "forward" }, frank.id, pageId)!;
+	const placed = store.linkEntity(card.id, { propId: author.id, direction: "forward" }, frank.id)!;
 	assert.equal(valueOf(store, dune.id, author.id), frank.id);
 	assert.deepEqual([placed.entityId, placed.x, placed.y], [frank.id, 288, 0], "a new card beside Dune's");
-	const shown = store.linkEntity(card.id, { propId: characters.id, direction: "forward" }, paul.id, pageId)!;
-	assert.equal(shown.id, paulCard.id, "Paul's card, put on the page too");
-	assert.ok(firstBoard(store).stories[0]!.pages[0]!.cardIds.includes(paulCard.id));
+	const shown = store.linkEntity(card.id, { propId: characters.id, direction: "forward" }, paul.id)!;
+	assert.equal(shown.id, paulCard.id, "Paul's card on the board");
+	assert.equal(firstBoard(store).cards.length, 3, "no new one for Paul");
 	assert.equal(store.linkEntity(card.id, { propId: characters.id, direction: "forward" }, paul.id), null, "linked already");
 
 	// From Frank's card: Emma, an existing book, gets him as author.
@@ -557,11 +553,11 @@ test("linkEntity links an existing entity either way, showing its card: the one 
 });
 
 test("addEntityWithCard creates an entity with its card at the first free spot, in one undo step", async () => {
-	const { store, person, boardId, pageId } = await linkable();
-	const made = store.addEntityWithCard(boardId, person.id, " Ada ", { x: 10, y: 10 }, pageId, ["Classic", "classic"])!;
+	const { store, person, boardId } = await linkable();
+	const made = store.addEntityWithCard(boardId, person.id, " Ada ", { x: 10, y: 10 }, ["Classic", "classic"])!;
 	assert.deepEqual([made.entity.name, made.entity.tags, made.entity.description], ["Ada", ["Classic"], "## Bio"]);
 	assert.deepEqual([made.card.x, made.card.y], [0, 192], "below Dune's card at 0, 0");
-	assert.ok(firstBoard(store).stories[0]!.pages[0]!.cardIds.includes(made.card.id));
+	assert.ok(firstBoard(store).cards.some((c) => c.id === made.card.id));
 	store.undo();
 	assert.equal(store.data.entities.some((e) => e.id === made.entity.id), false);
 });
@@ -738,204 +734,7 @@ test("each board has its own cards and viewport; card changes stay on their boar
 	);
 });
 
-/** A new board (`id`) with a story whose first page is named `firstPage` (its `pages`). */
-function storyBoard(store: Store, name: string, firstPage = "Step 1") {
-	const { id } = store.addBoard(name);
-	return { id, pages: store.addStory(id, "Story", firstPage)!.pages };
-}
-
-test("a board has stories: each starts with an empty page, in view; they can be renamed and deleted", async () => {
-	const storage = memoryStorage();
-	const store = await open(storage);
-	const note = store.addType("Note", [], "");
-	const a = store.addEntity(note.id, "A", "", {});
-	const board = firstBoard(store);
-	const card = store.addCard(board.id, a.id, 0, 0);
-	const line = store.addDrawing(board.id, { kind: "line", points: [{ x: 0, y: 0 }, { x: 5, y: 5 }], color: "#4a4a4a" });
-	store.setViewport(board.id, { x: 9, y: 9, zoom: 1 });
-
-	const story = store.addStory(board.id, " Pitch ", "Start")!;
-	const [first] = story.pages;
-	assert.equal(story.name, "Pitch");
-	assert.deepEqual([first?.name, first?.cardIds, first?.drawingIds, first?.frameId], ["Start", [], [], null]);
-	// Its description at the top left of what is seen (the grid point nearest 72, 16 px in), not somewhere off screen.
-	assert.deepEqual(first?.descriptionPosition, { x: 72, y: 0 });
-	assert.deepEqual([firstBoard(store).cards.map((c) => c.id), firstBoard(store).drawings.map((d) => d.id)], [[card.id], [line.id]]);
-
-	const other = store.addStory(board.id, "", "Start")!;
-	assert.equal(other.name, "Story 2");
-	store.renameStory(board.id, other.id, "Demo");
-	store.renameStory(board.id, other.id, "  ");
-	assert.deepEqual(firstBoard(store).stories.map((s) => s.name), ["Pitch", "Demo"]);
-	assert.deepEqual((await open(storage)).data.boards[0], firstBoard(store));
-
-	store.removeStory(board.id, story.id);
-	assert.deepEqual(firstBoard(store).stories.map((s) => s.id), [other.id]);
-	assert.deepEqual(firstBoard(store).cards.map((c) => c.id), [card.id], "what it showed stays on the board");
-});
-
-test("pages are added to their own story; a story's last page stays", async () => {
-	const store = await open(memoryStorage());
-	const { id } = store.addBoard("Flow");
-	const one = store.addStory(id, "One", "A")!;
-	const two = store.addStory(id, "Two", "B")!;
-	store.addPage(id, two.pages[0]!.id, "B2", false);
-	store.removePage(id, one.pages[0]!.id);
-	const stories = store.data.boards[1]!.stories;
-	assert.deepEqual(stories.map((s) => s.pages.map((p) => p.name)), [["A"], ["B", "B2"]]);
-});
-
-test("pages are added after the current one, copying it on request", async () => {
-	const store = await open(memoryStorage());
-	const note = store.addType("Note", [], "");
-	const a = store.addEntity(note.id, "A", "", {});
-	const story = storyBoard(store, "Flow", "Start");
-	const [first] = story.pages;
-	assert.equal(first?.name, "Start");
-
-	const card = store.addCard(story.id, a.id, 0, 0, first!.id);
-	store.updatePage(story.id, first!.id, { description: "**Begin**", descriptionPosition: { x: 300, y: 40 }, descriptionSize: { width: 200, height: 90 } });
-	const frame = store.addFrame(story.id, "Wide", { x: 0, y: 0, width: 800, height: 450 }, first!.id)!;
-
-	const empty = store.addPage(story.id, first!.id, " Empty ", false)!;
-	const copied = store.addPage(story.id, first!.id, "Copied", true)!;
-	const pages = store.data.boards[1]!.stories[0]!.pages;
-	assert.deepEqual(
-		pages.map((p) => p.name),
-		["Start", "Copied", "Empty"],
-	);
-	assert.deepEqual(empty.cardIds, []);
-	assert.deepEqual(copied.cardIds, [card.id]);
-	// Both are seen in the frame of the page before, with the description in the same place (but no text).
-	assert.deepEqual([empty.frameId, copied.frameId], [frame.id, frame.id]);
-	assert.deepEqual([copied.descriptionPosition, copied.descriptionSize], [{ x: 300, y: 40 }, { width: 200, height: 90 }]);
-	assert.equal(copied.description, "");
-});
-
-test("stories only hide cards and drawings per page; they stay on the board, even with no page showing them", async () => {
-	const storage = memoryStorage();
-	const store = await open(storage);
-	const note = store.addType("Note", [], "");
-	const a = store.addEntity(note.id, "A", "", {});
-	const story = storyBoard(store, "Flow");
-	const one = story.pages[0]!;
-	const card = store.addCard(story.id, a.id, 0, 0, one.id);
-	const frame = store.addDrawing(story.id, { kind: "line", points: [{ x: 0, y: 0 }, { x: 5, y: 5 }], color: "#4a4a4a" }, one.id);
-	const two = store.addPage(story.id, one.id, "Two", true)!;
-	const board = () => store.data.boards.find((b) => b.id === story.id)!;
-
-	store.removeCard(card.id, one.id);
-	store.removeDrawing(frame.id, two.id);
-	assert.deepEqual(board().stories[0]!.pages.map((p) => [p.cardIds, p.drawingIds]), [[[], [frame.id]], [[card.id], []]]);
-	assert.equal(board().cards.length, 1);
-
-	store.showOnPage(story.id, one.id, card.id);
-	store.showOnPage(story.id, one.id, card.id); // shown once only
-	assert.deepEqual(board().stories[0]!.pages[0]!.cardIds, [card.id]);
-
-	// Off every page: still on the board, to be shown again.
-	store.removeCard(card.id, one.id);
-	store.removeCard(card.id, two.id);
-	assert.deepEqual(board().cards.map((c) => c.id), [card.id]);
-
-	// Deleting a page keeps what it showed on the board; the last page stays.
-	store.removePage(story.id, one.id);
-	assert.deepEqual(board().drawings.map((d) => d.id), [frame.id]);
-	assert.deepEqual(board().stories[0]!.pages.map((p) => p.id), [two.id]);
-
-	// Deleting without a page (outside a story) takes it off the board, and off every page.
-	store.showOnPage(story.id, two.id, card.id);
-	store.removeCard(card.id);
-	assert.deepEqual([board().cards, board().stories[0]!.pages[0]!.cardIds], [[], []]);
-	store.removePage(story.id, two.id);
-	assert.equal(board().stories[0]!.pages.length, 1);
-
-	// Deleting an entity takes its cards off the pages too.
-	const b = store.addEntity(note.id, "B", "", {});
-	store.addCard(story.id, b.id, 0, 0, two.id);
-	store.deleteEntity(b.id);
-	assert.deepEqual(board().stories[0]!.pages[0]!.cardIds, []);
-
-	// Everything persists.
-	const reloaded = await open(storage);
-	assert.deepEqual(reloaded.data.boards[1], board());
-});
-
-test("a page can show its cards dimmed; copied pages keep that, and a card going off the page loses it", async () => {
-	const store = await open(memoryStorage());
-	const note = store.addType("Note", [], "");
-	const a = store.addEntity(note.id, "A", "", {});
-	const b = store.addEntity(note.id, "B", "", {});
-	const story = storyBoard(store, "Flow");
-	const one = story.pages[0]!;
-	const cardA = store.addCard(story.id, a.id, 0, 0, one.id);
-	const cardB = store.addCard(story.id, b.id, 0, 0); // on the board, not on the page
-	const page = (i = 0) => store.data.boards[1]!.stories[0]!.pages[i]!;
-
-	store.setDimmed(story.id, one.id, cardA.id, true);
-	store.setDimmed(story.id, one.id, cardB.id, true); // not on the page: nothing to dim
-	assert.deepEqual(page().dimmedCardIds, [cardA.id]);
-
-	store.addPage(story.id, one.id, "Two", true);
-	assert.deepEqual(page(1).dimmedCardIds, [cardA.id]);
-
-	store.setDimmed(story.id, one.id, cardA.id, false);
-	assert.deepEqual([page(0).dimmedCardIds, page(1).dimmedCardIds], [[], [cardA.id]]);
-
-	store.removeCard(cardA.id, page(1).id);
-	assert.deepEqual(page(1).dimmedCardIds, []);
-});
-
-test("frames: steps are seen in one or in the board's own; frames can be changed and deleted, each one undo step", async () => {
-	const storage = memoryStorage();
-	const store = await open(storage);
-	const story = storyBoard(store, "Flow");
-	const page = story.pages[0]!;
-	const board = () => store.data.boards[1]!;
-	assert.equal(page.frameId, null, "a new story starts in the board's frame");
-
-	const wide = store.addFrame(story.id, " Wide ", { x: 10, y: 20, width: 800, height: 450 }, page.id)!;
-	const tiny = store.addFrame(story.id, "", { x: 0, y: 0, width: 5, height: 5 }, page.id)!;
-	assert.deepEqual(board().frames, [
-		{ id: wide.id, name: "Wide", x: 10, y: 20, width: 800, height: 450 },
-		{ id: tiny.id, name: "Frame 2", x: 0, y: 0, width: 192, height: 108 }, // never below the minimum, in a screen's shape
-	]);
-	assert.equal(board().stories[0]!.pages[0]!.frameId, tiny.id);
-	store.setFrame(story.id, wide.id, page.id);
-
-	store.updateFrame(story.id, wide.id, { name: " ", x: 30, width: 320, height: 1000 });
-	assert.deepEqual(board().frames[0], { id: wide.id, name: "Wide", x: 30, y: 20, width: 320, height: 180 }, "the height follows the width");
-	store.undo();
-	assert.equal(board().frames[0]?.x, 10);
-
-	store.setFrame(story.id, "unknown", page.id); // not one of the board's: nothing changes
-	assert.equal(board().stories[0]!.pages[0]!.frameId, wide.id);
-	store.setFrame(story.id, null, page.id);
-	assert.equal(board().stories[0]!.pages[0]!.frameId, null);
-
-	// The board's own frame is moved and resized, likewise.
-	store.setViewFrame(story.id, { x: -48, y: 24, width: 10, height: 600 });
-	assert.deepEqual(board().viewFrame, { x: -48, y: 24, width: 192, height: 108 });
-	assert.deepEqual((await open(storage)).data.boards[1], board());
-
-	// Deleting a frame: its steps are seen in the board's frame.
-	store.setFrame(story.id, wide.id, page.id);
-	store.removeFrame(story.id, wide.id);
-	assert.deepEqual([board().frames.map((f) => f.id), board().stories[0]!.pages[0]!.frameId], [[tiny.id], null]);
-});
-
-test("undo keeps the board's pan and zoom", async () => {
-	const store = await open(memoryStorage());
-	const story = storyBoard(store, "Flow");
-	store.updatePage(story.id, story.pages[0]!.id, { name: "Renamed" });
-	store.setViewport(story.id, { x: 3, y: 4, zoom: 1 });
-	store.undo();
-	assert.equal(store.data.boards[1]!.stories[0]!.pages[0]!.name, story.pages[0]!.name);
-	assert.deepEqual(store.data.boards[1]!.viewport, { x: 3, y: 4, zoom: 1 });
-});
-
-test("version 5 steps' pan and zoom become frames, shared by steps seen alike, the same on every read", async () => {
-	const page = (id: string, viewport: unknown, name?: string) => ({ id, ...(name && { name }), viewport, cardIds: [] });
+test("stories saved before version 8 are left out; a board saved before frames gets its frame of its pan/zoom", async () => {
 	const saved = {
 		version: 5,
 		types: [],
@@ -945,103 +744,43 @@ test("version 5 steps' pan and zoom become frames, shared by steps seen alike, t
 				id: "b",
 				name: "Flow",
 				cards: [],
-				viewport: { x: 0, y: 0, zoom: 1 },
+				viewport: { x: -100, y: 50, zoom: 2 },
 				drawings: [],
-				stories: [
-					{ id: "s1", name: "One", pages: [page("p1", { x: -100, y: 50, zoom: 2 }, "Intro"), page("p2", { x: -100, y: 50, zoom: 2 })] },
-					{ id: "s2", name: "Two", pages: [page("p3", null)] },
-				],
+				story: true,
+				pages: [{ id: "p", cardIds: [] }],
+				stories: [{ id: "s", name: "One", pages: [{ id: "q", cardIds: [] }] }],
 			},
-			{ id: "c", name: "Framed", cards: [], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [], frames: [], stories: [{ id: "s3", name: "S", pages: [page("p4", { x: 5, y: 5, zoom: 1 })] }] },
-		],
-	};
-	const store = await open(memoryStorage(saved));
-	const [board, framed] = store.data.boards;
-	const { width, height } = REFERENCE_SCREEN;
-	assert.deepEqual(board?.frames, [
-		{ id: "p1", name: "Intro", x: 50, y: -25, width: width / 2, height: height / 2 },
-		{ id: "p3", name: "Frame 2", x: 0, y: 0, width, height },
-	]);
-	assert.deepEqual(board?.stories.map((s) => s.pages.map((p) => p.frameId)), [["p1", "p1"], ["p3"]]);
-	// The board's own frame shows what its pan/zoom did (the viewer showed the board so).
-	assert.deepEqual(board?.viewFrame, { x: 0, y: 0, width, height });
-	assert.equal("viewport" in board!.stories[0]!.pages[0]!, false);
-	assert.deepEqual((await open(memoryStorage(saved))).data.boards[0], board);
-	// A board saved with frames is read as it is: steps naming no frame of it are seen in the board's.
-	assert.deepEqual([framed?.frames, framed?.stories[0]?.pages[0]?.frameId], [[], null]);
-});
-
-test("storyboards saved by version 2 get a story; malformed pages are dropped or completed", async () => {
-	const saved = {
-		version: 2,
-		types: [],
-		entities: [],
-		boards: [
-			{ id: "w", name: "Old", cards: [], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] },
 			{
-				id: "s",
-				name: "Story",
-				kind: "storyboard",
+				id: "c",
+				name: "Framed",
 				cards: [],
 				viewport: { x: 0, y: 0, zoom: 1 },
+				viewFrame: { x: 10, y: 20, width: 320, height: 180 },
 				drawings: [],
-				pages: [null, { id: "p", cardIds: ["gone", 3], descriptionPosition: { x: "2", y: 0 }, descriptionSize: { width: 10, height: 500 }, viewport: "x" }],
-			},
-			{
-				id: "e",
-				name: "Empty",
-				kind: "storyboard",
-				cards: [{ id: "c", entityId: "01ARYZ6S41TSV4RRFFQ69G5FAV", x: 0, y: 0, width: 240, height: 160 }],
-				viewport: { x: 0, y: 0, zoom: 1 },
-				drawings: [],
+				frames: [{ id: "f", name: "F", x: 0, y: 0, width: 320, height: 180 }],
+				stories: [],
 			},
 		],
 	};
-	saved.types = [{ id: "n", name: "Note", properties: [] }] as never;
-	saved.entities = [{ id: "01ARYZ6S41TSV4RRFFQ69G5FAV", typeId: "n", name: "A", content: "", values: {} }] as never;
-	const [old, story, empty] = (await open(memoryStorage(saved))).data.boards;
-	assert.deepEqual(old?.stories, []);
-	assert.equal("kind" in story!, false);
-	assert.equal("pages" in story!, false);
-	// The steps become one story, with the board's id (as the server's migration does).
-	assert.deepEqual(story?.stories, [
-		{
-			id: "s",
-			name: "Story 1",
-			pages: [
-				{
-					id: "p",
-					name: "Step 2",
-					description: "",
-					descriptionPosition: { x: 72, y: 24 },
-					descriptionSize: { width: 160, height: 500 }, // never below the minimum
-					frameId: "p",
-					cardIds: [],
-					drawingIds: [],
-					dimmedCardIds: [],
-				},
-			],
-		},
-	]);
-	// In story mode without pages: a story with an empty one.
-	assert.deepEqual(empty?.stories.map((s) => s.pages.map((p) => p.cardIds)), [[[]]]);
-});
-
-test("version 4 boards' steps become a story, even with story mode off; boards with stories are read as they are", async () => {
-	const page = { id: "p1", name: "One", cardIds: [] };
-	const saved = {
-		version: 4,
-		types: [],
-		entities: [],
-		boards: [
-			{ id: "kept", name: "Off", cards: [], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [], story: false, pages: [page] },
-			{ id: "new", name: "New", cards: [], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [], stories: [{ id: "s", name: "Mine", pages: [page] }] },
-		],
-	};
-	const store = await open(memoryStorage(saved));
-	const [kept, already] = store.data.boards;
-	assert.deepEqual(kept?.stories.map((s) => [s.id, s.name, s.pages.map((p) => p.id)]), [["kept", "Story 1", ["p1"]]]);
-	assert.deepEqual(already?.stories.map((s) => [s.id, s.name, s.pages.map((p) => p.id)]), [["s", "Mine", ["p1"]]]);
+	const [board, framed] = (await open(memoryStorage(saved))).data.boards;
+	const { width, height } = REFERENCE_SCREEN;
+	// The board's frame shows what its pan/zoom did (the viewer showed the board so).
+	assert.deepEqual(board, {
+		id: "b",
+		name: "Flow",
+		cards: [],
+		viewport: { x: -100, y: 50, zoom: 2 },
+		viewFrame: { x: 50, y: -25, width: width / 2, height: height / 2 },
+		drawings: [],
+	});
+	assert.deepEqual(framed, {
+		id: "c",
+		name: "Framed",
+		cards: [],
+		viewport: { x: 0, y: 0, zoom: 1 },
+		viewFrame: { x: 10, y: 20, width: 320, height: 180 },
+		drawings: [],
+	});
 });
 
 test("types get distinct palette colors; a chosen color is kept and can be changed", async () => {
@@ -1176,22 +915,20 @@ test("drawings: added, replaced and removed on their own board", async () => {
 	assert.equal(store.data.boards[0]?.drawings.length, 1);
 });
 
-test("splitting drawings replaces them where they were, on their pages too, as one change", async () => {
+test("splitting drawings replaces them where they were, as one change", async () => {
 	const storage = memoryStorage();
 	const store = await open(storage);
-	const board = store.addBoard("Story");
-	const page = store.addStory(board.id, "Story", "Start")!.pages[0]!;
+	const board = store.addBoard("Sketch");
 	const points = [{ x: 0, y: 0 }, { x: 5, y: 0 }];
-	const first = store.addDrawing(board.id, { kind: "pen", points, color: "#4a4a4a", penStyle: "pen" }, page.id);
-	const gone = store.addDrawing(board.id, { kind: "pen", points, color: "#4a4a4a", penStyle: "pen" }, page.id);
-	const last = store.addDrawing(board.id, { kind: "line", points, color: "#4a4a4a" }, page.id);
+	const first = store.addDrawing(board.id, { kind: "pen", points, color: "#4a4a4a", penStyle: "pen" });
+	const gone = store.addDrawing(board.id, { kind: "pen", points, color: "#4a4a4a", penStyle: "pen" });
+	const last = store.addDrawing(board.id, { kind: "line", points, color: "#4a4a4a" });
 	const piece = { kind: "pen", points, color: "#f9c9c9", penStyle: "fineliner" } as const;
 
 	store.splitDrawings(new Map([[first.id, [piece, piece]], [gone.id, []]]));
 	const saved = (await open(storage)).data.boards.find((b) => b.id === board.id)!;
 	assert.deepEqual(saved.drawings.map(({ id: _, ...d }) => d), [piece, piece, { kind: "line", points, color: "#4a4a4a" }]);
 	assert.equal(saved.drawings[2]?.id, last.id);
-	assert.deepEqual(saved.stories[0]?.pages[0]?.drawingIds, saved.drawings.map((d) => d.id));
 
 	store.undo();
 	assert.deepEqual(store.data.boards.find((b) => b.id === board.id)!.drawings.map((d) => d.id), [first.id, gone.id, last.id]);
@@ -1236,16 +973,15 @@ test("library: drawings made, named, tagged and edited there are saved; placed o
 	assert.equal(firstBoard(store).drawings.length, 1, "removing from the library drawing leaves the boards alone");
 });
 
-test("library: deleting a drawing takes it off every board and page it's placed on; undo brings both back", async () => {
+test("library: deleting a drawing takes it off every board it's placed on; undo brings both back", async () => {
 	const store = await open(memoryStorage());
 	const star = store.addLibraryDrawing("Star");
 	const moon = store.addLibraryDrawing("Moon");
 	const one = firstBoard(store);
-	const pageId = store.addStory(one.id, "Story", "Step 1")!.pages[0]!.id;
 	const symbol = (libraryId: string) => ({ kind: "symbol" as const, libraryId, x: 0, y: 0, width: 40, height: 40 });
-	store.addDrawing(one.id, symbol(star.id), pageId);
 	store.addDrawing(one.id, symbol(star.id));
-	const kept = store.addDrawing(one.id, symbol(moon.id), pageId);
+	store.addDrawing(one.id, symbol(star.id));
+	const kept = store.addDrawing(one.id, symbol(moon.id));
 	const two = store.addBoard("Two");
 	store.addDrawing(two.id, symbol(star.id));
 	assert.deepEqual(store.libraryUses(star.id), { count: 3, boards: 2 });
@@ -1254,7 +990,6 @@ test("library: deleting a drawing takes it off every board and page it's placed 
 	store.deleteLibraryDrawing(star.id);
 	assert.deepEqual(store.data.library.map((item) => item.name), ["Moon"]);
 	assert.deepEqual(store.data.boards.map((b) => b.drawings.map((d) => d.id)), [[kept.id], []]);
-	assert.deepEqual(firstBoard(store).stories[0]!.pages[0]!.drawingIds, [kept.id]);
 
 	store.undo();
 	assert.deepEqual(store.data.library.map((item) => item.name), ["Star", "Moon"]);

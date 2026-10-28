@@ -1,5 +1,5 @@
 import type { Point, Rect } from "./connectors.js";
-import { screenToWorld, type Viewport } from "./viewport.js";
+import type { Viewport } from "./viewport.js";
 
 export type PropertyKind = "text" | "options" | "reference";
 
@@ -133,19 +133,6 @@ export interface CanvasCard {
 	height: number;
 }
 
-/**
- * A part of the board to look at, in world coordinates: the viewer fits it into the screen, whatever its size. Story
- * steps show one; several steps can share one, so they're seen alike. (The board's own frame is apart: Board.viewFrame.)
- */
-export interface ViewFrame {
-	id: string;
-	name: string;
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-}
-
 /** Frames have a screen's shape (16:9): what the viewer shows fills a screen, and frames look alike on every one. */
 export const FRAME_ASPECT = 16 / 9;
 export const MIN_FRAME_SIZE = { width: 192, height: 192 / FRAME_ASPECT } as const;
@@ -163,77 +150,18 @@ export function frameInside(rect: Rect): Rect {
 	return { x: rect.x + (rect.width - width) / 2, y: rect.y + (rect.height - height) / 2, width, height };
 }
 
-/**
- * One step of a story: which of the board's cards and drawings it shows (they keep one position on all pages), the
- * view frame it is seen in, and a description placed over the canvas.
- */
-export interface StoryPage {
-	id: string;
-	/** The step name. */
-	name: string;
-	/** Markdown; empty means none is shown. */
-	description: string;
-	/** The description's top left corner in world coordinates: it sits on the canvas like a card. */
-	descriptionPosition: Point;
-	/** The description box's size in world units, the same in the editor and the viewer. */
-	descriptionSize: { width: number; height: number };
-	/** One of the board's frames; null: the board's own frame (Board.viewFrame). */
-	frameId: string | null;
-	cardIds: string[];
-	drawingIds: string[];
-	/** Cards the page shows faded, out of focus: some of its `cardIds`. */
-	dimmedCardIds: string[];
-}
-
-/** Where a page's description goes unless it was moved: this far (screen px) from the top left of the page's
- * view, clear of the drawing tools. */
-export const DESCRIPTION_OFFSET: Point = { x: 72, y: 16 };
-
-export const DEFAULT_DESCRIPTION_SIZE = { width: 384, height: 120 } as const;
-export const MIN_DESCRIPTION_SIZE = { width: 160, height: 48 } as const;
-
-/** The grid point nearest to where a description is at DESCRIPTION_OFFSET in `viewport`: in view, top left. */
-export function descriptionInView(viewport: Viewport): Point {
-	const { x, y } = screenToWorld(viewport, DESCRIPTION_OFFSET.x, DESCRIPTION_OFFSET.y);
-	return { x: snapToGrid(x), y: snapToGrid(y) };
-}
-
-/** A way through a board, shown step by step like a presentation: each step (page) shows some of its cards and
- * drawings. A board can have several. */
-export interface Story {
-	id: string;
-	name: string;
-	/** In order; never empty. Page ids are unique across all stories of the board. */
-	pages: StoryPage[];
-}
-
-/** A named canvas with its own cards and pan/zoom, and stories through it. */
+/** A named canvas with its own cards and pan/zoom. */
 export interface Board {
 	id: string;
 	name: string;
 	/** Later cards are drawn on top. */
 	cards: CanvasCard[];
-	/** The editor's pan/zoom of the board, in and outside its stories; the viewer shows frames instead. */
+	/** The editor's pan/zoom of the board; the viewer shows its frame instead. */
 	viewport: Viewport;
-	/** The board's own frame, always there: the viewer shows the whole board in it, and the steps without a frame
-	 * of their own. In a frame's shape (see frameShape). */
+	/** The board's frame, always there: the viewer shows the board in it. In a frame's shape (see frameShape). */
 	viewFrame: Rect;
-	/** The steps' frames, in the order they were made. */
-	frames: ViewFrame[];
 	/** Shapes, lines, text and pen strokes, drawn behind the cards; later ones on top. */
 	drawings: Drawing[];
-	/** In the order they were made. */
-	stories: Story[];
-}
-
-/** All pages of all the board's stories. */
-export function boardPages(board: Pick<Board, "stories">): StoryPage[] {
-	return board.stories.flatMap((s) => s.pages);
-}
-
-/** The board with `fn` applied to every page of every story. */
-export function mapPages<B extends Pick<Board, "stories">>(board: B, fn: (page: StoryPage) => StoryPage): B {
-	return { ...board, stories: board.stories.map((s) => ({ ...s, pages: s.pages.map(fn) })) };
 }
 
 export type TextSize = "s" | "m" | "l";

@@ -189,12 +189,12 @@ async function writeUnit(tx: Queries, ws: string, unit: Change): Promise<void> {
 		}
 		case "board": {
 			const board = unit.after.value;
-			await tx`insert into boards (workspace_id, id, position, name, viewport, view_frame, frames, stories, updated_at)
+			await tx`insert into boards (workspace_id, id, position, name, viewport, view_frame, updated_at)
 				values (${ws}, ${board.id}, ${unit.after.position}, ${board.name}, ${jsonbParameter(tx, board.viewport)},
-					${jsonbParameter(tx, board.viewFrame ?? null)}, ${jsonbParameter(tx, board.frames ?? [])}, ${jsonbParameter(tx, board.stories ?? [])}, now())
+					${jsonbParameter(tx, board.viewFrame ?? null)}, now())
 				on conflict (workspace_id, id) do update set
 					position = excluded.position, name = excluded.name, viewport = excluded.viewport, view_frame = excluded.view_frame,
-					frames = excluded.frames, stories = excluded.stories, updated_at = now()`;
+					updated_at = now()`;
 			return;
 		}
 		case "card": {

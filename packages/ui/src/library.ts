@@ -140,7 +140,6 @@ export function libraryView(store: Store): HTMLElement {
 			store,
 			readOnly: false,
 			owner: () => ({ libraryId }),
-			page: () => null,
 			zoom: () => viewport.zoom,
 			toWorld,
 			captureTarget: () => surface,

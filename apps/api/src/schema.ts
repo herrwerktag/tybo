@@ -209,6 +209,14 @@ export const MIGRATIONS: readonly Migration[] = [
 			)`;
 		},
 	},
+	{
+		version: 10,
+		name: "no more stories",
+		async up(tx) {
+			// Stories and the frames of their steps are gone from the app; what was saved of them goes too.
+			await tx`alter table boards drop column stories, drop column frames`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */

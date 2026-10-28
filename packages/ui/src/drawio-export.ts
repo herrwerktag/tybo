@@ -26,8 +26,7 @@ import {
  * A board as a draw.io file: its cards as boxes, where they are on the board, showing what the cards show (type bar,
  * name, properties, content), and the lines of `line` references as edges attached to them, so they stay attached
  * when moved in draw.io. A card's description is its tooltip, as HTML. Groups (areas) are named containers holding the cards
- * lying in them, so they move together in draw.io too. Like the editor outside a story, the whole board is in; other
- * drawings and stories are left out.
+ * lying in them, so they move together in draw.io too. The whole board is in; other drawings are left out.
  */
 export function boardDrawio(data: Pick<AppData, "types" | "entities" | "boards">, boardId: string): string {
 	const board = findBoard(data, boardId);

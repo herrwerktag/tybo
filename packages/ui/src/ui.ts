@@ -76,7 +76,7 @@ const WORKSPACE_MIME = "application/x-workspace-index";
 const ENTITIES_TAG_KEY = "entities-tag";
 
 /** The page shown, from the URL hash: entity types, entities, board editing (boards), the library of drawings,
- * analyses, or read-only boards (view, maybe followed by the board, story and step shown: see parseViewHash). */
+ * analyses, or read-only boards (view, maybe followed by the board shown: see parseViewHash). */
 type Route = "types" | "entities" | "boards" | "library" | "analysis" | "view";
 
 /** Entities is the default page, so old links (e.g. "#data") still land there; "#canvas" and "#viewer" are the

@@ -70,9 +70,7 @@ const data: Pick<AppData, "types" | "entities" | "boards"> = {
 			cards: [card("ca", "a1", 0, 0), card("cr-far", "r1", 2400, 0), card("cr", "r1", 480, 0), card("cf", "f1", 0, 480)],
 			viewport: { x: 0, y: 0, zoom: 1 },
 			viewFrame: { x: 0, y: 0, width: 960, height: 540 },
-			frames: [],
 			drawings: [],
-			stories: [],
 		} satisfies Board,
 	],
 };

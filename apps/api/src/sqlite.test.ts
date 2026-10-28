@@ -8,8 +8,8 @@ import { DatabaseSync } from "node:sqlite";
 import { SQLITE_MIGRATIONS, sqliteStorage } from "./sqlite.js";
 import { call, startApp } from "./test-server.js";
 
-/** A state with every kind of unit: a type with a property, an entity with a value, a board in story mode
- * with a card, a drawing placed from the library, and that library drawing. */
+/** A state with every kind of unit: a type with a property, an entity with a value, a board with a card, a
+ * drawing placed from the library, and that library drawing. */
 function sample(): AppData {
 	return {
 		types: [
@@ -28,28 +28,8 @@ function sample(): AppData {
 				name: "Brett",
 				cards: [{ id: "card-1", entityId: "ent-1", x: 1.25, y: -2, width: 240, height: 160 }],
 				viewport: { x: 0, y: 0, zoom: 1.5 },
-				frames: [{ id: "frame-1", name: "Weit", x: 0, y: 0, width: 640, height: 360 }],
 				viewFrame: { x: -12.5, y: 0, width: 1280, height: 720 },
 				drawings: [{ id: "draw-star", kind: "symbol", libraryId: "lib-star", x: 40, y: 40.5, width: 96, height: 48 }],
-				stories: [
-					{
-						id: "story-1",
-						name: "Vortrag",
-						pages: [
-							{
-								id: "page-1",
-								name: "Anfang",
-								description: "",
-								descriptionPosition: { x: 72, y: 16 },
-								descriptionSize: { width: 384, height: 120 },
-								frameId: "frame-1",
-								cardIds: ["card-1"],
-								drawingIds: [],
-								dimmedCardIds: [],
-							},
-						],
-					},
-				],
 			},
 		],
 		library: [{ id: "lib-star", name: "Stern", tags: ["Form"], drawings: [{ id: "lib-rect", kind: "rect", x: 0, y: 0, width: 20, height: 10.5, color: "#f6e8a6", text: "★", textSize: "l" }] }],
@@ -77,7 +57,7 @@ async function fresh() {
 test("sqlite: the schema is made once, and survives reopening the file", async () => {
 	const { storage, path, close } = await fresh();
 	try {
-		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6]);
+		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7]);
 		assert.deepEqual(await storage.init(), [], "the second start has nothing left to do");
 		assert.equal(await storage.healthy(), true);
 		await storage.createWorkspace({ id: "ws", name: "Bleibt" }, 1);
@@ -177,40 +157,34 @@ test("sqlite: a change set the tables refuse writes nothing half — 503 over HT
 	}
 });
 
-test("sqlite: a board's steps from before become one story, with the board's id; its frames read as null", async () => {
+test("sqlite: what was saved of stories, by any version before, is dropped; the board's frame reads as null", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "tybo-sqlite-"));
 	const path = join(dir, "test.sqlite");
 	try {
-		// A file as the version before made it: steps on boards, in story mode or not.
+		// A file as an old version made it: steps on boards, in story mode or not.
 		const db = new DatabaseSync(path);
 		for (const migration of SQLITE_MIGRATIONS.slice(0, 2)) migration.up(db);
 		db.exec("pragma user_version = 2");
 		db.exec("insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 4)");
 		const insert = db.prepare("insert into boards (workspace_id, id, position, name, viewport, story, pages) values ('ws', ?, ?, ?, null, ?, ?)");
 		insert.run("on", 0, "An", 1, JSON.stringify([{ id: "p1", name: "Eins" }]));
-		insert.run("off", 1, "Aus", 0, JSON.stringify([{ id: "p2", name: "Zwei" }]));
-		insert.run("none", 2, "Ohne", 0, JSON.stringify([]));
-		insert.run("null", 3, "Leer", null, null);
+		insert.run("null", 1, "Leer", null, null);
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [3, 4, 5, 6]);
+		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7]);
 		const { data } = (await storage.readWorkspace("ws"))!;
-		// Null, not missing: the app makes frames of those steps' pan/zoom.
+		// Null, not missing: the app makes the frame of the board's pan/zoom.
 		assert.deepEqual(
-			data.boards.map((b) => [b.viewFrame, b.frames]),
-			[[null, null], [null, null], [null, null], [null, null]],
-		);
-		assert.deepEqual(
-			data.boards.map((b) => [b.id, b.stories]),
+			data.boards.map((b) => [b.id, b.viewFrame, Object.keys(b).sort()]),
 			[
-				["on", [{ id: "on", name: "Story 1", pages: [{ id: "p1", name: "Eins" }] }]],
-				["off", [{ id: "off", name: "Story 1", pages: [{ id: "p2", name: "Zwei" }] }]],
-				["none", []],
-				["null", []],
+				["on", null, ["cards", "drawings", "id", "name", "viewFrame", "viewport"]],
+				["null", null, ["cards", "drawings", "id", "name", "viewFrame", "viewport"]],
 			],
 		);
 		await storage.close();
+		const columns = (new DatabaseSync(path).prepare("pragma table_info(boards)").all() as { name: string }[]).map((c) => c.name);
+		assert.deepEqual(columns.sort(), ["id", "name", "position", "updated_at", "view_frame", "viewport", "workspace_id"]);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
