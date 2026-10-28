@@ -12,10 +12,9 @@ export const LANGUAGES: readonly { code: Language; name: string }[] = [
 
 const en = {
 	// Navigation and settings
-	tabEntities: "Entities",
+	tabEntities: "Data",
 	tabBoards: "Boards",
 	tabAnalysis: "Analyses",
-	tabView: "View",
 	settings: "Settings",
 	language: "Language",
 	theme: "Theme",
@@ -237,7 +236,9 @@ const en = {
 	zoomIn: "Zoom in",
 	resetView: "Reset view",
 	exportView: "Download this board as an HTML file that shows it like here, without the server",
-	exportDrawioButton: "Export for draw.io",
+	exportBoard: "Export this board",
+	exportViewButton: "As HTML file",
+	exportDrawioButton: "For draw.io",
 	exportDrawio: "Download this board's cards and lines as a draw.io file; with groups, as a ZIP with one more file per group",
 	groupFallbackName: "Group",
 
@@ -306,10 +307,9 @@ export type Messages = typeof en;
 
 /** Typed against the English messages, so a missing or extra key is a type error. */
 const de: Messages = {
-	tabEntities: "Entitäten",
+	tabEntities: "Daten",
 	tabBoards: "Boards",
 	tabAnalysis: "Auswertungen",
-	tabView: "Ansicht",
 	settings: "Einstellungen",
 	language: "Sprache",
 	theme: "Darstellung",
@@ -524,7 +524,9 @@ const de: Messages = {
 	zoomIn: "Vergrößern",
 	resetView: "Ansicht zurücksetzen",
 	exportView: "Dieses Board als HTML-Datei herunterladen, die es wie hier zeigt, ohne Server",
-	exportDrawioButton: "Für draw.io exportieren",
+	exportBoard: "Dieses Board exportieren",
+	exportViewButton: "Als HTML-Datei",
+	exportDrawioButton: "Für draw.io",
 	exportDrawio: "Karten und Linien dieses Boards als draw.io-Datei herunterladen; mit Gruppen als ZIP mit je einer weiteren Datei pro Gruppe",
 	groupFallbackName: "Gruppe",
 

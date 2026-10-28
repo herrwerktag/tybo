@@ -53,25 +53,8 @@ const ZOOM_SETTLE_ANIMATION = 120;
 /** Room (screen px) around a frame the editor goes to. */
 const FIT_MARGIN = 48;
 
-/** What a viewer address names: `#view/<board>`, the board optional. */
-export interface ViewTarget {
-	boardId?: string;
-}
-
-export function parseViewHash(hash: string): ViewTarget {
-	const [route, boardId] = hash.replace(/^#/, "").split("/").map(decodeURIComponent);
-	if (route !== "view") return {};
-	return boardId ? { boardId } : {};
-}
-
-export function viewHash({ boardId }: ViewTarget): string {
-	return boardId === undefined ? "#view" : `#view/${encodeURIComponent(boardId)}`;
-}
-
 interface CanvasOptions {
 	readOnly: boolean;
-	/** Viewer only: the address (location.hash) names the board shown, and follows it. */
-	addressed?: boolean;
 	onExportView?: (boardId: string) => void;
 	onExportDrawio?: (boardId: string) => void;
 }
@@ -100,8 +83,8 @@ function firstBoardView(store: Store, options: CanvasOptions): HTMLElement {
 
 /**
  * The board canvas. With `readOnly` (the Viewer) it only displays: no side panel, no board editing,
- * no moving, resizing, removing or dropping cards, and pan/zoom are never saved. With `onExportView` and
- * `onExportDrawio`, the viewer offers to export the current board (as HTML, for draw.io).
+ * no moving, resizing, removing or dropping cards, and pan/zoom are never saved. With `onExportView` or
+ * `onExportDrawio`, the editor offers to export the current board (as HTML, for draw.io).
  *
  * The viewer shows the board in its frame, fitted into the screen. The editor keeps one pan/zoom per board, and
  * shows the frame as an outline to move and resize.
@@ -109,9 +92,7 @@ function firstBoardView(store: Store, options: CanvasOptions): HTMLElement {
 export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	if (store.data.boards.length === 0) return firstBoardView(store, options);
 	const { readOnly, onExportView, onExportDrawio } = options;
-	const addressed = readOnly && options.addressed === true;
-	const target = addressed ? parseViewHash(location.hash) : {};
-	let boardId = target.boardId ?? readPreference(ACTIVE_BOARD_KEY) ?? "";
+	let boardId = readPreference(ACTIVE_BOARD_KEY) ?? "";
 	const currentBoard = (): Board => store.data.boards.find((b) => b.id === boardId) ?? store.data.boards[0]!;
 	boardId = currentBoard().id;
 
@@ -248,7 +229,6 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		boardId = id;
 		writePreference(ACTIVE_BOARD_KEY, id);
 		show();
-		address();
 	}
 
 	/** Shows the board now chosen, with its pan/zoom (see homeViewport). */
@@ -263,13 +243,6 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		renderPanel();
 		renderCards();
 		renderFrames();
-	}
-
-	/** In an addressed viewer, puts the board shown into the address, in place of the current one. */
-	function address(): void {
-		if (!addressed) return;
-		const hash = viewHash({ boardId });
-		if (hash !== location.hash) history.replaceState(null, "", hash);
 	}
 
 	/** Editor: moves the pan/zoom to show the whole frame, with some room around it, and keeps it for the board. */
@@ -577,18 +550,30 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		},
 	});
 
+	/** Editor: the current board's exports (as HTML, for draw.io), in a dropdown like the boards'. */
+	const { dialog: exportDialog, button: exportButton } = pickerDropdown("export-dialog", text.exportButton, "export-switch", text.exportBoard, () => {
+		const option = (label: string, title: string, run: (id: string) => void) =>
+			el(
+				"li",
+				{},
+				el("button", { type: "button", className: "picker-option", title, onclick: () => (exportDialog.close(), run(boardId)) }, label),
+			);
+		exportDialog.replaceChildren(
+			el("h2", {}, text.exportButton),
+			el(
+				"ul",
+				{ className: "picker-list" },
+				...(onExportView ? [option(text.exportViewButton, text.exportView, onExportView)] : []),
+				...(onExportDrawio ? [option(text.exportDrawioButton, text.exportDrawio, onExportDrawio)] : []),
+			),
+		);
+	});
+	exportButton.replaceChildren(text.exportButton, el("span", { ariaHidden: "true" }, "▾"));
+
 	function renderBoardControls(): void {
 		boardButton.replaceChildren(...pickerLabel(currentBoard().name));
-		// The viewer only switches boards, and maybe exports the current board.
-		if (readOnly) {
-			const exportButton = el("button", { type: "button", title: text.exportView, onclick: () => onExportView?.(boardId) }, text.exportButton);
-			const drawioButton = el("button", { type: "button", title: text.exportDrawio, onclick: () => onExportDrawio?.(boardId) }, text.exportDrawioButton);
-			return boardControls.replaceChildren(
-				boardButton,
-				...(onExportView ? [exportButton] : []),
-				...(onExportDrawio ? [drawioButton] : []),
-			);
-		}
+		// The viewer only switches boards.
+		if (readOnly) return boardControls.replaceChildren(boardButton);
 		editFramesButton.ariaPressed = String(editingFrames);
 		editFramesButton.replaceChildren(el("span", { ariaHidden: "true" }, "▭"), editingFrames ? text.doneEditingFrames : text.editFrames);
 		boardControls.replaceChildren(
@@ -596,6 +581,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			editFramesButton,
 			...(editingFrames ? [frameFromViewButton] : []),
 			el("button", { type: "button", title: text.newEntityHint, onclick: openNewEntity }, text.newEntityButton),
+			...(onExportView || onExportDrawio ? [exportButton] : []),
 		);
 	}
 
@@ -1668,6 +1654,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		zoomBar,
 		preview.element,
 		boardDialog,
+		exportDialog,
 		connectDialog,
 		newEntityDialog,
 	);

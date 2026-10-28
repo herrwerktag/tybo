@@ -28,7 +28,7 @@ import {
 import { canvasView } from "./canvas.js";
 import { entityForm } from "./entity-form.js";
 import { analysisView } from "./analysis.js";
-import { downloadFile, dragHandle, el, reorderable, safeFileName, tagFilter, typeDot } from "./dom.js";
+import { downloadFile, dragHandle, el, reorderable, safeFileName, svgEl, tagFilter, typeDot } from "./dom.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
 import { THEMES, setTheme, theme, type Theme } from "./theme.js";
 import { setWrapReferences, wrapReferences } from "./wrap-references.js";
@@ -74,17 +74,24 @@ const WORKSPACE_MIME = "application/x-workspace-index";
 /** The tag the Entities page is filtered by, if any. */
 const ENTITIES_TAG_KEY = "entities-tag";
 
-/** The page shown, from the URL hash: entity types, entities, board editing (boards), analyses,
- * or read-only boards (view, maybe followed by the board shown: see parseViewHash). */
-type Route = "types" | "entities" | "boards" | "analysis" | "view";
+/** The page shown, from the URL hash: entity types, entities, boards or analyses. */
+type Route = "types" | "entities" | "boards" | "analysis";
 
-/** Entities is the default page, so old links (e.g. "#data") still land there; "#canvas" and "#viewer" are the
- * board pages' former names. */
+/** Entities is the default page, so old links (e.g. "#data") still land there; "#canvas" is the boards' former
+ * name, and the read-only "#view" (formerly "#viewer") is gone: its links open the boards. */
 function routeFromHash(hash: string): Route {
 	const route = hash.slice(1).split("/")[0];
-	if (route === "canvas") return "boards";
-	if (route === "viewer") return "view";
-	return route === "types" || route === "boards" || route === "analysis" || route === "view" ? route : "entities";
+	if (route === "canvas" || route === "view" || route === "viewer") return "boards";
+	return route === "types" || route === "boards" || route === "analysis" ? route : "entities";
+}
+
+/** An arrow bending back (undo); mirrored, forward (redo). Drawn, since the font's arrows come out small and thin. */
+function historyIcon(mirrored: boolean): SVGSVGElement {
+	return svgEl(
+		"svg",
+		{ class: "history-icon", viewBox: "0 0 16 16", "aria-hidden": "true", ...(mirrored && { transform: "scale(-1 1)" }) },
+		svgEl("path", { d: "M5.5 3 2.5 6l3 3M2.5 6h7a4 4 0 0 1 0 8H7" }),
+	);
 }
 
 /** How often to look, in the background, for a stand of the open workspace that someone else saved in between:
@@ -155,8 +162,8 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 	const banner = el("div", { className: "problem-banner", role: "alert" });
 
 	/** Undo and redo in the top bar; updated on their own, since most canvas changes don't draw the page again. */
-	const undoButton = el("button", { type: "button", className: "history-button", onclick: () => undoChange() }, "↶");
-	const redoButton = el("button", { type: "button", className: "history-button", onclick: () => redoChange() }, "↷");
+	const undoButton = el("button", { type: "button", className: "history-button", onclick: () => undoChange() }, historyIcon(false));
+	const redoButton = el("button", { type: "button", className: "history-button", onclick: () => redoChange() }, historyIcon(true));
 	const historyButtons = el("div", { className: "history-buttons" }, undoButton, redoButton);
 	const isMac = /Mac|iPhone|iPad/.test(navigator.userAgent);
 
@@ -322,14 +329,13 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 		renderHistoryButtons();
 		root.replaceChildren(
 			// One header, so the page keeps its two rows (top, content) with or without warnings.
-			el("header", {}, navBar(route), ...(entitiesTab ? [subNav(route)] : []), banner),
+			el("header", {}, navBar(route), banner),
 			entitiesTab
 				? el("div", { className: "data-view" }, route === "types" ? typesSection() : entitiesSection())
 				: route === "analysis"
 					? analysisView(store)
 					: canvasView(store, {
-						readOnly: route === "view",
-						addressed: true,
+						readOnly: false,
 						...(viewScript ? { onExportView: (boardId: string) => exportView(viewScript, boardId) } : {}),
 						onExportDrawio: exportDrawio,
 					}),
@@ -346,27 +352,32 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 		}
 	}
 
+	/** The workspace first, since every tab shows its data; then the tabs; undo, redo and settings at the right end. */
 	function navBar(route: Route): HTMLElement {
 		const tab = (id: Route, label: string, current = route === id) =>
 			el("a", { href: `#${id}`, className: current ? "tab current" : "tab" }, label);
 		const nav = el(
 			"nav",
 			{ className: "app-nav" },
-			tab("entities", text.tabEntities, route === "entities" || route === "types"),
-			tab("boards", text.tabBoards),
-			tab("analysis", text.tabAnalysis),
-			tab("view", text.tabView),
-			el("div", { className: "nav-menus" }, historyButtons, workspaceMenu(), settingsMenu()),
+			workspaceMenu(),
+			el(
+				"div",
+				{ className: "app-tabs" },
+				tab("entities", text.tabEntities, route === "entities" || route === "types"),
+				tab("boards", text.tabBoards),
+				tab("analysis", text.tabAnalysis),
+			),
+			el("div", { className: "nav-menus" }, historyButtons, settingsMenu()),
 		);
 		nav.querySelector(".current")?.setAttribute("aria-current", "page");
 		return nav;
 	}
 
-	/** The Entities tab's two pages: the entity types and the entities themselves. */
-	function subNav(route: "types" | "entities"): HTMLElement {
+	/** In place of the data pages' heading: switches between them, the entity types and the entities. */
+	function dataSwitch(route: "types" | "entities"): HTMLElement {
 		const tab = (id: "types" | "entities", label: string) =>
-			el("a", { href: `#${id}`, className: route === id ? "tab current" : "tab" }, label);
-		const nav = el("nav", { className: "sub-nav" }, tab("types", text.entityTypes), tab("entities", text.entities));
+			el("a", { href: `#${id}`, className: route === id ? "current" : "" }, label);
+		const nav = el("nav", { className: "data-switch", ariaLabel: text.tabEntities }, tab("types", text.entityTypes), tab("entities", text.entities));
 		nav.querySelector(".current")?.setAttribute("aria-current", "page");
 		return nav;
 	}
@@ -444,7 +455,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 		});
 		return popover(
 			"settings",
-			el("button", {}, el("span", { ariaHidden: "true" }, "⚙"), text.settings),
+			el("button", { className: "settings-button", title: text.settings, ariaLabel: text.settings }, el("span", { ariaHidden: "true" }, "⚙")),
 			text.settings,
 			el("h2", {}, text.settings),
 			el("label", { className: "field" }, el("span", {}, text.language), languageSelect),
@@ -545,6 +556,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 			{ title: text.workspaces, ariaLabel: text.workspaceMenuLabel(current.name) },
 			el("span", { ariaHidden: "true" }, "▤"),
 			el("span", { className: "workspace-name" }, current.name),
+			el("span", { ariaHidden: "true" }, "▾"),
 		);
 		return popover(
 			"workspace",
@@ -1043,14 +1055,14 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 		return el(
 			"section",
 			{},
-			el("div", { className: "section-header" }, el("h2", {}, text.entityTypes), ...(editingType || state.creatingType ? [] : [createButton])),
+			el("div", { className: "section-header" }, dataSwitch("types"), ...(editingType || state.creatingType ? [] : [createButton])),
 			...(editingType || state.creatingType ? [form] : []),
 			store.data.types.length > 0 ? list : el("p", { className: "muted" }, text.noTypesYet),
 		);
 	}
 
 	function entitiesSection(): HTMLElement {
-		const header = el("div", { className: "section-header" }, el("h2", {}, text.entities));
+		const header = el("div", { className: "section-header" }, dataSwitch("entities"));
 		const section = el("section", {}, header);
 		const type = store.data.types.find((t) => t.id === state.selectedTypeId);
 		if (!type) {
