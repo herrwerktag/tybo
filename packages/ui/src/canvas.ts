@@ -6,10 +6,8 @@ import { text } from "./i18n.js";
 import {
 	DEFAULT_CARD_SIZE,
 	GRID_SIZE,
-	MIN_DESCRIPTION_SIZE,
 	FRAME_ASPECT,
 	MIN_FRAME_SIZE,
-	descriptionInView,
 	frameInside,
 	effectiveCardDisplay,
 	entityTags,
@@ -27,14 +25,10 @@ import {
 	type Entity,
 	type EntityType,
 	type LineArrow,
-	type Story,
-	type StoryPage,
-	type ViewFrame,
 } from "@tybo/core";
-import { renderMarkdown } from "./markdown.js";
 import { cardParts, cardSize, createCardPreview, entityDetails } from "./entity-card.js";
 import { showEntityEditor } from "./entity-form.js";
-import { readPreference, readSession, writePreference, writeSession } from "./preferences.js";
+import { readPreference, writePreference } from "./preferences.js";
 import type { Store } from "@tybo/core";
 import { defaultViewport, fitRect, screenToWorld, snapZoom, stepZoom, visibleRect, zoomAt, type Viewport } from "@tybo/core";
 
@@ -54,45 +48,36 @@ const THUMBNAIL_SIZE = 40;
 const ACTIVE_BOARD_KEY = "canvas-active-board";
 /** Whether the editor is editing the frames: only then are they shown, with their controls. */
 const EDIT_FRAMES_KEY = "canvas-edit-frames";
-/** The story last shown in the editor, per board (empty: the whole board). */
-const activeStoryKey = (boardId: string) => `canvas-active-story:${boardId}`;
 /** The connector lines' color (as in the stylesheet), for a gradient's end at a card whose type has no color. */
 const LINE_COLOR = "#8a8a8a";
 /** Canvases made so far (see gradientPrefix). */
 let canvasCount = 0;
-/** The page last shown in the editor, per story. (A board's steps from before became a story with the board's id, so
- * the key then is the one the board used.) */
-const activePageKey = (storyId: string) => `canvas-active-page:${storyId}`;
-/** The step the viewer was on in a story, for this browser tab (sessionStorage): coming back to the story goes on there. */
-const storyStepKey = (storyId: string) => `story-step:${storyId}`;
-/** How long the pan/zoom takes to move to another page, in ms. */
-const PAGE_ANIMATION = 450;
+/** How long the pan/zoom takes to move somewhere else, in ms. */
+const PAN_ANIMATION = 450;
 /** How long scroll/pinch zooming must pause before the zoom settles on the nearest 10% step, and how long that takes, in ms. */
 const ZOOM_SETTLE_DELAY = 150;
 const ZOOM_SETTLE_ANIMATION = 120;
 /** Room (screen px) around a frame the editor goes to. */
 const FIT_MARGIN = 48;
 
-/** What a viewer address names: `#view/<board>/<story>/<page>`, the latter parts optional. */
+/** What a viewer address names: `#view/<board>`, the board optional. */
 export interface ViewTarget {
 	boardId?: string;
-	storyId?: string;
-	pageId?: string;
 }
 
 export function parseViewHash(hash: string): ViewTarget {
-	const [route, boardId, storyId, pageId] = hash.replace(/^#/, "").split("/").map(decodeURIComponent);
+	const [route, boardId] = hash.replace(/^#/, "").split("/").map(decodeURIComponent);
 	if (route !== "view") return {};
-	return { ...(boardId && { boardId }), ...(storyId && { storyId }), ...(pageId && { pageId }) };
+	return boardId ? { boardId } : {};
 }
 
-export function viewHash({ boardId, storyId, pageId }: ViewTarget): string {
-	return ["#view", boardId, storyId, pageId].filter((part) => part !== undefined).map((part, i) => (i === 0 ? part : encodeURIComponent(part!))).join("/");
+export function viewHash({ boardId }: ViewTarget): string {
+	return boardId === undefined ? "#view" : `#view/${encodeURIComponent(boardId)}`;
 }
 
 interface CanvasOptions {
 	readOnly: boolean;
-	/** Viewer only: the address (location.hash) names the board, story and step shown, and follows them. */
+	/** Viewer only: the address (location.hash) names the board shown, and follows it. */
 	addressed?: boolean;
 	onExportView?: (boardId: string) => void;
 	onExportDrawio?: (boardId: string) => void;
@@ -127,14 +112,8 @@ function firstBoardView(store: Store, options: CanvasOptions): HTMLElement {
  * `onExportDrawio`, the viewer offers to export the current board (as HTML, for draw.io). With
  * `onEditLibraryDrawing`, a placed library drawing can be opened in the library.
  *
- * A board can have stories. A story is shown one page at a time, with a page bar at the bottom and the page's
- * description over the canvas; the editor also shows the cards and drawings of other pages, faded, so they can be
- * shown here too. The viewer always starts with the whole board (unless its address names a story), and picking a
- * story steps through it; coming back to a story goes on at the step it was left at in this browser tab.
- *
- * The viewer shows the whole board in the board's frame, and each step in its own frame or else the board's, fitted
- * into the screen. The editor keeps one pan/zoom per board, in and outside its stories: it only moves to a step's
- * frame when that differs from the step's before, and shows the frames as outlines to move and resize.
+ * The viewer shows the board in its frame, fitted into the screen. The editor keeps one pan/zoom per board, and
+ * shows the frame as an outline to move and resize.
  */
 export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	if (store.data.boards.length === 0) return firstBoardView(store, options);
@@ -144,34 +123,6 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	let boardId = target.boardId ?? readPreference(ACTIVE_BOARD_KEY) ?? "";
 	const currentBoard = (): Board => store.data.boards.find((b) => b.id === boardId) ?? store.data.boards[0]!;
 	boardId = currentBoard().id;
-
-	/** The story shown step by step, or null for the whole board: in the editor the one last shown on the board; the
-	 * viewer starts with the whole board, unless its address names a story. */
-	let storyId: string | null = readOnly ? (target.storyId ?? null) : readPreference(activeStoryKey(boardId)) || null;
-	/** The page shown of the story (its first, if it has no such page). */
-	let pageId = target.pageId ?? savedPageId();
-	const currentStory = (): Story | null => currentBoard().stories.find((s) => s.id === storyId) ?? null;
-	const currentPage = (): StoryPage | null => {
-		const story = currentStory();
-		return story ? (story.pages.find((p) => p.id === pageId) ?? story.pages[0] ?? null) : null;
-	};
-	/** Where the story was left: in the editor for good, in the viewer for this browser tab. */
-	function savedPageId(): string {
-		if (!storyId) return "";
-		return (readOnly ? readSession(storyStepKey(storyId)) : readPreference(activePageKey(storyId))) ?? "";
-	}
-	/** The board's own frame, as a frame named for the board, with the id "" (no step frame has it). */
-	const boardFrame = (): ViewFrame => ({ id: "", name: text.boardFrame, ...currentBoard().viewFrame });
-	/** The frame what's shown is seen in by the viewer: the page's own, else the board's. */
-	const currentFrame = (): ViewFrame => {
-		const id = currentPage()?.frameId;
-		return currentBoard().frames.find((f) => f.id === id) ?? boardFrame();
-	};
-	/** Whether a card or drawing is shown on the current page (everything is, outside a story). */
-	const onPage = (id: string): boolean => {
-		const page = currentPage();
-		return !page || page.cardIds.includes(id) || page.drawingIds.includes(id);
-	};
 
 	/** The viewer fits what's shown once the canvas is laid out (see homeViewport); the editor has the board's. */
 	let viewport: Viewport = readOnly ? defaultViewport() : { ...currentBoard().viewport };
@@ -213,20 +164,18 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		"»",
 	);
 
-	view.classList.toggle("story-mode", currentPage() !== null);
-
 	const panel = el("aside", { className: "canvas-panel" });
 	const layer = el("div", { className: "canvas-board" });
 	const surface = el("div", { className: "canvas-surface" }, layer);
 	const zoomLabel = el("span", { className: "zoom-label" });
 
-	/** Where what's shown is seen from: in the viewer, its frame fitted into the screen (as it is while the canvas
+	/** Where the board is seen from: in the viewer, its frame fitted into the screen (as it is while the canvas
 	 * isn't laid out); in the editor, the board's pan/zoom. */
 	function homeViewport(): Viewport {
 		if (!readOnly) return { ...currentBoard().viewport };
 		const { clientWidth: width, clientHeight: height } = surface;
 		if (width === 0 || height === 0) return viewport;
-		return fitRect(currentFrame(), width, height);
+		return fitRect(currentBoard().viewFrame, width, height);
 	}
 
 	/** Two or more cards and drawings selected together, to move at once (Shift+click, or a frame dragged around
@@ -240,7 +189,6 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		store,
 		readOnly,
 		owner: () => ({ boardId }),
-		page: currentPage,
 		zoom: () => viewport.zoom,
 		toWorld: (clientX, clientY) => {
 			const rect = surface.getBoundingClientRect();
@@ -309,27 +257,13 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		flushViewport();
 		boardId = id;
 		writePreference(ACTIVE_BOARD_KEY, id);
-		storyId = readOnly ? null : readPreference(activeStoryKey(id)) || null;
-		pageId = savedPageId();
 		show();
-		address("replace");
+		address();
 	}
 
-	/** Shows a story step by step (where it was left), or the whole board (null). The editor goes to the step's frame. */
-	function showStory(id: string | null): void {
-		flushViewport();
-		storyId = id;
-		if (!readOnly) writePreference(activeStoryKey(boardId), id ?? "");
-		pageId = savedPageId();
-		show();
-		if (!readOnly && id) goToFrame(currentFrame());
-		address("push");
-	}
-
-	/** Shows the board, story and page now chosen, with their pan/zoom (see homeViewport). */
+	/** Shows the board now chosen, with its pan/zoom (see homeViewport). */
 	function show(): void {
 		stopAnimation();
-		view.classList.toggle("story-mode", currentPage() !== null);
 		fitted = readOnly;
 		viewport = homeViewport();
 		group = null;
@@ -338,61 +272,23 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		renderBoardControls();
 		renderPanel();
 		renderCards();
-		renderPageBar();
-		renderDescription();
 		renderFrames();
 	}
 
-	/** In an addressed viewer, puts what's shown into the address: a new history entry when entering or leaving a
-	 * story (so Back leaves the story, not one step), else in place of the current one. */
-	function address(how: "push" | "replace"): void {
+	/** In an addressed viewer, puts the board shown into the address, in place of the current one. */
+	function address(): void {
 		if (!addressed) return;
-		const hash = viewHash({ boardId, ...(currentStory() && { storyId: storyId!, pageId: currentPage()!.id }) });
-		if (hash === location.hash) return;
-		if (how === "push") history.pushState(null, "", hash);
-		else history.replaceState(null, "", hash);
-	}
-
-	/** Shows another page of the story: what it shows fades in, and the pan/zoom moves to the page's frame — in the
-	 * editor only if it has another frame than the page before, so editing steps seen alike doesn't move the board. */
-	function goToPage(id: string): void {
-		flushViewport();
-		const before = new Set(currentPage()?.cardIds);
-		const frameBefore = currentFrame().id;
-		pageId = id;
-		if (storyId && readOnly) writeSession(storyStepKey(storyId), id);
-		else if (storyId) writePreference(activePageKey(storyId), id);
-		appearing = new Set(currentPage()?.cardIds.filter((cardId) => !before.has(cardId)));
-		group = null;
-		drawing.deselect();
-		renderPanel();
-		renderCards();
-		renderPageBar();
-		renderDescription();
-		renderFrames();
-		renderBoardControls();
-		const frame = currentFrame();
-		if (readOnly) {
-			fitted = true;
-			animateViewport(homeViewport());
-		} else if (frame.id !== frameBefore) goToFrame(frame);
-		address("replace");
+		const hash = viewHash({ boardId });
+		if (hash !== location.hash) history.replaceState(null, "", hash);
 	}
 
 	/** Editor: moves the pan/zoom to show the whole frame, with some room around it, and keeps it for the board. */
-	function goToFrame(frame: ViewFrame): void {
+	function goToFrame(frame: Rect): void {
 		const { clientWidth: width, clientHeight: height } = surface;
 		if (width === 0 || height === 0) return; // not laid out (yet)
 		const target = fitRect(frame, width, height, FIT_MARGIN);
 		animateViewport(target);
 		saveViewportSoon(target);
-	}
-
-	/** The page `step` pages before (negative) or after the current one, if there is one. */
-	function stepPage(step: number): void {
-		const pages = currentStory()?.pages ?? [];
-		const next = pages[pages.findIndex((p) => p.id === currentPage()?.id) + step];
-		if (next) goToPage(next.id);
 	}
 
 	let animation = 0;
@@ -417,7 +313,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		const b = center(target);
 		const start = performance.now();
 		const frame = (now: number) => {
-			const t = Math.min(1, (now - start) / PAGE_ANIMATION);
+			const t = Math.min(1, (now - start) / PAN_ANIMATION);
 			const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2; // ease in and out
 			const zoom = from.zoom + (target.zoom - from.zoom) * e;
 			const x = a.x + (b.x - a.x) * e;
@@ -471,14 +367,14 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	}
 
 	/**
-	 * A picker dropdown (boards, stories, frames): its items, the current one marked; clicking one picks it. In the editor
-	 * (with `editing`), each can be renamed in place (unless `fixed`) and deleted, and a form below adds one; with
-	 * `move`, too, the items can be reordered (then none is `fixed`).
+	 * A picker dropdown (boards): its items, the current one marked; clicking one picks it. In the editor (with
+	 * `editing`), each can be renamed in place and deleted, and a form below adds one; with `move`, too, the items can
+	 * be reordered.
 	 */
 	interface Picker {
 		dialog: HTMLDialogElement;
 		title: string;
-		items: readonly { id: string; name: string; fixed?: boolean }[];
+		items: readonly { id: string; name: string }[];
 		currentId: string;
 		/** The item shown with a name field instead, if any. */
 		renamingId: string | null;
@@ -543,7 +439,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				item.name,
 			);
 			if (item.id === currentId) option.setAttribute("aria-current", "true");
-			if (!editing || item.fixed) return el("li", {}, option);
+			if (!editing) return el("li", {}, option);
 			const { move, moveTitle } = editing;
 			const handle = move ? dragHandle(moveTitle?.(item.name) ?? item.name, item.id) : null;
 			const row = el(
@@ -667,115 +563,17 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		});
 	}
 
-	/** The board's stories, or the whole board: show one (and in the editor, create, rename or delete). */
-	const { dialog: storyDialog, button: storyButton } = pickerDropdown("story-dialog", text.stories, "story-switch", text.changeStory, () =>
-		renderStoryDialog(),
-	);
-
-	function renderStoryDialog(renamingId: string | null = null): void {
-		const { stories } = currentBoard();
-		renderPicker({
-			dialog: storyDialog,
-			title: text.stories,
-			items: [{ id: "", name: text.wholeBoard, fixed: true }, ...stories],
-			currentId: storyId ?? "",
-			renamingId,
-			pick: (id) => showStory(id || null),
-			rerender: renderStoryDialog,
-			...(!readOnly && {
-				editing: {
-					renameTitle: text.renameStory,
-					deleteTitle: text.deleteStory,
-					rename: (id, name) => {
-						store.renameStory(boardId, id, name);
-						renderBoardControls();
-					},
-					remove: deleteStory,
-					newTitle: text.newStory,
-					newName: text.defaultStoryName(stories.length + 1),
-					add: (name) => {
-						const story = store.addStory(boardId, name, text.defaultPageName(1));
-						if (story) showStory(story.id);
-					},
-				},
-			}),
-		});
-	}
-
-	/** Deletes a story (after asking); the cards and drawings it showed stay on the board. */
-	function deleteStory(id: string): void {
-		const story = currentBoard().stories.find((s) => s.id === id);
-		if (!story || !confirm(text.confirmDeleteStory(story.name, story.pages.length))) return;
-		flushViewport();
-		store.removeStory(boardId, id);
-		if (id === storyId) showStory(null);
-		else renderBoardControls();
-		renderStoryDialog();
-	}
-
-	/** Editor, in a story: the frames — the one the step is seen in by the viewer, to pick another or the board's, and
-	 * to create one of what's seen now, rename or delete one. */
-	const { dialog: frameDialog, button: frameButton } = pickerDropdown("frame-dialog", text.frames, "frame-switch", text.changeFrame, () =>
-		renderFrameDialog(),
-	);
-
-	function renderFrameDialog(renamingId: string | null = null): void {
-		const { frames } = currentBoard();
-		const page = currentPage()?.id;
-		if (!page) return;
-		renderPicker({
-			dialog: frameDialog,
-			title: text.frames,
-			items: [{ id: "", name: text.boardFrame, fixed: true }, ...frames],
-			currentId: currentFrame().id,
-			renamingId,
-			pick: (id) => {
-				store.setFrame(boardId, id || null, page);
-				framesChanged();
-				goToFrame(currentFrame());
-			},
-			rerender: renderFrameDialog,
-			editing: {
-				renameTitle: text.renameFrame,
-				deleteTitle: text.deleteFrame,
-				rename: (id, name) => {
-					store.updateFrame(boardId, id, { name });
-					framesChanged();
-				},
-				remove: (id) => {
-					const frame = frames.find((f) => f.id === id);
-					if (!frame || !confirm(text.confirmDeleteFrame(frame.name))) return;
-					store.removeFrame(boardId, id);
-					framesChanged();
-					renderFrameDialog();
-				},
-				newTitle: text.newFrame,
-				newName: text.defaultFrameName(frames.length + 1),
-				add: (name) => {
-					store.addFrame(boardId, name, seenFrame(), page);
-					framesChanged();
-				},
-			},
-		});
-	}
-
-	function framesChanged(): void {
-		renderBoardControls();
-		renderFrames();
-	}
-
 	/** The frame of what is seen now: the largest one in a frame's shape inside the canvas. */
 	const seenFrame = (): Rect => frameInside(visibleRect(viewport, surface.clientWidth, surface.clientHeight));
 
-	/** Editor: sets the frame of what's shown (the step's, which may be the board's, or outside a story the board's)
-	 * to what is seen now; steps sharing it are seen anew too. */
+	/** Editor: sets the board's frame to what is seen now. */
 	const frameFromViewButton = el(
 		"button",
-		{ type: "button", className: "frame-from-view", title: text.frameFromViewHint, onclick: () => saveFrame(currentFrame(), seenFrame()) },
+		{ type: "button", className: "frame-from-view", title: text.frameFromViewHint, onclick: () => saveFrame(seenFrame()) },
 		text.frameFromView,
 	);
 
-	/** Editor: frames are only shown, picked and changed while editing them, so they don't clutter the board. */
+	/** Editor: the frame is only shown and changed while editing it, so it doesn't clutter the board. */
 	let editingFrames = readPreference(EDIT_FRAMES_KEY) === "true";
 	const editFramesButton = el("button", {
 		type: "button",
@@ -784,36 +582,29 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		onclick: () => {
 			editingFrames = !editingFrames;
 			writePreference(EDIT_FRAMES_KEY, String(editingFrames));
-			framesChanged();
+			renderBoardControls();
+			renderFrames();
 		},
 	});
 
 	function renderBoardControls(): void {
 		boardButton.replaceChildren(...pickerLabel(currentBoard().name));
-		// The viewer offers the stories only if there are any; outside one, the button invites to pick one.
-		const story = currentStory();
-		storyButton.replaceChildren(...pickerLabel(story?.name ?? (readOnly ? text.stories : text.wholeBoard)));
-		const hasStories = currentBoard().stories.length > 0;
-		// The viewer only switches boards and stories, and maybe exports the current board.
+		// The viewer only switches boards, and maybe exports the current board.
 		if (readOnly) {
 			const exportButton = el("button", { type: "button", title: text.exportView, onclick: () => onExportView?.(boardId) }, text.exportButton);
 			const drawioButton = el("button", { type: "button", title: text.exportDrawio, onclick: () => onExportDrawio?.(boardId) }, text.exportDrawioButton);
 			return boardControls.replaceChildren(
 				boardButton,
-				...(hasStories ? [storyButton] : []),
 				...(onExportView ? [exportButton] : []),
 				...(onExportDrawio ? [drawioButton] : []),
 			);
 		}
-		frameButton.replaceChildren(el("span", { ariaHidden: "true" }, "▭"), ...pickerLabel(currentFrame().name));
 		editFramesButton.ariaPressed = String(editingFrames);
 		editFramesButton.replaceChildren(el("span", { ariaHidden: "true" }, "▭"), editingFrames ? text.doneEditingFrames : text.editFrames);
 		boardControls.replaceChildren(
 			boardButton,
-			storyButton,
 			editFramesButton,
-			// Outside a story, the whole board is always seen in its own frame.
-			...(editingFrames ? [...(story ? [frameButton] : []), frameFromViewButton] : []),
+			...(editingFrames ? [frameFromViewButton] : []),
 			el("button", { type: "button", title: text.newEntityHint, onclick: openNewEntity }, text.newEntityButton),
 		);
 	}
@@ -958,7 +749,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	function renderLibraryPanel(): void {
 		const placed = new Map<string, number>();
 		for (const d of currentBoard().drawings) {
-			if (isSymbol(d) && onPage(d.id)) placed.set(d.libraryId, (placed.get(d.libraryId) ?? 0) + 1);
+			if (isSymbol(d)) placed.set(d.libraryId, (placed.get(d.libraryId) ?? 0) + 1);
 		}
 		const matches = filterLibrary(store.data.library, libraryQuery);
 		const empty = store.data.library.length === 0 ? text.noLibraryYet : text.noLibraryMatches;
@@ -997,7 +788,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		if (readOnly) return; // no side panel in the viewer
 		if (panelTab === "library") return renderLibraryPanel();
 		const cardCounts = new Map<string, number>();
-		for (const card of currentBoard().cards.filter((c) => onPage(c.id))) cardCounts.set(card.entityId, (cardCounts.get(card.entityId) ?? 0) + 1);
+		for (const card of currentBoard().cards) cardCounts.set(card.entityId, (cardCounts.get(card.entityId) ?? 0) + 1);
 		const matches = filterEntities(store.data.entities, { query: panelQuery, typeId: panelTypeId, tag: panelTag });
 		const groups = store.data.types
 			.map((type) => ({ type, entities: matches.filter((e) => e.typeId === type.id) }))
@@ -1195,7 +986,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 
 	/** Shows another entity's details, selecting its card if it's on this board. */
 	function selectEntity(entityId: string): void {
-		select(entityId, currentBoard().cards.find((c) => c.entityId === entityId && onPage(c.id))?.id ?? null);
+		select(entityId, currentBoard().cards.find((c) => c.entityId === entityId)?.id ?? null);
 	}
 
 	/** Links the selected card's entity with another one, existing or new, through any relation (see relationsOf). */
@@ -1263,7 +1054,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 							{
 								type: "button",
 								className: "picker-option",
-								onclick: () => done(store.linkEntity(cardId, link, other.id, currentPage()?.id) ?? undefined),
+								onclick: () => done(store.linkEntity(cardId, link, other.id) ?? undefined),
 							},
 							other.name,
 						),
@@ -1288,7 +1079,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 					className: "connect-new",
 					onsubmit: (e: SubmitEvent) => {
 						e.preventDefault();
-						done(store.addLinkedEntity(cardId, link, relation.typeId, name.value, currentPage()?.id)?.card);
+						done(store.addLinkedEntity(cardId, link, relation.typeId, name.value)?.card);
 					},
 				},
 				el("h3", {}, text.newEntity(typeName)),
@@ -1321,7 +1112,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 									surface.clientWidth / 2 - (DEFAULT_CARD_SIZE.width * zoom) / 2,
 									surface.clientHeight / 2 - (DEFAULT_CARD_SIZE.height * zoom) / 2,
 								);
-								const made = store.addEntityWithCard(boardId, typeSelect.value, name.value, at, currentPage()?.id, panelTag ? [panelTag] : []);
+								const made = store.addEntityWithCard(boardId, typeSelect.value, name.value, at, panelTag ? [panelTag] : []);
 								newEntityDialog.close();
 								if (!made) return;
 								appearing = new Set([made.card.id]);
@@ -1377,16 +1168,11 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		details.replaceChildren(...entityDetails(store, entity, { actions, onClose: () => select(null), onSelectEntity: selectEntity }));
 	}
 
-	// Escape closes the details panel, the arrow keys page through story mode (the listener removes itself
-	// once this view is gone).
+	// Escape closes the details panel (the listener removes itself once this view is gone).
 	function onKeyDown(e: KeyboardEvent): void {
 		if (!view.isConnected) return document.removeEventListener("keydown", onKeyDown);
 		if ((e.target as Element).closest("input, select, textarea")) return;
 		if (e.key === "Escape" && (selected || group)) select(null);
-		if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !e.ctrlKey && !e.metaKey && !e.altKey && currentPage()) {
-			e.preventDefault();
-			stepPage(e.key === "ArrowLeft" ? -1 : 1);
-		}
 	}
 	document.addEventListener("keydown", onKeyDown);
 
@@ -1408,7 +1194,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	}[] = [];
 	/** Makes the lines' gradient ids unique in the document, should it show more than one canvas. */
 	const gradientPrefix = `connector-gradient-${++canvasCount}`;
-	/** Cards that just came onto the page shown, so they fade in; set when changing pages. */
+	/** Cards that just came onto the board, so they fade in. */
 	let appearing = new Set<string>();
 	/** The lines drawn, as the cards they link (see drawConnectors). */
 	let edges: [string, string][] = [];
@@ -1419,20 +1205,15 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		const entities = new Map(store.data.entities.map((e) => [e.id, e]));
 		const entityNames = new Map(store.data.entities.map((e) => [e.id, e.name]));
 		const types = new Map(store.data.types.map((t) => [t.id, t]));
-		// Lines only connect the cards the page shows.
-		const shown = board.cards.filter((c) => onPage(c.id));
 		const cardsByEntity = new Map<string, CanvasCard[]>();
-		for (const card of shown) cardsByEntity.set(card.entityId, [...(cardsByEntity.get(card.entityId) ?? []), card]);
+		for (const card of board.cards) cardsByEntity.set(card.entityId, [...(cardsByEntity.get(card.entityId) ?? []), card]);
 
-		cardRects = new Map(shown.map((c) => [c.id, { x: c.x, y: c.y, width: c.width, height: c.height }]));
+		cardRects = new Map(board.cards.map((c) => [c.id, { x: c.x, y: c.y, width: c.width, height: c.height }]));
 		links = [];
 		const cardNodes = board.cards.flatMap((card) => {
 			const entity = entities.get(card.entityId);
-			// The editor shows other pages' cards faded (ghosts); the viewer only what the page shows.
-			const ghost = !onPage(card.id);
-			if (!entity || (ghost && readOnly)) return [];
+			if (!entity) return [];
 			const type = types.get(entity.typeId);
-			if (ghost) return [cardElement(card, entity, type, entityNames, () => false, true)];
 			// Other cards on this board showing the given entity.
 			const targetCards = (entityId: string) => (cardsByEntity.get(entityId) ?? []).filter((c) => c.id !== card.id);
 			for (const prop of type?.properties ?? []) {
@@ -1452,14 +1233,12 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 					}
 				}
 			}
-			return [cardElement(card, entity, type, entityNames, (id) => targetCards(id).length > 0, false)];
+			return [cardElement(card, entity, type, entityNames, (id) => targetCards(id).length > 0)];
 		});
 		appearing = new Set();
-		// The page's description stays on top of the cards. It isn't redrawn with them (so its text keeps focus and
-		// whatever was typed): only the nodes before it are replaced.
-		// The frames' outlines, kept the same way, are above the cards too, below the description.
-		if (description.parentNode !== layer) layer.append(frameLayer, description);
-		for (const node of [...layer.childNodes]) if (node !== description && node !== frameLayer) node.remove();
+		// The frame's outline stays on top of the cards. It isn't redrawn with them: only the nodes before it are replaced.
+		if (frameLayer.parentNode !== layer) layer.append(frameLayer);
+		for (const node of [...layer.childNodes]) if (node !== frameLayer) node.remove();
 		frameLayer.before(drawing.element, connectorLayer, connectorLabels, ...cardNodes);
 		drawing.render();
 		measureCards();
@@ -1468,7 +1247,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		requestAnimationFrame(() => {
 			if (measureCards()) drawConnectors();
 		});
-		if (selected?.cardId && !shown.some((c) => c.id === selected!.cardId)) selected = { ...selected, cardId: null };
+		if (selected?.cardId && !board.cards.some((c) => c.id === selected!.cardId)) selected = { ...selected, cardId: null };
 		renderDetails(); // the entity may have changed or been removed
 	}
 
@@ -1515,15 +1294,12 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		const gradients: SVGElement[] = [];
 		const labels: HTMLElement[] = [];
 		edges = [];
-		// A line touching a dimmed card is dimmed with it.
-		const dimmed = new Set(currentPage()?.dimmedCardIds);
 		for (const { fromCardId, targetCardIds, label, fromColor, color, arrow } of links) {
 			const from = cardRects.get(fromCardId);
 			const to = from && nearest(from, targetCardIds.flatMap((id) => cardRects.get(id) ?? []));
 			if (!from || !to) continue;
 			const toCardId = targetCardIds.find((id) => cardRects.get(id) === to)!;
 			edges.push([fromCardId, toCardId]);
-			const faded = dimmed.has(fromCardId) || dimmed.has(toCardId);
 			// "from" draws the same curve the other way round, so the arrowhead lands on this card.
 			const shape = arrow === "from" ? connector(to, from) : connector(from, to, arrow === "to");
 			const { path, mid, start, end } = shape;
@@ -1543,7 +1319,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				svgEl(
 					"g",
 					{
-						class: faded ? "connector dimmed" : "connector",
+						class: "connector",
 						"data-from": fromCardId,
 						"data-to": toCardId,
 						style: `--line-gradient: url(#${gradientId})`,
@@ -1554,7 +1330,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 						: []),
 				),
 			);
-			const tag = el("span", { className: faded ? "connector-label dimmed" : "connector-label" }, label);
+			const tag = el("span", { className: "connector-label" }, label);
 			Object.assign(tag.style, { left: `${mid.x}px`, top: `${mid.y}px` });
 			Object.assign(tag.dataset, { from: fromCardId, to: toCardId });
 			labels.push(tag);
@@ -1570,74 +1346,31 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		type: EntityType | undefined,
 		entityNames: ReadonlyMap<string, string>,
 		isLinked: (entityId: string) => boolean,
-		ghost: boolean,
 	): HTMLElement {
-		const page = currentPage();
-		// In story mode, × only takes the card off this page, and + shows another page's card here too.
 		const removeButton = readOnly
 			? undefined
-			: ghost
-				? el(
-						"button",
-						{
-							type: "button",
-							className: "card-remove",
-							ariaLabel: text.showNamedOnPage(entity.name),
-							title: text.showOnPage,
-							onclick: () => {
-								store.showOnPage(boardId, page!.id, card.id);
-								renderCards();
-								renderPanel();
-							},
+			: el(
+					"button",
+					{
+						type: "button",
+						className: "card-remove",
+						ariaLabel: text.removeNamedFromCanvas(entity.name),
+						title: text.removeFromCanvas,
+						onclick: () => {
+							store.removeCard(card.id);
+							renderCards();
+							renderPanel();
 						},
-						"+",
-					)
-				: el(
-						"button",
-						{
-							type: "button",
-							className: "card-remove",
-							ariaLabel: page ? text.removeNamedFromPage(entity.name) : text.removeNamedFromCanvas(entity.name),
-							title: page ? text.removeFromPage : text.removeFromCanvas,
-							onclick: () => {
-								store.removeCard(card.id, page?.id);
-								renderCards();
-								renderPanel();
-							},
-						},
-						"×",
-					);
-		// In story mode, a card on the page can be dimmed there: shown faded, out of focus.
-		const dimmed = !ghost && !!page?.dimmedCardIds.includes(card.id);
-		const dimButton =
-			readOnly || ghost || !page
-				? []
-				: [
-						el(
-							"button",
-							{
-								type: "button",
-								className: "card-dim",
-								ariaLabel: text.dimNamedOnPage(entity.name),
-								title: text.dimOnPage,
-								ariaPressed: String(dimmed),
-								onclick: () => {
-									store.setDimmed(boardId, page.id, card.id, !dimmed);
-									renderCards();
-								},
-							},
-							"◐",
-						),
-					];
+					},
+					"×",
+				);
 		const { header, body } = cardParts(store, entity, type, entityNames, isLinked, {
-			buttons: [...dimButton, ...(removeButton ? [removeButton] : [])],
+			buttons: removeButton ? [removeButton] : [],
 			preview,
 		});
 		// Sized to what it shows once laid out (see fitCard); until then as last measured.
 		const node = el("article", { className: "canvas-card" }, header, ...(body ? [body] : []));
 		node.classList.toggle("selected", isCardSelected(card.id));
-		node.classList.toggle("ghost", ghost);
-		node.classList.toggle("dimmed", dimmed);
 		node.classList.toggle("appear", appearing.has(card.id));
 		node.dataset.cardId = card.id;
 		// Only a click shows the card's details; the browser also fires a click after dragging or resizing,
@@ -1648,8 +1381,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				return;
 			}
 			if ((e.target as Element).closest("button, .ref-tag")) return;
-			// Shift+click adds the card to the selection or takes it out (not in the viewer, nor other pages' cards).
-			if (e.shiftKey && !readOnly && !ghost) toggleSelected("cardIds", card.id);
+			// Shift+click adds the card to the selection or takes it out (not in the viewer).
+			if (e.shiftKey && !readOnly) toggleSelected("cardIds", card.id);
 			else select(entity.id, card.id);
 		});
 		Object.assign(node.style, {
@@ -1658,8 +1391,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			width: `${card.width}px`,
 			height: `${card.height}px`,
 		});
-		// The viewer only looks: no moving; nor are other pages' cards moved from here.
-		if (readOnly || ghost) return node;
+		// The viewer only looks: no moving.
+		if (readOnly) return node;
 
 		header.addEventListener("pointerdown", (e) => {
 			if (e.button !== 0 || e.shiftKey || (e.target as Element).closest("button")) return; // Shift: a click (see above)
@@ -1724,13 +1457,13 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		{ capture: true },
 	);
 
-	// With a drawing tool active, pressing anywhere on the canvas except on a card (or the description, or a frame's
+	// With a drawing tool active, pressing anywhere on the canvas except on a card (or the frame's
 	// name or corner) starts a new drawing (in the capture phase, so it wins over panning and selecting).
 	if (!readOnly) {
 		surface.addEventListener(
 			"pointerdown",
 			(e) => {
-				if (!(e.target as Element).closest(".canvas-card, .page-description, .view-frame")) drawing.startCreate(e);
+				if (!(e.target as Element).closest(".canvas-card, .view-frame")) drawing.startCreate(e);
 			},
 			{ capture: true },
 		);
@@ -1771,7 +1504,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		a.x <= b.x + b.width && b.x <= a.x + a.width && a.y <= b.y + b.height && b.y <= a.y + a.height;
 
 	/**
-	 * Drags a frame from this press: the cards and drawings of the page shown that it touches get selected (with
+	 * Drags a frame from this press: the cards and drawings it touches get selected (with
 	 * Shift, added to the selection). A click without moving clears the selection.
 	 */
 	function frameSelect(e: PointerEvent): void {
@@ -1805,8 +1538,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				const world = { x: from.x, y: from.y, width: to.x - from.x, height: to.y - from.y };
 				const board = currentBoard();
 				const { cardIds, drawingIds } = adding ? selection() : { cardIds: new Set<string>(), drawingIds: new Set<string>() };
-				for (const c of board.cards) if (onPage(c.id) && touches(world, cardRects.get(c.id) ?? c)) cardIds.add(c.id);
-				for (const d of board.drawings) if (onPage(d.id) && touches(world, drawingBounds(d))) drawingIds.add(d.id);
+				for (const c of board.cards) if (touches(world, cardRects.get(c.id) ?? c)) cardIds.add(c.id);
+				for (const d of board.drawings) if (touches(world, drawingBounds(d))) drawingIds.add(d.id);
 				setSelection(cardIds, drawingIds);
 			},
 			surface,
@@ -1877,7 +1610,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			e.preventDefault();
 			// Drop so the pointer ends up on the card's header, on the grid.
 			const x = snapToGrid(world.x - DEFAULT_CARD_SIZE.width / 2);
-			store.addCard(boardId, entityId, x, snapToGrid(world.y - 16), currentPage()?.id);
+			store.addCard(boardId, entityId, x, snapToGrid(world.y - 16));
 			renderCards();
 			renderPanel();
 		});
@@ -1896,156 +1629,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	}
 	if (!readOnly) document.addEventListener("paste", onPaste);
 
-	/** In a story only: bottom center. The viewer only steps back and forth (or back to the board); the editor also
-	 * names, adds and deletes pages. */
-	const pageBar = el("div", { className: "toolbar-group page-bar", role: "navigation", ariaLabel: text.pages });
-
-	function renderPageBar(): void {
-		const page = currentPage();
-		pageBar.hidden = !page;
-		if (!page) return void pageBar.replaceChildren();
-		const pages = currentStory()!.pages;
-		const index = pages.findIndex((p) => p.id === page.id);
-		const counter = el("span", { className: "page-counter muted" }, `${index + 1} / ${pages.length}`);
-		const prev = el(
-			"button",
-			{ type: "button", ariaLabel: text.previousPage, title: text.previousPage, disabled: index === 0, onclick: () => stepPage(-1) },
-			"‹",
-		);
-		const next = el(
-			"button",
-			{ type: "button", ariaLabel: text.nextPage, title: text.nextPage, disabled: index === pages.length - 1, onclick: () => stepPage(1) },
-			"›",
-		);
-		if (readOnly) {
-			const back = el("button", { type: "button", title: text.backToBoardHint, onclick: () => showStory(null) }, text.backToBoard);
-			return pageBar.replaceChildren(back, prev, el("strong", { className: "page-name" }, page.name), counter, next);
-		}
-
-		const name = el("input", {
-			className: "page-name",
-			value: page.name,
-			ariaLabel: text.stepName,
-			placeholder: text.stepName,
-			onchange: () => store.updatePage(boardId, page.id, { name: name.value.trim() }),
-		});
-		const copy = el("input", { type: "checkbox", checked: true });
-		pageBar.replaceChildren(
-			prev,
-			counter,
-			name,
-			next,
-			el(
-				"button",
-				{
-					type: "button",
-					title: text.addPage,
-					onclick: () => {
-						const added = store.addPage(boardId, page.id, text.defaultPageName(pages.length + 1), copy.checked);
-						if (added) goToPage(added.id);
-					},
-				},
-				text.addPageButton,
-			),
-			el("label", { className: "page-copy", title: text.copyPageHint }, copy, text.copyPage),
-			// The description may be far off after panning (or placed before the page was looked at from here).
-			el(
-				"button",
-				{
-					type: "button",
-					title: text.descriptionHereHint,
-					onclick: () => {
-						store.updatePage(boardId, page.id, { descriptionPosition: descriptionInView(viewport) });
-						renderDescription();
-					},
-				},
-				text.descriptionHere,
-			),
-			el(
-				"button",
-				{
-					type: "button",
-					disabled: pages.length <= 1,
-					title: pages.length <= 1 ? text.lastPage : text.deletePage,
-					onclick: () => {
-						if (!confirm(text.confirmDeletePage(page.name))) return;
-						flushViewport();
-						store.removePage(boardId, page.id);
-						goToPage((pages[index + 1] ?? pages[index - 1])!.id);
-					},
-				},
-				text.delete,
-			),
-		);
-	}
-
-	/** The page's description on the canvas, like a card: at its saved place in world coordinates, so it pans and
-	 * zooms with the cards. The editor edits it and moves it by its handle; the viewer shows it as Markdown, or
-	 * nothing when there is none. */
-	const description = el("div", { className: "page-description" });
-
-	function placeDescription({ x, y }: { x: number; y: number }): void {
-		Object.assign(description.style, { left: `${x}px`, top: `${y}px` });
-	}
-
-	/** Width and height in world units, the same in the editor and the viewer (which scrolls longer text). */
-	function sizeDescription({ width, height }: { width: number; height: number }): void {
-		Object.assign(description.style, { width: `${width}px`, height: `${height}px` });
-	}
-
-	function renderDescription(): void {
-		const page = currentPage();
-		description.hidden = !page || (readOnly && page.description.trim() === "");
-		if (!page || description.hidden) return void description.replaceChildren();
-		placeDescription(page.descriptionPosition);
-		sizeDescription(page.descriptionSize);
-		if (readOnly) return void description.replaceChildren(renderMarkdown(page.description));
-
-		const input = el("textarea", {
-			value: page.description,
-			ariaLabel: text.stepDescription,
-			placeholder: text.stepDescription,
-			onchange: () => store.updatePage(boardId, page.id, { description: input.value }),
-		});
-		const handle = el("div", { className: "page-description-handle", title: text.moveDescription }, "⠿");
-		handle.addEventListener("pointerdown", (e) => {
-			if (e.button !== 0) return;
-			e.preventDefault();
-			// From where it is saved now: `page` is the page as it was when the box was drawn, before any drag.
-			const start = currentPage()?.descriptionPosition ?? page.descriptionPosition;
-			const { zoom } = viewport;
-			const at = (dx: number, dy: number) => ({ x: snapToGrid(start.x + dx / zoom), y: snapToGrid(start.y + dy / zoom) });
-			trackPointer(
-				e,
-				(dx, dy) => placeDescription(at(dx, dy)),
-				(dx, dy) => {
-					if (Math.hypot(dx, dy) >= CLICK_TOLERANCE) store.updatePage(boardId, page.id, { descriptionPosition: at(dx, dy) });
-				},
-			);
-		});
-		// Resized at its corner like a card.
-		const resize = el("div", { className: "card-resize", title: text.resize });
-		resize.addEventListener("pointerdown", (e) => {
-			if (e.button !== 0) return;
-			e.preventDefault();
-			const start = currentPage()?.descriptionSize ?? page.descriptionSize;
-			const { zoom } = viewport;
-			const size = (dx: number, dy: number) => ({
-				width: Math.max(MIN_DESCRIPTION_SIZE.width, snapToGrid(start.width + dx / zoom)),
-				height: Math.max(MIN_DESCRIPTION_SIZE.height, snapToGrid(start.height + dy / zoom)),
-			});
-			trackPointer(
-				e,
-				(dx, dy) => sizeDescription(size(dx, dy)),
-				(dx, dy) => store.updatePage(boardId, page.id, { descriptionSize: size(dx, dy) }),
-			);
-		});
-		description.replaceChildren(handle, input, resize);
-	}
-
-	/** Editor, while editing frames: the frames as outlines on the canvas — the board's, and in a story the steps'
-	 * too —, the one of what's shown highlighted. Each is moved by its name (a click there goes to it) and resized at
-	 * its corner, snapped to the grid; only those react to the pointer. */
+	/** Editor, while editing the frame: the board's frame as an outline on the canvas. It is moved by its name (a click
+	 * there goes to it) and resized at its corner, snapped to the grid; only those react to the pointer. */
 	const frameLayer = el("div", { className: "view-frames" });
 
 	function placeFrame(node: HTMLElement, { x, y, width, height }: { x: number; y: number; width: number; height: number }): void {
@@ -2054,24 +1639,19 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 
 	function renderFrames(): void {
 		if (readOnly) return;
-		if (!editingFrames) return frameLayer.replaceChildren();
-		const current = currentFrame().id;
-		const frames = [boardFrame(), ...(currentPage() ? currentBoard().frames : [])];
-		frameLayer.replaceChildren(...frames.map((frame) => frameElement(frame, frame.id === current)));
+		frameLayer.replaceChildren(...(editingFrames ? [frameElement(currentBoard().viewFrame)] : []));
 	}
 
-	/** Moves or resizes a frame: the board's own (id "") or a step frame. */
-	function saveFrame(frame: ViewFrame, rect: Rect): void {
-		const { x, y, width, height } = rect;
-		if (frame.id === "") store.setViewFrame(boardId, { x, y, width, height });
-		else store.updateFrame(boardId, frame.id, { x, y, width, height });
+	/** Moves or resizes the board's frame. */
+	function saveFrame({ x, y, width, height }: Rect): void {
+		store.setViewFrame(boardId, { x, y, width, height });
 		renderFrames();
 	}
 
-	function frameElement(frame: ViewFrame, current: boolean): HTMLElement {
-		const node = el("div", { className: `view-frame${frame.id === "" ? " board-frame" : ""}${current ? " current" : ""}` });
+	function frameElement(frame: Rect): HTMLElement {
+		const node = el("div", { className: "view-frame" });
 		placeFrame(node, frame);
-		const label = el("div", { className: "view-frame-label", title: text.frameHandle }, frame.name);
+		const label = el("div", { className: "view-frame-label", title: text.frameHandle }, text.boardFrame);
 		label.addEventListener("pointerdown", (e) => {
 			if (e.button !== 0) return;
 			e.preventDefault();
@@ -2082,7 +1662,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				(dx, dy) => placeFrame(node, { ...frame, ...at(dx, dy) }),
 				(dx, dy) => {
 					if (Math.hypot(dx, dy) < CLICK_TOLERANCE) return goToFrame(frame);
-					saveFrame(frame, { ...frame, ...at(dx, dy) });
+					saveFrame({ ...frame, ...at(dx, dy) });
 				},
 			);
 		});
@@ -2100,7 +1680,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			trackPointer(
 				e,
 				(dx, dy) => placeFrame(node, { ...frame, ...size(dx, dy) }),
-				(dx, dy) => saveFrame(frame, { ...frame, ...size(dx, dy) }),
+				(dx, dy) => saveFrame({ ...frame, ...size(dx, dy) }),
 			);
 		});
 		node.append(label, resize);
@@ -2153,8 +1733,6 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	if (!readOnly) buildPanel();
 	renderPanel();
 	renderCards();
-	renderPageBar();
-	renderDescription();
 	renderFrames();
 	// The viewer fits what's shown once the canvas has a size, and again whenever it changes, until panned or zoomed.
 	if (readOnly && typeof ResizeObserver !== "undefined") {
@@ -2165,20 +1743,13 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			applyViewport();
 		}).observe(surface);
 	}
-	// The page bar wraps on narrow canvases; what sits above it moves up by its actual height (see CSS).
-	if (typeof ResizeObserver !== "undefined") {
-		new ResizeObserver(() => canvasMain.style.setProperty("--page-bar-height", `${pageBar.offsetHeight}px`)).observe(pageBar);
-	}
 	canvasMain.append(
 		surface,
 		...(readOnly ? [] : [openPanelButton, drawing.toolbar, drawing.styleBar]),
 		toolbar,
-		pageBar,
 		zoomBar,
 		preview.element,
 		boardDialog,
-		storyDialog,
-		frameDialog,
 		connectDialog,
 		newEntityDialog,
 	);

@@ -92,7 +92,7 @@ test("steps 6 to 8: a board's steps from before become one story, with the board
 		await board("none", 2, false, []);
 		await board("null", 3, null, null);
 
-		assert.deepEqual(await migrateSchema(sql), [6, 7, 8, 9]);
+		assert.deepEqual(await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 10)), [6, 7, 8, 9]);
 		const rows = await sql`select id, stories from boards order by position`;
 		// Steps 7 and 8 leave the frames null: the app makes them of the board's and the steps' pan/zoom.
 		assert.deepEqual([...(await sql`select distinct view_frame, frames from boards`)], [{ view_frame: null, frames: null }]);
@@ -121,7 +121,7 @@ test("step 8 gives boards their own frame, whichever form step 7 ran in", { skip
 		await wipe(sql);
 		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 8));
 		assert.deepEqual(await columns(), ["frames", "view_frame_id"]);
-		assert.deepEqual(await migrateSchema(sql), [8, 9]);
+		assert.deepEqual(await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 10)), [8, 9]);
 		assert.deepEqual(await columns(), ["frames", "view_frame"]);
 
 		// As step 7 briefly was: with `view_frame` already.
@@ -129,8 +129,29 @@ test("step 8 gives boards their own frame, whichever form step 7 ran in", { skip
 		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 7));
 		await sql`alter table boards add column view_frame jsonb, add column frames jsonb`;
 		await sql`insert into schema_migrations (version, name) values (7, 'view frames')`;
-		assert.deepEqual(await migrateSchema(sql), [8, 9]);
+		assert.deepEqual(await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 10)), [8, 9]);
 		assert.deepEqual(await columns(), ["frames", "view_frame"]);
+	} finally {
+		await sql.end({ timeout: 5 });
+	}
+});
+
+test("step 10 drops what was saved of stories and their frames; the board's own frame stays", { skip: !url }, async () => {
+	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
+	try {
+		await wipe(sql);
+		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 10));
+		await sql`insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 7)`;
+		await sql`insert into boards (workspace_id, id, position, name, view_frame, frames, stories)
+			values ('ws', 'b', 0, 'Flow', ${sql.json({ x: 0, y: 0, width: 1280, height: 720 })}, '[]', ${sql.json([{ id: "s", name: "Story 1", pages: [] }])})`;
+
+		assert.deepEqual(await migrateSchema(sql), [10]);
+		const columns = await sql`select column_name from information_schema.columns where table_name = 'boards' order by column_name`;
+		assert.deepEqual(
+			columns.map((row) => row.column_name),
+			["id", "name", "position", "updated_at", "view_frame", "viewport", "workspace_id"],
+		);
+		assert.deepEqual([...(await sql`select id, view_frame from boards`)], [{ id: "b", view_frame: { x: 0, y: 0, width: 1280, height: 720 } }]);
 	} finally {
 		await sql.end({ timeout: 5 });
 	}

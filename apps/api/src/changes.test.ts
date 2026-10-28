@@ -37,30 +37,10 @@ function state(): AppData {
 					{ id: "card-bob", entityId: "ent-bob", x: 330.5, y: -40, width: 160, height: 80 },
 				],
 				viewport: { x: 0, y: 0, zoom: 1 },
-				frames: [{ id: "frame-1", name: "Weit", x: -10.5, y: 20, width: 640, height: 360.25 }],
 				viewFrame: { x: 0.5, y: -24, width: 960, height: 540 },
 				drawings: [
 					{ id: "draw-line", kind: "line", points: [{ x: 0, y: 0 }, { x: 5.5, y: 5.25 }], color: "#4a4a4a" },
 					{ id: "draw-star", kind: "symbol", libraryId: "lib-star", x: 40, y: 40.5, width: 96, height: 48 },
-				],
-				stories: [
-					{
-						id: "story-1",
-						name: "Vortrag",
-						pages: [
-							{
-								id: "page-1",
-								name: "Anfang",
-								description: "Nur **Ada**",
-								descriptionPosition: { x: 250.5, y: 120 },
-								descriptionSize: { width: 300, height: 90.5 },
-								frameId: "frame-1",
-								cardIds: ["card-ada"],
-								drawingIds: ["draw-line"],
-								dimmedCardIds: ["card-ada"],
-							},
-						],
-					},
 				],
 			},
 		],

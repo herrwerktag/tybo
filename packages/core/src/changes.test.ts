@@ -42,9 +42,7 @@ function state(): AppData {
 				cards: [card("card-ada", "ent-ada", 10, 20), card("card-bob", "ent-bob", 330, 40)],
 				viewport: { x: 0, y: 0, zoom: 1 },
 				viewFrame: { x: 0, y: 0, width: 1280, height: 720 },
-				frames: [],
 				drawings: [drawing],
-				stories: [],
 			},
 		],
 		library: [{ id: "lib-star", name: "Stern", tags: ["Form"], drawings: [{ ...drawing, id: "lib-line" }] }],
@@ -154,29 +152,9 @@ test("a type is one unit with its properties; a board is one without its cards a
 	assert.deepEqual(outline(changes), ["type:type-person", "board:board-1"]);
 	const [typeChange, boardChange] = changes as [Extract<Change, { kind: "type" }>, Extract<Change, { kind: "board" }>];
 	assert.deepEqual(typeChange.after!.value.properties.map((p) => p.id), ["p-note", "p-status"]);
-	const meta = { viewFrame: { x: 0, y: 0, width: 1280, height: 720 }, frames: [], stories: [] };
+	const meta = { viewFrame: { x: 0, y: 0, width: 1280, height: 720 } };
 	assert.deepEqual(boardChange.after!.value, { id: "board-1", name: "Unbenannt", viewport: { x: 12, y: 34, zoom: 0.5 }, ...meta });
 	assert.deepEqual(boardChange.before!.value, { id: "board-1", name: "Übersicht", viewport: { x: 0, y: 0, zoom: 1 }, ...meta });
-});
-
-test("a story mode page shown or hidden is a change of the board alone, never of its cards", () => {
-	const before = state();
-	const page = {
-		id: "page-1",
-		name: "Step 1",
-		description: "",
-		descriptionPosition: { x: 72, y: 16 },
-		descriptionSize: { width: 384, height: 112 },
-		frameId: null,
-		cardIds: ["card-ada"],
-		drawingIds: [],
-		dimmedCardIds: [],
-	};
-	before.boards[0] = { ...before.boards[0]!, stories: [{ id: "story-1", name: "Pitch", pages: [page] }] };
-	const after = structuredClone(before);
-	after.boards[0]!.stories[0]!.pages[0]!.cardIds.push("card-bob");
-
-	assert.deepEqual(outline(changesBetween(before, after)), ["board:board-1"]);
 });
 
 test("a library drawing is one unit with its drawings; editing it never touches the boards it's placed on", () => {

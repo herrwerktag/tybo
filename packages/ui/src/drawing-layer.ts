@@ -36,7 +36,6 @@ import {
 	type PathDrawing,
 	type PenStyle,
 	type Rect,
-	type StoryPage,
 } from "@tybo/core";
 import type { Store } from "@tybo/core";
 
@@ -226,8 +225,6 @@ const TOOLS_COLLAPSED_KEY = "drawing-tools-collapsed";
 export function createDrawingLayer(options: {
 	store: Store;
 	owner: () => DrawingOwner;
-	/** The story mode page shown (only its drawings are, others faded in the editor); null outside story mode. */
-	page: () => StoryPage | null;
 	zoom: () => number;
 	/** World coordinates of a point on the screen. */
 	toWorld: (clientX: number, clientY: number) => Point;
@@ -277,11 +274,11 @@ export function createDrawingLayer(options: {
 			? (store.data.boards.find((b) => b.id === owner.boardId)?.drawings ?? [])
 			: (store.data.library.find((item) => item.id === owner.libraryId)?.drawings ?? []);
 	};
-	/** Adds a drawing to the owner (on a board in story mode, shown on the page shown). */
+	/** Adds a drawing to the owner. */
 	const add = (drawing: NewDrawing): Drawing => {
 		const owner = options.owner();
 		return "boardId" in owner
-			? store.addDrawing(owner.boardId, drawing, options.page()?.id)
+			? store.addDrawing(owner.boardId, drawing)
 			: store.addToLibraryDrawing(owner.libraryId, drawing);
 	};
 	/** The tools for the owner: areas group cards, so only boards have them. */
@@ -293,15 +290,10 @@ export function createDrawingLayer(options: {
 		draw();
 	}
 
-	/** Whether the drawing is on the page shown (always, outside story mode). */
-	const onPage = (id: string): boolean => options.page()?.drawingIds.includes(id) ?? true;
-
 	function draw(): void {
-		// The viewer leaves out other pages' drawings; the editor shows them faded (see drawingNode).
 		// Areas lie below the other drawings, so they never cover what's in them.
 		const all = drawings();
 		const shown = [...all.filter(isArea), ...all.filter((d) => !isArea(d))]
-			.filter((d) => !readOnly || onPage(d.id))
 			.map((d) => (draft?.id === d.id ? draft : groupMove?.ids.has(d.id) ? moveDrawing(d, groupMove.dx, groupMove.dy) : d))
 			.flatMap((d) => erased?.get(d.id)?.map((points) => ({ ...d, points })) ?? [d]);
 		if (draft && !shown.some((d) => d.id === draft!.id)) shown.push(draft);
@@ -318,7 +310,7 @@ export function createDrawingLayer(options: {
 	function drawingNode(d: Drawing): SVGGElement {
 		const group = svgEl(
 			"g",
-			{ class: onPage(d.id) || d.id === "draft" ? "drawing" : "drawing ghost", "data-id": d.id },
+			{ class: "drawing", "data-id": d.id },
 			...drawingShape(d, store.data.library, d.id !== editingId),
 		);
 		if (options.inFocus?.().has(d.id)) group.classList.add("in-chain");
@@ -593,10 +585,10 @@ export function createDrawingLayer(options: {
 		return true;
 	}
 
-	/** Rubs out the parts of pen strokes (on the page shown) the pointer passes over; saved as one change on release. */
+	/** Rubs out the parts of pen strokes the pointer passes over; saved as one change on release. */
 	function erase(e: PointerEvent, start: Point): void {
 		const radius = ERASER_RADIUS / options.zoom();
-		const strokes = drawings().filter((d) => d.kind === "pen" && onPage(d.id)) as PathDrawing[];
+		const strokes = drawings().filter((d) => d.kind === "pen") as PathDrawing[];
 		const left = new Map<string, Point[][]>();
 		let from = start;
 		const rub = (to: Point) => {
@@ -659,18 +651,13 @@ export function createDrawingLayer(options: {
 		draw();
 	}
 
-	/** Deletes the selected drawing — with `pageId`, only takes it off that page. */
-	function removeSelected(pageId?: string): void {
+	/** Deletes the selected drawing. */
+	function removeSelected(): void {
 		if (!selectedId) return;
-		store.removeDrawing(selectedId, pageId);
+		store.removeDrawing(selectedId);
 		selectedId = null;
 		draw();
 		options.onSelect(null);
-	}
-
-	function showOnPage(pageId: string, drawingId: string): void {
-		const owner = options.owner();
-		if ("boardId" in owner) store.showOnPage(owner.boardId, pageId, drawingId);
 	}
 
 	function update(change: (d: Drawing) => Drawing): void {
@@ -720,7 +707,6 @@ export function createDrawingLayer(options: {
 		// The color applies to the selected drawing, or else to the next one drawn. The bar is only shown
 		// while drawing or with a drawing selected, so it isn't in the way while arranging cards.
 		const selected = selectedId ? find(selectedId) : undefined;
-		const page = options.page();
 		// Images and library drawings have no color of their own.
 		const colorless = selected !== undefined && (isImage(selected) || isSymbol(selected));
 		const current = selected && "color" in selected ? selected.color : color;
@@ -779,15 +765,7 @@ export function createDrawingLayer(options: {
 			...(selected && isSymbol(selected) && options.onEditSymbol
 				? [el("button", { type: "button", onclick: () => options.onEditSymbol?.(selected.libraryId) }, text.editInLibrary)]
 				: []),
-			// In story mode: show another page's drawing here too, or take one off this page only.
-			...(selected && page && !onPage(selected.id)
-				? [el("button", { type: "button", onclick: () => (showOnPage(page.id, selected.id), draw()) }, text.showOnPage)]
-				: []),
-			...(selected && page && onPage(selected.id)
-				? [el("button", { type: "button", onclick: () => removeSelected(page.id) }, text.removeFromPage)]
-				: []),
-			// Deleting from the board only outside story mode, which never deletes.
-			...(selected && !page
+			...(selected
 				? [el("button", { type: "button", title: text.deleteDrawing, onclick: () => removeSelected() }, text.delete)]
 				: []),
 		);
@@ -800,7 +778,7 @@ export function createDrawingLayer(options: {
 		if ((e.target as Element).closest?.("input, select, textarea, [contenteditable]")) return;
 		if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
 			e.preventDefault();
-			removeSelected(options.page()?.id); // in story mode, like a card's ×: off this page
+			removeSelected();
 		} else if (e.key === "Escape") {
 			if (tool !== "select") setTool("select");
 			else if (selectedId) select(null);
