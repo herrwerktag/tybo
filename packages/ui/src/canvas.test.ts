@@ -322,7 +322,7 @@ test("boards are reordered in the dropdown with their drag handles' arrow keys; 
 test("a board is renamed in place in the dropdown; Escape keeps the old name", async () => {
 	const { store, view } = await setup();
 	const dialog = openBoards(view);
-	const rename = () => [...dialog.querySelectorAll<HTMLButtonElement>("li button")].find((b) => b.textContent === "Rename")!.click();
+	const rename = () => dialog.querySelector<HTMLButtonElement>(`li button[title="${text.renameBoard}"]`)!.click();
 	rename();
 	const input = dialog.querySelector<HTMLInputElement>(".picker-rename input")!;
 	input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
@@ -340,7 +340,7 @@ test("deleting the last board leaves only a button creating the first one", asyn
 	const questions: string[] = [];
 	Object.assign(globalThis, { confirm: (message: string) => (questions.push(message), true) });
 	const dialog = openBoards(view);
-	[...dialog.querySelectorAll<HTMLButtonElement>("li button")].find((b) => b.textContent === "Delete")!.click();
+	dialog.querySelector<HTMLButtonElement>(`li button[title="${text.deleteBoard}"]`)!.click();
 	assert.deepEqual(questions, [text.confirmDeleteBoard("Board 1", 2)]);
 	assert.equal(store.data.boards.length, 0);
 	const first = document.querySelector<HTMLButtonElement>(".first-board button")!;
