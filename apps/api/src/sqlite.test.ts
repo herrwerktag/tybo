@@ -56,7 +56,7 @@ async function fresh() {
 test("sqlite: the schema is made once, and survives reopening the file", async () => {
 	const { storage, path, close } = await fresh();
 	try {
-		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
 		assert.deepEqual(await storage.init(), [], "the second start has nothing left to do");
 		assert.equal(await storage.healthy(), true);
 		await storage.createWorkspace({ id: "ws", name: "Bleibt" }, 1);
@@ -172,7 +172,7 @@ test("sqlite: what was saved of stories, by any version before, is dropped; the 
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7, 8, 9, 10]);
+		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7, 8, 9, 10, 11]);
 		const { data } = (await storage.readWorkspace("ws"))!;
 		// Null, not missing: the app makes the frame of the board's pan/zoom.
 		assert.deepEqual(
@@ -206,7 +206,7 @@ test("sqlite: step 8 drops the library and the library drawings placed on boards
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [8, 9, 10]);
+		assert.deepEqual(await storage.init(), [8, 9, 10, 11]);
 		await storage.close();
 		const check = new DatabaseSync(path);
 		assert.deepEqual(check.prepare("select name from sqlite_master where name = 'library_drawings'").all(), []);
@@ -379,8 +379,27 @@ test("sqlite: step 10 gives the entries written before it their format, 9", asyn
 		raw.prepare("insert into history (workspace_id, operation) values ('ws', 'create')").run();
 		raw.close();
 
-		assert.deepEqual(await storage.init(), [10]);
+		assert.deepEqual(await storage.init(), [10, 11]);
 		assert.deepEqual((await storage.readHistory("ws", { limit: 10 })).map((e) => e.dataVersion), [9]);
+	} finally {
+		await close();
+	}
+});
+
+test("sqlite: after the schema is up to date, every workspace says the app's data format — whatever it was made with", async () => {
+	const { storage, path, close } = await fresh();
+	try {
+		// Made long ago, its rows brought along by the steps since. Fails once DATA_VERSION is raised without a step
+		// that brings the rows to the new format and says so (see DATA_VERSION in the core).
+		const raw = new DatabaseSync(path);
+		raw.exec("pragma foreign_keys = on");
+		for (const migration of SQLITE_MIGRATIONS.filter((m) => m.version < 11)) migration.up(raw);
+		raw.exec("pragma user_version = 10");
+		raw.prepare("insert into workspaces (id, position, name, data_version) values ('old', 0, 'Alt', 4)").run();
+		raw.close();
+
+		await storage.init();
+		assert.equal((await storage.readWorkspace("old"))?.data.version, DATA_VERSION);
 	} finally {
 		await close();
 	}

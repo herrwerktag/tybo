@@ -232,6 +232,13 @@ export const SQLITE_MIGRATIONS: readonly Migration[] = [
 			db.exec("alter table history add column data_version integer; update history set data_version = 9;");
 		},
 	},
+	{
+		version: 11,
+		up(db) {
+			// As Postgres's step 14.
+			db.exec("update workspaces set data_version = 9");
+		},
+	},
 ];
 
 /** The table holding each kind of unit, one row per unit. */
