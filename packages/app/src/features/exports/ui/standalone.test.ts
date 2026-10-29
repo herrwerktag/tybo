@@ -1,10 +1,10 @@
-import { freshDom } from "../../shared/ui/test-dom.js";
+import { freshDom } from "../../../shared/ui/test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { language, setLanguage } from "./i18n.js";
+import { language, setLanguage } from "../../../shared/ui/index.js";
 import { renderStandaloneView, standaloneViewHtml } from "./standalone.js";
-import { DRAWING_LAYER } from "../../features/drawings/ui.js";
-import { DATA_VERSION, type AppData } from "../core/index.js";
+import { DRAWING_LAYER } from "../../drawings/ui.js";
+import { DATA_VERSION, type AppData } from "../../../legacy/core/index.js";
 
 const viewport = { x: 0, y: 0, zoom: 1 };
 /** Entity ids are ULIDs; others are given new ones on load. */

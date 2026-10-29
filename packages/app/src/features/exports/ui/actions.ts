@@ -1,9 +1,10 @@
-import type { Store } from "../core/index.js";
-import { downloadFile, language, safeFileName, zipFiles } from "../../shared/ui/index.js";
-import type { BoardExport } from "../../features/boards/ui/layer.js";
+import type { Store } from "../../../legacy/core/index.js";
+import { downloadFile, language, safeFileName, zipFiles, type WorkspaceAction } from "../../../shared/ui/index.js";
+import type { BoardExport } from "../../boards/ui.js";
 import { boardDrawioFiles } from "./drawio-export.js";
-import { text } from "./i18n.js";
+import { text } from "../texts.js";
 import { standaloneViewHtml } from "./standalone.js";
+import { workspaceText } from "./text-export.js";
 
 const boardName = (store: Store, boardId: string) => store.data.boards.find((b) => b.id === boardId)?.name ?? "";
 
@@ -33,3 +34,13 @@ const DRAWIO_EXPORT: BoardExport = {
 export function boardExports(viewScript?: string): BoardExport[] {
 	return [...(viewScript ? [viewExport(viewScript)] : []), DRAWIO_EXPORT];
 }
+
+/** In the workspace menu: the workspace as a text file, its types and entities written out. */
+export const TEXT_EXPORT: WorkspaceAction<Store> = {
+	label: () => text.exportTextButton,
+	title: () => text.exportText,
+	run(store, name) {
+		const date = new Date().toISOString().slice(0, 10);
+		downloadFile(`${safeFileName(name)} ${date}.txt`, workspaceText(name, store.data, date), "text/plain;charset=utf-8");
+	},
+};

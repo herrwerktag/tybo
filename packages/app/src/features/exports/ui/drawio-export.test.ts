@@ -1,9 +1,9 @@
-import "../../shared/ui/test-dom.js";
+import "../../../shared/ui/test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AppData, Board, PropertyDef } from "../core/index.js";
+import type { AppData, Board, PropertyDef } from "../../../legacy/core/index.js";
 import { boardDrawio, boardDrawioFiles } from "./drawio-export.js";
-import { text } from "./i18n.js";
+import { text } from "../texts.js";
 
 const prop = (id: string, name: string, more: Partial<PropertyDef> = {}): PropertyDef => ({
 	id,

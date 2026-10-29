@@ -1,22 +1,13 @@
-import { WS, byText, goTo, memoryStorage, readSaved, settle, startApp, storage, stub, typeInto } from "./test-app.js";
+import { WS, byText, goTo, library, memoryStorage, readSaved, settle, startApp, storage, stub, typeInto } from "./test-app.js";
 import { freshDom } from "../../shared/ui/test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { setLanguage, text } from "./i18n.js";
+import { setLanguage } from "../../shared/ui/index.js";
 import { text as dataText } from "../../features/data/texts.js";
 import { text as boardText } from "../../features/boards/texts.js";
 import { createWorkspaces } from "../core/index.js";
 import { render } from "../../features.ui.js";
 import { activeWorkspacePreference, sharedText } from "../../shared/ui/index.js";
-
-/** One type (Book, with a text property "author") and one entity (Dune), as saved data. */
-const library = {
-	types: [
-		{ id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", properties: [{ id: "author", name: "author", kind: "text", options: [], reference: null, cardDisplay: "list" }] },
-	],
-	entities: [{ id: "01J00000000000000000000000", typeId: "book", name: "Dune", content: "", description: "", values: { author: "Herbert" } }],
-	boards: [],
-};
 
 test("a type with a property, then an entity of it, can be created through the forms and are saved", async () => {
 	const root = await startApp(undefined, "#types");
@@ -329,94 +320,6 @@ test("canvas changes can be undone too: the Undo button follows them without the
 
 	undo!.click();
 	assert.ok(root.querySelector('.canvas-board .canvas-card[data-card-id="c"]'));
-});
-
-/** Opens the boards' export dropdown and clicks the export titled `title`. */
-function exportBoard(app: HTMLElement, title: string): void {
-	app.querySelector<HTMLButtonElement>(".export-switch")!.click();
-	app.querySelector<HTMLButtonElement>(`.export-dialog button[title="${title}"]`)!.click();
-}
-
-test("the boards export the current board as an HTML file with the viewer inside", async () => {
-	const data = structuredClone(library) as { boards: unknown[] };
-	data.boards = [{ id: "b", name: "Shelf", cards: [{ id: "c", entityId: "01J00000000000000000000000", x: 0, y: 0, width: 240, height: 160 }], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] }];
-	// Without the viewer's script there's nothing to export with.
-	const withoutScript = await startApp(data, "#boards");
-	withoutScript.querySelector<HTMLButtonElement>(".export-switch")!.click();
-	assert.equal(withoutScript.querySelector(`.export-dialog button[title="${text.exportView}"]`), null);
-
-	const app = await startApp(data, "#boards", memoryStorage(data), { viewScript: "viewer();" });
-	const downloads: Blob[] = [];
-	const createObjectURL = URL.createObjectURL;
-	URL.createObjectURL = (blob: Blob) => (downloads.push(blob), "blob:export");
-	try {
-		exportBoard(app, text.exportView);
-	} finally {
-		URL.createObjectURL = createObjectURL;
-	}
-	assert.equal(downloads[0]?.type, "text/html");
-	const html = await downloads[0]!.text();
-	assert.match(html, /<title>Shelf<\/title>/);
-	assert.match(html, /<script>viewer\(\);<\/script>/);
-	assert.match(html, /"name":"Dune"/);
-});
-
-test("the boards export the current board for draw.io", async () => {
-	const data = structuredClone(library) as { boards: unknown[] };
-	data.boards = [{ id: "b", name: "Shelf", cards: [{ id: "c", entityId: "01J00000000000000000000000", x: 0, y: 0, width: 240, height: 160 }], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] }];
-	const app = await startApp(data, "#boards");
-	const downloads: Blob[] = [];
-	const createObjectURL = URL.createObjectURL;
-	URL.createObjectURL = (blob: Blob) => (downloads.push(blob), "blob:export");
-	try {
-		exportBoard(app, text.exportDrawio);
-	} finally {
-		URL.createObjectURL = createObjectURL;
-	}
-	assert.equal(downloads[0]?.type, "application/xml");
-	const xml = await downloads[0]!.text();
-	assert.match(xml, /<diagram id="b" name="Shelf">/);
-	assert.match(xml, /<UserObject id="card-c" label="[^"]*Dune/);
-});
-
-test("with groups on the board, the draw.io export is a ZIP with one more file per group", async () => {
-	const data = structuredClone(library) as { boards: unknown[] };
-	const group = { id: "g", kind: "area", x: -24, y: -24, width: 480, height: 312, color: "#c4dafa", text: "Regal", textSize: "m" };
-	data.boards = [{ id: "b", name: "Shelf", cards: [{ id: "c", entityId: "01J00000000000000000000000", x: 0, y: 0, width: 240, height: 160 }], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [group] }];
-	const app = await startApp(data, "#boards");
-	const downloads: Blob[] = [];
-	const names: string[] = [];
-	const createObjectURL = URL.createObjectURL;
-	const click = HTMLAnchorElement.prototype.click;
-	URL.createObjectURL = (blob: Blob) => (downloads.push(blob), "blob:export");
-	HTMLAnchorElement.prototype.click = function () {
-		names.push(this.download);
-	};
-	try {
-		exportBoard(app, text.exportDrawio);
-	} finally {
-		URL.createObjectURL = createObjectURL;
-		HTMLAnchorElement.prototype.click = click;
-	}
-	assert.deepEqual([names[0], downloads[0]?.type], ["Shelf.zip", "application/zip"]);
-	const zip = new TextDecoder().decode(await downloads[0]!.arrayBuffer());
-	assert.match(zip, /Shelf\.drawio/);
-	assert.match(zip, /Regal\.drawio/);
-	assert.match(zip, /<mxCell id="area-g" value="Regal"/);
-});
-
-test("the workspace menu exports the workspace as a text file", async () => {
-	const root = await startApp(library);
-	const downloads: Blob[] = [];
-	const createObjectURL = URL.createObjectURL;
-	URL.createObjectURL = (blob: Blob) => (downloads.push(blob), "blob:export");
-	try {
-		root.querySelector<HTMLButtonElement>(`button[title="${text.exportText}"]`)!.click();
-	} finally {
-		URL.createObjectURL = createObjectURL;
-	}
-	assert.equal(downloads[0]?.type, "text/plain;charset=utf-8");
-	assert.match(await downloads[0]!.text(), /^## Book "Dune"$/m);
 });
 
 test("a workspace saved by a newer version warns that changes aren't saved, and offers a reload", async () => {

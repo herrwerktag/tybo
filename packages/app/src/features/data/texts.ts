@@ -19,6 +19,7 @@ const en = {
 	cardDisplays: { list: "List", line: "Line", hidden: "Hidden" } satisfies Record<CardDisplay, string>,
 	closeDetails: "Close details",
 	details: "Details",
+	entityMention: (type: string, name: string) => `${type} "${name}"`,
 	color: "Color",
 	colorNames: {
 		Red: "Red",
@@ -139,6 +140,7 @@ export const text = messages<typeof en>({
 		cardDisplays: { list: "Liste", line: "Linie", hidden: "Ausgeblendet" },
 		closeDetails: "Details schließen",
 		details: "Details",
+		entityMention: (type, name) => `${type} „${name}“`,
 		color: "Farbe",
 		colorNames: {
 			Red: "Rot",
