@@ -35,7 +35,7 @@ import {
 	type PropertyValue,
 	type Store,
 	type ValidationError,
-} from "@tybo/core";
+} from "@tybo/app/core";
 import { ToolError, type Tool } from "./protocol.js";
 
 /**

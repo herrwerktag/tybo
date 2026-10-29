@@ -12,7 +12,7 @@
 		"build": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@tybo/core": "workspace:*",
+		"@tybo/app": "workspace:*",
 		"@tybo/demo": "workspace:*"
 	},
 	"devDependencies": {

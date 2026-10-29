@@ -1,5 +1,5 @@
-import type { Change, SavedChanges } from "@tybo/core";
-import { inKindOrder, unitStandsOf, untouched } from "@tybo/core";
+import type { Change, SavedChanges } from "@tybo/app/core";
+import { inKindOrder, unitStandsOf, untouched } from "@tybo/app/core";
 import { readAppData } from "./data.js";
 import { changeEntries, recordHistory } from "./history.js";
 import type { Queries, Sql } from "./schema.js";

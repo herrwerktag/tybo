@@ -1,6 +1,6 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
-import type { AppData, Change, SavedChanges } from "@tybo/core";
-import { DATA_VERSION, inKindOrder, moveItem, unitStandsOf, untouched } from "@tybo/core";
+import type { AppData, Change, SavedChanges } from "@tybo/app/core";
+import { DATA_VERSION, inKindOrder, moveItem, unitStandsOf, untouched } from "@tybo/app/core";
 import type { StoredWorkspace } from "./data.js";
 import { changeEntries, type HistoryEntry, type HistoryOperation, type NewEntry } from "./history.js";
 import type { Api } from "./http.js";

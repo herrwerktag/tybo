@@ -15,7 +15,7 @@ import {
 	type EntityType,
 	type UnitKind,
 	type UnitStand,
-} from "@tybo/core";
+} from "@tybo/app/core";
 import type { Queries } from "./schema.js";
 import { json, parsed, plain, type All, type Run } from "./sqlite-values.js";
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { test } from "node:test";
-import { DATA_VERSION } from "@tybo/core";
+import { DATA_VERSION } from "@tybo/app/core";
 import { MIGRATIONS, SchemaMismatch, migrateSchema } from "./schema.js";
 
 /** The test database these tests run against (never the productive DATABASE_URL); without it they are skipped, not failed. */

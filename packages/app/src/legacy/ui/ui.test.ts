@@ -1,0 +1,750 @@
+import { freshDom } from "../../shared/ui/test-dom.js";
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { setLanguage, text } from "./i18n.js";
+import type { AppData } from "../core/index.js";
+import { render } from "./ui.js";
+import { DATA_VERSION, createWorkspaces, ulid } from "../core/index.js";
+import { memoryDataPort } from "../core/memory-port.js";
+import { activeWorkspacePreference, sharedText } from "../../shared/ui/index.js";
+
+/** Lets work started by a click or an event finish first (the stores open and save through the async port). */
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve));
+
+/** The workspace the tests' saved data is in. */
+const WS = "ws";
+
+/** The storage in memory, with `saved` as the data of the workspace WS (named as the first workspace is) — or
+ * no workspace at all, the way the very first start finds it. */
+function memoryStorage(saved?: unknown) {
+	const behind = memoryDataPort(saved === undefined ? {} : { [WS]: saved });
+	if (saved !== undefined) void behind.port.renameWorkspace(WS, text.defaultWorkspaceName(1)); // done at once, in memory
+	return behind;
+}
+
+/** The storage behind the app the last startApp started. */
+let storage = memoryStorage();
+
+/** Renders the app on a fresh page (at `hash`, e.g. "#boards"), with `saved` already in the storage. A different
+ * storage `behind` it shows what the app does with one that answers otherwise (with collisions, for instance). */
+async function startApp(saved?: unknown, hash = "", behind = memoryStorage(saved), options: { viewScript?: string } = {}): Promise<HTMLElement> {
+	freshDom();
+	location.hash = hash;
+	storage = behind;
+	const root = document.querySelector<HTMLElement>("#app")!;
+	const workspaces = await createWorkspaces(behind.port, text.defaultWorkspaceName, activeWorkspacePreference);
+	await render(root, workspaces, options);
+	return root;
+}
+
+/** The element matching `selector` whose text is `label`. */
+function byText<T extends HTMLElement = HTMLElement>(root: ParentNode, selector: string, label: string): T {
+	const found = [...root.querySelectorAll<T>(selector)].find((node) => node.textContent?.trim() === label);
+	assert.ok(found, `no ${selector} with text "${label}"`);
+	return found;
+}
+
+function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string): void {
+	input.value = value;
+	input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/** Replaces browser dialogs (alert, confirm, prompt) for the current page. */
+const stub = (dialogs: Partial<Record<"alert" | "confirm" | "prompt", (message: string) => unknown>>) => Object.assign(globalThis, dialogs);
+
+/** The data of the first workspace, as the storage holds it once the saves on their way have landed. */
+async function readSaved(): Promise<AppData> {
+	await settle();
+	const [first] = await storage.port.listWorkspaces();
+	return storage.data(first!.id) as unknown as AppData;
+}
+
+/** One type (Book, with a text property "author") and one entity (Dune), as saved data. */
+const library = {
+	types: [
+		{ id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", properties: [{ id: "author", name: "author", kind: "text", options: [], reference: null, cardDisplay: "list" }] },
+	],
+	entities: [{ id: "01J00000000000000000000000", typeId: "book", name: "Dune", content: "", description: "", values: { author: "Herbert" } }],
+	boards: [],
+};
+
+/** Shows another page, the way a click on a nav link does. */
+function goTo(hash: string): void {
+	location.hash = hash;
+	window.dispatchEvent(new Event("hashchange"));
+}
+
+test("a type with a property, then an entity of it, can be created through the forms and are saved", async () => {
+	const root = await startApp(undefined, "#types");
+	byText(root, "button", text.createNewType).click();
+	const typeForm = root.querySelector<HTMLFormElement>("#type-form")!;
+	typeInto(typeForm.querySelector(`input[placeholder="${text.typeNamePlaceholder}"]`)!, "Book");
+	byText(typeForm, "button", text.addProperty).click();
+	// The form was drawn again with the new property; the typed name is kept.
+	const form = root.querySelector<HTMLFormElement>("#type-form")!;
+	typeInto(form.querySelector(`input[placeholder="${text.propertyName}"]`)!, "author");
+	byText(form, "button", text.createType).click();
+
+	assert.ok(byText(root, ".type-name", "Book"));
+	const [book] = (await readSaved()).types;
+	assert.equal(book?.name, "Book");
+	assert.deepEqual(book?.properties.map((p) => p.name), ["author"]);
+	assert.equal(root.querySelector("#type-form"), null); // created: the form closes
+
+	goTo("#entities");
+	byText(root, "button", text.createNewEntity).click();
+	const entityForm = root.querySelector<HTMLFormElement>("#entity-form")!;
+	const [nameInput, authorInput, tagsInput] = entityForm.querySelectorAll<HTMLInputElement>("label.field input");
+	nameInput!.value = " Dune ";
+	authorInput!.value = "Herbert";
+	tagsInput!.value = "Classic, sci-fi, classic,";
+	byText(entityForm, "button", text.create).click();
+
+	assert.ok(byText(root, "td", "Dune"));
+	assert.ok(byText(root, "td", "Herbert"));
+	assert.ok(byText(root, "td", "Classic, sci-fi"));
+	const [dune] = (await readSaved()).entities;
+	assert.equal(dune?.name, "Dune");
+	assert.equal(dune?.values[book!.properties[0]!.id], "Herbert");
+	assert.deepEqual(dune?.tags, ["Classic", "sci-fi"]);
+	assert.equal(root.querySelector("#entity-form"), null);
+});
+
+test("Data is the default page; its heading switches between entity types and entities", async () => {
+	const root = await startApp(library);
+	assert.equal(root.querySelector(".app-nav .current")?.textContent, text.tabEntities);
+	assert.equal(root.querySelector(".data-switch .current")?.textContent, text.entities);
+	assert.ok(byText(root, "td", "Dune"));
+	assert.equal(root.querySelector(".type-item"), null);
+
+	goTo("#types");
+	assert.equal(root.querySelector(".app-nav .current")?.textContent, text.tabEntities);
+	assert.equal(root.querySelector(".data-switch .current")?.textContent, text.entityTypes);
+	assert.ok(byText(root, ".type-name", "Book"));
+	assert.equal(root.querySelector("td"), null);
+
+	goTo("#boards");
+	assert.equal(root.querySelector(".app-nav .current")?.textContent, text.tabBoards);
+	assert.equal(root.querySelector(".data-switch"), null);
+
+	goTo("#canvas"); // the former name still leads there
+	assert.equal(root.querySelector(".app-nav .current")?.textContent, text.tabBoards);
+	goTo("#view/b"); // and so do the former read-only boards' addresses
+	assert.equal(root.querySelector(".app-nav .current")?.textContent, text.tabBoards);
+});
+
+
+test("types and entities are reordered with their drag handles' arrow keys; focus stays on the moved one", async () => {
+	const root = await startApp({
+		...library,
+		types: [...library.types, { id: "film", name: "Film", color: "#c8ebbf", contentTemplate: "", properties: [] }],
+		entities: [
+			...library.entities,
+			{ id: "01J00000000000000000000001", typeId: "book", name: "Emma", content: "", description: "", values: {} },
+		],
+	}, "#types");
+	const press = (handle: HTMLElement, key: string) => handle.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+
+	press(root.querySelectorAll<HTMLElement>(".type-item .drag-handle")[1]!, "ArrowUp");
+	assert.deepEqual([...root.querySelectorAll(".type-name")].map((n) => n.textContent), ["Film", "Book"]);
+	assert.equal((document.activeElement as HTMLElement).dataset.focusKey, "type:film");
+	press(document.activeElement as HTMLElement, "ArrowUp"); // already first: nothing changes
+	assert.deepEqual((await readSaved()).types.map((t) => t.id), ["film", "book"]);
+
+	goTo("#entities");
+	const select = root.querySelector<HTMLSelectElement>(".section-header select")!;
+	select.value = "book";
+	select.dispatchEvent(new Event("change"));
+	press(root.querySelector<HTMLElement>("tbody .drag-handle")!, "ArrowDown");
+	assert.deepEqual([...root.querySelectorAll("tbody tr")].map((tr) => tr.children[2]?.textContent), ["Emma", "Dune"]);
+	assert.equal((document.activeElement as HTMLElement).dataset.focusKey, "entity:01J00000000000000000000000");
+	assert.deepEqual((await readSaved()).entities.map((e) => e.name), ["Emma", "Dune"]);
+
+	// Dropped on Dune's row (its lower half: the test page has no layout), the dragged Emma goes after it.
+	const dataTransfer = new DataTransfer();
+	dataTransfer.setData("application/x-entity-index", "0");
+	const drop = new DragEvent("drop", { bubbles: true, cancelable: true });
+	Object.defineProperty(drop, "dataTransfer", { value: dataTransfer }); // happy-dom leaves it out of the init
+	root.querySelectorAll("tbody tr")[1]!.dispatchEvent(drop);
+	assert.deepEqual((await readSaved()).entities.map((e) => e.name), ["Dune", "Emma"]);
+});
+test("the forms for a new type and a new entity are hidden until asked for, and Cancel hides them again", async () => {
+	const root = await startApp(library, "#types");
+	assert.equal(root.querySelector("#type-form"), null);
+	byText(root, "button", text.createNewType).click();
+	byText(root.querySelector("#type-form")!, "button", text.cancel).click();
+	assert.equal(root.querySelector("#type-form"), null);
+
+	goTo("#entities");
+	assert.equal(root.querySelector("#entity-form"), null);
+	byText(root, "button", text.createNewEntity).click();
+	byText(root.querySelector("#entity-form")!, "button", text.cancel).click();
+	assert.equal(root.querySelector("#entity-form"), null);
+
+	// Edit opens the form too.
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.edit).click();
+	assert.equal(root.querySelector<HTMLInputElement>("#entity-form input")?.value, "Dune");
+});
+
+test("a reference allowing several values shows them as tags: × removes one, the select adds another", async () => {
+	const members = { id: "members", name: "members", kind: "reference", options: [], reference: { typeIds: ["person"], multiple: true }, cardDisplay: "list" };
+	const root = await startApp({
+		types: [
+			{ id: "team", name: "Team", color: "#c8ebbf", contentTemplate: "", properties: [members] },
+			{ id: "person", name: "Person", color: "#c4dafa", contentTemplate: "", properties: [] },
+		],
+		entities: [
+			{ id: "01J00000000000000000000000", typeId: "team", name: "Core", content: "", description: "", values: { members: ["01J00000000000000000000001"] } },
+			{ id: "01J00000000000000000000001", typeId: "person", name: "Ada", content: "", description: "", values: {} },
+			{ id: "01J00000000000000000000002", typeId: "person", name: "Bob", content: "", description: "", values: {} },
+		],
+		boards: [],
+	});
+	byText(byText(root, "td", "Core").closest("tr")!, "button", text.edit).click();
+	const form = root.querySelector<HTMLFormElement>("#entity-form")!;
+	const tags = () => [...form.querySelectorAll(".reference-type")].map((t) => t.firstChild?.textContent);
+	assert.deepEqual(tags(), ["Ada"]);
+
+	const nameInput = form.querySelector<HTMLInputElement>("input")!;
+	nameInput.value = "Core team";
+	const add = form.querySelector<HTMLSelectElement>(".reference-values select")!;
+	add.value = "01J00000000000000000000002";
+	add.dispatchEvent(new Event("change"));
+	assert.deepEqual(tags(), ["Ada", "Bob"]);
+	assert.equal(form.querySelector(".reference-values select"), null); // nobody left to add
+	byText(form, "button", "×").click();
+	assert.deepEqual(tags(), ["Bob"]);
+	assert.equal(nameInput.value, "Core team"); // only the field was drawn again
+
+	byText(form, "button", text.save).click();
+	const [core] = (await readSaved()).entities;
+	assert.equal(core?.name, "Core team");
+	assert.deepEqual(core?.values.members, ["01J00000000000000000000002"]);
+});
+
+test("an invalid type shows its problems and isn't saved", async () => {
+	const root = await startApp(undefined, "#types");
+	byText(root, "button", text.createNewType).click();
+	byText(root.querySelector("#type-form")!, "button", text.createType).click();
+	assert.equal(root.querySelector("#type-form .error")?.textContent, text.validation({ code: "typeNameRequired" }));
+	assert.deepEqual((await readSaved()).types, []);
+	assert.equal(storage.saves.length, 0);
+});
+
+test("deleting an entity asks first; cancelling keeps it", async () => {
+	const root = await startApp(library);
+	const questions: string[] = [];
+	let answer = false;
+	stub({
+		confirm: (message: string) => {
+			questions.push(message);
+			return answer;
+		},
+	});
+	const deleteDune = () => byText(byText(root, "td", "Dune").closest("tr")!, "button", text.delete).click();
+
+	deleteDune();
+	assert.deepEqual(questions, [text.confirmDeleteEntity("Dune", 0)]);
+	assert.equal((await readSaved()).entities.length, 1);
+
+	answer = true;
+	deleteDune();
+	assert.equal((await readSaved()).entities.length, 0);
+	assert.ok(byText(root, "p", text.noEntitiesOfType("Book")));
+});
+
+test("a type other types refer to can't be deleted", async () => {
+	const data = structuredClone(library) as { types: unknown[]; boards: unknown[] };
+	data.types.push({ id: "review", name: "Review", properties: [{ id: "of", name: "of", kind: "reference", options: [], reference: { typeId: "book", multiple: false }, cardDisplay: "list" }] });
+	const root = await startApp(data, "#types");
+	const alerts: string[] = [];
+	stub({ alert: (message: string) => void alerts.push(message), confirm: () => assert.fail("shouldn't ask to confirm") });
+
+	const bookItem = root.querySelector(".type-item")!;
+	byText(bookItem, "button", text.delete).click();
+	assert.deepEqual(alerts, [text.cannotDeleteType("Book", "Review.of")]);
+	assert.equal((await readSaved()).types.length, 2);
+});
+
+test("a new workspace from the menu starts empty and becomes active; switching back shows the first one again", async () => {
+	const root = await startApp(library, "#types");
+	const newForm = root.querySelector<HTMLFormElement>(".workspace-new")!;
+	newForm.querySelector<HTMLInputElement>("input:not([type])")!.value = "Second";
+	byText(newForm, "button", text.create).click();
+	await settle();
+
+	assert.equal(root.querySelector(".workspace-name")?.textContent, "Second");
+	assert.ok(byText(root, "p", text.noTypesYet));
+
+	byText(root, ".workspace-option", text.defaultWorkspaceName(1)).click();
+	await settle();
+	assert.equal(root.querySelector(".workspace-name")?.textContent, text.defaultWorkspaceName(1));
+	assert.ok(byText(root, ".type-name", "Book"));
+});
+
+test("workspaces are reordered in the menu with their drag handles' arrow keys; the order is saved", async () => {
+	const behind = memoryStorage(library);
+	const root = await startApp(library, "#types", behind);
+	const newForm = root.querySelector<HTMLFormElement>(".workspace-new")!;
+	newForm.querySelector<HTMLInputElement>("input:not([type])")!.value = "Second";
+	byText(newForm, "button", text.create).click();
+	await settle();
+
+	root.querySelectorAll<HTMLElement>(".workspace-list .drag-handle")[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+	assert.deepEqual([...root.querySelectorAll(".workspace-option")].map((b) => b.textContent), ["Second", text.defaultWorkspaceName(1)]);
+	assert.ok((document.activeElement as HTMLElement).dataset.focusKey?.startsWith("workspace:"));
+	await settle();
+	assert.deepEqual((await behind.port.listWorkspaces()).map((w) => w.name), ["Second", text.defaultWorkspaceName(1)]);
+	assert.equal(root.querySelector(".workspace-name")?.textContent, "Second", "the active workspace stays");
+});
+
+test("a workspace whose data can't be loaded warns that changes aren't saved, and offers a reload", async () => {
+	const behind = memoryStorage(library);
+	behind.failing.loads = true;
+	const root = await startApp(undefined, "", behind);
+	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
+	assert.equal(banner.hidden, false);
+	assert.ok(banner.textContent!.includes(text.loadUnavailable));
+	assert.ok(byText(banner, "button", text.reload));
+});
+
+test("a page that can't be drawn shows the error screen, which can still export", async (t) => {
+	const logged = t.mock.method(console, "error", () => {});
+	const root = await startApp(library);
+	const createElement = document.createElement.bind(document);
+	document.createElement = ((tag: string) => {
+		if (tag === "table") throw new Error("table failed");
+		return createElement(tag);
+	}) as typeof document.createElement;
+
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.edit).click(); // draws the page again
+
+	const screen = root.querySelector(".error-screen");
+	assert.ok(screen);
+	assert.equal(screen.querySelector(".error-detail")?.textContent, "table failed");
+	assert.ok(byText(screen, "button", text.reload));
+	assert.ok(byText(screen, "button", text.exportButton));
+	assert.equal(logged.mock.callCount(), 1);
+});
+
+test("errors thrown outside rendering show in the banner", async () => {
+	const root = await startApp();
+	window.dispatchEvent(new ErrorEvent("error", { error: new Error("handler failed") }));
+	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
+	assert.equal(banner.hidden, false);
+	assert.match(banner.textContent ?? "", /handler failed/);
+});
+
+const press = (target: Element, key: string, modifiers: KeyboardEventInit = {}) =>
+	target.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, bubbles: true, cancelable: true, ...modifiers }));
+
+test("a deleted entity comes back with the Undo button, and goes again with Ctrl+Y", async () => {
+	const root = await startApp(library);
+	const [undo, redo] = root.querySelectorAll<HTMLButtonElement>(".history-button") as unknown as [HTMLButtonElement, HTMLButtonElement];
+	assert.equal(undo.disabled, true);
+
+	stub({ confirm: () => true });
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.delete).click();
+	assert.equal(undo.disabled, false);
+
+	undo.click();
+	assert.ok(byText(root, "td", "Dune"));
+	assert.equal((await readSaved()).entities.length, 1);
+	assert.equal(redo.disabled, false);
+
+	press(document.body, "y");
+	assert.equal((await readSaved()).entities.length, 0);
+	assert.equal(root.querySelector("td"), null);
+});
+
+test("Ctrl+Z undoes outside text fields; inside one it's left to the browser's text undo", async () => {
+	const root = await startApp(library);
+	stub({ confirm: () => true });
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.delete).click();
+
+	byText(root, "button", text.createNewEntity).click();
+	const nameInput = root.querySelector<HTMLInputElement>("#entity-form input")!;
+	assert.equal(press(nameInput, "z"), true); // not handled: the default (text undo) isn't prevented
+	assert.equal((await readSaved()).entities.length, 0);
+
+	assert.equal(press(document.body, "z"), false);
+	assert.equal((await readSaved()).entities.length, 1);
+	press(document.body, "z", { shiftKey: true });
+	assert.equal((await readSaved()).entities.length, 0);
+});
+
+test("canvas changes can be undone too: the Undo button follows them without the page being drawn again", async () => {
+	const data = structuredClone(library) as { types: unknown[]; boards: unknown[] };
+	data.boards = [{ id: "b", name: "Board 1", cards: [{ id: "c", entityId: "01J00000000000000000000000", x: 0, y: 0, width: 240, height: 160 }], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] }];
+	const root = await startApp(data, "#boards");
+	const [undo] = root.querySelectorAll<HTMLButtonElement>(".history-button");
+
+	root.querySelector<HTMLButtonElement>(".canvas-board .card-remove")!.click();
+	assert.equal(root.querySelector(".canvas-board .canvas-card"), null);
+	assert.equal(undo!.disabled, false);
+
+	undo!.click();
+	assert.ok(root.querySelector('.canvas-board .canvas-card[data-card-id="c"]'));
+});
+
+/** Opens the boards' export dropdown and clicks the export titled `title`. */
+function exportBoard(app: HTMLElement, title: string): void {
+	app.querySelector<HTMLButtonElement>(".export-switch")!.click();
+	app.querySelector<HTMLButtonElement>(`.export-dialog button[title="${title}"]`)!.click();
+}
+
+test("the boards export the current board as an HTML file with the viewer inside", async () => {
+	const data = structuredClone(library) as { boards: unknown[] };
+	data.boards = [{ id: "b", name: "Shelf", cards: [{ id: "c", entityId: "01J00000000000000000000000", x: 0, y: 0, width: 240, height: 160 }], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] }];
+	// Without the viewer's script there's nothing to export with.
+	const withoutScript = await startApp(data, "#boards");
+	withoutScript.querySelector<HTMLButtonElement>(".export-switch")!.click();
+	assert.equal(withoutScript.querySelector(`.export-dialog button[title="${text.exportView}"]`), null);
+
+	const app = await startApp(data, "#boards", memoryStorage(data), { viewScript: "viewer();" });
+	const downloads: Blob[] = [];
+	const createObjectURL = URL.createObjectURL;
+	URL.createObjectURL = (blob: Blob) => (downloads.push(blob), "blob:export");
+	try {
+		exportBoard(app, text.exportView);
+	} finally {
+		URL.createObjectURL = createObjectURL;
+	}
+	assert.equal(downloads[0]?.type, "text/html");
+	const html = await downloads[0]!.text();
+	assert.match(html, /<title>Shelf<\/title>/);
+	assert.match(html, /<script>viewer\(\);<\/script>/);
+	assert.match(html, /"name":"Dune"/);
+});
+
+test("the boards export the current board for draw.io", async () => {
+	const data = structuredClone(library) as { boards: unknown[] };
+	data.boards = [{ id: "b", name: "Shelf", cards: [{ id: "c", entityId: "01J00000000000000000000000", x: 0, y: 0, width: 240, height: 160 }], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] }];
+	const app = await startApp(data, "#boards");
+	const downloads: Blob[] = [];
+	const createObjectURL = URL.createObjectURL;
+	URL.createObjectURL = (blob: Blob) => (downloads.push(blob), "blob:export");
+	try {
+		exportBoard(app, text.exportDrawio);
+	} finally {
+		URL.createObjectURL = createObjectURL;
+	}
+	assert.equal(downloads[0]?.type, "application/xml");
+	const xml = await downloads[0]!.text();
+	assert.match(xml, /<diagram id="b" name="Shelf">/);
+	assert.match(xml, /<UserObject id="card-c" label="[^"]*Dune/);
+});
+
+test("with groups on the board, the draw.io export is a ZIP with one more file per group", async () => {
+	const data = structuredClone(library) as { boards: unknown[] };
+	const group = { id: "g", kind: "area", x: -24, y: -24, width: 480, height: 312, color: "#c4dafa", text: "Regal", textSize: "m" };
+	data.boards = [{ id: "b", name: "Shelf", cards: [{ id: "c", entityId: "01J00000000000000000000000", x: 0, y: 0, width: 240, height: 160 }], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [group] }];
+	const app = await startApp(data, "#boards");
+	const downloads: Blob[] = [];
+	const names: string[] = [];
+	const createObjectURL = URL.createObjectURL;
+	const click = HTMLAnchorElement.prototype.click;
+	URL.createObjectURL = (blob: Blob) => (downloads.push(blob), "blob:export");
+	HTMLAnchorElement.prototype.click = function () {
+		names.push(this.download);
+	};
+	try {
+		exportBoard(app, text.exportDrawio);
+	} finally {
+		URL.createObjectURL = createObjectURL;
+		HTMLAnchorElement.prototype.click = click;
+	}
+	assert.deepEqual([names[0], downloads[0]?.type], ["Shelf.zip", "application/zip"]);
+	const zip = new TextDecoder().decode(await downloads[0]!.arrayBuffer());
+	assert.match(zip, /Shelf\.drawio/);
+	assert.match(zip, /Regal\.drawio/);
+	assert.match(zip, /<mxCell id="area-g" value="Regal"/);
+});
+
+test("the workspace menu exports the workspace as a text file", async () => {
+	const root = await startApp(library);
+	const downloads: Blob[] = [];
+	const createObjectURL = URL.createObjectURL;
+	URL.createObjectURL = (blob: Blob) => (downloads.push(blob), "blob:export");
+	try {
+		root.querySelector<HTMLButtonElement>(`button[title="${text.exportText}"]`)!.click();
+	} finally {
+		URL.createObjectURL = createObjectURL;
+	}
+	assert.equal(downloads[0]?.type, "text/plain;charset=utf-8");
+	assert.match(await downloads[0]!.text(), /^## Book "Dune"$/m);
+});
+
+test("a workspace saved by a newer version warns that changes aren't saved, and offers a reload", async () => {
+	const root = await startApp({ version: 999, types: [], entities: [] });
+	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
+	assert.equal(banner.hidden, false);
+	assert.match(banner.textContent ?? "", new RegExp(text.loadNewerVersion.slice(0, 20)));
+	assert.ok(byText(banner, "button", text.reload));
+	assert.equal(banner.querySelector(`button`)?.textContent, text.reload); // nothing to dismiss
+});
+
+test("a save that collided warns of the conflict, not of a failing storage, and offers a reload", async () => {
+	// A storage that answers every unit as collided — the way the API's does when someone else saved it first.
+	const behind = memoryStorage();
+	behind.port.saveChanges = async (_id, changes) => ({ version: "9", collided: changes.map((c) => c.id) });
+	const root = await startApp(undefined, "#types", behind);
+	byText(root, "button", text.createNewType).click();
+	const typeForm = root.querySelector<HTMLFormElement>("#type-form")!;
+	typeInto(typeForm.querySelector(`input[placeholder="${text.typeNamePlaceholder}"]`)!, "Book");
+	byText(typeForm, "button", text.createType).click();
+	await settle();
+
+	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
+	assert.equal(banner.hidden, false);
+	assert.ok(banner.textContent!.includes(text.saveConflict));
+	assert.equal(banner.textContent!.includes(text.saveFailed), false); // honestly: not a storage problem
+	assert.ok(byText(banner, "button", text.reload));
+});
+
+/** What the page does when the tab takes the front again: it looks for a newer stand at once. */
+const lookNow = () => window.dispatchEvent(new Event("focus"));
+
+test("a stand saved elsewhere in between is noticed and offered with the reload button — nothing loads it on its own", async () => {
+	const root = await startApp(library);
+	await settle();
+	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
+	assert.equal(banner.hidden, true); // nobody else changed anything: no hint
+
+	storage.saveElsewhere(WS); // another tab saved this workspace in between
+	lookNow();
+	await settle();
+	assert.equal(banner.hidden, false);
+	assert.match(banner.textContent ?? "", new RegExp(text.changedElsewhere.slice(0, 20)));
+	assert.ok(byText(banner, "button", text.reload));
+
+	// The look didn't load anything: the page shows the stand it read, and the saved data wasn't run over.
+	assert.ok(byText(root, "td", "Dune"));
+	assert.deepEqual(storage.data(WS), library);
+});
+
+test("the tab hidden asks nothing: no eyes on it, nothing on the wire; visible again, it looks", async () => {
+	const root = await startApp(library);
+	const looks = storage.looks;
+	await settle();
+	const asked = looks();
+
+	// Nobody can see the tab: focus (whatever brought it there) may come and go, nothing is asked.
+	Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+	try {
+		document.dispatchEvent(new Event("visibilitychange"));
+		window.dispatchEvent(new Event("focus"));
+		await settle();
+		assert.equal(looks(), asked);
+
+		// Back in the front — the moment the user looks — the look goes out at once.
+		Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+		window.dispatchEvent(new Event("focus"));
+		await settle();
+		assert.equal(looks(), asked + 1);
+		assert.equal(root.querySelector<HTMLElement>(".problem-banner")!.hidden, true);
+	} finally {
+		Reflect.deleteProperty(document, "visibilityState");
+	}
+});
+
+test("drawing the page again and again starts no further timers: one watch for the page's whole life", async (t) => {
+	freshDom();
+	const started = t.mock.method(window, "setInterval");
+	const root = document.querySelector<HTMLElement>("#app")!;
+	await render(root, await createWorkspaces(memoryStorage(library).port, text.defaultWorkspaceName, activeWorkspacePreference));
+	assert.equal(started.mock.callCount(), 1);
+
+	// Whatever draws the page anew, none of it may start a watch of its own (or the page would ask faster and
+	// faster with every re-draw): a route switch, a form opening, a language change from the menu.
+	window.dispatchEvent(new Event("hashchange"));
+	assert.equal(started.mock.callCount(), 1);
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.edit).click();
+	assert.equal(started.mock.callCount(), 1);
+	setLanguage("de"); // a language change draws the page again, every label of it
+	window.dispatchEvent(new Event("hashchange"));
+	assert.equal(started.mock.callCount(), 1);
+	setLanguage("en");
+});
+
+/** Book entities in two sets: Dune and Emma tagged "Classic", Foundation untagged; and a board. */
+const tagged = {
+	...library,
+	boards: [{ id: "01J0000000000000000000000B", name: "Board 1" }],
+	entities: [
+		{ ...library.entities[0]!, tags: ["Classic"] },
+		{ id: "01J00000000000000000000001", typeId: "book", name: "Foundation", content: "", description: "", tags: [], values: {} },
+		{ id: "01J00000000000000000000002", typeId: "book", name: "Emma", content: "", description: "", tags: ["classic", "Romance"], values: {} },
+	],
+};
+/** The tag filter select in `scope`, if there is one. */
+const tagSelectIn = (scope: ParentNode | null) =>
+	[...(scope?.querySelectorAll<HTMLSelectElement>("select") ?? [])].find((s) => s.ariaLabel === sharedText.filterByTag) ?? null;
+const rowNames = (root: HTMLElement) => [...root.querySelectorAll("tbody tr")].map((tr) => tr.children[2]?.textContent);
+const choose = (select: HTMLSelectElement, value: string) => {
+	select.value = value;
+	select.dispatchEvent(new Event("change"));
+};
+
+test("the Entities page filters by tag, remembers it, tags new entities with it, and reorders among all of the type", async () => {
+	const root = await startApp(tagged, "#entities");
+	const tagSelect = () => tagSelectIn(root.querySelector(".section-header"))!;
+	assert.deepEqual([...tagSelect().options].map((o) => o.textContent), [sharedText.allTags, "Classic", "Romance"]);
+	choose(tagSelect(), "Classic");
+	assert.deepEqual(rowNames(root), ["Dune", "Emma"]);
+
+	// Emma moves above Dune, so before Foundation too, which the filter hides.
+	root.querySelectorAll<HTMLElement>("tbody .drag-handle")[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+	assert.deepEqual((await readSaved()).entities.map((e) => e.name), ["Emma", "Dune", "Foundation"]);
+
+	byText(root, "button", text.createNewEntity).click();
+	const tagsInput = [...root.querySelectorAll<HTMLInputElement>("#entity-form label.field input")].at(-1)!;
+	// Emma comes first now: the tag is spelled as on her, and the filter still shows the set.
+	assert.equal(tagsInput.value, "classic", "a new entity starts in the set shown");
+	assert.deepEqual(rowNames(root), ["Emma", "Dune"]);
+
+	goTo("#types");
+	goTo("#entities");
+	assert.equal(tagSelect().value, "classic", "remembered");
+});
+
+test("the board's side panel filters entities by tag", async () => {
+	const root = await startApp(tagged, "#boards");
+	const panelNames = () => [...root.querySelectorAll(".panel-list .panel-item")].map((n) => n.textContent?.trim());
+	assert.equal(panelNames().length, 3);
+	choose(tagSelectIn(root.querySelector(".panel-filters"))!, "Romance");
+	assert.deepEqual(panelNames(), ["Emma"]);
+});
+
+test("without tags in use there's no tag filter", async () => {
+	const root = await startApp(library, "#entities");
+	assert.equal(tagSelectIn(root), null);
+	goTo("#boards");
+	assert.equal(tagSelectIn(root), null);
+});
+
+test("Analyses: an analysis set up step by step lists the rows grouped, is saved, and shows the card and details of the entities it names", async () => {
+	const reference = (id: string, name: string, typeId: string, inverseLabel = "") => ({
+		id,
+		name,
+		kind: "reference",
+		options: [],
+		reference: { typeIds: [typeId], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel },
+		cardDisplay: "list",
+	});
+	// Entity ids are ULIDs (others are replaced on loading, losing the references to them).
+	const ids = { Build: ulid(), Sort: ulid(), Developer: ulid(), Delivery: ulid() };
+	const entity = (name: keyof typeof ids, typeId: string, values: Record<string, string> = {}) => ({
+		id: ids[name],
+		typeId,
+		name,
+		content: "",
+		description: "",
+		tags: [],
+		values,
+	});
+	const root = await startApp(
+		{
+			version: DATA_VERSION,
+			types: [
+				{ id: "activity", name: "Activity", color: "#c4dafa", contentTemplate: "", properties: [reference("role", "Responsible", "role"), reference("process", "Process", "process", "includes")] },
+				{ id: "role", name: "Role", color: "#f9c9c9", contentTemplate: "", properties: [] },
+				{ id: "process", name: "Process", color: "#c8ebbf", contentTemplate: "", properties: [] },
+			],
+			entities: [
+				entity("Build", "activity", { role: ids.Developer, process: ids.Delivery }),
+				entity("Sort", "activity", { process: ids.Delivery }),
+				entity("Developer", "role"),
+				entity("Delivery", "process"),
+			],
+			boards: [],
+		},
+		"#analysis",
+	);
+	assert.equal(root.querySelector(".tab.current")?.textContent, text.tabAnalysis);
+	assert.ok(byText(root, "p", text.analysisEmpty));
+
+	byText<HTMLButtonElement>(root, "button", text.newAnalysis).click();
+	const choose = (select: HTMLSelectElement, label: string) => {
+		select.value = [...select.options].find((o) => o.textContent === label)!.value;
+		select.dispatchEvent(new Event("change"));
+	};
+	choose(root.querySelector<HTMLSelectElement>(".analysis-meta select")!, "Activity");
+	byText<HTMLButtonElement>(root, "button", `+ ${text.addGroupLevel}`).click();
+	choose(root.querySelector<HTMLSelectElement>(".path-list .path-editor select")!, "Responsible → Role");
+	byText<HTMLButtonElement>(root, "button", `+ ${text.addColumn}`).click();
+	choose(root.querySelectorAll<HTMLSelectElement>(".path-list")[1]!.querySelector("select")!, "Process → Process");
+
+	const headings = [...root.querySelectorAll(".analysis-result h3")].map((h) => h.textContent);
+	assert.deepEqual(headings, [`Developer${text.analysisCount(1)}`, `${text.analysisNoValue("Responsible")}${text.analysisCount(1)}`]);
+	const rows = [...root.querySelectorAll(".analysis-result tbody tr")].map((tr) => [...tr.querySelectorAll("td")].map((td) => td.textContent));
+	assert.deepEqual(rows, [["Build", "Delivery"], ["Sort", "Delivery"]]);
+	assert.ok(byText(root, ".analysis-result .section-header button", text.exportAnalysisMarkdown), "the result can be exported");
+
+	const saved = await readSaved();
+	assert.deepEqual(saved.analyses.map(({ name, typeId, groups, columns }) => ({ name, typeId, groups, columns })), [
+		{
+			name: text.defaultAnalysisName(1),
+			typeId: "activity",
+			groups: [[{ propertyId: "role", direction: "forward" }]],
+			columns: [[{ propertyId: "process", direction: "forward" }]],
+		},
+	]);
+
+	// Hovering (or focusing) an entity shows its card; clicking it, its details beside, where Edit shows its form.
+	const delivery = byText<HTMLButtonElement>(root, ".analysis-result button", "Delivery");
+	delivery.dispatchEvent(new Event("focus"));
+	const preview = root.querySelector<HTMLElement>(".card-preview")!;
+	assert.equal(preview.hidden, false);
+	assert.equal(preview.querySelector(".card-title")?.textContent, "Delivery");
+	delivery.click();
+	const details = root.querySelector<HTMLElement>(".analysis-view .details-panel")!;
+	assert.equal(details.hidden, false);
+	assert.equal(details.querySelector(".details-title")?.textContent, "Delivery");
+	assert.equal(root.querySelectorAll(".entity-link.selected").length, 2, "both of its links in the result are marked");
+	// Its details name the activities the process includes (the other side of the references): clicking one shows that.
+	byText<HTMLButtonElement>(details, ".ref-tag", "Build").click();
+	assert.equal(details.querySelector(".details-title")?.textContent, "Build");
+	byText<HTMLButtonElement>(details, "button", text.edit).click();
+	const form = details.querySelector<HTMLFormElement>("#entity-form")!;
+	assert.equal(details.querySelector(".card-type")?.textContent, "Activity", "below the bar of its type");
+	form.querySelector<HTMLInputElement>("input")!.value = "Build it";
+	form.requestSubmit();
+	await settle();
+	assert.equal(location.hash, "#analysis", "it stays in the analysis");
+	assert.equal(details.querySelector(".details-title")?.textContent, "Build it");
+	assert.ok(byText(root, ".analysis-result button", "Build it"), "the result names it anew");
+});
+
+test("the settings switch the theme: dark or light on <html>, or none to follow the system, remembered in this browser", async () => {
+	const root = await startApp();
+	const select = byText(root, "#settings-menu label > span", text.theme).closest("label")!.querySelector("select")!;
+	assert.equal(select.value, "system");
+	assert.equal(document.documentElement.dataset.theme, undefined);
+
+	select.value = "dark";
+	select.dispatchEvent(new Event("change"));
+	assert.equal(document.documentElement.dataset.theme, "dark");
+	assert.equal(localStorage.getItem("ui-theme"), "dark");
+
+	select.value = "system";
+	select.dispatchEvent(new Event("change"));
+	assert.equal(document.documentElement.dataset.theme, undefined);
+	assert.equal(localStorage.getItem("ui-theme"), "system");
+});
+
+test("the settings let references on cards wrap instead of being cut off, remembered in this browser", async () => {
+	const root = await startApp();
+	const checkbox = () => byText(root, "#settings-menu label", text.wrapReferences).querySelector("input")!;
+	assert.equal(checkbox().checked, false);
+	assert.equal(document.documentElement.dataset.wrapReferences, undefined);
+
+	checkbox().click();
+	assert.equal(document.documentElement.dataset.wrapReferences, "");
+	assert.equal(localStorage.getItem("wrap-references"), "true");
+	assert.equal(checkbox().checked, true, "still checked once drawn anew");
+
+	checkbox().click();
+	assert.equal(document.documentElement.dataset.wrapReferences, undefined);
+	assert.equal(localStorage.getItem("wrap-references"), "false");
+});

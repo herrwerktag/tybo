@@ -1,4 +1,4 @@
-import { DATA_VERSION, type Change, type UnitStands } from "@tybo/core";
+import { DATA_VERSION, type Change, type UnitStands } from "@tybo/app/core";
 import type { Queries } from "./schema.js";
 import { storageOf } from "./units.js";
 

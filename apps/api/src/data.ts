@@ -1,4 +1,4 @@
-import { moveItem, type AppData, type WorkspaceInfo } from "@tybo/core";
+import { moveItem, type AppData, type WorkspaceInfo } from "@tybo/app/core";
 import { recordHistory } from "./history.js";
 import type { Queries, Sql } from "./schema.js";
 import { UNIT_STORAGES, assembleAppData } from "./units.js";

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize } from "node:path";
-import { DATA_VERSION, type Change, type SavedChanges, type WorkspaceInfo } from "@tybo/core";
+import { DATA_VERSION, type Change, type SavedChanges, type WorkspaceInfo } from "@tybo/app/core";
 import { parseChanges } from "./changes.js";
 import type { StoredWorkspace } from "./data.js";
 import type { HistoryEntry, HistoryPage } from "./history.js";
