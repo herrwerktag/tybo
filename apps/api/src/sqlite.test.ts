@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { DATA_VERSION, changesBetween, type AppData } from "@tybo/core";
+import { DATA_VERSION, changesBetween, type AppData } from "@tybo/app/core";
 import { DatabaseSync } from "node:sqlite";
 import { SQLITE_MIGRATIONS, sqliteStorage } from "./sqlite.js";
 import { call, startApp } from "./test-server.js";

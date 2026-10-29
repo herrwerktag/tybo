@@ -8,7 +8,7 @@
 	"exports": {
 		"./core": "./src/core.ts",
 		"./ui": "./src/ui.ts",
-		"./test-dom": "./src/shared/ui/test-dom.ts"
+		"./testing": "./src/legacy/core/memory-port.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.core.json && tsc --noEmit -p tsconfig.ui.json",

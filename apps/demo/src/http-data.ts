@@ -1,4 +1,4 @@
-import { DATA_VERSION, type Change, type DataPort, type SavedChanges, type WorkspaceInfo } from "@tybo/core";
+import { DATA_VERSION, type Change, type DataPort, type SavedChanges, type WorkspaceInfo } from "@tybo/app/core";
 
 /**
  * The browser app's port into the storage API (apps/api), which keeps the workspaces and their data in

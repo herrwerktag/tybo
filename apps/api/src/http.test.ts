@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DATA_VERSION, moveItem } from "@tybo/core";
+import { DATA_VERSION, moveItem } from "@tybo/app/core";
 import type { HistoryPage } from "./history.js";
 import { DEFAULT_PORT, portFromEnv, type Api } from "./http.js";
 import { call, startApp } from "./test-server.js";

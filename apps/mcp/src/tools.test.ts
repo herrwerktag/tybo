@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DATA_VERSION, createStore } from "@tybo/core";
-import { memoryDataPort } from "@tybo/core/testing";
+import { DATA_VERSION, createStore } from "@tybo/app/core";
+import { memoryDataPort } from "@tybo/app/testing";
 import { ToolError } from "./protocol.js";
 import { tyboTools } from "./tools.js";
 

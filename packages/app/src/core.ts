@@ -1,4 +1,2 @@
-export * from "./shared/core/geometry.js";
-export * from "./shared/core/list.js";
-export * from "./shared/core/ulid.js";
-export * from "./shared/core/changes.js";
+export * from "./shared/core/index.js";
+export * from "./legacy/core/index.js";
