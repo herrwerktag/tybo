@@ -1,4 +1,4 @@
-import { freshDom } from "./test-dom.js";
+import { freshDom } from "@tybo/app/test-dom";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { language, setLanguage } from "./i18n.js";

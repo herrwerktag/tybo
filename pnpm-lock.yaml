@@ -226,7 +226,26 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  packages/app:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.3
+        version: 26.6.3
+      happy-dom:
+        specifier: ^20.14.5
+        version: 20.14.5
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
   packages/core:
+    dependencies:
+      '@tybo/app':
+        specifier: workspace:*
+        version: link:../app
     devDependencies:
       '@types/node':
         specifier: ^26.6.3
@@ -240,6 +259,9 @@ importers:
 
   packages/ui:
     dependencies:
+      '@tybo/app':
+        specifier: workspace:*
+        version: link:../app
       '@tybo/core':
         specifier: workspace:*
         version: link:../core

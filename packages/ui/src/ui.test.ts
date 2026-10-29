@@ -1,4 +1,4 @@
-import { freshDom } from "./test-dom.js";
+import { freshDom } from "@tybo/app/test-dom";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setLanguage, text } from "./i18n.js";
@@ -6,7 +6,7 @@ import type { AppData } from "@tybo/core";
 import { render } from "./ui.js";
 import { DATA_VERSION, createWorkspaces, ulid } from "@tybo/core";
 import { memoryDataPort } from "@tybo/core/testing";
-import { activeWorkspacePreference } from "./preferences.js";
+import { activeWorkspacePreference, sharedText } from "@tybo/app/ui";
 
 /** Lets work started by a click or an event finish first (the stores open and save through the async port). */
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve));
@@ -579,7 +579,7 @@ const tagged = {
 };
 /** The tag filter select in `scope`, if there is one. */
 const tagSelectIn = (scope: ParentNode | null) =>
-	[...(scope?.querySelectorAll<HTMLSelectElement>("select") ?? [])].find((s) => s.ariaLabel === text.filterByTag) ?? null;
+	[...(scope?.querySelectorAll<HTMLSelectElement>("select") ?? [])].find((s) => s.ariaLabel === sharedText.filterByTag) ?? null;
 const rowNames = (root: HTMLElement) => [...root.querySelectorAll("tbody tr")].map((tr) => tr.children[2]?.textContent);
 const choose = (select: HTMLSelectElement, value: string) => {
 	select.value = value;
@@ -589,7 +589,7 @@ const choose = (select: HTMLSelectElement, value: string) => {
 test("the Entities page filters by tag, remembers it, tags new entities with it, and reorders among all of the type", async () => {
 	const root = await startApp(tagged, "#entities");
 	const tagSelect = () => tagSelectIn(root.querySelector(".section-header"))!;
-	assert.deepEqual([...tagSelect().options].map((o) => o.textContent), [text.allTags, "Classic", "Romance"]);
+	assert.deepEqual([...tagSelect().options].map((o) => o.textContent), [sharedText.allTags, "Classic", "Romance"]);
 	choose(tagSelect(), "Classic");
 	assert.deepEqual(rowNames(root), ["Dune", "Emma"]);
 

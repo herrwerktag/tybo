@@ -1,16 +1,6 @@
 /** Geometry for connector lines between canvas cards, in world coordinates. */
 
-export interface Point {
-	x: number;
-	y: number;
-}
-
-export interface Rect {
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-}
+import type { Point, Rect } from "@tybo/app/core";
 
 export type Side = "left" | "right" | "top" | "bottom";
 

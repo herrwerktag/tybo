@@ -1,5 +1,4 @@
-import { isUlid, ulid } from "./ulid.js";
-import type { Point, Rect } from "./connectors.js";
+import { isUlid, moveItem, ulid, type Point, type Rect } from "@tybo/app/core";
 import { changesBetween } from "./changes.js";
 import type { DataPort } from "./ports.js";
 import { clampZoom, defaultViewport, visibleRect, type Viewport } from "./viewport.js";
@@ -12,7 +11,6 @@ import {
 	effectiveCardDisplay,
 	entityTypeMap,
 	migrateValues,
-	moveItem,
 	nextTypeColor,
 	canTakeMore,
 	freeSpot,

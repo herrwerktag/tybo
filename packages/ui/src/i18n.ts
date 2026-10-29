@@ -1,14 +1,8 @@
 import type { Tool } from "./drawings.js";
 import type { CardDisplay, LineArrow, PropertyKind, TextSize, ValidationError } from "@tybo/core";
-import { readPreference, writePreference } from "./preferences.js";
+import { messages } from "@tybo/app/ui";
 
-export type Language = "en" | "de";
-
-/** Each language is listed by its own name, so it's recognizable whatever the current language. */
-export const LANGUAGES: readonly { code: Language; name: string }[] = [
-	{ code: "en", name: "English" },
-	{ code: "de", name: "Deutsch" },
-];
+export { LANGUAGES, language, setLanguage, type Language } from "@tybo/app/ui";
 
 const en = {
 	// Navigation and settings
@@ -119,7 +113,6 @@ const en = {
 	confirmDeleteType: (name: string, count: number) => `Delete type "${name}" and its ${count} entities?`,
 
 	// Property cards in the type form
-	dragToReorder: "Drag to reorder, or use the arrow keys",
 	moveProperty: (label: string) => `Move property ${label}; use the arrow keys`,
 	moveType: (name: string) => `Move type ${name}; use the arrow keys`,
 	moveEntity: (name: string) => `Move ${name}; use the arrow keys`,
@@ -195,7 +188,6 @@ const en = {
 	// Canvas
 	showEntities: "Show entities and drawings",
 	hideEntities: "Hide entities and drawings",
-	resizePanel: "Drag to change the width; double-click to reset",
 	moreControls: "More controls",
 	dragOntoCanvas: "Drag onto the canvas.",
 	noEntitiesYet: "No entities yet. Create some in the Data view.",
@@ -203,8 +195,6 @@ const en = {
 	searchEntities: "Search titles…",
 	filterByType: "Filter by type",
 	allTypes: "All types",
-	filterByTag: "Filter by tag",
-	allTags: "All tags",
 	newEntityButton: "+ Entity",
 	newEntityHint: "Create an entity of any type, with its card on this board",
 	newEntityTitle: "New entity",
@@ -409,7 +399,6 @@ const de: Messages = {
 		`${name} kann nicht gelöscht werden: wird verwendet von ${usedBy}. Entferne oder ändere zuerst diese Eigenschaften.`,
 	confirmDeleteType: (name, count) => `Typ „${name}“ und seine ${count} Entitäten löschen?`,
 
-	dragToReorder: "Ziehen zum Umsortieren, oder die Pfeiltasten verwenden",
 	moveProperty: (label) => `Eigenschaft ${label} verschieben; Pfeiltasten verwenden`,
 	moveType: (name) => `Typ ${name} verschieben; Pfeiltasten verwenden`,
 	moveEntity: (name) => `${name} verschieben; Pfeiltasten verwenden`,
@@ -484,7 +473,6 @@ const de: Messages = {
 
 	showEntities: "Entitäten und Zeichnungen einblenden",
 	hideEntities: "Entitäten und Zeichnungen ausblenden",
-	resizePanel: "Ziehen ändert die Breite, Doppelklick setzt sie zurück",
 	moreControls: "Weitere Bedienelemente",
 	dragOntoCanvas: "Auf den Canvas ziehen.",
 	noEntitiesYet: "Noch keine Entitäten. Lege welche in der Datenansicht an.",
@@ -492,8 +480,6 @@ const de: Messages = {
 	searchEntities: "Titel suchen…",
 	filterByType: "Nach Typ filtern",
 	allTypes: "Alle Typen",
-	filterByTag: "Nach Tag filtern",
-	allTags: "Alle Tags",
 	newEntityButton: "+ Entität",
 	newEntityHint: "Eine Entität beliebigen Typs anlegen, mit ihrer Karte auf diesem Board",
 	newEntityTitle: "Neue Entität",
@@ -588,24 +574,5 @@ const de: Messages = {
 	analysisExportMentioned: "In den Spalten genannt",
 };
 
-const MESSAGES: Record<Language, Messages> = { en, de };
-const LANGUAGE_KEY = "ui-language";
-
-function initialLanguage(): Language {
-	const saved = readPreference(LANGUAGE_KEY);
-	if (saved === "en" || saved === "de") return saved;
-	// First visit: follow the browser.
-	return navigator.language.toLowerCase().startsWith("de") ? "de" : "en";
-}
-
-/** The current UI language and its messages; ES module bindings, so importers always see the current values. */
-export let language: Language = initialLanguage();
-export let text: Messages = MESSAGES[language];
-document.documentElement.lang = language;
-
-export function setLanguage(next: Language): void {
-	language = next;
-	text = MESSAGES[next];
-	document.documentElement.lang = next;
-	writePreference(LANGUAGE_KEY, next);
-}
+/** The current language's messages; setLanguage (@tybo/app/ui) swaps them. */
+export const text = messages<Messages>({ en, de });

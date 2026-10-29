@@ -14,12 +14,12 @@ import {
 } from "@tybo/core";
 import { analysisMarkdownFiles, pathLabel } from "./analysis-export.js";
 import { DETAILS_WIDTH_KEY } from "./canvas.js";
-import { downloadFile, el, resizeHandle, safeFileName, typeDot } from "./dom.js";
+import { downloadFile, el, resizeHandle, safeFileName, typeDot } from "@tybo/app/ui";
 import { createCardPreview, entityDetails } from "./entity-card.js";
 import { showEntityEditor } from "./entity-form.js";
 import { text } from "./i18n.js";
-import { readPreference, writePreference } from "./preferences.js";
-import { zipFiles } from "./zip.js";
+import { readPreference, writePreference } from "@tybo/app/ui";
+import { zipFiles } from "@tybo/app/ui";
 
 /** The analysis open in the Analyses tab. */
 const SELECTED_KEY = "analysis-selected";

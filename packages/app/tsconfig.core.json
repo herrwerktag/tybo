@@ -1,0 +1,12 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		// No browser type library and no Node types: the core must stay usable outside the browser (e.g. against a
+		// database); the few platform globals it uses are typed in src/shared/core/globals.d.ts. A core file that
+		// reaches for the DOM, directly or through a UI file it imports, fails here.
+		"types": [],
+		"lib": ["esnext"]
+	},
+	"include": ["src/core.ts", "src/**/core/**/*.ts", "src/**/core.ts"],
+	"exclude": ["src/**/*.test.ts"]
+}

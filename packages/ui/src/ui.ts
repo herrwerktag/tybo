@@ -28,14 +28,14 @@ import {
 import { canvasView } from "./canvas.js";
 import { entityForm } from "./entity-form.js";
 import { analysisView } from "./analysis.js";
-import { downloadFile, dragHandle, el, reorderable, safeFileName, svgEl, tagFilter, typeDot } from "./dom.js";
+import { downloadFile, dragHandle, el, reorderable, safeFileName, svgEl, tagFilter, typeDot } from "@tybo/app/ui";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
 import { THEMES, setTheme, theme, type Theme } from "./theme.js";
 import { setWrapReferences, wrapReferences } from "./wrap-references.js";
 import { standaloneViewHtml } from "./standalone.js";
 import { workspaceText } from "./text-export.js";
 import { boardDrawioFiles } from "./drawio-export.js";
-import { zipFiles } from "./zip.js";
+import { zipFiles } from "@tybo/app/ui";
 import type { Store } from "@tybo/core";
 import { exportWorkspace, readWorkspaceFile, type Workspaces } from "@tybo/core";
 

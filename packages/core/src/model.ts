@@ -1,4 +1,4 @@
-import type { Point, Rect } from "./connectors.js";
+import type { Point, Rect } from "@tybo/app/core";
 import type { Viewport } from "./viewport.js";
 
 export type PropertyKind = "text" | "options" | "reference";
@@ -528,14 +528,6 @@ export function filterEntities<T extends Pick<Entity, "name" | "typeId" | "tags"
 /** The tags in use, sorted; spelled as where they first appear (tags differing only in case count as one). */
 export function entityTags(entities: readonly Pick<Entity, "tags">[]): string[] {
 	return parseTags(entities.flatMap((e) => e.tags).join(",")).sort((a, b) => a.localeCompare(b));
-}
-
-/** Returns a copy of the list with the item at `from` moved to index `to`. */
-export function moveItem<T>(items: readonly T[], from: number, to: number): T[] {
-	const result = [...items];
-	const [item] = result.splice(from, 1);
-	if (item !== undefined) result.splice(Math.max(0, Math.min(to, result.length)), 0, item);
-	return result;
 }
 
 /** Maps each entity id to its type id, so reference values can be checked. */

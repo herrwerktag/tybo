@@ -1,4 +1,4 @@
-import { readPreference, writePreference } from "./preferences.js";
+import { readPreference, writePreference } from "@tybo/app/ui";
 
 const WRAP_REFERENCES_KEY = "wrap-references";
 

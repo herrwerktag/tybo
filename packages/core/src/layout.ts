@@ -1,4 +1,4 @@
-import type { Point } from "./connectors.js";
+import type { Point } from "@tybo/app/core";
 import { DEFAULT_CARD_SIZE, GRID_SIZE, referencedIds, snapToGrid, type Entity, type EntityType } from "./model.js";
 
 /** Space between two columns, and between two cards of a column. */

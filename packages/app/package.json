@@ -1,0 +1,24 @@
+{
+	"name": "@tybo/app",
+	"version": "1.0.0",
+	"description": "tybo, feature by feature: each feature's model, UI and storage side by side",
+	"license": "MIT",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./core": "./src/core.ts",
+		"./ui": "./src/ui.ts",
+		"./test-dom": "./src/shared/ui/test-dom.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.core.json && tsc --noEmit -p tsconfig.ui.json",
+		"test": "tsx --test 'src/**/*.test.ts'",
+		"build": "tsc --noEmit -p tsconfig.core.json && tsc --noEmit -p tsconfig.ui.json"
+	},
+	"devDependencies": {
+		"@types/node": "^26.6.3",
+		"happy-dom": "^20.14.5",
+		"tsx": "^4.23.15",
+		"typescript": "^7.0.2"
+	}
+}

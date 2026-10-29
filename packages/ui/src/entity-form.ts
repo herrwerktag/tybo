@@ -10,7 +10,7 @@ import {
 	type PropertyValue,
 	type Store,
 } from "@tybo/core";
-import { el } from "./dom.js";
+import { el } from "@tybo/app/ui";
 import { detailsBar } from "./entity-card.js";
 import { text } from "./i18n.js";
 

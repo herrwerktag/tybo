@@ -1,4 +1,4 @@
-import "./test-dom.js";
+import "@tybo/app/test-dom";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AppData, Board, PropertyDef } from "@tybo/core";

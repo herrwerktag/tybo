@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { TYPE_COLORS, type AppData, type DraftProperty } from "./model.js";
 import { memoryDataPort } from "./memory-port.js";
 import { DATA_VERSION, REFERENCE_SCREEN, MIGRATIONS, createStore, migrate, type Store } from "./store.js";
-import { isUlid } from "./ulid.js";
+import { isUlid } from "@tybo/app/core";
 
 /** Lets background saves finish and report how they went (a failed save flips `problems.saveFailed` only then). */
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve));

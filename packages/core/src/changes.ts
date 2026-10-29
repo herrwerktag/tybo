@@ -1,5 +1,5 @@
 import type { Analysis, AppData, CanvasCard, Drawing, Entity, EntityType } from "./model.js";
-import type { Rect } from "./connectors.js";
+import type { Rect } from "@tybo/app/core";
 import type { Viewport } from "./viewport.js";
 
 /**

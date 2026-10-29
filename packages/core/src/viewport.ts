@@ -1,4 +1,4 @@
-import type { Rect } from "./connectors.js";
+import type { Rect } from "@tybo/app/core";
 
 /** Pan and zoom of the canvas: a world point p is drawn at screen position p * zoom + (x, y). */
 export interface Viewport {

@@ -13,9 +13,9 @@ import {
 	type EntityType,
 	type Store,
 } from "@tybo/core";
-import { el } from "./dom.js";
+import { el } from "@tybo/app/ui";
 import { text } from "./i18n.js";
-import { renderMarkdown } from "./markdown.js";
+import { renderMarkdown } from "@tybo/app/ui";
 
 /** A read-only card shown while hovering or focusing an entity's tag or link (see createCardPreview). */
 export interface CardPreview {
