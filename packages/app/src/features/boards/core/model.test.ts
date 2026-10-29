@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { FRAME_ASPECT, frameInside, frameShape, placeBeside, snapToGrid } from "./model.js";
+import { snapToGrid } from "../../data/core/model.js";
+import { FRAME_ASPECT, frameInside, frameShape, placeBeside } from "./model.js";
 
 test("placeBeside puts a card right of the source, moved down past the cards in the way", () => {
 	const source = { x: 0, y: 0, width: 240, height: 168 };

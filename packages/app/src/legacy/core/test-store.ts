@@ -2,7 +2,9 @@
 import assert from "node:assert/strict";
 import type { AppData, DraftProperty } from "./model.js";
 import { memoryDataPort } from "./memory-port.js";
-import { DATA_VERSION, REFERENCE_SCREEN, createStore, type Store } from "./store.js";
+import { DATA_VERSION, createStore, type Store } from "./store.js";
+import { REFERENCE_SCREEN } from "../../features/boards/core.js";
+import { BOARD_LISTS } from "../../features.core.js";
 
 /** Lets background saves finish and report how they went (a failed save flips `problems.saveFailed` only then). */
 export const settle = () => new Promise<void>((resolve) => setTimeout(resolve));
@@ -23,6 +25,9 @@ export const open = async (storage: ReturnType<typeof memoryStorage>) => {
 	return createStore(storage.port, WS);
 };
 
+/** The features' lists of a board with nothing in them (see `BoardList`). */
+export const noLists = Object.fromEntries(BOARD_LISTS.map(({ key }) => [key, []]));
+
 /** Checks for fresh data: no types or entities, and one empty default board. */
 export function assertEmpty(data: AppData) {
 	assert.deepEqual(data.types, []);
@@ -34,7 +39,7 @@ export function assertEmpty(data: AppData) {
 		cards: [],
 		viewport: { x: 0, y: 0, zoom: 1 },
 		viewFrame: { x: 0, y: 0, ...REFERENCE_SCREEN },
-		drawings: [],
+		...noLists,
 	});
 }
 

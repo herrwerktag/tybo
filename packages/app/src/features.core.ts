@@ -1,11 +1,13 @@
 import { changesOf, normalizedParts, storedParts, unitStandsOf, type Change, type DataPart, type UnitKind, type UnitStands } from "./shared/core/index.js";
-import { BOARD_UNIT, CARD_UNIT, DRAWING_UNIT } from "./legacy/core/changes.js";
+import { DRAWING_LIST, DRAWING_UNIT } from "./legacy/core/drawings.js";
 import { ENTITY_UNIT, TYPE_UNIT } from "./features/data/core.js";
 import type { AppData } from "./legacy/core/model.js";
 import { ANALYSES_PART, ANALYSIS_UNIT } from "./features/analyses/core.js";
+import { BOARD_UNIT, CARD_UNIT, type BoardList } from "./features/boards/core.js";
 
 export * from "./features/data/core.js";
 export * from "./features/analyses/core.js";
+export * from "./features/boards/core.js";
 
 /**
  * The features' parts of the core, in one place: a feature joins with a line here, and leaves without a trace
@@ -17,6 +19,9 @@ export const UNIT_KINDS: readonly UnitKind<AppData, any>[] = [TYPE_UNIT, ENTITY_
 
 /** The features' own parts of the app's data (see `DataPart`). */
 export const DATA_PARTS: readonly DataPart[] = [ANALYSES_PART];
+
+/** The features' own lists on each board, next to its cards (see `BoardList`). */
+export const BOARD_LISTS: readonly BoardList[] = [DRAWING_LIST];
 
 /** What the features' parts make of the app's data. */
 export type FeatureData = Omit<AppData, "types" | "entities" | "boards">;

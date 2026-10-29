@@ -1,4 +1,4 @@
-import type { Rect } from "../../shared/core/index.js";
+import type { Rect } from "../../../shared/core/index.js";
 
 /** Pan and zoom of the canvas: a world point p is drawn at screen position p * zoom + (x, y). */
 export interface Viewport {

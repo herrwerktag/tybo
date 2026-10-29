@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Rect } from "../../shared/core/index.js";
+import type { Rect } from "../../../shared/core/index.js";
 import { connector } from "./connectors.js";
 import { layeredLayout } from "./layout.js";
-import { DEFAULT_CARD_SIZE, type PropertyDef } from "./model.js";
+import { DEFAULT_CARD_SIZE, type PropertyDef } from "../../data/core/model.js";
 
 /** A reference property `id` pointing at entities of `typeId`, several allowed. */
 const points = (id: string, typeId: string): PropertyDef => ({

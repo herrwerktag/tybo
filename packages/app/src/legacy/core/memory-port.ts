@@ -1,6 +1,7 @@
 import { moveItem, untouched, withChanges, type Change } from "../../shared/core/index.js";
-import { UNIT_KINDS, storedFeatureData, unitStands } from "../../features.core.js";
-import type { AppData, Board } from "./model.js";
+import { BOARD_LISTS, UNIT_KINDS, storedFeatureData, unitStands } from "../../features.core.js";
+import type { AppData } from "./model.js";
+import { storedLists, type Board } from "../../features/boards/core.js";
 import type { DataPort, SavedChanges, WorkspaceInfo } from "../../shared/core/index.js";
 
 /** One workspace as the memory holds it: its data as saved (in whatever shape a test put there), and the
@@ -107,7 +108,7 @@ function asAppData(data: Record<string, unknown>): AppData {
 	return {
 		types: list(data.types),
 		entities: list(data.entities),
-		boards: list(data.boards).map((board: Partial<Board>) => ({ ...board, cards: list(board.cards), drawings: list(board.drawings) })),
+		boards: list(data.boards).map((board: Partial<Board>) => ({ ...board, cards: list(board.cards), ...storedLists(BOARD_LISTS, board) })),
 		...storedFeatureData(data),
 	} as AppData;
 }

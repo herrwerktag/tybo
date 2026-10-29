@@ -19,7 +19,7 @@ pnpm-Monorepo mit TypeScript:
 
 ### Features
 
-Ein Feature liegt mit allen Schichten in einem Ordner unter `packages/app/src/features/` (bisher: `data` für Typen und Entitäten, `analyses`):
+Ein Feature liegt mit allen Schichten in einem Ordner unter `packages/app/src/features/` (bisher: `data` für Typen und Entitäten, `analyses`, `boards`):
 `core.ts` (Modell, Store-Funktionen, Einheit und Datenteil), `ui.ts` (Seite), `api.ts` (Speicherung in Postgres
 und SQLite), `mcp.ts` (Werkzeuge), `texts.ts` (Texte en/de), eigenes CSS und die Tests daneben. Die Laufzeit folgt
 dem Namen: `core` ohne DOM, `ui` im Browser, `api` und `mcp` in Node (je eine tsconfig prueft das).
@@ -27,7 +27,8 @@ dem Namen: `core` ohne DOM, `ui` im Browser, `api` und `mcp` in Node (je eine ts
 Eingehaengt wird ein Feature mit je einer Zeile in `features.core.ts`, `features.ui.ts`, `features.api.ts` und
 `features.mcp.ts`; das CSS findet die Demo von selbst. In der Oberflaeche kann ein Feature eine Seite mit Tab
 beisteuern, Eintraege im Arbeitsbereich-Menue, eine Option fuer neue Arbeitsbereiche und eine Einstellung (siehe
-`ShellParts` in `shared/ui/shell.ts`). Die Huelle selbst (Store-Kern, Arbeitsbereiche, Top-Bar) liegt in `shared/`. Global bleiben nur die Migrationen (Datenformat und
+`ShellParts` in `shared/ui/shell.ts`). Auf jedem Board kann ein Feature eine eigene Liste neben den Karten fuehren
+(`BOARD_LISTS` in `features.core.ts`, siehe `BoardList`), so wie die Zeichnungen. Die Huelle selbst (Store-Kern, Arbeitsbereiche, Top-Bar) liegt in `shared/`. Global bleiben nur die Migrationen (Datenformat und
 Datenbankschema), die immer nur wachsen. Was mehrere Features nutzen, liegt in `shared/`; `legacy/` ist der Teil,
 der noch Feature fuer Feature in `features/` umzieht.
 
