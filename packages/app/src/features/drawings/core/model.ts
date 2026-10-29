@@ -1,10 +1,10 @@
-import { ulid, type StoreCore, type UnitKind } from "../../shared/core/index.js";
-import { TYPE_COLORS } from "../../features/data/core/model.js";
-import { withBoardList, type Board, type BoardList } from "../../features/boards/core.js";
-import type { AppData } from "./model.js";
+import type { UnitKind } from "../../../shared/core/index.js";
+import type { AppData } from "../../../legacy/core/model.js";
+import { TYPE_COLORS } from "../../data/core.js";
+import { withBoardList, type BoardList } from "../../boards/core.js";
 
 /** Drawings on the boards: text boxes, areas and images, a list of each board's own (see `BoardList`). */
-declare module "../../features/boards/core/model.js" {
+declare module "../../boards/core/model.js" {
 	interface Board {
 		/** Text boxes, groups and images, drawn behind the cards; later ones on top. */
 		drawings: Drawing[];
@@ -116,29 +116,3 @@ export const DRAWING_UNIT: UnitKind<AppData, Drawing> = {
 	// A new board starts without drawings.
 	settle: (data) => ({ ...data, boards: data.boards.map((board) => ({ ...board, drawings: board.drawings ?? [] })) }),
 };
-
-/** The changes to the drawings, on the store of the app's data. */
-export function drawingOps(core: StoreCore<AppData>) {
-	/** Applies fn to the board holding the drawing. */
-	function updateDrawingBoard(drawingId: string, fn: (board: Board) => Board): void {
-		const board = core.data.boards.find((b) => b.drawings.some((d) => d.id === drawingId));
-		if (board) core.change({ ...core.data, boards: core.data.boards.map((b) => (b.id === board.id ? fn(b) : b)) });
-	}
-
-	return {
-		addDrawing(boardId: string, drawing: NewDrawing): Drawing {
-			const added = { ...drawing, id: ulid() } as Drawing;
-			core.change({ ...core.data, boards: core.data.boards.map((b) => (b.id === boardId ? { ...b, drawings: [...b.drawings, added] } : b)) });
-			return added;
-		},
-
-		/** Replaces the drawing with the same id (on whichever board it is). */
-		replaceDrawing(drawing: Drawing): void {
-			updateDrawingBoard(drawing.id, (b) => ({ ...b, drawings: b.drawings.map((d) => (d.id === drawing.id ? drawing : d)) }));
-		},
-
-		removeDrawing(drawingId: string): void {
-			updateDrawingBoard(drawingId, (b) => ({ ...b, drawings: b.drawings.filter((d) => d.id !== drawingId) }));
-		},
-	};
-}

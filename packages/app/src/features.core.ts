@@ -1,13 +1,14 @@
 import { changesOf, normalizedParts, storedParts, unitStandsOf, type Change, type DataPart, type UnitKind, type UnitStands } from "./shared/core/index.js";
-import { DRAWING_LIST, DRAWING_UNIT } from "./legacy/core/drawings.js";
 import { ENTITY_UNIT, TYPE_UNIT } from "./features/data/core.js";
 import type { AppData } from "./legacy/core/model.js";
 import { ANALYSES_PART, ANALYSIS_UNIT } from "./features/analyses/core.js";
 import { BOARD_UNIT, CARD_UNIT, type BoardList } from "./features/boards/core.js";
+import { DRAWING_LIST, DRAWING_UNIT } from "./features/drawings/core.js";
 
 export * from "./features/data/core.js";
 export * from "./features/analyses/core.js";
 export * from "./features/boards/core.js";
+export * from "./features/drawings/core.js";
 
 /**
  * The features' parts of the core, in one place: a feature joins with a line here, and leaves without a trace

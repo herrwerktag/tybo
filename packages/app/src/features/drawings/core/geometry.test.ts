@@ -10,8 +10,8 @@ import {
 	normalizeRect,
 	resizeBox,
 	resizeImage,
-} from "./drawings.js";
-import type { BoxDrawing, ImageDrawing } from "../core/index.js";
+} from "./geometry.js";
+import type { BoxDrawing, ImageDrawing } from "./model.js";
 
 const box: BoxDrawing = { id: "b", kind: "textbox", x: 100, y: 100, width: 200, height: 100, color: "#dcdcdc", text: "", textSize: "m" };
 const image: ImageDrawing = { id: "i", kind: "image", x: 100, y: 100, width: 200, height: 100, src: "data:image/png;base64," };

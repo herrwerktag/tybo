@@ -1,18 +1,16 @@
 import { uniqueFileNames } from "../../shared/ui/index.js";
-import { areaContents } from "./drawings.js";
+import { areaContents, isArea, type BoxDrawing } from "../../features/drawings/core.js";
 import { text } from "./i18n.js";
 import { renderMarkdown } from "../../shared/ui/index.js";
 import {
 	cardRows,
 	effectiveCardDisplay,
 	inverseCardRows,
-	isArea,
 	nearest,
 	placeholderProperty,
 	referencedIds,
 	type AppData,
 	type Board,
-	type BoxDrawing,
 	type CanvasCard,
 	type CardRow,
 	type Entity,

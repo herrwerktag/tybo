@@ -1,9 +1,9 @@
 import type { AppData } from "./legacy/core/model.js";
-import { DRAWING_STORAGE } from "./legacy/api/units.js";
 import { ENTITY_STORAGE, TYPE_STORAGE } from "./features/data/api.js";
 import type { UnitStorage } from "./shared/api/index.js";
 import { ANALYSIS_STORAGE } from "./features/analyses/api.js";
 import { BOARD_STORAGE, CARD_STORAGE } from "./features/boards/api.js";
+import { DRAWING_STORAGE } from "./features/drawings/api.js";
 
 /**
  * The features' parts of the storage, in one place: a feature joins with a line here, and leaves without a trace

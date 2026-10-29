@@ -1,7 +1,6 @@
 import { createStoreCore, type DataFormat, type DataPort } from "../../shared/core/index.js";
 import { BOARD_LISTS, changesBetween, dataOps, keepWellFormed, normalizeEntityData, normalizedFeatureData, reconcileValues, storedFeatureData } from "../../features.core.js";
 import { boardOps, keepViewports, newBoard, normalizeBoards, pruneCards, storedBoards } from "../../features/boards/core.js";
-import { drawingOps } from "./drawings.js";
 import type { AppData } from "./model.js";
 
 export type Store = Awaited<ReturnType<typeof createStore>>;
@@ -121,5 +120,5 @@ export const APP_FORMAT: DataFormat<AppData> = {
  * the changes the app makes to it. */
 export async function createStore(port: DataPort, workspaceId: string) {
 	const core = await createStoreCore(port, workspaceId, APP_FORMAT);
-	return Object.assign(core, dataOps(core, pruneCards), boardOps(core, BOARD_LISTS), drawingOps(core));
+	return Object.assign(core, dataOps(core, pruneCards), boardOps(core, BOARD_LISTS));
 }
