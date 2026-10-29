@@ -1,8 +1,8 @@
-import { freshDom } from "./test-dom.js";
+import { freshDom } from "@tybo/app/test-dom";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { canvasView } from "./canvas.js";
-import { CLICK_TOLERANCE } from "./dom.js";
+import { CLICK_TOLERANCE } from "@tybo/app/ui";
 import { text } from "./i18n.js";
 import { createStore, DATA_VERSION, frameInside, newReference, visibleRect, type Store } from "@tybo/core";
 import { memoryDataPort } from "@tybo/core/testing";

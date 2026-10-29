@@ -1,4 +1,4 @@
-import { text } from "./i18n.js";
+import { text } from "./texts.js";
 import { readPreference, writePreference } from "./preferences.js";
 
 /** Creates an element with the given properties and children. Strings become text nodes, so user text is never parsed as HTML. */

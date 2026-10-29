@@ -1,5 +1,5 @@
 import type { Point } from "@tybo/core";
-import { CLICK_TOLERANCE, el, svgEl, trackPointer } from "./dom.js";
+import { CLICK_TOLERANCE, el, svgEl, trackPointer } from "@tybo/app/ui";
 import {
 	MIN_BOX_SIZE,
 	drawingBounds,
@@ -12,7 +12,7 @@ import {
 	type Tool,
 } from "./drawings.js";
 import { text } from "./i18n.js";
-import { readPreference, writePreference } from "./preferences.js";
+import { readPreference, writePreference } from "@tybo/app/ui";
 import {
 	DRAWING_COLORS,
 	TEXT_SIZES,

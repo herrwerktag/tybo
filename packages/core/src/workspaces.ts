@@ -1,8 +1,8 @@
 import { changesBetween } from "./changes.js";
-import { moveItem, type AppData, type EntityType } from "./model.js";
+import { moveItem, ulid } from "@tybo/app/core";
+import type { AppData, EntityType } from "./model.js";
 import { DATA_VERSION, createStore, looksLikeAppData, prepareImport, toSaved, type Store } from "./store.js";
 import type { DataPort, WorkspaceInfo } from "./ports.js";
-import { ulid } from "./ulid.js";
 
 /** Where the active workspace is remembered — per browser, the way a view is: which one this tab opens. */
 export interface ActiveWorkspacePreference {

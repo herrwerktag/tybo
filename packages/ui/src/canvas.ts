@@ -1,7 +1,7 @@
 import { connector, nearest, type Rect } from "@tybo/core";
 import { createDrawingLayer } from "./drawing-layer.js";
 import { areaContents, drawingBounds } from "./drawings.js";
-import { CLICK_TOLERANCE, dragHandle, el, reorderable, resizeHandle, svgEl, tagFilter, trackPointer, typeDot, wheelGesture } from "./dom.js";
+import { CLICK_TOLERANCE, dragHandle, el, reorderable, resizeHandle, svgEl, tagFilter, trackPointer, typeDot, wheelGesture } from "@tybo/app/ui";
 import { text } from "./i18n.js";
 import {
 	DEFAULT_CARD_SIZE,
@@ -26,7 +26,7 @@ import {
 } from "@tybo/core";
 import { cardParts, cardSize, createCardPreview, entityDetails } from "./entity-card.js";
 import { showEntityEditor } from "./entity-form.js";
-import { readPreference, writePreference } from "./preferences.js";
+import { readPreference, writePreference } from "@tybo/app/ui";
 import type { Store } from "@tybo/core";
 import { defaultViewport, fitRect, screenToWorld, snapZoom, stepZoom, visibleRect, zoomAt, type Viewport } from "@tybo/core";
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { connector, type Rect } from "./connectors.js";
+import type { Rect } from "@tybo/app/core";
+import { connector } from "./connectors.js";
 import { layeredLayout } from "./layout.js";
 import { DEFAULT_CARD_SIZE, type PropertyDef } from "./model.js";
 

@@ -1,3 +1,5 @@
+/// <reference path="./globals.d.ts" />
+
 /** Crockford base32, as used by ULID (https://github.com/ulid/spec). */
 const ENCODING = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 

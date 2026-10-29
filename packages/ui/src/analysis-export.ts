@@ -13,7 +13,7 @@ import {
 	type PathStep,
 	type PropertyDef,
 } from "@tybo/core";
-import { uniqueFileNames } from "./dom.js";
+import { uniqueFileNames } from "@tybo/app/ui";
 import { text } from "./i18n.js";
 import { uniqueNames } from "./text-export.js";
 

@@ -17,7 +17,6 @@ import {
 	inverseRelations,
 	migrateValues,
 	missingRequired,
-	moveItem,
 	nextTypeColor,
 	parseValue,
 	linkCandidates,
@@ -139,15 +138,6 @@ test("nextTypeColor picks the first unused palette color, then repeats", () => {
 	assert.equal(nextTypeColor([palette[0]!.toUpperCase()]), palette[1]);
 	assert.equal(nextTypeColor(palette), palette[0]);
 	assert.equal(nextTypeColor([...palette, palette[0]!]), palette[1]);
-});
-
-test("moveItem moves one item and leaves the input unchanged", () => {
-	const items = ["a", "b", "c", "d"];
-	assert.deepEqual(moveItem(items, 0, 2), ["b", "c", "a", "d"]);
-	assert.deepEqual(moveItem(items, 3, 0), ["d", "a", "b", "c"]);
-	assert.deepEqual(moveItem(items, 1, 1), items);
-	assert.deepEqual(moveItem(items, 1, 99), ["a", "c", "d", "b"]);
-	assert.deepEqual(items, ["a", "b", "c", "d"]);
 });
 
 test("cardRows lists visible properties with a value, in order, with reference names", () => {

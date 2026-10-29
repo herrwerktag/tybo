@@ -12,6 +12,7 @@ pnpm-Monorepo mit TypeScript:
 
 | Paket | Inhalt |
 | --- | --- |
+| `packages/app` (`@tybo/app`) | Wird zum Zuhause aller Features (je Feature ein Ordner mit Modell, Oberflaeche, Speicherung). Bisher nur `shared/`: was mehrere Features nutzen (`core` ohne DOM, `ui` fuer den Browser) |
 | `packages/core` (`@tybo/core`) | Datenmodell, Validierung, Arbeitsbereiche, Aenderungen, Speicher-Port (ohne DOM) |
 | `packages/ui` (`@tybo/ui`) | Oberflaeche: Formulare, Canvas, Zeichnungen, Texte (i18n) |
 | `apps/api` (`@tybo/api`) | HTTP-API ueber Postgres oder SQLite, Schema-Migrationen beim Start |

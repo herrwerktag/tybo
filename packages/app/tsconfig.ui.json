@@ -1,0 +1,9 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		// The browser's library, but no Node types: the UI runs in the browser.
+		"types": []
+	},
+	"include": ["src/ui.ts", "src/**/ui/**/*.ts", "src/**/ui.ts"],
+	"exclude": ["src/**/*.test.ts", "src/shared/ui/test-dom.ts"]
+}

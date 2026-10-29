@@ -1,5 +1,6 @@
 import { unitStands, untouched, type Change } from "./changes.js";
-import { moveItem, type AppData, type Board } from "./model.js";
+import { moveItem } from "@tybo/app/core";
+import type { AppData, Board } from "./model.js";
 import type { DataPort, SavedChanges, WorkspaceInfo } from "./ports.js";
 
 /** One workspace as the memory holds it: its data as saved (in whatever shape a test put there), and the

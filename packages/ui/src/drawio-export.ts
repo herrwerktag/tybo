@@ -1,7 +1,7 @@
-import { uniqueFileNames } from "./dom.js";
+import { uniqueFileNames } from "@tybo/app/ui";
 import { areaContents } from "./drawings.js";
 import { text } from "./i18n.js";
-import { renderMarkdown } from "./markdown.js";
+import { renderMarkdown } from "@tybo/app/ui";
 import {
 	cardRows,
 	effectiveCardDisplay,
