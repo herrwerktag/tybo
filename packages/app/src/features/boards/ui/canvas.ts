@@ -1,50 +1,37 @@
-import { connector, nearest, type Rect } from "../core/index.js";
-import { createDrawingLayer } from "./drawing-layer.js";
-import { areaContents, drawingBounds } from "./drawings.js";
-import { CLICK_TOLERANCE, dragHandle, el, reorderable, resizeHandle, svgEl, tagFilter, trackPointer, typeDot, wheelGesture } from "../../shared/ui/index.js";
-import { text } from "./i18n.js";
-import { text as dataText } from "../../features/data/texts.js";
+import type { Rect } from "../../../shared/core/index.js";
+import { CLICK_TOLERANCE, el, readPreference, resizeHandle, trackPointer, wheelGesture, writePreference } from "../../../shared/ui/index.js";
+import type { Store } from "../../../legacy/core/store.js";
+import { DEFAULT_CARD_SIZE, GRID_SIZE, effectiveCardDisplay, referencedIds, snapToGrid, type Entity, type EntityType } from "../../data/core.js";
+import { text as dataText } from "../../data/texts.js";
+import { DETAILS_WIDTH_KEY, cardParts, cardSize, createCardPreview, entityDetails } from "../../data/ui/entity-card.js";
+import { showEntityEditor } from "../../data/ui/entity-form.js";
 import {
-	DEFAULT_CARD_SIZE,
-	GRID_SIZE,
-	FRAME_ASPECT,
-	MIN_FRAME_SIZE,
+	defaultViewport,
+	fitRect,
 	frameInside,
-	effectiveCardDisplay,
-	entityTags,
-	filterEntities,
-	linkCandidates,
-	relationsOf,
-	isArea,
-	referencedIds,
-	snapToGrid,
+	screenToWorld,
+	snapZoom,
+	stepZoom,
+	visibleRect,
+	zoomAt,
 	type Board,
 	type CanvasCard,
-	type Relation,
-	type Entity,
-	type EntityType,
-	type LineArrow,
-} from "../core/index.js";
-import { DETAILS_WIDTH_KEY, cardParts, cardSize, createCardPreview, entityDetails } from "../../features/data/ui/entity-card.js";
-import { showEntityEditor } from "../../features/data/ui/entity-form.js";
-import { readPreference, writePreference } from "../../shared/ui/index.js";
-import type { Store } from "../core/index.js";
-import { defaultViewport, fitRect, screenToWorld, snapZoom, stepZoom, visibleRect, zoomAt, type Viewport } from "../core/index.js";
+	type Viewport,
+} from "../core.js";
+import { text } from "../texts.js";
+import { connectDialog, newEntityDialog } from "./dialogs.js";
+import { frameEditor } from "./frame.js";
+import { connectorLines, type Link } from "./lines.js";
+import { ENTITY_MIME, entityPanel } from "./panel.js";
+import { pickerDropdown, pickerLabel, renderPicker } from "./pickers.js";
+import type { BoardExport, BoardItems, CanvasLayer } from "./layer.js";
 
-const ENTITY_MIME = "application/x-entity-id";
-const PICKER_MIME = "application/x-picker-index";
 const PANEL_COLLAPSED_KEY = "canvas-panel-collapsed";
 /** The widths of the side panel and the details panel, if changed by dragging. */
 export const PANEL_WIDTH_KEY = "canvas-panel-width";
-/** The tag the side panel's entities are filtered by, if any. */
-const PANEL_TAG_KEY = "canvas-panel-tag";
 const ACTIVE_BOARD_KEY = "canvas-active-board";
 /** Whether the editor is editing the frames: only then are they shown, with their controls. */
 const EDIT_FRAMES_KEY = "canvas-edit-frames";
-/** The connector lines' color (as in the stylesheet), for a gradient's end at a card whose type has no color. */
-const LINE_COLOR = "#8a8a8a";
-/** Canvases made so far (see gradientPrefix). */
-let canvasCount = 0;
 /** How long the pan/zoom takes to move somewhere else, in ms. */
 const PAN_ANIMATION = 450;
 /** How long scroll/pinch zooming must pause before the zoom settles on the nearest 10% step, and how long that takes, in ms. */
@@ -52,14 +39,13 @@ const ZOOM_SETTLE_DELAY = 150;
 const ZOOM_SETTLE_ANIMATION = 120;
 /** Room (screen px) around a frame the editor goes to. */
 const FIT_MARGIN = 48;
-/** The pickers' row actions, drawn: a pencil (rename) and a bin (delete). */
-const RENAME_ICON = "M10.5 2.5l3 3-8 8h-3v-3z M9 4l3 3";
-const DELETE_ICON = "M2.5 4.5h11 M6 4.5V2.5h4v2 M4 4.5l.7 9h6.6l.7-9 M6.8 7v4 M9.2 7v4";
 
-interface CanvasOptions {
+export interface CanvasOptions {
 	readOnly: boolean;
-	onExportView?: (boardId: string) => void;
-	onExportDrawio?: (boardId: string) => void;
+	/** The features' layers on the board (see `CanvasLayer`), the first drawn lowest. */
+	layers: readonly CanvasLayer[];
+	/** The ways to export a board, offered in the editor (see `BoardExport`). */
+	exports?: readonly BoardExport[];
 }
 
 /** Instead of the canvas while there's no board: a button that creates the first one and opens it. */
@@ -86,15 +72,15 @@ function firstBoardView(store: Store, options: CanvasOptions): HTMLElement {
 
 /**
  * The board canvas. With `readOnly` (the Viewer) it only displays: no side panel, no board editing,
- * no moving, resizing, removing or dropping cards, and pan/zoom are never saved. With `onExportView` or
- * `onExportDrawio`, the editor offers to export the current board (as HTML, for draw.io).
+ * no moving, resizing, removing or dropping cards, and pan/zoom are never saved. With `exports`, the editor offers
+ * to export the current board.
  *
  * The viewer shows the board in its frame, fitted into the screen. The editor keeps one pan/zoom per board, and
  * shows the frame as an outline to move and resize.
  */
 export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	if (store.data.boards.length === 0) return firstBoardView(store, options);
-	const { readOnly, onExportView, onExportDrawio } = options;
+	const { readOnly, layers, exports = [] } = options;
 	let boardId = readPreference(ACTIVE_BOARD_KEY) ?? "";
 	const currentBoard = (): Board => store.data.boards.find((b) => b.id === boardId) ?? store.data.boards[0]!;
 	boardId = currentBoard().id;
@@ -139,7 +125,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		"»",
 	);
 
-	const panel = el("aside", { className: "canvas-panel" });
+	const panel = entityPanel(store, { board: currentBoard, readOnly, onHide: () => setPanelCollapsed(true) });
+	const renderPanel = panel.render;
 	const layer = el("div", { className: "canvas-board" });
 	const surface = el("div", { className: "canvas-surface" }, layer);
 	const zoomLabel = el("span", { className: "zoom-label" });
@@ -153,46 +140,44 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		return fitRect(currentBoard().viewFrame, width, height);
 	}
 
-	/** Two or more cards and drawings selected together, to move at once (Shift+click, or a frame dragged around
-	 * them); meanwhile neither the details nor a drawing's handles are shown. */
-	let group: { cardIds: Set<string>; drawingIds: Set<string> } | null = null;
-	/** The areas the selected card lies in, kept from fading along with the rest of the board (see markChain). */
-	let focusedAreas = new Set<string>();
+	/** Two or more cards and layer items selected together, to move at once (Shift+click, or a frame dragged
+	 * around them); meanwhile neither the details nor an item's handles are shown. */
+	let group: { [key: string]: Set<string> } | null = null;
 
-	// Shapes, lines, text and pen strokes: below the connector lines and cards.
-	const drawing = createDrawingLayer({
-		store,
-		readOnly,
-		boardId: () => boardId,
-		zoom: () => viewport.zoom,
-		toWorld: (clientX, clientY) => {
-			const rect = surface.getBoundingClientRect();
-			return screenToWorld(viewport, clientX - rect.left, clientY - rect.top);
-		},
-		captureTarget: () => surface,
-		// A card and a drawing are never selected at the same time.
-		onSelect: (drawingId) => {
-			if (drawingId) select(null);
-		},
-		group: () => group?.drawingIds ?? new Set(),
-		inFocus: () => focusedAreas,
-		onGroupPress: (e, drawingId) => {
-			if (e.shiftKey) toggleSelected("drawingIds", drawingId);
-			else dragGroup(e, { drawingId });
-		},
-		// An area moves along with the cards and drawings lying in it.
-		onAreaPress: (e, drawingId) => {
-			const board = currentBoard();
-			const area = board.drawings.find((d) => d.id === drawingId);
-			if (!area || !isArea(area)) return;
-			const cards = board.cards.map((c) => ({ ...c, ...cardRects.get(c.id) }));
-			const { cardIds, drawingIds } = areaContents(area, cards, board.drawings);
-			setSelection(new Set(), new Set([drawingId]));
-			dragGroup(e, { drawingId }, { cardIds, drawingIds: drawingIds.add(drawingId) });
-		},
-		onToolChange: (tool) => surface.classList.toggle("drawing-tool", tool !== "select"),
-	});
-	/** The zoom the drawings' selection handles were last drawn for (they keep their screen size). */
+	/** The features' layers on this canvas (see `CanvasLayer`), by their key; below the lines and cards. */
+	const views = new Map(
+		layers.map((layer) => {
+			const view = layer.create({
+				store,
+				readOnly,
+				boardId: () => boardId,
+				zoom: () => viewport.zoom,
+				toWorld: (clientX, clientY) => {
+					const rect = surface.getBoundingClientRect();
+					return screenToWorld(viewport, clientX - rect.left, clientY - rect.top);
+				},
+				captureTarget: () => surface,
+				cardRects: () => cardRects,
+				group: () => group?.[layer.key] ?? new Set(),
+				// A card and a layer's item are never selected at the same time, nor two layers' items.
+				onSelect: (id) => {
+					if (!id) return;
+					select(null);
+					for (const [key, other] of views) if (key !== layer.key) other.deselect();
+				},
+				onGroupPress: (e, id) => {
+					if (e.shiftKey) toggleSelected(layer.key, id);
+					else dragGroup(e, { key: layer.key, id });
+				},
+				dragItems: (e, id, items) => dragGroup(e, { key: layer.key, id }, items),
+				onToolChange: (active) => surface.classList.toggle("tool-active", active),
+			});
+			return [layer.key, view];
+		}),
+	);
+	const deselectLayers = () => views.forEach((view) => view.deselect());
+	const renderLayers = () => views.forEach((view) => view.render());
+	/** The zoom the layers' selection handles were last drawn for (they keep their screen size). */
 	let drawnZoom = viewport.zoom;
 
 	function applyViewport(): void {
@@ -204,7 +189,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		zoomLabel.textContent = `${Math.round(viewport.zoom * 100)}%`;
 		if (viewport.zoom !== drawnZoom) {
 			drawnZoom = viewport.zoom;
-			drawing.render();
+			renderLayers();
 		}
 	}
 
@@ -240,7 +225,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		fitted = readOnly;
 		viewport = homeViewport();
 		group = null;
-		drawing.deselect();
+		deselectLayers();
 		applyViewport();
 		renderBoardControls();
 		renderPanel();
@@ -310,201 +295,6 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 
 	const boardControls = el("div", { className: "board-controls" });
 
-	/** An overlay over the canvas (shown with showModal), closed by its × (see dialogHeader), Escape, or a click beside it. */
-	function canvasDialog(className: string, label: string): HTMLDialogElement {
-		const dialog: HTMLDialogElement = el("dialog", {
-			className: `canvas-dialog ${className}`,
-			ariaLabel: label,
-			// No expression body: an on… handler returning false would cancel every click inside, submits included.
-			onclick: (e: MouseEvent) => {
-				if (e.target === dialog) dialog.close();
-			},
-		});
-		return dialog;
-	}
-
-	function dialogHeader(dialog: HTMLDialogElement, title: string): HTMLElement {
-		return el(
-			"header",
-			{},
-			el("h2", {}, title),
-			el("button", { type: "button", className: "card-remove", title: text.close, ariaLabel: text.close, onclick: () => dialog.close() }, "×"),
-		);
-	}
-
-	/**
-	 * A picker dropdown (boards): its items, the current one marked; clicking one picks it. In the editor (with
-	 * `editing`), each can be renamed in place and deleted, and a form below adds one; with `move`, too, the items can
-	 * be reordered.
-	 */
-	interface Picker {
-		dialog: HTMLDialogElement;
-		title: string;
-		items: readonly { id: string; name: string }[];
-		currentId: string;
-		/** The item shown with a name field instead, if any. */
-		renamingId: string | null;
-		pick(id: string): void;
-		/** Draws the dropdown again (with an item being renamed). */
-		rerender(renamingId?: string | null): void;
-		editing?: {
-			renameTitle: string;
-			deleteTitle: string;
-			rename(id: string, name: string): void;
-			remove(id: string): void;
-			newTitle: string;
-			newName: string;
-			add(name: string): void;
-			/** Moves the item to index `to` among the items. */
-			move?(id: string, to: number): void;
-			/** The label of an item's drag handle. */
-			moveTitle?(name: string): string;
-		};
-	}
-
-	/** A row's rename or delete in a picker: a small drawn icon, its name in the tooltip. */
-	function pickerAction(title: string, icon: string, onclick: () => void): HTMLButtonElement {
-		return el(
-			"button",
-			{ type: "button", className: "picker-action", title, ariaLabel: title, onclick },
-			svgEl("svg", { viewBox: "0 0 16 16", "aria-hidden": "true" }, svgEl("path", { d: icon })),
-		);
-	}
-
-	function renderPicker({ dialog, title, items, currentId, renamingId, pick, rerender, editing }: Picker): void {
-		const rows = items.map((item, i) => {
-			if (editing && item.id === renamingId) {
-				const input = el("input", { value: item.name, ariaLabel: editing.renameTitle, required: true });
-				// Escape leaves the name as it was, instead of closing the dropdown.
-				input.addEventListener("keydown", (e) => {
-					if (e.key !== "Escape") return;
-					e.preventDefault();
-					rerender();
-				});
-				requestAnimationFrame(() => input.select());
-				return el(
-					"li",
-					{},
-					el(
-						"form",
-						{
-							className: "picker-rename",
-							onsubmit: (e: SubmitEvent) => {
-								e.preventDefault();
-								editing.rename(item.id, input.value);
-								rerender();
-							},
-						},
-						input,
-						el("button", { type: "submit", className: "primary" }, dataText.save),
-						el("button", { type: "button", onclick: () => rerender() }, dataText.cancel),
-					),
-				);
-			}
-			const option = el(
-				"button",
-				{
-					type: "button",
-					className: "picker-option",
-					title: item.name,
-					onclick: () => {
-						dialog.close();
-						if (item.id !== currentId) pick(item.id);
-					},
-				},
-				item.name,
-			);
-			if (item.id === currentId) option.setAttribute("aria-current", "true");
-			if (!editing) return el("li", {}, option);
-			const { move, moveTitle } = editing;
-			const handle = move ? dragHandle(moveTitle?.(item.name) ?? item.name, item.id) : null;
-			const row = el(
-				"li",
-				{},
-				...(handle ? [handle] : []),
-				option,
-				pickerAction(editing.renameTitle, RENAME_ICON, () => rerender(item.id)),
-				pickerAction(editing.deleteTitle, DELETE_ICON, () => editing.remove(item.id)),
-			);
-			if (handle && move) {
-				reorderable(row, handle, {
-					index: i,
-					count: items.length,
-					mime: PICKER_MIME,
-					move: (from, to) => {
-						const moved = items[from]!.id;
-						move(moved, to);
-						rerender();
-						dialog.querySelector<HTMLElement>(`.drag-handle[data-focus-key="${moved}"]`)?.focus();
-					},
-				});
-			}
-			return row;
-		});
-
-		const nameInput = el("input", { ariaLabel: dataText.name, value: editing?.newName ?? "", required: true });
-		const newForm = el(
-			"form",
-			{
-				className: "picker-new",
-				onsubmit: (e: SubmitEvent) => {
-					e.preventDefault();
-					dialog.close();
-					editing?.add(nameInput.value);
-				},
-			},
-			el("h3", {}, editing?.newTitle ?? ""),
-			nameInput,
-			el("button", { type: "submit", className: "primary" }, dataText.create),
-		);
-		dialog.replaceChildren(el("h2", {}, title), el("ul", { className: "picker-list" }, ...rows), ...(editing ? [newForm] : []));
-	}
-
-	/**
-	 * A picker as a dropdown under its button (`buttonClass`, showing what's current), the way the workspace menu opens:
-	 * a dialog that isn't modal, filled by `render` as it opens. Picking closes it, and so do Escape, a click beside it,
-	 * or its button again.
-	 */
-	function pickerDropdown(dialogClass: string, label: string, buttonClass: string, title: string, render: () => void) {
-		const dialog: HTMLDialogElement = el("dialog", { className: `picker-dropdown ${dialogClass}`, ariaLabel: label });
-		const button = el("button", {
-			type: "button",
-			className: `picker-switch ${buttonClass}`,
-			title,
-			ariaHasPopup: "dialog",
-			onclick: () => (dialog.open ? dialog.close() : open()),
-		});
-		button.setAttribute("aria-expanded", "false");
-		function open(): void {
-			render();
-			dialog.show();
-			// Under the button, kept on the screen; what doesn't fit below scrolls.
-			const at = button.getBoundingClientRect();
-			dialog.style.top = `${at.bottom + 6}px`;
-			dialog.style.left = `${Math.max(8, Math.min(at.left, innerWidth - dialog.offsetWidth - 8))}px`;
-			dialog.style.maxHeight = `${innerHeight - at.bottom - 14}px`;
-			button.setAttribute("aria-expanded", "true");
-			document.addEventListener("pointerdown", onPointerDown);
-			document.addEventListener("keydown", onKeyDown);
-		}
-		function onPointerDown(e: PointerEvent): void {
-			if (!dialog.contains(e.target as Node) && !button.contains(e.target as Node)) dialog.close();
-		}
-		function onKeyDown(e: KeyboardEvent): void {
-			// A rename field takes its own Escape (it keeps the old name).
-			if (e.key !== "Escape" || e.defaultPrevented) return;
-			dialog.close();
-			button.focus();
-		}
-		dialog.addEventListener("close", () => {
-			button.setAttribute("aria-expanded", "false");
-			document.removeEventListener("pointerdown", onPointerDown);
-			document.removeEventListener("keydown", onKeyDown);
-		});
-		return { dialog, button };
-	}
-	const pickerLabel = (name: string) => [el("span", { className: "picker-name" }, name), el("span", { ariaHidden: "true" }, "▾")];
-
 	/** The boards: switch to another (and in the editor, create, rename or delete). */
 	const { dialog: boardDialog, button: boardButton } = pickerDropdown("board-dialog", text.tabBoards, "board-switch", text.changeBoard, () =>
 		renderBoardDialog(),
@@ -545,7 +335,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	/** Editor: sets the board's frame to what is seen now. */
 	const frameFromViewButton = el(
 		"button",
-		{ type: "button", className: "frame-from-view", title: text.frameFromViewHint, onclick: () => saveFrame(seenFrame()) },
+		{ type: "button", className: "frame-from-view", title: text.frameFromViewHint, onclick: () => frame.save(seenFrame()) },
 		text.frameFromView,
 	);
 
@@ -563,7 +353,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		},
 	});
 
-	/** Editor: the current board's exports (as HTML, for draw.io), in a dropdown like the boards'. */
+	/** Editor: the current board's exports (see `BoardExport`), in a dropdown like the boards'. */
 	const { dialog: exportDialog, button: exportButton } = pickerDropdown("export-dialog", text.exportButton, "export-switch", text.exportBoard, () => {
 		const option = (label: string, title: string, run: (id: string) => void) =>
 			el(
@@ -573,12 +363,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			);
 		exportDialog.replaceChildren(
 			el("h2", {}, text.exportButton),
-			el(
-				"ul",
-				{ className: "picker-list" },
-				...(onExportView ? [option(text.exportViewButton, text.exportView, onExportView)] : []),
-				...(onExportDrawio ? [option(text.exportDrawioButton, text.exportDrawio, onExportDrawio)] : []),
-			),
+			el("ul", { className: "picker-list" }, ...exports.map((way) => option(way.label(), way.title(), (id) => way.run(store, id)))),
 		);
 	});
 	exportButton.replaceChildren(text.exportButton, el("span", { ariaHidden: "true" }, "▾"));
@@ -593,8 +378,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			boardButton,
 			editFramesButton,
 			...(editingFrames ? [frameFromViewButton] : []),
-			el("button", { type: "button", title: text.newEntityHint, onclick: openNewEntity }, text.newEntityButton),
-			...(onExportView || onExportDrawio ? [exportButton] : []),
+			el("button", { type: "button", title: text.newEntityHint, onclick: newEntity.open }, text.newEntityButton),
+			...(exports.length > 0 ? [exportButton] : []),
 		);
 	}
 
@@ -652,105 +437,6 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		}, ZOOM_SETTLE_DELAY);
 	}
 
-	// Search and type filter for the side panel, kept for this visit only; the tag filter is remembered (see buildPanel).
-	let panelQuery = "";
-	let panelTypeId: string | null = null;
-	let panelTag: string | null = null;
-	/** The list below the panel's controls; re-rendered on its own, so typing in the search keeps focus. */
-	const panelList = el("div", { className: "panel-list" });
-
-	/** Builds the panel once (header, hint, filters); the list itself is drawn by renderPanel. */
-	function buildPanel(): void {
-		const toggle = el(
-			"button",
-			{
-				type: "button",
-				className: "panel-toggle",
-				title: text.hideEntities,
-				ariaLabel: text.hideEntities,
-				onclick: () => setPanelCollapsed(true),
-			},
-			"«",
-		);
-		const search = el("input", {
-			type: "search",
-			placeholder: text.searchEntities,
-			ariaLabel: text.searchEntities,
-			oninput: () => {
-				panelQuery = search.value;
-				renderPanel();
-			},
-		});
-		const typeFilter = el(
-			"select",
-			{
-				ariaLabel: text.filterByType,
-				onchange: () => {
-					panelTypeId = typeFilter.value || null;
-					renderPanel();
-				},
-			},
-			el("option", { value: "" }, text.allTypes),
-			...store.data.types.map((t) => el("option", { value: t.id }, t.name)),
-		);
-		// Only with tags in use: filters by a set of entities that belong together (e.g. one project's).
-		const tags = entityTags(store.data.entities);
-		const byTag = tagFilter(tags, PANEL_TAG_KEY, (tag) => {
-			panelTag = tag;
-			renderPanel();
-		});
-		panelTag = byTag.tag;
-		const entityFilters = el("div", { className: "panel-filters" }, search, typeFilter, ...(tags.length > 0 ? [byTag.select] : []));
-		panel.replaceChildren(
-			el("div", { className: "panel-header" }, el("h2", {}, dataText.entities), toggle),
-			el("p", { className: "muted" }, text.dragOntoCanvas),
-			entityFilters,
-			panelList,
-		);
-	}
-
-	function renderPanel(): void {
-		if (readOnly) return; // no side panel in the viewer
-		const cardCounts = new Map<string, number>();
-		for (const card of currentBoard().cards) cardCounts.set(card.entityId, (cardCounts.get(card.entityId) ?? 0) + 1);
-		const matches = filterEntities(store.data.entities, { query: panelQuery, typeId: panelTypeId, tag: panelTag });
-		const groups = store.data.types
-			.map((type) => ({ type, entities: matches.filter((e) => e.typeId === type.id) }))
-			.filter((g) => g.entities.length > 0);
-
-		const empty = store.data.entities.length === 0 ? text.noEntitiesYet : text.noMatches;
-		panelList.replaceChildren(
-			...(groups.length === 0 ? [el("p", { className: "muted" }, empty)] : []),
-			...groups.map(({ type, entities }) =>
-				el(
-					"div",
-					{ className: "panel-group" },
-					el("h3", {}, typeDot(type.color), type.name),
-					el(
-						"ul",
-						{},
-						...entities.map((entity) => {
-							const count = cardCounts.get(entity.id) ?? 0;
-							const item = el(
-								"li",
-								{ className: count > 0 ? "panel-item placed" : "panel-item", draggable: true },
-								el("span", {}, entity.name),
-								// Always on its own line below the name.
-								...(count > 0 ? [el("span", { className: "panel-item-note muted" }, text.onCanvas(count))] : []),
-							);
-							item.addEventListener("dragstart", (e) => {
-								if (!e.dataTransfer) return;
-								e.dataTransfer.setData(ENTITY_MIME, entity.id);
-								e.dataTransfer.effectAllowed = "copy";
-							});
-							return item;
-						}),
-					),
-				),
-			),
-		);
-	}
-
 	const canvasMain = el("div", { className: "canvas-main" });
 	/** Read-only card shown while hovering or focusing a reference tag; in screen space, so zoom doesn't shrink it. */
 	const preview = createCardPreview(store, canvasMain);
@@ -759,7 +445,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	let selected: { entityId: string; cardId: string | null } | null = null;
 	/** Editor: the details panel shows the selected entity's form instead of its details. */
 	let editing = false;
-	const details = el("aside", { className: "details-panel", ariaLabel: text.details });
+	const details = el("aside", { className: "details-panel", ariaLabel: dataText.details });
 	details.hidden = true;
 
 	function select(entityId: string | null, cardId: string | null = null): void {
@@ -767,13 +453,13 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		group = null;
 		selected = entityId ? { entityId, cardId } : null;
 		editing = false;
-		if (entityId) drawing.deselect();
+		if (entityId) deselectLayers();
 		markSelectedCards();
-		if (hadGroup) drawing.render(); // without the group's outlines
+		if (hadGroup) renderLayers(); // without the group's outlines
 		renderDetails();
 	}
 
-	const isCardSelected = (cardId: string): boolean => (group ? group.cardIds.has(cardId) : selected?.cardId === cardId);
+	const isCardSelected = (cardId: string): boolean => (group ? !!group.cards?.has(cardId) : selected?.cardId === cardId);
 
 	function markSelectedCards(): void {
 		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card[data-card-id]")) {
@@ -794,27 +480,15 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		return chain;
 	}
 
-	/** The areas the card lies in. */
-	function areasOf(cardId: string): Set<string> {
-		const board = currentBoard();
-		const cards = board.cards.map((c) => ({ ...c, ...cardRects.get(c.id) }));
-		return new Set(
-			board.drawings.filter((d) => isArea(d) && areaContents(d, cards, board.drawings).cardIds.has(cardId)).map((d) => d.id),
-		);
-	}
-
 	/**
 	 * With one card selected, everything on the board fades but its chain: the cards linked to it and their lines,
-	 * and the areas it lies in. Its own lines (and their labels) stand out further, as `direct`.
+	 * and what the layers keep in focus with it. Its own lines (and their labels) stand out further, as `direct`.
 	 */
 	function markChain(): void {
 		const cardId = !group ? selected?.cardId : null;
 		const chain = cardId ? chainOf(cardId) : null;
 		layer.classList.toggle("focusing", chain !== null);
-		focusedAreas = cardId ? areasOf(cardId) : new Set();
-		for (const node of layer.querySelectorAll<SVGElement>(".drawing[data-id]")) {
-			node.classList.toggle("in-chain", focusedAreas.has(node.dataset.id!));
-		}
+		views.forEach((view) => view.focus(cardId ?? null));
 		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card[data-card-id]")) {
 			node.classList.toggle("in-chain", !!chain?.has(node.dataset.cardId!));
 		}
@@ -825,52 +499,55 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		}
 	}
 
-	/** What's selected on the board: the group, or the one card or drawing (copies, to change). */
-	function selection(): { cardIds: Set<string>; drawingIds: Set<string> } {
-		if (group) return { cardIds: new Set(group.cardIds), drawingIds: new Set(group.drawingIds) };
-		const drawingId = drawing.selected();
-		return { cardIds: new Set(selected?.cardId ? [selected.cardId] : []), drawingIds: new Set(drawingId ? [drawingId] : []) };
+	/** What's selected on the board, by list (see `BoardItems`): the group, or the one card or item (copies, to change). */
+	function selection(): { [key: string]: Set<string> } {
+		if (group) return Object.fromEntries(Object.entries(group).map(([key, ids]) => [key, new Set(ids)]));
+		const items: { [key: string]: Set<string> } = { cards: new Set(selected?.cardId ? [selected.cardId] : []) };
+		for (const [key, view] of views) {
+			const id = view.selected();
+			items[key] = new Set(id ? [id] : []);
+		}
+		return items;
 	}
 
-	/** Selects these cards and drawings: two or more as a group, one as usual (with its details or handles). */
-	function setSelection(cardIds: Set<string>, drawingIds: Set<string>): void {
-		if (cardIds.size + drawingIds.size >= 2) {
+	/** Selects these cards and items: two or more as a group, one as usual (with its details or handles). */
+	function setSelection(items: BoardItems): void {
+		const all = Object.entries(items).flatMap(([key, ids]) => [...ids].map((id) => ({ key, id })));
+		const [one] = all;
+		if (all.length >= 2) {
 			select(null);
-			drawing.deselect();
-			group = { cardIds, drawingIds };
+			deselectLayers();
+			group = Object.fromEntries(Object.entries(items).map(([key, ids]) => [key, new Set(ids)]));
 			markSelectedCards();
-			drawing.render();
-		} else if (cardIds.size === 1) {
-			const card = currentBoard().cards.find((c) => cardIds.has(c.id));
+			renderLayers();
+		} else if (one?.key === "cards") {
+			const card = currentBoard().cards.find((c) => c.id === one.id);
 			select(card?.entityId ?? null, card?.id ?? null);
-		} else if (drawingIds.size === 1) {
+		} else if (one) {
 			select(null);
-			drawing.select([...drawingIds][0]!);
+			views.get(one.key)?.select(one.id);
 		} else {
 			select(null);
-			drawing.deselect();
+			deselectLayers();
 		}
 	}
 
-	/** Shift+click: adds a card or drawing to the selection, or takes it out. */
-	function toggleSelected(kind: "cardIds" | "drawingIds", id: string): void {
+	/** Shift+click: adds a card or a layer's item to the selection, or takes it out. */
+	function toggleSelected(key: string, id: string): void {
 		const current = selection();
-		if (!current[kind].delete(id)) current[kind].add(id);
-		setSelection(current.cardIds, current.drawingIds);
+		const ids = (current[key] ??= new Set());
+		if (!ids.delete(id)) ids.add(id);
+		setSelection(current);
 	}
 
 	/**
-	 * Moves the group (or other `items`) along with the pointer from a press on one of its cards or drawings, snapped to
-	 * the grid like a single card, in one change. A click without moving selects just what was pressed (a card's own
-	 * click handler does that for cards).
+	 * Moves the group (or other `items`) along with the pointer from a press on one of its cards or layer items,
+	 * snapped to the grid like a single card, in one change. A click without moving selects just what was pressed (a
+	 * card's own click handler does that for cards).
 	 */
-	function dragGroup(
-		e: PointerEvent,
-		pressed: { cardNode: HTMLElement } | { drawingId: string },
-		items: { cardIds: ReadonlySet<string>; drawingIds: ReadonlySet<string> } | null = group,
-	): void {
+	function dragGroup(e: PointerEvent, pressed: { cardNode: HTMLElement } | { key: string; id: string }, items: BoardItems | null = group): void {
 		if (!items) return;
-		const { cardIds, drawingIds } = items;
+		const cardIds = items.cards ?? new Set<string>();
 		const { zoom } = viewport;
 		const board = currentBoard();
 		const cards = board.cards.filter((c) => cardIds.has(c.id));
@@ -890,18 +567,18 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 					node.style.top = `${card.y + o.y}px`;
 					cardRects.set(card.id, { ...(cardRects.get(card.id) ?? card), x: card.x + o.x, y: card.y + o.y });
 				}
-				drawing.previewMove(drawingIds, o.x, o.y);
+				for (const [key, view] of views) view.previewMove(items[key] ?? new Set(), o.x, o.y);
 				drawConnectors();
 			},
 			(dx, dy) => {
-				drawing.previewMove(null);
+				views.forEach((view) => view.previewMove(null));
 				if (!moving) {
-					if ("drawingId" in pressed) setSelection(new Set(), new Set([pressed.drawingId]));
+					if ("key" in pressed) setSelection({ [pressed.key]: new Set([pressed.id]) });
 					return;
 				}
 				if ("cardNode" in pressed) pressed.cardNode.dataset.dragged = "true";
 				const o = offset(dx, dy);
-				store.moveItems(board.id, { cards: [...cardIds], drawings: [...drawingIds] }, o.x, o.y);
+				store.moveItems(board.id, Object.fromEntries(Object.entries(items).map(([key, ids]) => [key, [...ids]])), o.x, o.y);
 				renderCards();
 			},
 			surface,
@@ -913,146 +590,37 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		select(entityId, currentBoard().cards.find((c) => c.entityId === entityId)?.id ?? null);
 	}
 
-	/** Links the selected card's entity with another one, existing or new, through any relation (see relationsOf). */
-	const connectDialog = canvasDialog("connect-dialog", text.connect);
+	/** Links the selected card's entity with another one, existing or new; the other one's card shows beside it. */
+	const connect = connectDialog(store, (card) => {
+		appearing = new Set([card.id]);
+		renderCards();
+		renderPanel();
+		reveal(cardRects.get(card.id) ?? card);
+	});
 
-	function connectButton(entity: Entity, cardId: string): HTMLButtonElement {
-		const none = relationsOf(store.data.types, entity).length === 0;
-		return el(
-			"button",
-			{ type: "button", disabled: none, title: none ? text.noRelations : text.connectHint, onclick: () => openConnect(entity.id, cardId) },
-			text.connect,
-		);
-	}
-
-	/** How a relation reads in the dialog, seen from the selected entity: its own reference, or another type's. */
-	function relationLabel({ prop, direction, typeId }: Relation): string {
-		const typeName = store.data.types.find((t) => t.id === typeId)?.name ?? "?";
-		if (direction === "forward") return text.relationForward(prop.name, typeName);
-		const inverse = prop.reference?.inverseLabel.trim() ?? "";
-		return inverse ? text.relationInverse(inverse, typeName) : text.relationInverseUnnamed(typeName, prop.name);
-	}
-
-	function openConnect(entityId: string, cardId: string): void {
-		renderConnect(entityId, cardId);
-		connectDialog.showModal();
-		connectDialog.querySelector<HTMLInputElement>(".connect-new input")?.focus();
-	}
-
-	/** The dialog's content for one of the relations: the existing entities fitting it (found by name), and a form for
-	 * a new one. Either way the other entity's card is shown beside the card, and the selection stays on it. */
-	function renderConnect(entityId: string, cardId: string, index = 0): void {
-		const entity = store.data.entities.find((e) => e.id === entityId);
-		if (!entity) return connectDialog.close();
-		const relations = relationsOf(store.data.types, entity);
-		const relation = relations[index];
-		if (!relation) return connectDialog.close();
-		const link = { propId: relation.prop.id, direction: relation.direction };
-		const typeName = store.data.types.find((t) => t.id === relation.typeId)?.name ?? "?";
-		const done = (card: CanvasCard | undefined) => {
-			connectDialog.close();
-			if (!card) return;
+	/** Creates an entity of any type, with its card in the middle of the view (tagged like the side panel's filter). */
+	const newEntity = newEntityDialog(store, {
+		boardId: () => boardId,
+		at: () => {
+			const { zoom } = viewport;
+			return screenToWorld(
+				viewport,
+				surface.clientWidth / 2 - (DEFAULT_CARD_SIZE.width * zoom) / 2,
+				surface.clientHeight / 2 - (DEFAULT_CARD_SIZE.height * zoom) / 2,
+			);
+		},
+		tags: () => {
+			const tag = panel.tag();
+			return tag ? [tag] : [];
+		},
+		onMade: ({ entity, card }) => {
 			appearing = new Set([card.id]);
 			renderCards();
 			renderPanel();
+			select(entity.id, card.id);
 			reveal(cardRects.get(card.id) ?? card);
-		};
-
-		const choice = el(
-			"select",
-			{ ariaLabel: text.relation, onchange: () => renderConnect(entityId, cardId, Number(choice.value)) },
-			...relations.map((r, i) => el("option", { value: String(i), selected: i === index }, relationLabel(r))),
-		);
-		const candidates = linkCandidates(store.data.entities, entity, relation);
-		const list = el("ul", { className: "connect-list" });
-		const renderList = (query: string) => {
-			const found = filterEntities(candidates, { query, typeId: null });
-			list.replaceChildren(
-				...(found.length === 0 ? [el("li", { className: "muted" }, candidates.length === 0 ? text.noCandidates : text.noMatches)] : []),
-				...found.map((other) =>
-					el(
-						"li",
-						{},
-						el(
-							"button",
-							{
-								type: "button",
-								className: "picker-option",
-								onclick: () => done(store.linkEntity(cardId, link, other.id) ?? undefined),
-							},
-							other.name,
-						),
-					),
-				),
-			);
-		};
-		renderList("");
-		const search = el("input", {
-			type: "search",
-			placeholder: text.searchEntities,
-			ariaLabel: text.searchEntities,
-			oninput: () => renderList(search.value),
-		});
-		const name = el("input", { required: true, pattern: ".*\\S.*", placeholder: dataText.name, ariaLabel: dataText.name });
-		connectDialog.replaceChildren(
-			dialogHeader(connectDialog, text.connectNamed(entity.name)),
-			el("label", { className: "field" }, el("span", {}, text.relation), choice),
-			el(
-				"form",
-				{
-					className: "connect-new",
-					onsubmit: (e: SubmitEvent) => {
-						e.preventDefault();
-						done(store.addLinkedEntity(cardId, link, relation.typeId, name.value)?.card);
-					},
-				},
-				el("h3", {}, dataText.newEntity(typeName)),
-				el("div", { className: "row" }, name, el("button", { type: "submit", className: "primary" }, dataText.create)),
-			),
-			el("div", { className: "connect-existing" }, el("h3", {}, text.existingEntity(typeName)), search, list),
-		);
-	}
-
-	/** Creates an entity of any type, with its card in the middle of the view (tagged like the side panel's filter). */
-	const newEntityDialog = canvasDialog("new-entity-dialog", text.newEntityTitle);
-
-	function openNewEntity(): void {
-		const types = store.data.types;
-		const typeSelect = el("select", { ariaLabel: dataText.entityType }, ...types.map((t) => el("option", { value: t.id }, t.name)));
-		const name = el("input", { required: true, pattern: ".*\\S.*", placeholder: dataText.name, ariaLabel: dataText.name });
-		newEntityDialog.replaceChildren(
-			dialogHeader(newEntityDialog, text.newEntityTitle),
-			types.length === 0
-				? el("p", { className: "muted" }, dataText.createTypeFirst)
-				: el(
-						"form",
-						{
-							className: "connect-new",
-							onsubmit: (e: SubmitEvent) => {
-								e.preventDefault();
-								const { zoom } = viewport;
-								const at = screenToWorld(
-									viewport,
-									surface.clientWidth / 2 - (DEFAULT_CARD_SIZE.width * zoom) / 2,
-									surface.clientHeight / 2 - (DEFAULT_CARD_SIZE.height * zoom) / 2,
-								);
-								const made = store.addEntityWithCard(boardId, typeSelect.value, name.value, at, panelTag ? [panelTag] : []);
-								newEntityDialog.close();
-								if (!made) return;
-								appearing = new Set([made.card.id]);
-								renderCards();
-								renderPanel();
-								select(made.entity.id, made.card.id);
-								reveal(cardRects.get(made.card.id) ?? made.card);
-							},
-						},
-						el("label", { className: "field" }, el("span", {}, dataText.entityType), typeSelect),
-						el("div", { className: "row" }, name, el("button", { type: "submit", className: "primary" }, dataText.create)),
-					),
-		);
-		newEntityDialog.showModal();
-		name.focus();
-	}
+		},
+	});
 
 	/** Easy-to-read details of the selected entity: description, all properties, content and ID. */
 	function renderDetails(): void {
@@ -1087,7 +655,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			? []
 			: [
 					el("button", { type: "button", onclick: edit }, dataText.edit),
-					...(selected?.cardId ? [connectButton(entity, selected.cardId)] : []),
+					...(selected?.cardId ? [connect.button(entity, selected.cardId)] : []),
 				];
 		details.replaceChildren(...entityDetails(store, entity, { actions, onClose: () => select(null), onSelectEntity: selectEntity }));
 	}
@@ -1100,24 +668,12 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	}
 	document.addEventListener("keydown", onKeyDown);
 
-	/** Lines from `line` reference properties, under the cards. */
-	const connectorLayer = svgEl("svg", { class: "connectors", "aria-hidden": "true" });
-	/** Property-name labels at the lines' midpoints: above the lines, below the cards. */
-	const connectorLabels = el("div", { className: "connector-labels", ariaHidden: "true" });
+	/** Lines from `line` reference properties, under the cards, with their labels. */
+	const lines = connectorLines();
 	/** Card positions and sizes by card id; updated live while dragging or resizing. */
 	let cardRects = new Map<string, Rect>();
 	/** One entry per drawn reference: from a card to the nearest of the target entity's cards. */
-	let links: {
-		fromCardId: string;
-		targetCardIds: string[];
-		label: string;
-		/** The source's and the target's type colors. */
-		fromColor: string;
-		color: string;
-		arrow: LineArrow;
-	}[] = [];
-	/** Makes the lines' gradient ids unique in the document, should it show more than one canvas. */
-	const gradientPrefix = `connector-gradient-${++canvasCount}`;
+	let links: Link[] = [];
 	/** Cards that just came onto the board, so they fade in. */
 	let appearing = new Set<string>();
 	/** The lines drawn, as the cards they link (see drawConnectors). */
@@ -1161,10 +717,10 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		});
 		appearing = new Set();
 		// The frame's outline stays on top of the cards. It isn't redrawn with them: only the nodes before it are replaced.
-		if (frameLayer.parentNode !== layer) layer.append(frameLayer);
-		for (const node of [...layer.childNodes]) if (node !== frameLayer) node.remove();
-		frameLayer.before(drawing.element, connectorLayer, connectorLabels, ...cardNodes);
-		drawing.render();
+		if (frame.element.parentNode !== layer) layer.append(frame.element);
+		for (const node of [...layer.childNodes]) if (node !== frame.element) node.remove();
+		frame.element.before(...[...views.values()].map((view) => view.element), lines.element, lines.labels, ...cardNodes);
+		renderLayers();
 		measureCards();
 		drawConnectors();
 		// On the first render the canvas isn't on the page yet, so sizes can only be measured a frame later.
@@ -1214,53 +770,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	}
 
 	function drawConnectors(): void {
-		const lines: SVGElement[] = [];
-		const gradients: SVGElement[] = [];
-		const labels: HTMLElement[] = [];
-		edges = [];
-		for (const { fromCardId, targetCardIds, label, fromColor, color, arrow } of links) {
-			const from = cardRects.get(fromCardId);
-			const to = from && nearest(from, targetCardIds.flatMap((id) => cardRects.get(id) ?? []));
-			if (!from || !to) continue;
-			const toCardId = targetCardIds.find((id) => cardRects.get(id) === to)!;
-			edges.push([fromCardId, toCardId]);
-			// "from" draws the same curve the other way round, so the arrowhead lands on this card.
-			const shape = arrow === "from" ? connector(to, from) : connector(from, to, arrow === "to");
-			const { path, mid, start, end } = shape;
-			// The selected card's own lines are drawn in a gradient along the curve, from the start card's color to
-			// the end card's (see .connector.direct).
-			const gradientId = `${gradientPrefix}-${gradients.length}`;
-			const [startColor, endColor] = arrow === "from" ? [color, fromColor] : [fromColor, color];
-			gradients.push(
-				svgEl(
-					"linearGradient",
-					{ id: gradientId, gradientUnits: "userSpaceOnUse", x1: start.x, y1: start.y, x2: end.x, y2: end.y },
-					svgEl("stop", { offset: 0, "stop-color": startColor || LINE_COLOR }),
-					svgEl("stop", { offset: 1, "stop-color": endColor || LINE_COLOR }),
-				),
-			);
-			lines.push(
-				svgEl(
-					"g",
-					{
-						class: "connector",
-						"data-from": fromCardId,
-						"data-to": toCardId,
-						style: `--line-gradient: url(#${gradientId})`,
-					},
-					svgEl("path", { class: "connector-line", d: path }),
-					...(shape.arrow
-						? [svgEl("polygon", { class: "connector-arrow", points: shape.arrow, fill: color || "currentColor" })]
-						: []),
-				),
-			);
-			const tag = el("span", { className: "connector-label" }, label);
-			Object.assign(tag.style, { left: `${mid.x}px`, top: `${mid.y}px` });
-			Object.assign(tag.dataset, { from: fromCardId, to: toCardId });
-			labels.push(tag);
-		}
-		connectorLayer.replaceChildren(svgEl("defs", {}, ...gradients), ...lines);
-		connectorLabels.replaceChildren(...labels);
+		edges = lines.draw(links, cardRects);
 		markChain();
 	}
 
@@ -1306,7 +816,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			}
 			if ((e.target as Element).closest("button, .ref-tag")) return;
 			// Shift+click adds the card to the selection or takes it out (not in the viewer).
-			if (e.shiftKey && !readOnly) toggleSelected("cardIds", card.id);
+			if (e.shiftKey && !readOnly) toggleSelected("cards", card.id);
 			else select(entity.id, card.id);
 		});
 		Object.assign(node.style, {
@@ -1321,7 +831,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		header.addEventListener("pointerdown", (e) => {
 			if (e.button !== 0 || e.shiftKey || (e.target as Element).closest("button")) return; // Shift: a click (see above)
 			e.preventDefault();
-			if (group?.cardIds.has(card.id)) return dragGroup(e, { cardNode: node });
+			if (group?.cards?.has(card.id)) return dragGroup(e, { cardNode: node });
 			const { zoom } = viewport;
 			let dragging = false;
 			trackPointer(
@@ -1369,7 +879,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	document.addEventListener("keyup", onSpace);
 
 	// The middle button, or Space + drag, pans from anywhere on the canvas: in the capture phase, registered first,
-	// so it wins over cards, drawings and drawing tools.
+	// so it wins over cards, the layers and their tools.
 	surface.addEventListener(
 		"pointerdown",
 		(e) => {
@@ -1381,13 +891,13 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		{ capture: true },
 	);
 
-	// With a drawing tool active, pressing anywhere on the canvas except on a card (or the frame's
-	// name or corner) starts a new drawing (in the capture phase, so it wins over panning and selecting).
+	// With a layer's tool active, pressing anywhere on the canvas except on a card (or the frame's name or corner)
+	// uses it, e.g. starts a new drawing (in the capture phase, so it wins over panning and selecting).
 	if (!readOnly) {
 		surface.addEventListener(
 			"pointerdown",
 			(e) => {
-				if (!(e.target as Element).closest(".canvas-card, .view-frame")) drawing.startCreate(e);
+				if (!(e.target as Element).closest(".canvas-card, .view-frame")) [...views.values()].some((view) => view.press(e));
 			},
 			{ capture: true },
 		);
@@ -1414,21 +924,21 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				saveViewportSoon();
 				if (Math.hypot(dx, dy) < CLICK_TOLERANCE && e.button === 0) {
 					select(null);
-					drawing.deselect();
+					deselectLayers();
 				}
 			},
 			surface,
 		);
 	}
 
-	/** The frame being dragged around cards and drawings to select them, in screen coordinates. */
+	/** The frame being dragged around cards and layer items to select them, in screen coordinates. */
 	const marquee = el("div", { className: "marquee", hidden: true });
 	surface.append(marquee);
 	const touches = (a: Rect, b: Rect): boolean =>
 		a.x <= b.x + b.width && b.x <= a.x + a.width && a.y <= b.y + b.height && b.y <= a.y + a.height;
 
 	/**
-	 * Drags a frame from this press: the cards and drawings it touches get selected (with
+	 * Drags a frame from this press: the cards and layer items it touches get selected (with
 	 * Shift, added to the selection). A click without moving clears the selection.
 	 */
 	function frameSelect(e: PointerEvent): void {
@@ -1453,7 +963,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				const framed = !marquee.hidden;
 				marquee.hidden = true;
 				if (!framed) {
-					if (!adding) setSelection(new Set(), new Set());
+					if (!adding) setSelection({});
 					return;
 				}
 				const f = frame(dx, dy);
@@ -1461,16 +971,17 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				const to = screenToWorld(viewport, f.x + f.width, f.y + f.height);
 				const world = { x: from.x, y: from.y, width: to.x - from.x, height: to.y - from.y };
 				const board = currentBoard();
-				const { cardIds, drawingIds } = adding ? selection() : { cardIds: new Set<string>(), drawingIds: new Set<string>() };
-				for (const c of board.cards) if (touches(world, cardRects.get(c.id) ?? c)) cardIds.add(c.id);
-				for (const d of board.drawings) if (touches(world, drawingBounds(d))) drawingIds.add(d.id);
-				setSelection(cardIds, drawingIds);
+				const items = adding ? selection() : {};
+				const add = (key: string, id: string) => (items[key] ??= new Set()).add(id);
+				for (const c of board.cards) if (touches(world, cardRects.get(c.id) ?? c)) add("cards", c.id);
+				for (const [key, view] of views) for (const id of view.touching(world)) add(key, id);
+				setSelection(items);
 			},
 			surface,
 		);
 	}
 
-	// Dragging the empty background frames cards and drawings to select them. Touch, and the viewer (which has
+	// Dragging the empty background frames cards and layer items to select them. Touch, and the viewer (which has
 	// nothing to select), pan instead.
 	surface.addEventListener("pointerdown", (e) => {
 		if (e.button !== 0 || (e.target !== surface && e.target !== layer)) return;
@@ -1497,16 +1008,15 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		{ passive: false },
 	);
 
-	/** Puts image files on the board, centered on a point (screen coordinates); several are staggered. */
-	function addImages(files: readonly File[], clientX: number, clientY: number): void {
+	/** Gives files to the layers, centered on a point (screen coordinates): true if one took any. */
+	function dropFiles(files: FileList | undefined, clientX: number, clientY: number): boolean {
 		const rect = surface.getBoundingClientRect();
 		const center = screenToWorld(viewport, clientX - rect.left, clientY - rect.top);
-		files.forEach((file, i) => void drawing.addImage(file, { x: center.x + i * GRID_SIZE, y: center.y + i * GRID_SIZE }));
+		const all = [...(files ?? [])];
+		return all.length > 0 && [...views.values()].some((view) => view.drop(all, center));
 	}
 
-	const imageFiles = (files: FileList | undefined): File[] => [...(files ?? [])].filter((f) => f.type.startsWith("image/"));
-
-	// Drop entities from the side panel, or image files (editor only).
+	// Drop entities from the side panel, or files for the layers, e.g. images (editor only).
 	if (!readOnly) {
 		surface.addEventListener("dragover", (e) => {
 			if (!e.dataTransfer || ![ENTITY_MIME, "Files"].some((type) => e.dataTransfer!.types.includes(type))) return;
@@ -1514,10 +1024,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			e.dataTransfer.dropEffect = "copy";
 		});
 		surface.addEventListener("drop", (e) => {
-			const images = imageFiles(e.dataTransfer?.files);
-			if (images.length > 0) {
+			if (dropFiles(e.dataTransfer?.files, e.clientX, e.clientY)) {
 				e.preventDefault();
-				addImages(images, e.clientX, e.clientY);
 				return;
 			}
 			const rect = surface.getBoundingClientRect();
@@ -1533,75 +1041,21 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		});
 	}
 
-	// Ctrl/⌘ + V with an image on the clipboard puts it in the middle of the view (the listener removes itself
-	// once this view is gone). Pasting into a text field stays the text field's.
+	// Ctrl/⌘ + V with files on the clipboard, e.g. an image, gives them to the layers, in the middle of the view (the
+	// listener removes itself once this view is gone). Pasting into a text field stays the text field's.
 	function onPaste(e: ClipboardEvent): void {
 		if (!view.isConnected) return document.removeEventListener("paste", onPaste);
 		if ((e.target as Element).closest?.("input, select, textarea, [contenteditable]")) return;
-		const images = imageFiles(e.clipboardData?.files);
-		if (images.length === 0) return;
-		e.preventDefault();
 		const rect = surface.getBoundingClientRect();
-		addImages(images, rect.left + rect.width / 2, rect.top + rect.height / 2);
+		if (dropFiles(e.clipboardData?.files, rect.left + rect.width / 2, rect.top + rect.height / 2)) e.preventDefault();
 	}
 	if (!readOnly) document.addEventListener("paste", onPaste);
 
-	/** Editor, while editing the frame: the board's frame as an outline on the canvas. It is moved by its name (a click
-	 * there goes to it) and resized at its corner, snapped to the grid; only those react to the pointer. */
-	const frameLayer = el("div", { className: "view-frames" });
-
-	function placeFrame(node: HTMLElement, { x, y, width, height }: { x: number; y: number; width: number; height: number }): void {
-		Object.assign(node.style, { left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` });
-	}
+	/** Editor, while editing the frame: the board's frame as an outline on the canvas (see frameEditor). */
+	const frame = frameEditor(store, { board: currentBoard, zoom: () => viewport.zoom, goTo: goToFrame });
 
 	function renderFrames(): void {
-		if (readOnly) return;
-		frameLayer.replaceChildren(...(editingFrames ? [frameElement(currentBoard().viewFrame)] : []));
-	}
-
-	/** Moves or resizes the board's frame. */
-	function saveFrame({ x, y, width, height }: Rect): void {
-		store.setViewFrame(boardId, { x, y, width, height });
-		renderFrames();
-	}
-
-	function frameElement(frame: Rect): HTMLElement {
-		const node = el("div", { className: "view-frame" });
-		placeFrame(node, frame);
-		const label = el("div", { className: "view-frame-label", title: text.frameHandle }, text.boardFrame);
-		label.addEventListener("pointerdown", (e) => {
-			if (e.button !== 0) return;
-			e.preventDefault();
-			const { zoom } = viewport;
-			const at = (dx: number, dy: number) => ({ x: snapToGrid(frame.x + dx / zoom), y: snapToGrid(frame.y + dy / zoom) });
-			trackPointer(
-				e,
-				(dx, dy) => placeFrame(node, { ...frame, ...at(dx, dy) }),
-				(dx, dy) => {
-					if (Math.hypot(dx, dy) < CLICK_TOLERANCE) return goToFrame(frame);
-					saveFrame({ ...frame, ...at(dx, dy) });
-				},
-			);
-		});
-		const resize = el("div", { className: "card-resize", title: text.resize });
-		resize.addEventListener("pointerdown", (e) => {
-			if (e.button !== 0) return;
-			e.preventDefault();
-			const { zoom } = viewport;
-			// It keeps a frame's shape: the width follows the pointer across or (if moved more that way) down, on the grid.
-			const size = (dx: number, dy: number) => {
-				const along = Math.abs(dx) >= Math.abs(dy * FRAME_ASPECT) ? dx : dy * FRAME_ASPECT;
-				const width = Math.max(MIN_FRAME_SIZE.width, snapToGrid(frame.width + along / zoom));
-				return { width, height: width / FRAME_ASPECT };
-			};
-			trackPointer(
-				e,
-				(dx, dy) => placeFrame(node, { ...frame, ...size(dx, dy) }),
-				(dx, dy) => saveFrame({ ...frame, ...size(dx, dy) }),
-			);
-		});
-		node.append(label, resize);
-		return node;
+		if (!readOnly) frame.render(editingFrames);
 	}
 
 	// Narrow screens only (see CSS): shows the controls kept out of the way there, so the canvas has room.
@@ -1619,8 +1073,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		},
 		"⋯",
 	);
-	// Each control group has its own place: boards top right, drawing tools on the left edge with their style
-	// bar at the bottom left (see CSS), zoom bottom right.
+	// Each control group has its own place: boards top right, the layers' controls (e.g. the drawing tools on the
+	// left edge with their style bar at the bottom left, see CSS), zoom bottom right.
 	const toolbar = el("div", { className: "canvas-toolbar" }, el("div", { className: "toolbar-group" }, boardControls, moreButton));
 	const zoomBar = el(
 		"div",
@@ -1647,7 +1101,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 
 	applyViewport();
 	renderBoardControls();
-	if (!readOnly) buildPanel();
+	if (!readOnly) panel.build();
 	renderPanel();
 	renderCards();
 	renderFrames();
@@ -1662,19 +1116,19 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	}
 	canvasMain.append(
 		surface,
-		...(readOnly ? [] : [openPanelButton, drawing.toolbar, drawing.styleBar]),
+		...(readOnly ? [] : [openPanelButton, ...[...views.values()].flatMap((view) => view.controls)]),
 		toolbar,
 		zoomBar,
 		preview.element,
 		boardDialog,
 		exportDialog,
-		connectDialog,
-		newEntityDialog,
+		connect.dialog,
+		newEntity.dialog,
 	);
 	// Drag handles for the widths of the side panel and the details (hidden along with them, see CSS).
-	const panelHandle = resizeHandle(panel, { key: PANEL_WIDTH_KEY, side: "left", min: 12, max: 32 });
+	const panelHandle = resizeHandle(panel.element, { key: PANEL_WIDTH_KEY, side: "left", min: 12, max: 32 });
 	const detailsHandle = resizeHandle(details, { key: DETAILS_WIDTH_KEY, side: "right", min: 16, max: 40 });
 	detailsHandle.classList.add("details-resize");
-	view.append(...(readOnly ? [] : [panel, panelHandle]), canvasMain, detailsHandle, details);
+	view.append(...(readOnly ? [] : [panel.element, panelHandle]), canvasMain, detailsHandle, details);
 	return view;
 }

@@ -28,7 +28,9 @@ Eingehaengt wird ein Feature mit je einer Zeile in `features.core.ts`, `features
 `features.mcp.ts`; das CSS findet die Demo von selbst. In der Oberflaeche kann ein Feature eine Seite mit Tab
 beisteuern, Eintraege im Arbeitsbereich-Menue, eine Option fuer neue Arbeitsbereiche und eine Einstellung (siehe
 `ShellParts` in `shared/ui/shell.ts`). Auf jedem Board kann ein Feature eine eigene Liste neben den Karten fuehren
-(`BOARD_LISTS` in `features.core.ts`, siehe `BoardList`), so wie die Zeichnungen. Die Huelle selbst (Store-Kern, Arbeitsbereiche, Top-Bar) liegt in `shared/`. Global bleiben nur die Migrationen (Datenformat und
+(`BOARD_LISTS` in `features.core.ts`, siehe `BoardList`) und sie auf dem Canvas als Ebene mit eigenen Werkzeugen zeigen
+(`CANVAS_LAYERS` in `features.ui.ts`, siehe `CanvasLayer`), so wie die Zeichnungen; Exporte eines Boards kommen als
+`BoardExport` ins Export-Menue. Die Huelle selbst (Store-Kern, Arbeitsbereiche, Top-Bar) liegt in `shared/`. Global bleiben nur die Migrationen (Datenformat und
 Datenbankschema), die immer nur wachsen. Was mehrere Features nutzen, liegt in `shared/`; `legacy/` ist der Teil,
 der noch Feature fuer Feature in `features/` umzieht.
 

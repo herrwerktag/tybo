@@ -550,40 +550,6 @@ th {
 	}
 }
 
-/* Canvas view */
-
-/* Side panel | canvas | details panel. Flex, so each side can come and go (collapsed, viewer, nothing selected). */
-.canvas-view {
-	display: flex;
-	min-height: 0;
-}
-
-/* Cards can't be dragged in the viewer. */
-.read-only .canvas-card header {
-	cursor: default;
-}
-
-/* Collapsed: the panel is gone entirely; a floating button over the canvas brings it back. */
-.panel-collapsed .canvas-panel {
-	display: none;
-}
-
-.panel-open {
-	position: absolute;
-	top: 0.75rem;
-	left: 0.75rem;
-	display: none;
-	padding: 0.1rem 0.5rem;
-	line-height: 1.4;
-	border-color: var(--border);
-	border-radius: 6px;
-	box-shadow: 0 2px 6px rgb(0 0 0 / 0.08);
-}
-
-.panel-collapsed .panel-open {
-	display: block;
-}
-
 /* Drag handles for the side panels' widths: a thin strip over the panel's border, gone along with the panel. */
 .resize-handle {
 	position: relative;
@@ -599,11 +565,6 @@ th {
 	outline: none;
 }
 
-.panel-collapsed > .resize-handle:not(.details-resize),
-.canvas-view:has(> .details-panel[hidden]) > .details-resize {
-	display: none;
-}
-
 /* Folded drawing tools: only the fold button and the current tool are left (narrow screens have the ⋯ button). */
 @media not (max-width: 40rem) {
 	.drawing-tools.collapsed > .tool-button:not(.tools-toggle, [aria-pressed="true"]) {
@@ -611,34 +572,12 @@ th {
 	}
 }
 
-.panel-header {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 0.5rem;
-}
-
-.panel-toggle {
-	padding: 0.1rem 0.5rem;
-	line-height: 1.4;
-}
-
-/* Narrow screens: side panel above, canvas, details below. */
+/* Narrow screens: the panels are stacked (see the canvas view in the boards feature, and the analyses). */
 @media (max-width: 40rem) {
-	.canvas-view {
-		flex-direction: column;
-	}
-
 	/* Stacked panels keep their own heights. */
 	.resize-handle,
 	.tools-toggle {
 		display: none;
-	}
-
-	.canvas-panel {
-		flex-basis: 30dvh;
-		border-right: none;
-		border-bottom: 1px solid var(--border);
 	}
 
 	.details-panel {
@@ -646,40 +585,6 @@ th {
 		border-left: none;
 		border-top: 1px solid var(--border);
 	}
-
-	/* With the side panel open, a selected card's details take its place: there's no room for both, and the canvas
-	   keeps its size and place instead of shrinking to a strip between them. */
-	.canvas-view:not(.panel-collapsed):has(> .details-panel:not([hidden])) > .canvas-panel {
-		display: none;
-	}
-
-	.canvas-view:not(.panel-collapsed, .read-only) > .details-panel {
-		order: -1;
-		flex-basis: 30dvh;
-		border-top: none;
-		border-bottom: 1px solid var(--border);
-	}
-}
-
-.canvas-panel {
-	flex: 0 0 var(--panel-width, 16rem);
-	display: grid;
-	align-content: start;
-	gap: 0.75rem;
-	padding: 1rem;
-	overflow-y: auto;
-	background: var(--surface);
-	border-right: 1px solid var(--border);
-}
-
-.panel-group {
-	display: grid;
-	gap: 0.25rem;
-}
-
-.panel-group ul {
-	display: grid;
-	gap: 0.25rem;
 }
 
 /* Read-only reverse references in the data view: set on the other entities. */
@@ -690,51 +595,6 @@ td.inverse {
 
 .field-hint {
 	font-size: 0.8125rem;
-}
-
-.panel-filters {
-	display: grid;
-	gap: 0.4rem;
-}
-
-.panel-filters :is(input, select) {
-	width: 100%;
-}
-
-.panel-list {
-	display: grid;
-	gap: 0.75rem;
-}
-
-.panel-item {
-	display: grid;
-	gap: 0.1rem;
-	padding: 0.35rem 0.5rem;
-	border: 1px solid var(--border);
-	border-radius: 4px;
-	background: var(--surface);
-	cursor: grab;
-	overflow-wrap: anywhere;
-}
-
-.panel-item:hover {
-	border-color: var(--border-strong);
-}
-
-.panel-item.placed {
-	background: var(--surface-inset);
-}
-
-.panel-item-note {
-	font-size: 0.85em;
-}
-
-.canvas-main {
-	flex: 1 1 0;
-	position: relative;
-	min-width: 0;
-	min-height: 0;
-	overflow: hidden;
 }
 
 /* Details of the selected card: description first, then every property, content and the ID. */
@@ -897,61 +757,6 @@ button.ref-tag {
 	box-shadow: none;
 }
 
-/* The card being dragged stays above the others (see the card drag in canvas.ts). */
-.canvas-card.dragging {
-	z-index: 1;
-}
-
-.canvas-card.selected {
-	outline: 2px solid var(--focus);
-	outline-offset: 2px;
-}
-
-.canvas-surface {
-	position: absolute;
-	inset: 0;
-	overflow: hidden;
-	touch-action: none;
-	/* Panning and dragging must not select the text of cards and drawings; only the editors stay selectable. */
-	user-select: none;
-	background-color: var(--surface-inset);
-	background-image: radial-gradient(circle, var(--border-strong) 1px, transparent 1px);
-}
-
-.canvas-surface :is(input, textarea) {
-	user-select: text;
-}
-
-/* The viewer pans by dragging; the editor with Space held (dragging the background frames a selection). */
-.read-only .canvas-surface,
-.canvas-surface.space-pan {
-	cursor: grab;
-}
-
-.canvas-surface.panning {
-	cursor: grabbing;
-}
-
-/* The frame dragged around cards and drawings to select them. */
-.marquee {
-	position: absolute;
-	z-index: 1;
-	border: 1px solid var(--focus);
-	background: rgb(59 111 224 / 0.08);
-	pointer-events: none;
-}
-
-.marquee[hidden] {
-	display: none;
-}
-
-.canvas-board {
-	position: absolute;
-	left: 0;
-	top: 0;
-	transform-origin: 0 0;
-}
-
 /* Read-only card preview for hovered references: sized like a card (capped to the canvas in JS), above everything. */
 .card-preview {
 	display: flex;
@@ -1094,12 +899,12 @@ button.ref-tag {
 	pointer-events: auto;
 }
 
-/* While a drawing tool is active, the canvas draws instead of panning. */
-.canvas-surface.drawing-tool {
+/* While a layer's tool is active (see CanvasLayer), e.g. a drawing tool, the canvas draws instead of panning. */
+.canvas-surface.tool-active {
 	cursor: crosshair;
 }
 
-.canvas-surface.drawing-tool .drawing {
+.canvas-surface.tool-active .drawing {
 	cursor: crosshair;
 }
 
@@ -1138,230 +943,10 @@ button.ref-tag {
 	flex-wrap: wrap;
 }
 
-.toolbar-group[hidden] {
-	display: none;
-}
-
-/* Zoom: bottom right. */
-.canvas-zoom {
-	position: absolute;
-	right: 0.75rem;
-	bottom: 0.75rem;
-}
-
-/* The button showing the controls kept out of the way on narrow screens; wider ones show them all. */
-.canvas-more {
-	display: none;
-}
-
-/* Narrow screens: too little room for the control groups to float side by side, and how tall each gets depends
-   on how it wraps. So they're laid out in a grid over the canvas: boards (and the drawing tools) at the top; the
-   drawing style, then the zoom at the bottom. Only what's needed to look around is shown: the board and the zoom.
-   The rest (editing the board, the drawing tools, resetting the view) waits behind ⋯ (.show-more), so the canvas
-   keeps its room. */
-@media (max-width: 40rem) {
-	.canvas-main {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		grid-template-rows: auto auto minmax(0, 1fr) auto auto;
-		grid-template-areas:
-			"top top"
-			"tools tools"
-			". ."
-			"style style"
-			". zoom";
-		column-gap: 0.5rem;
-		padding: 0.5rem;
-	}
-
-	.show-more .canvas-main {
-		grid-template-areas:
-			"top top"
-			"tools tools"
-			". ."
-			"style style"
-			"zoom zoom";
-	}
-
-	.canvas-main > :is(.canvas-toolbar, .drawing-tools, .drawing-style, .canvas-zoom) {
-		position: relative;
-		z-index: 1;
-		inset: auto;
-		transform: none;
-		max-width: 100%;
-		flex-wrap: wrap;
-	}
-
-	.canvas-main > .canvas-toolbar {
-		grid-area: top;
-	}
-
-	.canvas-main > .drawing-tools {
-		grid-area: tools;
-		flex-direction: row;
-		margin-top: 0.5rem;
-	}
-
-	.canvas-main > .drawing-style {
-		grid-area: style;
-		margin-bottom: 0.5rem;
-	}
-
-	.canvas-main > .canvas-zoom {
-		grid-area: zoom;
-	}
-
-
-	.canvas-main > .panel-open {
-		top: 0.5rem;
-		left: 0.5rem;
-	}
-
-	/* Leave room for the panel's open button on the left. */
-	.panel-collapsed .canvas-main > .canvas-toolbar {
-		margin-left: 2.75rem;
-	}
-
-	.canvas-more {
-		display: block;
-		flex: none;
-	}
-
-	/* Kept out of the way until ⋯. */
-	.canvas-view:not(.show-more)
-		:is(
-			.board-controls > :not(.board-switch),
-			.drawing-tools,
-			.canvas-zoom > button:last-child
-		) {
-		display: none;
-	}
-
-
-	/* The controls fill each line of their group, so the groups read as tidy bars; ⋯ stays top right. */
-	.canvas-toolbar > .toolbar-group {
-		flex: 1 1 auto;
-		align-items: flex-start;
-	}
-
-	.canvas-toolbar .board-controls {
-		flex: 1 1 0;
-		min-width: 0;
-		flex-wrap: wrap;
-	}
-
-	.canvas-main > :is(.drawing-tools, .canvas-zoom) > :not(.zoom-label),
-	.canvas-toolbar .board-controls > * {
-		flex: 1 1 auto;
-	}
-
-	.canvas-toolbar .picker-switch {
-		max-width: none;
-	}
-}
-
-/* The editor's view of the board's frame (see renderFrames): an outline above the cards that lets the pointer through,
- * except at its name (to move it, or click to go to it) and corner (to resize it). */
-.view-frames,
-.view-frame {
-	position: absolute;
-	pointer-events: none;
-}
-
-.view-frames {
-	left: 0;
-	top: 0;
-}
-
-.view-frame {
-	box-sizing: border-box;
-	border: 2px solid var(--focus);
-	border-radius: 6px;
-}
-
-.view-frame-label {
-	position: absolute;
-	bottom: 100%;
-	left: -2px;
-	max-width: 100%;
-	padding: 0.1rem 0.5rem;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	font-size: 0.8rem;
-	background: var(--surface);
-	border: 1px solid var(--focus);
-	border-radius: 6px 6px 0 0;
-	cursor: move;
-	touch-action: none;
-	user-select: none;
-	pointer-events: auto;
-}
-
-.view-frame .card-resize {
-	pointer-events: auto;
-}
-
-/* With one card selected, the rest of the board fades to grey so the chain of cards linked to it stands out (and the
- * areas it lies in). */
-.focusing .canvas-card:not(.in-chain),
-.focusing .connector:not(.in-chain),
-.focusing .connector-label:not(.in-chain),
+/* With one card selected, the drawings fade too, but for the areas it lies in (see the fading in the boards feature). */
 .focusing .drawing:not(.in-chain) {
 	opacity: 0.2;
 	filter: grayscale(1);
-}
-
-/* The selected card's own lines: thicker, dashed and running in the direction of flow, in a gradient from the start
- * card's color to the end card's (set per line in drawConnectors); their labels in bold. */
-.focusing .connector.direct .connector-line {
-	stroke: var(--line-gradient);
-	stroke-width: 4.5;
-	stroke-dasharray: 12 9;
-	animation: connector-flow 0.6s linear infinite;
-}
-
-.focusing .connector-label.direct {
-	font-weight: 600;
-}
-
-@keyframes connector-flow {
-	from {
-		stroke-dashoffset: 21;
-	}
-	to {
-		stroke-dashoffset: 0;
-	}
-}
-
-/* Turns editing the frames on and off (see renderBoardControls); while on, it stands out. */
-.frames-toggle {
-	display: inline-flex;
-	align-items: center;
-	gap: 0.4rem;
-}
-
-.frames-toggle[aria-pressed="true"] {
-	border-color: var(--focus);
-	color: var(--focus);
-}
-
-/* Cards coming onto the board fade in. */
-.canvas-card.appear {
-	animation: card-appear 350ms ease-out;
-}
-
-@keyframes card-appear {
-	from {
-		opacity: 0;
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.canvas-card.appear,
-	.focusing .connector.direct .connector-line {
-		animation: none;
-	}
 }
 
 /* Smaller than the swatches in the type form (more specific than .swatch, which comes later). */
@@ -1372,52 +957,6 @@ button.ref-tag {
 
 .swatch.toolbar-swatch[aria-pressed="true"] {
 	outline-offset: 1px;
-}
-
-/* Connector lines live in world coordinates at the layer's origin and never catch the pointer. */
-.connectors {
-	position: absolute;
-	left: 0;
-	top: 0;
-	width: 1px;
-	max-width: none; /* see .drawings */
-	height: 1px;
-	overflow: visible;
-	pointer-events: none;
-	color: var(--border-strong);
-}
-
-.connector-line {
-	fill: none;
-	stroke: #8a8a8a;
-	stroke-width: 1.5;
-}
-
-.connector-arrow {
-	stroke: #8a8a8a;
-	stroke-width: 1;
-	stroke-linejoin: round;
-}
-
-.connector-labels {
-	position: absolute;
-	left: 0;
-	top: 0;
-	pointer-events: none;
-}
-
-/* A small tag centered on the line, covering it so the text stands out from the line and the dots. */
-.connector-label {
-	position: absolute;
-	transform: translate(-50%, -50%);
-	padding: 0 0.4rem;
-	border: 1px solid var(--border-strong);
-	border-radius: 4px;
-	background: var(--surface);
-	color: var(--text);
-	font-size: 0.75rem;
-	line-height: 1.25rem;
-	white-space: nowrap;
 }
 
 .canvas-card {
@@ -1596,255 +1135,6 @@ button.ref-tag {
 	line-height: 1.5;
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
-}
-
-.card-resize {
-	position: absolute;
-	right: 0;
-	bottom: 0;
-	width: 14px;
-	height: 14px;
-	cursor: nwse-resize;
-	touch-action: none;
-	border-bottom-right-radius: 6px;
-	background: linear-gradient(135deg, transparent 50%, var(--border-strong) 50%);
-}
-
-.canvas-toolbar {
-	position: absolute;
-	top: 0.75rem;
-	right: 0.75rem;
-	/* Leave room for the panel's open button on the left. */
-	max-width: calc(100% - 4rem);
-	display: flex;
-	flex-wrap: wrap;
-	justify-content: flex-end;
-	align-items: flex-start;
-	gap: 0.5rem;
-	/* Only the groups catch the pointer, so the gaps between them still pan the canvas. */
-	pointer-events: none;
-}
-
-.toolbar-group {
-	display: flex;
-	align-items: center;
-	gap: 0.25rem;
-	padding: 0.25rem;
-	white-space: nowrap;
-	background: var(--surface);
-	border: 1px solid var(--border);
-	border-radius: 6px;
-	box-shadow: 0 2px 6px rgb(0 0 0 / 0.08);
-	pointer-events: auto;
-}
-
-.board-controls {
-	display: flex;
-	align-items: center;
-	gap: 0.25rem;
-}
-
-/* The current board's name, opening the overlay to pick another. */
-.picker-switch {
-	display: inline-flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 0.4rem;
-	max-width: 28rem;
-}
-
-.picker-name {
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-/* Overlays over the canvas: connecting an entity with another, a new entity. */
-.canvas-dialog {
-	/* Centered on the screen (the reset takes away the browser's margin: auto). */
-	margin: auto;
-	width: min(26rem, calc(100vw - 2rem));
-	max-height: calc(100dvh - 4rem);
-	padding: 1rem;
-	background: var(--surface);
-	color: inherit;
-	border: 1px solid var(--border);
-	border-radius: 6px;
-	box-shadow: 0 6px 20px rgb(0 0 0 / 0.12);
-}
-
-.canvas-dialog[open] {
-	display: grid;
-	gap: 0.75rem;
-}
-
-.canvas-dialog::backdrop {
-	background: rgb(0 0 0 / 0.25);
-}
-
-.canvas-dialog header {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-}
-
-/* The board picker: a dropdown under its button, like the workspace menu (placed by script). */
-.picker-dropdown {
-	position: fixed;
-	z-index: 30;
-	margin: 0;
-	/* As wide as the names in it, so they don't wrap. */
-	width: max-content;
-	min-width: min(16rem, calc(100vw - 1rem));
-	max-width: calc(100vw - 1rem);
-	overflow-y: auto;
-	padding: 1rem;
-	background: var(--surface);
-	color: inherit;
-	border: 1px solid var(--border);
-	border-radius: 6px;
-	box-shadow: 0 6px 20px rgb(0 0 0 / 0.12);
-}
-
-.picker-dropdown[open] {
-	display: grid;
-	gap: 0.75rem;
-}
-
-:is(.canvas-dialog, .picker-dropdown) h2 {
-	font-size: 1rem;
-}
-
-:is(.canvas-dialog, .picker-dropdown) h3 {
-	font-size: 0.9rem;
-}
-
-.picker-list,
-.connect-list {
-	display: grid;
-	gap: 0.25rem;
-	margin: 0;
-	padding: 0;
-	list-style: none;
-}
-
-/* The picker's dropdown scrolls as a whole; a scrolling list would cut off the drop marker above its first board
-   and below its last. */
-.connect-list {
-	overflow-y: auto;
-}
-
-.picker-list li,
-.connect-list li,
-.picker-rename {
-	display: flex;
-	gap: 0.25rem;
-}
-
-/* Like the workspace menu's options. */
-.picker-option {
-	flex: 1;
-	min-width: 0;
-	text-align: left;
-	border: none;
-	background: transparent;
-	padding: 0.35rem 0.5rem;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
-.picker-option[aria-current="true"],
-.picker-option[aria-current="true"]:hover:not(:disabled) {
-	background: var(--highlight);
-	font-weight: 600;
-}
-
-/* A row's rename and delete: quiet icons, clearer on the row under the pointer or with focus. */
-.picker-action {
-	display: inline-flex;
-	align-items: center;
-	border: none;
-	background: transparent;
-	padding: 0.35rem;
-	color: var(--muted);
-	opacity: 0.5;
-}
-
-.picker-list li:is(:hover, :focus-within) .picker-action {
-	opacity: 1;
-}
-
-.picker-action:hover:not(:disabled) {
-	color: var(--text);
-}
-
-/* Without hover (touch), they're always clear. */
-@media (hover: none) {
-	.picker-action {
-		opacity: 1;
-	}
-}
-
-.picker-action svg {
-	width: 1rem;
-	height: 1rem;
-	fill: none;
-	stroke: currentColor;
-	stroke-width: 1.4;
-	stroke-linecap: round;
-	stroke-linejoin: round;
-}
-
-.picker-rename input {
-	flex: 1;
-	min-width: 0;
-}
-
-.picker-new {
-	display: grid;
-	gap: 0.5rem;
-	padding-top: 0.75rem;
-	border-top: 1px solid var(--border);
-}
-
-.picker-new button {
-	justify-self: start;
-}
-
-/* Connecting an entity: the new one's name and its button on one line, then the existing ones to pick. */
-.connect-new,
-.connect-existing {
-	display: grid;
-	gap: 0.5rem;
-}
-
-.connect-new .row input {
-	flex: 1;
-	min-width: 0;
-}
-
-.connect-existing {
-	padding-top: 0.75rem;
-	border-top: 1px solid var(--border);
-}
-
-.connect-list {
-	max-height: 14rem;
-}
-
-/* Without any board: just the button creating the first, in the middle. */
-.first-board {
-	display: grid;
-	place-content: center;
-	justify-items: center;
-	gap: 0.75rem;
-}
-
-.zoom-label {
-	min-width: 3.5rem;
-	text-align: center;
-	font-variant-numeric: tabular-nums;
 }
 
 .type-dot {

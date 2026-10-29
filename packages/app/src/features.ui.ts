@@ -1,12 +1,19 @@
 import { APP_FORMAT, type AppData, type Store, type Workspaces } from "./legacy/core/index.js";
-import { boardsPage } from "./legacy/ui/boards-page.js";
+import { boardExports } from "./legacy/ui/board-exports.js";
+import { DRAWING_LAYER } from "./legacy/ui/drawing-layer.js";
 import { TEXT_EXPORT } from "./legacy/ui/shell-parts.js";
 import { renderShell } from "./shared/ui/index.js";
+import type { CanvasLayer } from "./features/boards/ui.js";
 import { COPY_TYPES, DATA_PAGE, WRAP_REFERENCES, deleteQuestion } from "./features/data/ui.js";
 import { ANALYSES_PAGE } from "./features/analyses/ui.js";
+import { boardsPage } from "./features/boards/ui.js";
 
 export * from "./features/data/ui.js";
 export * from "./features/analyses/ui.js";
+export * from "./features/boards/ui.js";
+
+/** The features' layers on the boards' canvas (see `CanvasLayer`), the first drawn lowest. */
+export const CANVAS_LAYERS: readonly CanvasLayer[] = [DRAWING_LAYER];
 
 /**
  * The app in the browser, put together of the shell and the features' parts: a feature joins with a line here, and
@@ -17,7 +24,7 @@ export function render(root: HTMLElement, workspaces: Workspaces, { viewScript }
 	return renderShell<AppData, Store>(root, workspaces, {
 		format: APP_FORMAT,
 		/** The pages, their tabs in this order. */
-		pages: [DATA_PAGE, boardsPage(viewScript), ANALYSES_PAGE],
+		pages: [DATA_PAGE, boardsPage({ layers: CANVAS_LAYERS, exports: boardExports(viewScript) }), ANALYSES_PAGE],
 		workspaceActions: [TEXT_EXPORT],
 		newWorkspaceOptions: [COPY_TYPES],
 		settings: [WRAP_REFERENCES],
