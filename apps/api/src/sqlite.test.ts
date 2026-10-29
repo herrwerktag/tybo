@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { DATA_VERSION, changesBetween, storedFeatureData, type AppData } from "@tybo/app/core";
 import { DatabaseSync } from "node:sqlite";
-import { SQLITE_MIGRATIONS, sqliteStorage } from "./sqlite.js";
+import { SQLITE_MIGRATIONS, sqliteStorage } from "@tybo/app/api";
 import { call, startApp } from "./test-server.js";
 
 /** A state with every kind of unit: a type with a property, an entity with a value, a board with a card, a

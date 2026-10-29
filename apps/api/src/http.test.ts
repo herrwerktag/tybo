@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DATA_VERSION, moveItem, storedFeatureData } from "@tybo/app/core";
-import type { HistoryPage } from "./history.js";
-import { DEFAULT_PORT, portFromEnv, type Api } from "./http.js";
+import type { Api, HistoryPage } from "@tybo/app/api";
+import { DEFAULT_PORT, portFromEnv } from "./http.js";
 import { call, startApp } from "./test-server.js";
 
 /** The API on workspaces held in memory — what the database does, without needing one. A change set isn't

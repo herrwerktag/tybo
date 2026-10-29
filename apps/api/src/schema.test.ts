@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { test } from "node:test";
 import { DATA_VERSION } from "@tybo/app/core";
-import { MIGRATIONS, SchemaMismatch, migrateSchema } from "./schema.js";
+import { POSTGRES_MIGRATIONS, SchemaMismatch, migrateSchema } from "@tybo/app/api";
 
 /** The test database these tests run against (never the productive DATABASE_URL); without it they are skipped, not failed. */
 const url = process.env.TEST_DATABASE_URL;
@@ -29,7 +29,7 @@ test("an empty database gets the whole schema, and a second run has nothing left
 	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
 	try {
 		await wipe(sql);
-		assert.deepEqual(await migrateSchema(sql), MIGRATIONS.map((m) => m.version));
+		assert.deepEqual(await migrateSchema(sql), POSTGRES_MIGRATIONS.map((m) => m.version));
 		assert.deepEqual(await tables(sql), ["analyses", "boards", "cards", "drawings", "entities", "entity_types", "entity_values", "history", "properties", "schema_migrations", "workspaces"]);
 		assert.deepEqual(await migrateSchema(sql), []);
 	} finally {
@@ -45,7 +45,7 @@ test("a step that fails leaves the schema exactly as it was — none of the run 
 		const before = await sql`select version from schema_migrations order by version`;
 
 		const failing = [
-			...MIGRATIONS,
+			...POSTGRES_MIGRATIONS,
 			{ version: 900, name: "made for the test", up: async (tx: postgres.ISql<{}>) => void (await tx`create table schema_test_half (id int)`) },
 			{ version: 901, name: "fails", up: async () => Promise.reject(new Error("the step fails")) },
 		];
@@ -64,13 +64,13 @@ test("a step recorded under another name stops the run before anything runs", { 
 	try {
 		// As a database brought up by another branch: its own step 9, not this one's.
 		await wipe(sql);
-		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 9));
+		await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 9));
 		await sql`insert into schema_migrations (version, name) values (9, 'from another branch')`;
-		const last = MIGRATIONS.at(-1)!;
-		const later = [...MIGRATIONS, { version: last.version + 1, name: "later", up: async (tx: postgres.ISql<{}>) => void (await tx`create table schema_test_later (id int)`) }];
+		const last = POSTGRES_MIGRATIONS.at(-1)!;
+		const later = [...POSTGRES_MIGRATIONS, { version: last.version + 1, name: "later", up: async (tx: postgres.ISql<{}>) => void (await tx`create table schema_test_later (id int)`) }];
 
 		await assert.rejects(migrateSchema(sql, later), (error) =>
-			error instanceof SchemaMismatch && error.version === 9 && error.recorded === "from another branch" && error.expected === MIGRATIONS.find((m) => m.version === 9)!.name,
+			error instanceof SchemaMismatch && error.version === 9 && error.recorded === "from another branch" && error.expected === POSTGRES_MIGRATIONS.find((m) => m.version === 9)!.name,
 		);
 		const [table] = await sql`select to_regclass('schema_test_later') is not null as there`;
 		assert.equal(table?.there, false, "no step ran");
@@ -83,7 +83,7 @@ test("steps 6 to 8: a board's steps from before become one story, with the board
 	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
 	try {
 		await wipe(sql);
-		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 6));
+		await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 6));
 		await sql`insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 4)`;
 		const board = (id: string, position: number, story: boolean | null, pages: unknown) =>
 			sql`insert into boards (workspace_id, id, position, name, story, pages)
@@ -93,7 +93,7 @@ test("steps 6 to 8: a board's steps from before become one story, with the board
 		await board("none", 2, false, []);
 		await board("null", 3, null, null);
 
-		assert.deepEqual(await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 10)), [6, 7, 8, 9]);
+		assert.deepEqual(await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 10)), [6, 7, 8, 9]);
 		const rows = await sql`select id, stories from boards order by position`;
 		// Steps 7 and 8 leave the frames null: the app makes them of the board's and the steps' pan/zoom.
 		assert.deepEqual([...(await sql`select distinct view_frame, frames from boards`)], [{ view_frame: null, frames: null }]);
@@ -120,17 +120,17 @@ test("step 8 gives boards their own frame, whichever form step 7 ran in", { skip
 	try {
 		// As step 7 is.
 		await wipe(sql);
-		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 8));
+		await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 8));
 		assert.deepEqual(await columns(), ["frames", "view_frame_id"]);
-		assert.deepEqual(await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 10)), [8, 9]);
+		assert.deepEqual(await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 10)), [8, 9]);
 		assert.deepEqual(await columns(), ["frames", "view_frame"]);
 
 		// As step 7 briefly was: with `view_frame` already.
 		await wipe(sql);
-		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 7));
+		await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 7));
 		await sql`alter table boards add column view_frame jsonb, add column frames jsonb`;
 		await sql`insert into schema_migrations (version, name) values (7, 'view frames')`;
-		assert.deepEqual(await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 10)), [8, 9]);
+		assert.deepEqual(await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 10)), [8, 9]);
 		assert.deepEqual(await columns(), ["frames", "view_frame"]);
 	} finally {
 		await sql.end({ timeout: 5 });
@@ -141,12 +141,12 @@ test("step 10 drops what was saved of stories and their frames; the board's own 
 	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
 	try {
 		await wipe(sql);
-		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 10));
+		await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 10));
 		await sql`insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 7)`;
 		await sql`insert into boards (workspace_id, id, position, name, view_frame, frames, stories)
 			values ('ws', 'b', 0, 'Flow', ${sql.json({ x: 0, y: 0, width: 1280, height: 720 })}, '[]', ${sql.json([{ id: "s", name: "Story 1", pages: [] }])})`;
 
-		assert.deepEqual(await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 11)), [10]);
+		assert.deepEqual(await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 11)), [10]);
 		const columns = await sql`select column_name from information_schema.columns where table_name = 'boards' order by column_name`;
 		assert.deepEqual(
 			columns.map((row) => row.column_name),
@@ -162,7 +162,7 @@ test("step 11 drops the library and the library drawings placed on boards; other
 	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
 	try {
 		await wipe(sql);
-		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 11));
+		await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 11));
 		await sql`insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 8)`;
 		await sql`insert into boards (workspace_id, id, position, name) values ('ws', 'b', 0, 'Flow')`;
 		await sql`insert into drawings (workspace_id, id, board_id, position, kind, body) values
@@ -170,7 +170,7 @@ test("step 11 drops the library and the library drawings placed on boards; other
 			('ws', 'placed', 'b', 1, 'symbol', ${sql.json({ id: "placed", kind: "symbol", libraryId: "lib" })})`;
 		await sql`insert into library_drawings (workspace_id, id, position, name) values ('ws', 'lib', 0, 'Stern')`;
 
-		assert.deepEqual(await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 12)), [11]);
+		assert.deepEqual(await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 12)), [11]);
 		assert.equal(await tables(sql).then((names) => names.includes("library_drawings")), false);
 		assert.deepEqual([...(await sql`select id from drawings`)], [{ id: "box" }]);
 	} finally {
@@ -182,10 +182,10 @@ test("step 13 gives the entries written before it their format, 9", { skip: !url
 	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
 	try {
 		await wipe(sql);
-		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 13));
+		await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 13));
 		await sql`insert into history (workspace_id, operation) values ('ws', 'create')`;
 
-		assert.deepEqual(await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 14)), [13]);
+		assert.deepEqual(await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 14)), [13]);
 		assert.deepEqual([...(await sql`select data_version from history`)], [{ data_version: 9 }]);
 	} finally {
 		await sql.end({ timeout: 5 });
@@ -198,7 +198,7 @@ test("after the schema is up to date, every workspace says the app's data format
 		// Made long ago, its rows brought along by the steps since. Fails once DATA_VERSION is raised without a step
 		// that brings the rows to the new format and says so (see DATA_VERSION in the core).
 		await wipe(sql);
-		await migrateSchema(sql, MIGRATIONS.filter((m) => m.version < 14));
+		await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 14));
 		await sql`insert into workspaces (id, position, name, data_version) values ('old', 0, 'Alt', 4)`;
 
 		await migrateSchema(sql);

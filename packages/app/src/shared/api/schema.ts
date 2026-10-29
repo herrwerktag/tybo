@@ -1,8 +1,5 @@
 import type postgres from "postgres";
-
-import type { Queries } from "@tybo/app/api";
-
-export type { Queries };
+import type { Queries } from "./storage.js";
 
 /** A connection of the driver, which can open transactions. */
 export type Sql = postgres.Sql<{}>;
@@ -18,7 +15,7 @@ interface Migration {
 
 /** The schema, step by step. The app's data lives in these tables and nowhere else: every row belongs to its
  * workspace, and a workspace's rows go with it. */
-export const MIGRATIONS: readonly Migration[] = [
+export const POSTGRES_MIGRATIONS: readonly Migration[] = [
 	{
 		version: 1,
 		name: "workspaces and their data tables",
@@ -298,7 +295,7 @@ export class SchemaMismatch extends Error {
  * schema exactly as it was. Answers the versions it ran (none: the schema was up to date already).
  * A recorded step whose name isn't this version's throws a SchemaMismatch, before anything runs.
  */
-export async function migrateSchema(sql: Sql, migrations: readonly Migration[] = MIGRATIONS): Promise<number[]> {
+export async function migrateSchema(sql: Sql, migrations: readonly Migration[] = POSTGRES_MIGRATIONS): Promise<number[]> {
 	return sql.begin(async (tx) => {
 		await tx`select pg_advisory_xact_lock(${MIGRATION_LOCK})`;
 		if (!(await exists(tx, "schema_migrations"))) {

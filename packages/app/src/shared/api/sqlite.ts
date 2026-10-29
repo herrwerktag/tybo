@@ -1,11 +1,9 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
-import type { AppData, Change, SavedChanges } from "@tybo/app/core";
-import { DATA_VERSION, inKindOrder, moveItem, unitStandsOf, untouched } from "@tybo/app/core";
-import type { StoredWorkspace } from "./data.js";
+import { DATA_VERSION, inKindOrder, moveItem, unitStandsOf, untouched, type AppData, type Change, type SavedChanges } from "../core/index.js";
+import type { Api, StoredWorkspace } from "./data.js";
 import { changeEntries, type HistoryEntry, type HistoryOperation, type NewEntry } from "./history.js";
-import type { Api } from "./http.js";
-import { json, parsed, plain } from "@tybo/app/api";
-import { STORED_KINDS, UNIT_STORAGES, assembleAppData, storageOf } from "@tybo/app/api";
+import { json, parsed, plain } from "./sqlite-values.js";
+import type { StoredUnits } from "./storage.js";
 
 /** The API's storage in a local SQLite file, plus what running the server against it takes — the same as
  * `PostgresStorage`, for working without a Postgres server at hand. */
@@ -256,9 +254,9 @@ function transaction<T>(db: DatabaseSync, work: () => T): T {
 	}
 }
 
-/** The app's data in a SQLite file at `path` (made when it isn't there): the same workspaces and tables as
- * in Postgres, written and read the same way — a save in one transaction, its units' collisions reported. */
-export function sqliteStorage(path: string): SqliteStorage {
+/** The app's data in a SQLite file at `path` (made when it isn't there), its kinds of unit kept as `stored` says:
+ * the same workspaces and tables as in Postgres, written and read the same way — a save in one transaction, its units' collisions reported. */
+export function sqliteStorageOf(path: string, stored: StoredUnits): SqliteStorage {
 	const db = new DatabaseSync(path);
 	// The references' cascades are what deleting a unit relies on; SQLite only follows them when asked to.
 	db.exec("pragma foreign_keys = on; pragma journal_mode = wal; pragma busy_timeout = 5000");
@@ -270,13 +268,13 @@ export function sqliteStorage(path: string): SqliteStorage {
 
 	const readAppData = (ws: string): AppData => {
 		const all = (sql: string) => db.prepare(sql).all(ws) as Record<string, any>[];
-		return assembleAppData(UNIT_STORAGES.map((storage) => storage.readSqlite(all)));
+		return stored.assemble(stored.storages.map((storage) => storage.readSqlite(all)));
 	};
 
 	/** Writes one unit's rows — only that unit's own, in its workspace (see `changes.ts`, which does the same in Postgres). */
 	const writeUnit = (ws: string, unit: Change): void => {
 		const run = (sql: string, ...params: SQLInputValue[]) => void db.prepare(sql).run(...params);
-		const storage = storageOf(unit.kind)!;
+		const storage = stored.storageOf(unit.kind)!;
 		if (unit.after === null) {
 			run(`delete from ${storage.table} where workspace_id = ? and id = ?`, ws, unit.id);
 			return;
@@ -423,8 +421,8 @@ export function sqliteStorage(path: string): SqliteStorage {
 			}
 			return transaction(db, () => {
 				if (revisionOf(id) === null) return null;
-				const stands = unitStandsOf(STORED_KINDS, readAppData(id));
-				const ordered = inKindOrder(STORED_KINDS, changes);
+				const stands = unitStandsOf(stored.kinds, readAppData(id));
+				const ordered = inKindOrder(stored.kinds, changes);
 				const collided: string[] = [];
 				for (const unit of ordered) {
 					if (!untouched(stands, unit)) collided.push(unit.id);
@@ -432,7 +430,7 @@ export function sqliteStorage(path: string): SqliteStorage {
 				}
 				db.prepare("update workspaces set revision = revision + 1, updated_at = current_timestamp where id = ?").run(id);
 				const version = revisionOf(id)!;
-				recordHistory(id, source, changeEntries(stands, ordered, collided).map((entry) => ({ ...entry, revision: version })));
+				recordHistory(id, source, changeEntries(stored, stands, ordered, collided).map((entry) => ({ ...entry, revision: version })));
 				return { version, collided };
 			});
 		},

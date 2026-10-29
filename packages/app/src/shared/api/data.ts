@@ -1,13 +1,40 @@
-import { moveItem, type AppData, type WorkspaceInfo } from "@tybo/app/core";
-import { recordHistory } from "./history.js";
-import type { Queries, Sql } from "./schema.js";
-import { UNIT_STORAGES, assembleAppData } from "@tybo/app/api";
+import { moveItem, type AppData, type Change, type SavedChanges, type WorkspaceInfo } from "../core/index.js";
+import { recordHistory, type HistoryEntry, type HistoryPage } from "./history.js";
+import type { Sql } from "./schema.js";
+import type { Queries, StoredUnits } from "./storage.js";
 
 /** A workspace's data as a read answers it: its rows put together the way the app holds them, marked with
  * the format they are in (`version`, as an exported file is), and the revision the workspace is at. */
 export interface StoredWorkspace {
 	data: AppData & { version: number };
 	revision: string;
+}
+
+/** What a storage offers the API (see `createApp` in apps/api): the workspaces and their data, and whether it answers.
+ * Every write goes into the history, under the `source` the request named itself with (null when it didn't). */
+export interface Api {
+	/** Resolves once it's known whether the database answers; /health says ok only then. */
+	healthy(): Promise<boolean>;
+	/** The workspaces, in their order. */
+	listWorkspaces(): Promise<WorkspaceInfo[]>;
+	/** Makes an empty workspace; false when one of that id is there already (nothing written then). */
+	createWorkspace(info: WorkspaceInfo, dataVersion: number, source?: string | null): Promise<boolean>;
+	/** Renames a workspace; false when there is none of that id. */
+	renameWorkspace(id: string, name: string, source?: string | null): Promise<boolean>;
+	/** Moves a workspace to index `to` in the list; false when there is none of that id. */
+	moveWorkspace(id: string, to: number, source?: string | null): Promise<boolean>;
+	/** Deletes a workspace and all its data; there being none of that id is no error. */
+	deleteWorkspace(id: string, source?: string | null): Promise<void>;
+	/** The workspace's data with its revision, read as one — or null when there is none of that id. */
+	readWorkspace(id: string): Promise<StoredWorkspace | null>;
+	/** The revision the workspace is at, or null when there is none of that id. */
+	workspaceRevision(id: string): Promise<string | null>;
+	/** Writes a change set — only the rows of the units it names — into the workspace. The units' `before`
+	 * stands decide, one at a time, which of them collided: answered, written anyway (last one wins).
+	 * Null when there is no workspace of that id. */
+	writeChanges(id: string, changes: Change[], source?: string | null): Promise<SavedChanges | null>;
+	/** The workspace's history, newest first — also of a workspace that is gone; empty when there is none. */
+	readHistory(id: string, page: HistoryPage): Promise<HistoryEntry[]>;
 }
 
 /** The workspaces, in the order they were made. */
@@ -66,9 +93,9 @@ export async function moveWorkspace(sql: Sql, id: string, to: number, source: st
 
 /** Deletes the workspace, and with it every row of its data (the tables' references cascade). Its history
  * stays, and gains the deletion with everything the workspace held — so what went can still be found. */
-export async function deleteWorkspace(sql: Sql, id: string, source: string | null = null): Promise<void> {
+export async function deleteWorkspace(sql: Sql, stored: StoredUnits, id: string, source: string | null = null): Promise<void> {
 	await sql.begin(async (tx) => {
-		const was = await snapshot(tx, id);
+		const was = await snapshot(tx, stored, id);
 		if (!was) return;
 		await tx`delete from workspaces where id = ${id}`;
 		await recordHistory(tx, id, source, [{ operation: "delete", revision: was.revision, before: was, after: null }]);
@@ -78,14 +105,14 @@ export async function deleteWorkspace(sql: Sql, id: string, source: string | nul
 /** Gives every workspace whose history has no start yet — one made before there was a history — its baseline:
  * everything it holds now. Each in a transaction of its own, the workspace locked against saves meanwhile;
  * entries of saves already there stay before it. Answers how many it recorded — none once each has its start. */
-export async function recordBaselines(sql: Sql): Promise<number> {
+export async function recordBaselines(sql: Sql, stored: StoredUnits): Promise<number> {
 	const rows = await sql`select id from workspaces
 		where not exists (select 1 from history where workspace_id = workspaces.id and operation in ('create', 'baseline'))
 		order by position, created_at, id`;
 	let recorded = 0;
 	for (const { id } of rows) {
 		const done = await sql.begin(async (tx) => {
-			const now = await snapshot(tx, id as string);
+			const now = await snapshot(tx, stored, id as string);
 			// Gone, or given its start meanwhile (another server starting at once).
 			if (!now) return false;
 			const [started] = await tx`select 1 from history where workspace_id = ${id} and operation in ('create', 'baseline') limit 1`;
@@ -101,10 +128,10 @@ export async function recordBaselines(sql: Sql): Promise<number> {
 /** Everything the workspace holds — its name, revision and data — read with the workspace locked for the rest of
  * the transaction; null when there is none of that id. The data's format is the entry's own (`data_version`): the
  * workspace's column keeps the one it was made with, which the app has migrated past since. */
-async function snapshot(tx: Queries, id: string): Promise<{ name: string; revision: string; data: AppData } | null> {
+async function snapshot(tx: Queries, stored: StoredUnits, id: string): Promise<{ name: string; revision: string; data: AppData } | null> {
 	const [row] = await tx`select name, revision::text as revision from workspaces where id = ${id} for update`;
 	if (!row) return null;
-	return { name: row.name as string, revision: row.revision as string, data: await readAppData(tx, id) };
+	return { name: row.name as string, revision: row.revision as string, data: await readAppData(tx, stored, id) };
 }
 
 /** The revision the workspace is at, or null when there is none of that id. */
@@ -115,11 +142,11 @@ export async function workspaceRevision(sql: Queries, id: string): Promise<strin
 
 /** Reads the workspace's data and its revision in one snapshot of the database, so a save landing alongside
  * can't tear the picture in half — or null when there is no workspace of that id. */
-export async function readWorkspace(sql: Sql, id: string): Promise<StoredWorkspace | null> {
+export async function readWorkspace(sql: Sql, stored: StoredUnits, id: string): Promise<StoredWorkspace | null> {
 	return sql.begin("isolation level repeatable read", async (tx) => {
 		const [workspace] = await tx`select data_version, revision::text as revision from workspaces where id = ${id}`;
 		if (!workspace) return null;
-		const data = await readAppData(tx, id);
+		const data = await readAppData(tx, stored, id);
 		return { data: { version: workspace.data_version as number, ...data }, revision: workspace.revision as string };
 	});
 }
@@ -129,6 +156,6 @@ export async function readWorkspace(sql: Sql, id: string): Promise<StoredWorkspa
  * or the transaction of a save that reads within it, so it sees its own writes. The `position` columns hold
  * every list's order; floats come back bit for bit, the way Postgres stores and answers them.
  */
-export async function readAppData(queries: Queries, workspaceId: string): Promise<AppData> {
-	return assembleAppData(await Promise.all(UNIT_STORAGES.map((storage) => storage.readPostgres(queries, workspaceId))));
+export async function readAppData(queries: Queries, stored: StoredUnits, workspaceId: string): Promise<AppData> {
+	return stored.assemble(await Promise.all(stored.storages.map((storage) => storage.readPostgres(queries, workspaceId))));
 }

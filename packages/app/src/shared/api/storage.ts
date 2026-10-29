@@ -1,5 +1,5 @@
 import type postgres from "postgres";
-import type { UnitKind, UnitStand } from "../core/index.js";
+import type { AppData, UnitKind, UnitStand } from "../core/index.js";
 import type { All, Run } from "./sqlite-values.js";
 
 /** The driver's query function, a connection's or a transaction's — everything here runs on either. */
@@ -28,6 +28,29 @@ export interface UnitStorage<T extends { id: string } = any, R = any, D = any> {
 	writeSqlite(run: Run, ws: string, after: UnitStand<T>, boardId: string | undefined): void;
 	/** Whether a change between the two stands is no news for the history (it's saved, but leaves no entry). */
 	quiet?(before: UnitStand<T> | null, after: UnitStand<T> | null): boolean;
+}
+
+/** The kinds of unit a storage keeps — the app's, given by the features (see features.api.ts) — with what is asked
+ * of them by kind. */
+export interface StoredUnits {
+	/** Parents before the children naming them: the order they are read, put together and written in. */
+	storages: readonly UnitStorage<any, any, AppData>[];
+	/** The kinds of unit, in the storages' order. */
+	kinds: readonly UnitKind<AppData, any>[];
+	/** How the kind named is kept, or undefined for a kind there is none of. */
+	storageOf(kind: string): UnitStorage | undefined;
+	/** The app's data put together of every kind's rows (in the storages' order), parents first. */
+	assemble(rows: readonly unknown[]): AppData;
+}
+
+/** The kinds of unit kept by `storages`, parents before the children naming them (see `StoredUnits`). */
+export function storedUnits(storages: readonly UnitStorage<any, any, AppData>[]): StoredUnits {
+	return {
+		storages,
+		kinds: storages.map(({ unit }) => unit),
+		storageOf: (kind) => storages.find((storage) => storage.unit.kind === kind),
+		assemble: (rows) => storages.reduce((data, storage, index) => storage.assemble(data, rows[index]), {} as AppData),
+	};
 }
 
 /** The jsonb parameter the driver makes, in the transaction at hand (`null` stays SQL null, not jsonb `null`). */

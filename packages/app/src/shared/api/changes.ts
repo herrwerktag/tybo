@@ -1,9 +1,8 @@
-import type { Change, SavedChanges } from "@tybo/app/core";
-import { inKindOrder, unitStandsOf, untouched } from "@tybo/app/core";
+import { inKindOrder, unitStandsOf, untouched, type Change, type SavedChanges } from "../core/index.js";
 import { readAppData } from "./data.js";
 import { changeEntries, recordHistory } from "./history.js";
-import type { Queries, Sql } from "./schema.js";
-import { STORED_KINDS, storageOf } from "@tybo/app/api";
+import type { Sql } from "./schema.js";
+import type { Queries, StoredUnits } from "./storage.js";
 
 /**
  * The change-set writer: the one way the app's data is written. A save never carries the whole document —
@@ -23,21 +22,21 @@ import { STORED_KINDS, storageOf } from "@tybo/app/api";
  */
 
 /** Whether `raw` is a change set: an array of units, each with its `kind` (one the storages know, see
- * units.ts), a non-empty `id`, at least one of `before`/`after` (a unit can't be neither — and a new one
+ * `StoredUnits`), a non-empty `id`, at least one of `before`/`after` (a unit can't be neither — and a new one
  * that is already gone nobody asks for), and for the kinds standing on a board (cards, drawings) the board
  * they stand on. What a stand holds — a type with its properties, a card's numbers — is the writer's
  * business with the database: what doesn't fit makes the save fail as a whole, its transaction refused,
  * nothing written. Null when `raw` isn't such an array at all — the request is refused without touching a
  * thing. */
-export function parseChanges(raw: unknown): Change[] | null {
+export function parseChanges(raw: unknown, stored: StoredUnits): Change[] | null {
 	if (!Array.isArray(raw)) return null;
 	const changes: Change[] = [];
 	for (const entry of raw) {
 		if (typeof entry !== "object" || entry === null) return null;
 		const { kind, id, boardId, before, after } = entry as Record<string, unknown>;
-		if (typeof kind !== "string" || !storageOf(kind)) return null;
+		if (typeof kind !== "string" || !stored.storageOf(kind)) return null;
 		if (typeof id !== "string" || id === "") return null;
-		const onBoard = storageOf(kind)!.unit.onBoard === true;
+		const onBoard = stored.storageOf(kind)!.unit.onBoard === true;
 		if (onBoard && (typeof boardId !== "string" || boardId === "")) return null;
 		const was = stand(before);
 		const now = stand(after);
@@ -71,7 +70,7 @@ function stand(raw: unknown): { value: object; position: number } | null | undef
  * says where the revision stands. Null when there is no workspace of that id; refused (thrown) when it
  * couldn't be written honestly — then it changed nothing. Every unit written leaves its entry in the history,
  * under `source`. */
-export async function applyChanges(sql: Sql, workspaceId: string, changes: readonly Change[], source: string | null = null): Promise<SavedChanges | null> {
+export async function applyChanges(sql: Sql, stored: StoredUnits, workspaceId: string, changes: readonly Change[], source: string | null = null): Promise<SavedChanges | null> {
 	if (changes.length === 0) {
 		// Nothing changed: nothing is written, not even the revision.
 		const [row] = await sql`select revision::text as version from workspaces where id = ${workspaceId}`;
@@ -82,20 +81,20 @@ export async function applyChanges(sql: Sql, workspaceId: string, changes: reado
 		const [locked] = await tx`select id from workspaces where id = ${workspaceId} for update`;
 		if (!locked) return null;
 
-		const stands = unitStandsOf(STORED_KINDS, await readAppData(tx, workspaceId));
-		const ordered = inKindOrder(STORED_KINDS, changes);
+		const stands = unitStandsOf(stored.kinds, await readAppData(tx, stored, workspaceId));
+		const ordered = inKindOrder(stored.kinds, changes);
 		const collided: string[] = [];
 		for (const unit of ordered) {
 			// Whatever the tables hold differs from the unit's `before`: someone else was here first.
 			if (!untouched(stands, unit)) collided.push(unit.id);
-			await writeUnit(tx, workspaceId, unit);
+			await writeUnit(tx, stored, workspaceId, unit);
 		}
 
-		const [stored] = await tx`update workspaces set revision = revision + 1, updated_at = now()
+		const [saved] = await tx`update workspaces set revision = revision + 1, updated_at = now()
 			where id = ${workspaceId}
 			returning revision::text as version`;
-		const version = stored!.version as string;
-		const entries = changeEntries(stands, ordered, collided).map((entry) => ({ ...entry, revision: version }));
+		const version = saved!.version as string;
+		const entries = changeEntries(stored, stands, ordered, collided).map((entry) => ({ ...entry, revision: version }));
 		await recordHistory(tx, workspaceId, source, entries);
 		return { version, collided };
 	});
@@ -103,8 +102,8 @@ export async function applyChanges(sql: Sql, workspaceId: string, changes: reado
 
 /** Writes one unit's rows within the transaction — only that unit's own, in its workspace: its delete is a
  * delete of its one row (the tables' references cascade what hung below it), its write an upsert of it. */
-async function writeUnit(tx: Queries, ws: string, unit: Change): Promise<void> {
-	const storage = storageOf(unit.kind)!;
+async function writeUnit(tx: Queries, stored: StoredUnits, ws: string, unit: Change): Promise<void> {
+	const storage = stored.storageOf(unit.kind)!;
 	if (unit.after === null) {
 		// Gone: its one row goes, and the tables' references take care of what belonged below it — values
 		// with their property or entity, cards and drawings with their board.

@@ -3,8 +3,7 @@ import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { test } from "node:test";
 import { changesBetween, storedFeatureData, type AppData, type Change } from "@tybo/app/core";
-import { readWorkspace } from "./data.js";
-import { postgresStorage } from "./postgres.js";
+import { STORED_UNITS, postgresStorage, readWorkspace } from "@tybo/app/api";
 import { call, startApp } from "./test-server.js";
 
 /** The test database these tests run against (never the productive DATABASE_URL); without it they are skipped, not failed. */
@@ -101,7 +100,7 @@ async function firstSave(app: Testing, data: AppData): Promise<string> {
 /** Everything that tells the app its stand says the same: the read of the tables, and the GET over the
  * wire — deep-equal the expected stand (in format 1) and at `version`. */
 async function assertServes(app: Testing, expected: AppData, version: string): Promise<void> {
-	const stored = await readWorkspace(app.sql, app.ws);
+	const stored = await readWorkspace(app.sql, STORED_UNITS, app.ws);
 	assert.ok(stored);
 	assert.deepEqual(stored.data, { version: 1, ...expected }, "deep-equal what the tables read");
 	assert.equal(stored.revision, version);

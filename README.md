@@ -13,7 +13,7 @@ pnpm-Monorepo mit TypeScript:
 | Paket | Inhalt |
 | --- | --- |
 | `packages/app` (`@tybo/app`) | Die Anwendung ohne Laufzeit-Huelle, je Feature ein Ordner (siehe unten). Einstiege: `@tybo/app/core`, `/ui`, `/api`, `/mcp`, fuer Tests `/testing` |
-| `apps/api` (`@tybo/api`) | HTTP-API ueber Postgres oder SQLite, Schema-Migrationen beim Start |
+| `apps/api` (`@tybo/api`) | HTTP-API, startet die Speicherung (Postgres oder SQLite, aus `@tybo/app/api`) samt Schema-Migrationen |
 | `apps/demo` (`@tybo/demo`) | Die Anwendung im Browser (Vite), spricht nur mit der API |
 | `apps/mcp` (`@tybo/mcp`) | MCP-Server (stdio) fuer LLM-Clients, spricht nur mit der API |
 
@@ -31,7 +31,7 @@ beisteuern, Eintraege im Arbeitsbereich-Menue, eine Option fuer neue Arbeitsbere
 (`BOARD_LISTS` in `features.core.ts`, siehe `BoardList`) und sie auf dem Canvas als Ebene mit eigenen Werkzeugen zeigen
 (`CANVAS_LAYERS` in `features.ui.ts`, siehe `CanvasLayer`), so wie die Zeichnungen; Exporte eines Boards kommen als
 `BoardExport` ins Export-Menue. Die Huelle selbst (Store-Kern, Arbeitsbereiche, Top-Bar) liegt in `shared/`. Global bleiben nur die Migrationen (Datenformat in
-`shared/core/migrations.ts`, Datenbankschema), die immer nur wachsen. Was mehrere Features nutzen, liegt in `shared/`,
+`shared/core/migrations.ts`, Datenbankschema in `shared/api/schema.ts` und `sqlite.ts`), die immer nur wachsen. Was mehrere Features nutzen, liegt in `shared/`,
 auch `AppData`, an das jedes Feature seinen Teil haengt. Zusammengesetzt wird die App in `features.*.ts`: Store und
 Arbeitsbereiche in `features.core.ts`, die Arbeitsbereich-Werkzeuge in `features.mcp.ts`; daneben liegen die Tests der
 ganzen App und ihre Hilfen (`test-*.ts`, `memory-port.ts`). Importe zeigen nur nach unten: `shared/` kennt keine

@@ -1,8 +1,6 @@
 import { resolve } from "node:path";
+import { SchemaMismatch, postgresStorage, sqliteStorage } from "@tybo/app/api";
 import { createApp, portFromEnv } from "./http.js";
-import { postgresStorage } from "./postgres.js";
-import { SchemaMismatch } from "./schema.js";
-import { sqliteStorage } from "./sqlite.js";
 
 // LOCAL_DB_PATH runs the API on a local SQLite file instead of Postgres. A relative path is taken from where
 // pnpm was started (INIT_CWD), not from this package's folder.

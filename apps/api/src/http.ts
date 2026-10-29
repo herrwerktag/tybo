@@ -1,10 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize } from "node:path";
-import { DATA_VERSION, type Change, type SavedChanges, type WorkspaceInfo } from "@tybo/app/core";
-import { parseChanges } from "./changes.js";
-import type { StoredWorkspace } from "./data.js";
-import type { HistoryEntry, HistoryPage } from "./history.js";
+import { DATA_VERSION } from "@tybo/app/core";
+import { STORED_UNITS, parseChanges, type Api, type HistoryPage } from "@tybo/app/api";
 
 /** The port the server listens on when the PORT environment variable doesn't say otherwise.
  * Not 3000: that one is taken by Forgejo on this host. */
@@ -24,33 +22,6 @@ export const DEFAULT_CORS_ORIGIN = "http://localhost:5173";
 /** The folder the built demo is served from when CLIENT_DIR doesn't say otherwise. Empty means the API
  * answers only its own routes, the way it does in development, where Vite serves the demo itself. */
 export const DEFAULT_CLIENT_DIR = process.env.CLIENT_DIR ?? "";
-
-/** What createApp needs besides the routing: the workspaces and their data, and whether their storage answers.
- * Every write goes into the history, under the `source` the request named itself with (null when it didn't). */
-export interface Api {
-	/** Resolves once it's known whether the database answers; /health says ok only then. */
-	healthy(): Promise<boolean>;
-	/** The workspaces, in their order. */
-	listWorkspaces(): Promise<WorkspaceInfo[]>;
-	/** Makes an empty workspace; false when one of that id is there already (nothing written then). */
-	createWorkspace(info: WorkspaceInfo, dataVersion: number, source?: string | null): Promise<boolean>;
-	/** Renames a workspace; false when there is none of that id. */
-	renameWorkspace(id: string, name: string, source?: string | null): Promise<boolean>;
-	/** Moves a workspace to index `to` in the list; false when there is none of that id. */
-	moveWorkspace(id: string, to: number, source?: string | null): Promise<boolean>;
-	/** Deletes a workspace and all its data; there being none of that id is no error. */
-	deleteWorkspace(id: string, source?: string | null): Promise<void>;
-	/** The workspace's data with its revision, read as one — or null when there is none of that id. */
-	readWorkspace(id: string): Promise<StoredWorkspace | null>;
-	/** The revision the workspace is at, or null when there is none of that id. */
-	workspaceRevision(id: string): Promise<string | null>;
-	/** Writes a change set — only the rows of the units it names — into the workspace. The units' `before`
-	 * stands decide, one at a time, which of them collided: answered, written anyway (last one wins).
-	 * Null when there is no workspace of that id. */
-	writeChanges(id: string, changes: Change[], source?: string | null): Promise<SavedChanges | null>;
-	/** The workspace's history, newest first — also of a workspace that is gone; empty when there is none. */
-	readHistory(id: string, page: HistoryPage): Promise<HistoryEntry[]>;
-}
 
 /** The HTTP interface of the app's data.
  *
@@ -211,7 +182,7 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api, client
 				}
 			case "changes": {
 				if (method !== "PUT") return notAllowed(res, "PUT");
-				const changes = parseChanges(await readJson(req));
+				const changes = parseChanges(await readJson(req), STORED_UNITS);
 				if (changes === null) return sendEmpty(res, 400);
 				if (!inOwnFormat(req)) return sendEmpty(res, 409);
 				const answer = await api.writeChanges(id, changes, source);

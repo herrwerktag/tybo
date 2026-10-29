@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { DATA_VERSION, changesBetween, storedFeatureData, type AppData } from "@tybo/app/core";
 import postgres from "postgres";
-import { postgresStorage } from "./postgres.js";
+import { postgresStorage } from "@tybo/app/api";
 import { call, startApp } from "./test-server.js";
 
 /** The test database these tests run against (never the productive DATABASE_URL); without it they are skipped, not failed. */
