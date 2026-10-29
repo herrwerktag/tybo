@@ -1,4 +1,4 @@
-import { readPreference, writePreference } from "../../shared/ui/index.js";
+import { readPreference, writePreference } from "./preferences.js";
 
 /** Light or dark colors; "system" follows the operating system (prefers-color-scheme in app.css). */
 export type Theme = "system" | "light" | "dark";

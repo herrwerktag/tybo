@@ -3,7 +3,7 @@ import { DETAILS_WIDTH_KEY, createCardPreview, entityDetails } from "../../legac
 import { showEntityEditor } from "../../legacy/ui/entity-form.js";
 import { text as legacyText } from "../../legacy/ui/i18n.js";
 import { moveItem } from "../../shared/core/index.js";
-import { downloadFile, el, readPreference, resizeHandle, safeFileName, typeDot, writePreference, zipFiles, type Page } from "../../shared/ui/index.js";
+import { downloadFile, el, readPreference, resizeHandle, safeFileName, typeDot, writePreference, zipFiles, type PageMaker } from "../../shared/ui/index.js";
 import {
 	addAnalysis,
 	deleteAnalysis,
@@ -419,4 +419,4 @@ function join(nodes: HTMLElement[]): (HTMLElement | string)[] {
 }
 
 /** The Analyses tab, after the boards. */
-export const ANALYSES_PAGE: Page<Store> = { route: "analysis", label: () => text.tabAnalysis, render: analysisView };
+export const ANALYSES_PAGE: PageMaker<Store> = () => ({ routes: ["analysis"], label: () => text.tabAnalysis, render: analysisView });

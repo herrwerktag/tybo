@@ -149,7 +149,7 @@ test("a new workspace can start with copies of entity types, keeping their ids",
 	);
 	source.addEntity(person.id, "Frank", "", {});
 
-	const added = (await workspaces.add("Copy", source.data.types))!;
+	const added = (await workspaces.add("Copy", (nothing) => ({ ...nothing, types: source.data.types })))!;
 	const copy = await workspaces.openStore(added.id);
 	assert.deepEqual(
 		copy.data.types.map((t) => t.id),
