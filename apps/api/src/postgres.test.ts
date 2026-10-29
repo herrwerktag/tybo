@@ -211,6 +211,31 @@ test("every write goes into the history, which outlives the workspace — also o
 	}
 });
 
+test("the history comes newest first also where its ids gain a digit (…99, then …00)", { skip: !url }, async () => {
+	const storage = postgresStorage(url!);
+	const raw = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
+	const id = freshId();
+	try {
+		await storage.init();
+		// The next ids run over a power of ten: the making gets the last one with fewer digits, the save the ones after.
+		const [row] = await raw`select coalesce(max(id), 0)::text as last from history`;
+		const power = 10 ** String(Number(row!.last) + 2).length;
+		await raw`select setval(pg_get_serial_sequence('history', 'id'), ${power - 2})`;
+		await storage.createWorkspace({ id, name: "Stelle" }, 1, "demo");
+		await storage.writeChanges(id, changesBetween(empty(), sample()), "demo");
+
+		const history = await storage.readHistory(id, { limit: 100 });
+		const ids = history.map((e) => Number(e.id));
+		assert.equal(ids.at(-1), power - 1);
+		assert.deepEqual(ids, [...ids].sort((a, b) => b - a), "by number, not as text");
+		assert.equal(history.at(-1)!.operation, "create");
+	} finally {
+		await raw.end({ timeout: 5 });
+		await storage.deleteWorkspace(id);
+		await storage.close();
+	}
+});
+
 test("a workspace made before the history gets a baseline of everything it holds, once", { skip: !url }, async () => {
 	const storage = postgresStorage(url!);
 	const raw = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
