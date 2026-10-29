@@ -1,5 +1,5 @@
-import { unitStands, untouched, type Change } from "./changes.js";
-import { moveItem } from "@tybo/app/core";
+import { moveItem, untouched, withChanges, type Change } from "@tybo/app/core";
+import { UNIT_KINDS, unitStands } from "./changes.js";
 import type { AppData, Board } from "./model.js";
 import type { DataPort, SavedChanges, WorkspaceInfo } from "./ports.js";
 
@@ -73,7 +73,7 @@ export function memoryDataPort(initial: Record<string, unknown> = {}) {
 			const current = asAppData(workspace.data);
 			const stands = unitStands(current);
 			const collided = changes.filter((unit) => !untouched(stands, unit)).map((unit) => unit.id);
-			workspace.data = { ...workspace.data, ...applyChanges(current, changes) };
+			workspace.data = { ...workspace.data, ...withChanges(UNIT_KINDS, current, changes) };
 			workspace.version++;
 			return { version: String(workspace.version), collided };
 		},
@@ -110,79 +110,4 @@ function asAppData(data: Record<string, unknown>): AppData {
 		boards: list(data.boards).map((board: Partial<Board>) => ({ ...board, cards: list(board.cards), drawings: list(board.drawings) })),
 		analyses: list(data.analyses),
 	} as AppData;
-}
-
-/** A list's units by id, each with its place — what the tables' `position` columns hold. */
-type Placed<T> = Map<string, { value: T; position: number }>;
-
-const placed = <T extends { id: string }>(items: readonly T[]): Placed<T> =>
-	new Map(items.map((value, position) => [value.id, { value, position }]));
-
-/** The units in the order of their places. */
-const ordered = <T>(units: Placed<T>): T[] => [...units.values()].sort((a, b) => a.position - b.position).map(({ value }) => value);
-
-/** The data with the change set's units written into it — every other unit as it was, and what hung below a
- * unit that goes going with it, as the tables' references cascade. */
-function applyChanges(data: AppData, changes: readonly Change[]): AppData {
-	const types = placed(data.types);
-	const entities = placed(data.entities);
-	const analyses = placed(data.analyses);
-	const boards = new Map(
-		data.boards.map((board, position) => [
-			board.id,
-			{ board, position, cards: placed(board.cards), drawings: placed(board.drawings) },
-		]),
-	);
-	const set = <T>(units: Placed<T>, id: string, after: { value: T; position: number } | null) =>
-		after ? units.set(id, after) : units.delete(id);
-
-	for (const unit of changes) {
-		switch (unit.kind) {
-			case "type":
-				set(types, unit.id, unit.after);
-				if (!unit.after) for (const [id, { value }] of entities) if (value.typeId === unit.id) entities.delete(id);
-				break;
-			case "entity":
-				set(entities, unit.id, unit.after);
-				break;
-			case "analysis":
-				set(analyses, unit.id, unit.after);
-				break;
-			case "board": {
-				if (!unit.after) {
-					boards.delete(unit.id);
-					break;
-				}
-				const existing = boards.get(unit.id);
-				boards.set(unit.id, {
-					board: { ...unit.after.value, cards: [], drawings: [] },
-					position: unit.after.position,
-					cards: existing?.cards ?? new Map(),
-					drawings: existing?.drawings ?? new Map(),
-				});
-				break;
-			}
-			case "card":
-				for (const board of boards.values()) board.cards.delete(unit.id);
-				if (unit.after) boards.get(unit.boardId)?.cards.set(unit.id, unit.after);
-				break;
-			case "drawing":
-				for (const board of boards.values()) board.drawings.delete(unit.id);
-				if (unit.after) boards.get(unit.boardId)?.drawings.set(unit.id, unit.after);
-				break;
-		}
-	}
-	// Cards of an entity that went go with it.
-	for (const board of boards.values()) {
-		for (const [id, { value }] of board.cards) if (!entities.has(value.entityId)) board.cards.delete(id);
-	}
-
-	return {
-		types: ordered(types),
-		entities: ordered(entities),
-		boards: [...boards.values()]
-			.sort((a, b) => a.position - b.position)
-			.map(({ board, cards, drawings }) => ({ ...board, cards: ordered(cards), drawings: ordered(drawings) })),
-		analyses: ordered(analyses),
-	};
 }

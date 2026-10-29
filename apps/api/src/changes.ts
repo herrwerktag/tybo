@@ -1,8 +1,9 @@
 import type { Change, SavedChanges } from "@tybo/core";
-import { CHANGE_KINDS, unitStands, untouched } from "@tybo/core";
+import { inKindOrder, unitStandsOf, untouched } from "@tybo/core";
 import { readAppData } from "./data.js";
 import { changeEntries, recordHistory } from "./history.js";
 import type { Queries, Sql } from "./schema.js";
+import { STORED_KINDS, storageOf } from "./units.js";
 
 /**
  * The change-set writer: the one way the app's data is written. A save never carries the whole document —
@@ -21,31 +22,22 @@ import type { Queries, Sql } from "./schema.js";
  * afterwards.
  */
 
-/** The table holding each kind of unit, one row per unit. */
-const TABLES: Record<Change["kind"], string> = {
-	type: "entity_types",
-	entity: "entities",
-	analysis: "analyses",
-	board: "boards",
-	card: "cards",
-	drawing: "drawings",
-};
-
-/** Whether `raw` is a change set: an array of units, each with its `kind` (one of the six), a non-empty
- * `id`, at least one of `before`/`after` (a unit can't be neither — and a new one that is already gone
- * nobody asks for), and for cards and drawings the board they stand on. What a stand holds — a type with
- * its properties, a card's numbers — is the writer's business with the database: what doesn't fit makes
- * the save fail as a whole, its transaction refused, nothing written. Null when `raw` isn't such an array
- * at all — the request is refused without touching a thing. */
+/** Whether `raw` is a change set: an array of units, each with its `kind` (one the storages know, see
+ * units.ts), a non-empty `id`, at least one of `before`/`after` (a unit can't be neither — and a new one
+ * that is already gone nobody asks for), and for the kinds standing on a board (cards, drawings) the board
+ * they stand on. What a stand holds — a type with its properties, a card's numbers — is the writer's
+ * business with the database: what doesn't fit makes the save fail as a whole, its transaction refused,
+ * nothing written. Null when `raw` isn't such an array at all — the request is refused without touching a
+ * thing. */
 export function parseChanges(raw: unknown): Change[] | null {
 	if (!Array.isArray(raw)) return null;
 	const changes: Change[] = [];
 	for (const entry of raw) {
 		if (typeof entry !== "object" || entry === null) return null;
 		const { kind, id, boardId, before, after } = entry as Record<string, unknown>;
-		if (typeof kind !== "string" || !CHANGE_KINDS.includes(kind as Change["kind"])) return null;
+		if (typeof kind !== "string" || !storageOf(kind)) return null;
 		if (typeof id !== "string" || id === "") return null;
-		const onBoard = kind === "card" || kind === "drawing";
+		const onBoard = storageOf(kind)!.unit.onBoard === true;
 		if (onBoard && (typeof boardId !== "string" || boardId === "")) return null;
 		const was = stand(before);
 		const now = stand(after);
@@ -90,9 +82,8 @@ export async function applyChanges(sql: Sql, workspaceId: string, changes: reado
 		const [locked] = await tx`select id from workspaces where id = ${workspaceId} for update`;
 		if (!locked) return null;
 
-		const stands = unitStands(await readAppData(tx, workspaceId));
-		// Parents before children; a stable sort keeps each kind's units in the order they came.
-		const ordered = [...changes].sort((a, b) => CHANGE_KINDS.indexOf(a.kind) - CHANGE_KINDS.indexOf(b.kind));
+		const stands = unitStandsOf(STORED_KINDS, await readAppData(tx, workspaceId));
+		const ordered = inKindOrder(STORED_KINDS, changes);
 		const collided: string[] = [];
 		for (const unit of ordered) {
 			// Whatever the tables hold differs from the unit's `before`: someone else was here first.
@@ -110,104 +101,15 @@ export async function applyChanges(sql: Sql, workspaceId: string, changes: reado
 	});
 }
 
-/** The jsonb parameter the driver makes, in the transaction at hand (`null` stays SQL null, not jsonb `null`). */
-function jsonbParameter(queries: Queries, value: unknown) {
-	return value === null || value === undefined ? null : queries.json(value as never);
-}
-
 /** Writes one unit's rows within the transaction — only that unit's own, in its workspace: its delete is a
  * delete of its one row (the tables' references cascade what hung below it), its write an upsert of it. */
 async function writeUnit(tx: Queries, ws: string, unit: Change): Promise<void> {
+	const storage = storageOf(unit.kind)!;
 	if (unit.after === null) {
 		// Gone: its one row goes, and the tables' references take care of what belonged below it — values
 		// with their property or entity, cards and drawings with their board.
-		await tx`delete from ${tx(TABLES[unit.kind])} where workspace_id = ${ws} and id = ${unit.id}`;
+		await tx`delete from ${tx(storage.table)} where workspace_id = ${ws} and id = ${unit.id}`;
 		return;
 	}
-	switch (unit.kind) {
-		case "type": {
-			const type = unit.after.value;
-			await tx`insert into entity_types (workspace_id, id, position, name, content_template, color, updated_at)
-				values (${ws}, ${type.id}, ${unit.after.position}, ${type.name}, ${type.contentTemplate}, ${type.color}, now())
-				on conflict (workspace_id, id) do update set
-					position = excluded.position, name = excluded.name,
-					content_template = excluded.content_template, color = excluded.color, updated_at = now()`;
-			const properties = type.properties ?? [];
-			// Properties the type no longer has lose their rows — their values go with them, the tables'
-			// references take care of what hangs below a property (or its type) going away.
-			if (properties.length === 0) await tx`delete from properties where workspace_id = ${ws} and type_id = ${type.id}`;
-			else
-				await tx`delete from properties
-					where workspace_id = ${ws} and type_id = ${type.id} and id <> all(${properties.map((p) => p.id)})`;
-			for (const [index, property] of properties.entries()) {
-				await tx`insert into properties (workspace_id, id, type_id, position, name, kind, options, reference, card_display)
-					values (${ws}, ${property.id}, ${type.id}, ${index}, ${property.name}, ${property.kind},
-						${jsonbParameter(tx, property.options)}, ${jsonbParameter(tx, property.reference)}, ${property.cardDisplay})
-					on conflict (workspace_id, id) do update set
-						type_id = excluded.type_id, position = excluded.position, name = excluded.name,
-						kind = excluded.kind, options = excluded.options, reference = excluded.reference,
-						card_display = excluded.card_display`;
-			}
-			return;
-		}
-		case "entity": {
-			const entity = unit.after.value;
-			await tx`insert into entities (workspace_id, id, type_id, position, name, content, description, tags, updated_at)
-				values (${ws}, ${entity.id}, ${entity.typeId}, ${unit.after.position}, ${entity.name}, ${entity.content}, ${entity.description},
-					${jsonbParameter(tx, entity.tags ?? [])}, now())
-				on conflict (workspace_id, id) do update set
-					type_id = excluded.type_id, position = excluded.position, name = excluded.name,
-					content = excluded.content, description = excluded.description, tags = excluded.tags, updated_at = now()`;
-			// The values the entity no longer has lose their rows; the ones it has are written — the place
-			// is the record's own order, the read assembles the record either way.
-			const values = Object.entries(entity.values ?? {});
-			if (values.length === 0) await tx`delete from entity_values where workspace_id = ${ws} and entity_id = ${entity.id}`;
-			else
-				await tx`delete from entity_values
-					where workspace_id = ${ws} and entity_id = ${entity.id} and property_id <> all(${values.map(([propertyId]) => propertyId)})`;
-			for (const [index, [propertyId, value]] of values.entries()) {
-				await tx`insert into entity_values (workspace_id, entity_id, property_id, position, value)
-					values (${ws}, ${entity.id}, ${propertyId}, ${index}, ${jsonbParameter(tx, value)})
-					on conflict (workspace_id, entity_id, property_id) do update set position = excluded.position, value = excluded.value`;
-			}
-			return;
-		}
-		case "analysis": {
-			const item = unit.after.value;
-			await tx`insert into analyses (workspace_id, id, position, name, type_id, group_paths, column_paths, updated_at)
-				values (${ws}, ${item.id}, ${unit.after.position}, ${item.name}, ${item.typeId}, ${jsonbParameter(tx, item.groups)},
-					${jsonbParameter(tx, item.columns)}, now())
-				on conflict (workspace_id, id) do update set
-					position = excluded.position, name = excluded.name, type_id = excluded.type_id, group_paths = excluded.group_paths,
-					column_paths = excluded.column_paths, updated_at = now()`;
-			return;
-		}
-		case "board": {
-			const board = unit.after.value;
-			await tx`insert into boards (workspace_id, id, position, name, viewport, view_frame, updated_at)
-				values (${ws}, ${board.id}, ${unit.after.position}, ${board.name}, ${jsonbParameter(tx, board.viewport)},
-					${jsonbParameter(tx, board.viewFrame ?? null)}, now())
-				on conflict (workspace_id, id) do update set
-					position = excluded.position, name = excluded.name, viewport = excluded.viewport, view_frame = excluded.view_frame,
-					updated_at = now()`;
-			return;
-		}
-		case "card": {
-			const card = unit.after.value;
-			await tx`insert into cards (workspace_id, id, board_id, entity_id, position, x, y, width, height)
-				values (${ws}, ${card.id}, ${unit.boardId}, ${card.entityId}, ${unit.after.position}, ${card.x}, ${card.y}, ${card.width}, ${card.height})
-				on conflict (workspace_id, id) do update set
-					board_id = excluded.board_id, entity_id = excluded.entity_id, position = excluded.position,
-					x = excluded.x, y = excluded.y, width = excluded.width, height = excluded.height`;
-			return;
-		}
-		case "drawing": {
-			const drawing = unit.after.value;
-			await tx`insert into drawings (workspace_id, id, board_id, position, kind, body)
-				values (${ws}, ${drawing.id}, ${unit.boardId}, ${unit.after.position}, ${drawing.kind}, ${jsonbParameter(tx, drawing)})
-				on conflict (workspace_id, id) do update set
-					board_id = excluded.board_id, position = excluded.position, kind = excluded.kind, body = excluded.body`;
-			return;
-		}
-	}
+	await storage.writePostgres(tx, ws, unit.after, unit.boardId);
 }

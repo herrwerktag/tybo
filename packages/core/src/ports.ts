@@ -1,4 +1,4 @@
-import type { Change } from "./changes.js";
+import type { Change } from "@tybo/app/core";
 
 /** A workspace: its own entity types, entities and boards. */
 export interface WorkspaceInfo {

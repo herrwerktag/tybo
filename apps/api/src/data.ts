@@ -1,6 +1,7 @@
-import { moveItem, type AppData, type Drawing, type WorkspaceInfo } from "@tybo/core";
+import { moveItem, type AppData, type WorkspaceInfo } from "@tybo/core";
 import { recordHistory } from "./history.js";
 import type { Queries, Sql } from "./schema.js";
+import { UNIT_STORAGES, assembleAppData } from "./units.js";
 
 /** A workspace's data as a read answers it: its rows put together the way the app holds them, marked with
  * the format they are in (`version`, as an exported file is), and the revision the workspace is at. */
@@ -129,96 +130,5 @@ export async function readWorkspace(sql: Sql, id: string): Promise<StoredWorkspa
  * every list's order; floats come back bit for bit, the way Postgres stores and answers them.
  */
 export async function readAppData(queries: Queries, workspaceId: string): Promise<AppData> {
-	const [types, properties, entities, values, boards, cards, drawings, analyses] = await Promise.all([
-		queries`select id, name, content_template, color from entity_types where workspace_id = ${workspaceId} order by position, id`,
-		queries`select id, type_id, name, kind, options, reference, card_display from properties where workspace_id = ${workspaceId} order by type_id, position, id`,
-		queries`select id, type_id, name, content, description, tags from entities where workspace_id = ${workspaceId} order by position, id`,
-		queries`select entity_id, property_id, value from entity_values where workspace_id = ${workspaceId} order by entity_id, position, property_id`,
-		queries`select id, name, viewport, view_frame from boards where workspace_id = ${workspaceId} order by position, id`,
-		queries`select id, board_id, entity_id, x, y, width, height from cards where workspace_id = ${workspaceId} order by board_id, position, id`,
-		queries`select board_id, body from drawings where workspace_id = ${workspaceId} order by board_id, position, id`,
-		queries`select id, name, type_id, group_paths, column_paths from analyses where workspace_id = ${workspaceId} order by position, id`,
-	]);
-	return assembleAppData({ types, properties, entities, values, boards, cards, drawings, analyses });
-}
-
-/** A workspace's rows, table by table, in the order `readAppData` reads them — the JSON columns already
- * parsed, whichever database answered them. */
-export interface WorkspaceRows {
-	types: readonly Record<string, any>[];
-	properties: readonly Record<string, any>[];
-	entities: readonly Record<string, any>[];
-	values: readonly Record<string, any>[];
-	boards: readonly Record<string, any>[];
-	cards: readonly Record<string, any>[];
-	drawings: readonly Record<string, any>[];
-	analyses: readonly Record<string, any>[];
-}
-
-/** Puts a workspace's rows together into the app's data. */
-export function assembleAppData({ types, properties, entities, values, boards, cards, drawings, analyses }: WorkspaceRows): AppData {
-	const propertiesOf = groupBy(properties, "type_id", (property) => ({
-		id: property.id,
-		name: property.name,
-		kind: property.kind,
-		options: property.options ?? [],
-		reference: property.reference ?? null,
-		cardDisplay: property.card_display,
-	}));
-	const valuesOf = new Map<string, Record<string, unknown>>();
-	for (const { entity_id, property_id, value } of values) {
-		const record = valuesOf.get(entity_id) ?? {};
-		record[property_id] = value;
-		valuesOf.set(entity_id, record);
-	}
-	const cardsOf = groupBy(cards, "board_id", ({ id, entity_id, x, y, width, height }) => ({ id, entityId: entity_id, x, y, width, height }));
-	const drawingsOf = groupBy(drawings, "board_id", ({ body }) => body as Drawing);
-
-	return {
-		types: types.map(({ id, name, content_template, color }) => ({
-			id,
-			name,
-			properties: propertiesOf.get(id) ?? [],
-			contentTemplate: content_template,
-			color,
-		})),
-		entities: entities.map(({ id, type_id, name, content, description, tags }) => ({
-			id,
-			typeId: type_id,
-			name,
-			content,
-			description,
-			tags: tags ?? [],
-			values: valuesOf.get(id) ?? {},
-		})),
-		// The frame is null on boards saved before frames (JSON keeps a null, unlike a missing value, so a save's
-		// `before` still matches): the app makes it of the board's pan/zoom.
-		boards: boards.map(({ id, name, viewport, view_frame }) => ({
-			id,
-			name,
-			cards: cardsOf.get(id) ?? [],
-			viewport,
-			viewFrame: view_frame ?? null,
-			drawings: drawingsOf.get(id) ?? [],
-		})),
-		analyses: analyses.map(({ id, name, type_id, group_paths, column_paths }) => ({
-			id,
-			name,
-			typeId: type_id,
-			groups: group_paths ?? [],
-			columns: column_paths ?? [],
-		})),
-	} as AppData;
-}
-
-/** The rows by the parent their `column` names, each turned into what the app holds, in the rows' order. */
-function groupBy<R extends Record<string, unknown>, T>(rows: readonly R[], column: keyof R, make: (row: R) => T): Map<string, T[]> {
-	const groups = new Map<string, T[]>();
-	for (const row of rows) {
-		const parent = row[column] as string;
-		const list = groups.get(parent) ?? [];
-		list.push(make(row));
-		groups.set(parent, list);
-	}
-	return groups;
+	return assembleAppData(await Promise.all(UNIT_STORAGES.map((storage) => storage.readPostgres(queries, workspaceId))));
 }

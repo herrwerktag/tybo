@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { TYPE_COLORS, type AppData, type DraftProperty } from "./model.js";
+import { TYPE_COLORS, type AppData, type DraftProperty, type Entity } from "./model.js";
 import { memoryDataPort } from "./memory-port.js";
 import { DATA_VERSION, REFERENCE_SCREEN, MIGRATIONS, createStore, migrate, type Store } from "./store.js";
 import { isUlid } from "@tybo/app/core";
@@ -1245,7 +1245,7 @@ test("saves go out as change sets of only what changed", async () => {
 	assert.equal(unit?.kind, "entity");
 	assert.equal(unit?.id, entity.id);
 	assert.equal(unit?.before, null);
-	assert.equal(unit?.after?.value.name, "Dune");
+	assert.equal((unit?.after?.value as Entity | undefined)?.name, "Dune");
 
 	const card = store.addCard(board.id, entity.id, 5, 6);
 	await settle();
