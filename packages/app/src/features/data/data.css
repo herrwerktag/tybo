@@ -1,0 +1,273 @@
+/* The data pages' heading: a switch between them (entity types, entities), the current one in front. */
+.data-switch {
+	display: inline-flex;
+	gap: 0.25rem;
+	padding: 0.2rem;
+	background: var(--surface-inset);
+	border-radius: 6px;
+	font-size: 1.05rem;
+}
+
+.data-switch > a {
+	padding: 0.3rem 0.75rem;
+	border-radius: 4px;
+	color: var(--muted);
+}
+
+.data-switch > a:hover:not(.current) {
+	color: inherit;
+}
+
+.data-switch > .current {
+	background: var(--surface);
+	color: inherit;
+	font-weight: 600;
+	box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+
+.data-view {
+	width: 100%;
+	max-width: 80rem;
+	margin-inline: auto;
+	padding: 1.5rem 1rem;
+	display: grid;
+	gap: 1.5rem;
+	align-items: start;
+}
+
+/* Roomier inputs in the data view; the canvas toolbar keeps the compact default. */
+.data-view :is(input:not([type="checkbox"]), select, textarea) {
+	padding: 0.5rem 0.75rem;
+}
+
+/* The entity table's drag handles: a narrow column of their own. */
+td.handle-cell {
+	width: 1px;
+	padding: 0.15rem 0;
+}
+
+/* Property cards in the type form: compact controls, laid out in a fixed structure. */
+.data-view .property :is(input:not([type="checkbox"]), select, textarea) {
+	padding: 0.35rem 0.6rem;
+}
+
+.property-head {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.25rem;
+}
+
+.property-settings {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.5rem 0.75rem;
+	align-items: end;
+}
+
+.setting-label {
+	font-size: 0.8125rem;
+	color: var(--muted);
+}
+
+.reference-type {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+}
+
+.reference-type-remove {
+	padding: 0 0.15rem;
+	border: none;
+	background: transparent;
+	color: inherit;
+	border-radius: 3px;
+	line-height: 1;
+	cursor: pointer;
+}
+
+.reference-type-remove:hover:not(:disabled) {
+	background: rgb(0 0 0 / 0.08);
+}
+
+.property-remove {
+	border: none;
+	background: transparent;
+	color: var(--muted);
+	padding: 0.25rem 0.45rem;
+}
+
+.property-remove:hover:not(:disabled) {
+	color: var(--error);
+	background: var(--error-tint);
+}
+
+.wide {
+	justify-self: stretch;
+}
+
+.wide textarea {
+	width: 100%;
+}
+
+.property,
+.builtin {
+	justify-self: stretch;
+	display: grid;
+	gap: 0.5rem;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 0.75rem;
+	background: var(--surface);
+}
+
+.builtin {
+	color: var(--muted);
+	background: var(--surface-inset);
+	border-style: dashed;
+}
+
+.type-list {
+	display: grid;
+	gap: 0.5rem;
+}
+
+.type-item {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	grid-template-areas:
+		"handle name actions"
+		"summary summary summary";
+	align-items: center;
+	gap: 0.35rem 0.5rem;
+	padding: 0.5rem 0.75rem;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+}
+
+.type-item.current {
+	background: var(--highlight);
+	border-color: var(--focus);
+}
+
+.type-item > .drag-handle {
+	grid-area: handle;
+	margin-inline-start: -0.35rem;
+}
+
+.type-name {
+	grid-area: name;
+	overflow-wrap: anywhere;
+}
+
+.type-item .actions {
+	grid-area: actions;
+}
+
+.type-summary {
+	grid-area: summary;
+	display: grid;
+	gap: 0.1rem;
+	font-size: 0.9em;
+	overflow-wrap: anywhere;
+}
+
+.reference-values {
+	display: grid;
+	gap: 0.25rem;
+}
+
+/* Narrow screens: less padding around the pages, the heading on a line of its own with the controls sharing the
+   line below, and each entity as a card instead of a table row too wide to see whole: the handle and name on top,
+   then every value with its column's name above it (data-label, set in entityTable), the ID, and the buttons. */
+@media (max-width: 40rem) {
+	.data-view {
+		padding: 0.75rem 0.5rem;
+		gap: 0.75rem;
+	}
+
+	.data-view .section-header > .data-switch {
+		flex-basis: 100%;
+	}
+
+	.data-switch > a {
+		flex: 1;
+		text-align: center;
+	}
+
+	.data-view .section-header > :not(.data-switch) {
+		flex: 1 1 auto;
+	}
+
+	.entity-table,
+	.entity-table :is(tbody, tr, td) {
+		display: block;
+	}
+
+	.entity-table thead {
+		display: none;
+	}
+
+	.entity-table tr {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		gap: 0.5rem;
+		align-items: start;
+		padding: 0.75rem 0;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.entity-table td {
+		grid-column: 2;
+		padding: 0;
+		border: none;
+		overflow-wrap: anywhere;
+	}
+
+	.entity-table td::before {
+		content: attr(data-label);
+		display: block;
+		font-family: system-ui, sans-serif; /* not the ID's monospace */
+		font-size: 0.8125rem;
+		color: var(--muted);
+	}
+
+	.entity-table td:is(.handle-cell, :nth-child(3), :last-child)::before {
+		content: none;
+	}
+
+	.entity-table td.handle-cell {
+		grid-column: 1;
+		grid-row: 1;
+		width: auto;
+	}
+
+	.entity-table td:nth-child(3) {
+		grid-column: 2;
+		grid-row: 1;
+		font-weight: 600;
+	}
+
+	.entity-table td:last-child {
+		order: 2;
+	}
+
+	.entity-table td:nth-child(2) {
+		order: 1;
+		font-size: 0.8125rem;
+		color: var(--muted);
+	}
+
+	/* Where a dragged entity will land: on the card, not on each of its values. */
+	.entity-table tr:is(.drop-before, .drop-after) > td {
+		box-shadow: none;
+	}
+
+	.entity-table tr.drop-before {
+		box-shadow: 0 -3px 0 var(--focus);
+	}
+
+	.entity-table tr.drop-after {
+		box-shadow: 0 3px 0 var(--focus);
+	}
+}

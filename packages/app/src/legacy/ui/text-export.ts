@@ -1,5 +1,6 @@
 import { fillPlaceholders, referencedIds, type AppData, type Entity, type EntityType, type PropertyDef } from "../core/index.js";
 import { text } from "./i18n.js";
+import { text as dataText } from "../../features/data/texts.js";
 
 /**
  * A workspace as plain text for reading, e.g. by an LLM: first the entity types, then one section per entity with
@@ -37,16 +38,16 @@ export function workspaceText(name: string, data: Pick<AppData, "types" | "entit
 
 function typeSection(type: EntityType, types: ReadonlyMap<string, EntityType>): string {
 	const lines = type.properties.map((prop) => {
-		let kind = text.kinds[prop.kind];
+		let kind = dataText.kinds[prop.kind];
 		if (prop.kind === "options" && prop.options.length > 0) kind += ` (${prop.options.join(", ")})`;
 		if (prop.kind === "reference" && prop.reference) {
 			kind += ` → ${prop.reference.typeIds.flatMap((id) => types.get(id)?.name ?? []).join(", ")}`;
-			if (prop.reference.multiple) kind += ` ${text.multipleSuffix}`;
-			if (prop.reference.required) kind += ` ${text.requiredSuffix}`;
+			if (prop.reference.multiple) kind += ` ${dataText.multipleSuffix}`;
+			if (prop.reference.required) kind += ` ${dataText.requiredSuffix}`;
 		}
 		return `- ${prop.name}: ${kind}`;
 	});
-	return [`### ${type.name}`, ...(lines.length > 0 ? lines : [`- ${text.noProperties}`])].join("\n");
+	return [`### ${type.name}`, ...(lines.length > 0 ? lines : [`- ${dataText.noProperties}`])].join("\n");
 }
 
 function entitySection(
@@ -57,7 +58,7 @@ function entitySection(
 	referencing: ReadonlyMap<string, string[]>,
 ): string {
 	const lines = [`## ${mentions.get(entity.id)!}`];
-	if (entity.tags.length > 0) lines.push(`${text.tags}: ${entity.tags.join(", ")}`);
+	if (entity.tags.length > 0) lines.push(`${dataText.tags}: ${entity.tags.join(", ")}`);
 	for (const prop of type.properties) {
 		const value = entity.values[prop.id];
 		if (prop.kind === "reference") {
@@ -74,7 +75,7 @@ function entitySection(
 		const label = prop.reference?.inverseLabel.trim() || text.textExportReferencedVia(prop.name);
 		lines.push(`${label}: ${linked.map((id) => mentions.get(id)!).join(", ")}`);
 	}
-	if (entity.content.trim() !== "") lines.push(field(text.content, entity.content));
+	if (entity.content.trim() !== "") lines.push(field(dataText.content, entity.content));
 	// {{Property}} in the description: the value, references by type and name like above, "—" when empty.
 	const placeholder = (prop: PropertyDef): string => {
 		const value = entity.values[prop.id];
@@ -82,7 +83,7 @@ function entitySection(
 		const shown = prop.kind === "reference" ? linked.join(", ") : typeof value === "string" ? value.trim() : "";
 		return shown || "—";
 	};
-	if (entity.description.trim() !== "") lines.push(field(text.description, fillPlaceholders(entity.description, type, placeholder)));
+	if (entity.description.trim() !== "") lines.push(field(dataText.description, fillPlaceholders(entity.description, type, placeholder)));
 	return lines.join("\n");
 }
 

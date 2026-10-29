@@ -2,7 +2,7 @@ import { byText, readSaved, settle, startApp } from "../../legacy/ui/test-app.js
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DATA_VERSION, ulid } from "../../legacy/core/index.js";
-import { text as legacyText } from "../../legacy/ui/i18n.js";
+import { text as dataText } from "../data/texts.js";
 import { text } from "./texts.js";
 
 test("Analyses: an analysis set up step by step lists the rows grouped, is saved, and shows the card and details of the entities it names", async () => {
@@ -87,7 +87,7 @@ test("Analyses: an analysis set up step by step lists the rows grouped, is saved
 	// Its details name the activities the process includes (the other side of the references): clicking one shows that.
 	byText<HTMLButtonElement>(details, ".ref-tag", "Build").click();
 	assert.equal(details.querySelector(".details-title")?.textContent, "Build");
-	byText<HTMLButtonElement>(details, "button", legacyText.edit).click();
+	byText<HTMLButtonElement>(details, "button", dataText.edit).click();
 	const form = details.querySelector<HTMLFormElement>("#entity-form")!;
 	assert.equal(details.querySelector(".card-type")?.textContent, "Activity", "below the bar of its type");
 	form.querySelector<HTMLInputElement>("input")!.value = "Build it";

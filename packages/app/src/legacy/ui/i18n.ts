@@ -1,15 +1,12 @@
 import type { Tool } from "./drawings.js";
-import type { CardDisplay, LineArrow, PropertyKind, TextSize, ValidationError } from "../core/index.js";
+import type { TextSize } from "../core/index.js";
 import { messages } from "../../shared/ui/index.js";
 
 export { LANGUAGES, language, setLanguage, type Language } from "../../shared/ui/index.js";
 
 const en = {
 	// Navigation and settings
-	tabEntities: "Data",
 	tabBoards: "Boards",
-	wrapReferences: "Wrap references on cards",
-	copyTypesFrom: (name: string) => `Copy entity types from ${name}`,
 	exportButton: "Export",
 	exportTextButton: "Export as text",
 	exportText: "Download this workspace as a text file",
@@ -19,130 +16,21 @@ const en = {
 	textExportTypes: "Entity types",
 	textExportEntity: (type: string, name: string) => `${type} "${name}"`,
 	textExportReferencedVia: (property: string) => `Referenced by (via "${property}")`,
-	confirmDeleteWorkspace: (name: string, types: number, entities: number, boards: number) =>
-		`Delete workspace "${name}" with ${types} entity types, ${entities} entities and ${boards} boards? This can't be undone.`,
 
 	// Problems with the saved data
 
 	// Unexpected errors
 
 	// Common actions
-	save: "Save",
-	cancel: "Cancel",
 	close: "Close",
-	edit: "Edit",
-	delete: "Delete",
-	create: "Create",
-	editNamed: (name: string) => `Edit ${name}`,
 
 	// Entity types
-	entityTypes: "Entity types",
-	noTypesYet: "No types yet.",
-	newType: "New type",
-	createNewType: "Create new type",
-	typeName: "Type name",
-	typeNamePlaceholder: "e.g. Book",
-	color: "Color",
-	colorNames: {
-		Red: "Red",
-		Orange: "Orange",
-		Yellow: "Yellow",
-		Green: "Green",
-		Teal: "Teal",
-		Blue: "Blue",
-		Violet: "Violet",
-		Pink: "Pink",
-		Gray: "Gray",
-		Dark: "Dark gray",
-	} as Record<string, string>,
-	properties: "Properties",
-	builtinId: " · ULID, automatic",
-	builtinName: " · text, required",
-	builtinContent: " · multiline, on cards",
-	builtinDescription: " · long text, in the details panel; {{Property}} shows the property's value there",
-	contentTemplate: "Default text (template)",
-	addProperty: "Add property",
-	createType: "Create type",
-	noProperties: "no properties",
-	kinds: { text: "text", options: "options", reference: "reference" } satisfies Record<PropertyKind, string>,
-	multipleSuffix: "(multiple)",
-	requiredSuffix: "(required)",
-	confirmChangedValues: (count: number) => `This changes or clears ${count} existing values. Continue?`,
-	cannotDeleteType: (name: string, usedBy: string) =>
-		`Can't delete ${name}: used by ${usedBy}. Remove or change those properties first.`,
-	confirmDeleteType: (name: string, count: number) => `Delete type "${name}" and its ${count} entities?`,
 
 	// Property cards in the type form
-	moveProperty: (label: string) => `Move property ${label}; use the arrow keys`,
-	moveType: (name: string) => `Move type ${name}; use the arrow keys`,
-	moveEntity: (name: string) => `Move ${name}; use the arrow keys`,
 	moveBoard: (name: string) => `Move board ${name}; use the arrow keys`,
-	propertyName: "Property name",
-	removeProperty: "Remove property",
-	removePropertyNamed: (label: string) => `Remove property ${label}`,
-	settingType: "Type",
-	settingOnCard: "On card",
-	onCardHint: "How this property appears on canvas cards",
-	cardDisplays: { list: "List", line: "Line", hidden: "Hidden" } satisfies Record<CardDisplay, string>,
-	optionsOnePerLine: "Options (one per line)",
-	references: "References",
-	noTypesOption: "(no types yet)",
-	addReferenceType: "Add type…",
-	removeReferenceType: (type: string) => `Remove ${type}`,
-	addReference: "Add…",
-	removeReference: (name: string) => `Remove ${name}`,
-	allowMultiple: "Allow multiple",
-	requiredReference: "Required",
-	requiredReferenceHint: "Entities without one are still saved, but marked as incomplete",
-	arrow: "Arrow",
-	arrows: { to: "To target", from: "From target", none: "None" } satisfies Record<LineArrow, string>,
-	lineLabel: "Line label",
-	shownOnTargetAs: "Shown on target as",
-	setOn: (typeName: string, propertyName: string) => `Set on ${typeName} → ${propertyName}`,
-	shownOnTargetAsPlaceholder: "e.g. responsible for (optional)",
-	shownOnTargetAsHint: "Lists the entities that reference it on the target's cards, form and table. Leave empty to not show it.",
-	lineLabelPlaceholder: "property name",
-	validation: (error: ValidationError): string => {
-		switch (error.code) {
-			case "typeNameRequired":
-				return "Type name is required.";
-			case "propertyNameRequired":
-				return "Property names are required.";
-			case "reservedName":
-				return `"${error.label}" is a built-in field and can't be used as a property name.`;
-			case "duplicateName":
-				return `Duplicate property name "${error.label}".`;
-			case "optionsRequired":
-				return `"${error.label}" needs at least one option.`;
-			case "emptyOption":
-				return `"${error.label}" has an empty option.`;
-			case "duplicateOptions":
-				return `"${error.label}" has duplicate options.`;
-			case "referenceTypeRequired":
-				return `"${error.label}" needs an entity type to reference.`;
-		}
-	},
 
 	// Entities
-	entities: "Entities",
-	entityType: "Entity type",
-	createTypeFirst: "Create an entity type first.",
-	noEntitiesOfType: (type: string) => `No ${type} entities yet.`,
-	noEntitiesWithTag: (type: string, tag: string) => `No ${type} entities tagged "${tag}".`,
-	newEntity: (type: string) => `New ${type}`,
-	createNewEntity: "Create new entity",
-	id: "ID",
-	name: "Name",
-	content: "Content",
-	description: "Description",
 	details: "Details",
-	noDescription: "No description",
-	missingRequired: (names: string) => `Missing: ${names}`,
-	missingValue: "missing",
-	closeDetails: "Close details",
-	confirmDeleteEntity: (name: string, references: number) =>
-		`Delete "${name}"?` +
-		(references > 0 ? ` It's referenced ${references} times; those references will be removed.` : ""),
 
 	// Canvas
 	showEntities: "Show entities and drawings",
@@ -213,8 +101,6 @@ const en = {
 	textSizes: { s: "small", m: "medium", l: "large" } satisfies Record<TextSize, string>,
 	deleteDrawing: "Delete drawing",
 
-	tags: "Tags",
-	tagsHint: "Separated by commas",
 
 };
 
@@ -222,10 +108,7 @@ export type Messages = typeof en;
 
 /** Typed against the English messages, so a missing or extra key is a type error. */
 const de: Messages = {
-	tabEntities: "Daten",
 	tabBoards: "Boards",
-	wrapReferences: "Referenzen auf Karten umbrechen",
-	copyTypesFrom: (name) => `Entitätstypen aus ${name} übernehmen`,
 	exportButton: "Exportieren",
 	exportTextButton: "Als Text exportieren",
 	exportText: "Diesen Arbeitsbereich als Text-Datei herunterladen",
@@ -235,125 +118,15 @@ const de: Messages = {
 	textExportTypes: "Entitätstypen",
 	textExportEntity: (type, name) => `${type} „${name}“`,
 	textExportReferencedVia: (property) => `Referenziert von (über „${property}“)`,
-	confirmDeleteWorkspace: (name, types, entities, boards) =>
-		`Arbeitsbereich „${name}“ mit ${types} Entitätstypen, ${entities} Entitäten und ${boards} Boards löschen? Das kann nicht rückgängig gemacht werden.`,
 
 
 
-	save: "Speichern",
-	cancel: "Abbrechen",
 	close: "Schließen",
-	edit: "Bearbeiten",
-	delete: "Löschen",
-	create: "Erstellen",
-	editNamed: (name) => `${name} bearbeiten`,
 
-	entityTypes: "Entitätstypen",
-	noTypesYet: "Noch keine Typen.",
-	newType: "Neuer Typ",
-	createNewType: "Neuen Typ anlegen",
-	typeName: "Typname",
-	typeNamePlaceholder: "z. B. Buch",
-	color: "Farbe",
-	colorNames: {
-		Red: "Rot",
-		Orange: "Orange",
-		Yellow: "Gelb",
-		Green: "Grün",
-		Teal: "Türkis",
-		Blue: "Blau",
-		Violet: "Violett",
-		Pink: "Rosa",
-		Gray: "Grau",
-		Dark: "Dunkelgrau",
-	},
-	properties: "Eigenschaften",
-	builtinId: " · ULID, automatisch",
-	builtinName: " · Text, Pflichtfeld",
-	builtinContent: " · mehrzeilig, auf Karten",
-	builtinDescription: " · langer Text, im Detailbereich; {{Eigenschaft}} zeigt dort den Wert der Eigenschaft",
-	contentTemplate: "Standardtext (Vorlage)",
-	addProperty: "Eigenschaft hinzufügen",
-	createType: "Typ erstellen",
-	noProperties: "keine Eigenschaften",
-	kinds: { text: "Text", options: "Auswahl", reference: "Referenz" },
-	multipleSuffix: "(mehrfach)",
-	requiredSuffix: "(Pflicht)",
-	confirmChangedValues: (count) => `Dadurch werden ${count} vorhandene Werte geändert oder geleert. Fortfahren?`,
-	cannotDeleteType: (name, usedBy) =>
-		`${name} kann nicht gelöscht werden: wird verwendet von ${usedBy}. Entferne oder ändere zuerst diese Eigenschaften.`,
-	confirmDeleteType: (name, count) => `Typ „${name}“ und seine ${count} Entitäten löschen?`,
 
-	moveProperty: (label) => `Eigenschaft ${label} verschieben; Pfeiltasten verwenden`,
-	moveType: (name) => `Typ ${name} verschieben; Pfeiltasten verwenden`,
-	moveEntity: (name) => `${name} verschieben; Pfeiltasten verwenden`,
 	moveBoard: (name) => `Board ${name} verschieben; Pfeiltasten verwenden`,
-	propertyName: "Name der Eigenschaft",
-	removeProperty: "Eigenschaft entfernen",
-	removePropertyNamed: (label) => `Eigenschaft ${label} entfernen`,
-	settingType: "Art",
-	settingOnCard: "Auf der Karte",
-	onCardHint: "Wie diese Eigenschaft auf Canvas-Karten erscheint",
-	cardDisplays: { list: "Liste", line: "Linie", hidden: "Ausgeblendet" },
-	optionsOnePerLine: "Optionen (eine pro Zeile)",
-	references: "Verweist auf",
-	noTypesOption: "(noch keine Typen)",
-	addReferenceType: "Typ hinzufügen …",
-	removeReferenceType: (type) => `${type} entfernen`,
-	addReference: "Hinzufügen …",
-	removeReference: (name) => `${name} entfernen`,
-	allowMultiple: "Mehrfachauswahl",
-	requiredReference: "Pflichtfeld",
-	requiredReferenceHint: "Entitäten ohne Verweis werden trotzdem gespeichert, aber als unvollständig markiert",
-	arrow: "Pfeil",
-	arrows: { to: "Zum Ziel", from: "Vom Ziel", none: "Keiner" },
-	lineLabel: "Linienbeschriftung",
-	shownOnTargetAs: "Beim Ziel angezeigt als",
-	setOn: (typeName, propertyName) => `Festgelegt bei ${typeName} → ${propertyName}`,
-	shownOnTargetAsPlaceholder: "z. B. verantwortlich für (optional)",
-	shownOnTargetAsHint:
-		"Zeigt beim Ziel – auf Karten, im Formular und in der Tabelle – die Entitäten, die darauf verweisen. Leer lassen, um es nicht anzuzeigen.",
-	lineLabelPlaceholder: "Name der Eigenschaft",
-	validation: (error) => {
-		switch (error.code) {
-			case "typeNameRequired":
-				return "Der Typname ist erforderlich.";
-			case "propertyNameRequired":
-				return "Eigenschaften brauchen einen Namen.";
-			case "reservedName":
-				return `„${error.label}“ ist ein eingebautes Feld und kann nicht als Name einer Eigenschaft verwendet werden.`;
-			case "duplicateName":
-				return `Der Name „${error.label}“ ist doppelt vergeben.`;
-			case "optionsRequired":
-				return `„${error.label}“ braucht mindestens eine Option.`;
-			case "emptyOption":
-				return `„${error.label}“ hat eine leere Option.`;
-			case "duplicateOptions":
-				return `„${error.label}“ hat doppelte Optionen.`;
-			case "referenceTypeRequired":
-				return `„${error.label}“ braucht einen Entitätstyp als Ziel.`;
-		}
-	},
 
-	entities: "Entitäten",
-	entityType: "Entitätstyp",
-	createTypeFirst: "Lege zuerst einen Entitätstyp an.",
-	noEntitiesOfType: (type) => `Noch keine Entitäten vom Typ ${type}.`,
-	noEntitiesWithTag: (type, tag) => `Keine Entitäten vom Typ ${type} mit dem Tag „${tag}“.`,
-	newEntity: (type) => `Neu: ${type}`,
-	createNewEntity: "Neue Entität anlegen",
-	id: "ID",
-	name: "Name",
-	content: "Inhalt",
-	description: "Beschreibung",
 	details: "Details",
-	noDescription: "Keine Beschreibung",
-	missingRequired: (names) => `Fehlt: ${names}`,
-	missingValue: "fehlt",
-	closeDetails: "Details schließen",
-	confirmDeleteEntity: (name, references) =>
-		`„${name}“ löschen?` +
-		(references > 0 ? ` Es wird ${references}-mal referenziert; diese Verweise werden entfernt.` : ""),
 
 	showEntities: "Entitäten und Zeichnungen einblenden",
 	hideEntities: "Entitäten und Zeichnungen ausblenden",
@@ -420,8 +193,6 @@ const de: Messages = {
 	textSizes: { s: "klein", m: "mittel", l: "groß" },
 	deleteDrawing: "Zeichnung löschen",
 
-	tags: "Tags",
-	tagsHint: "Durch Kommas getrennt",
 
 };
 

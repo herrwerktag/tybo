@@ -1,4 +1,4 @@
-import { readPreference, writePreference } from "../../shared/ui/index.js";
+import { readPreference, writePreference } from "../../../shared/ui/index.js";
 
 const WRAP_REFERENCES_KEY = "wrap-references";
 

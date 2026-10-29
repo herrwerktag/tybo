@@ -1,3 +1,5 @@
+import type { Store } from "../../../legacy/core/index.js";
+import { moveItem } from "../../../shared/core/index.js";
 import {
 	CARD_DISPLAYS,
 	LINE_ARROWS,
@@ -10,7 +12,6 @@ import {
 	inverseReferences,
 	inverseRelations,
 	migrateValues,
-	moveItem,
 	newReference,
 	nextTypeColor,
 	validateType,
@@ -23,12 +24,11 @@ import {
 	type ReferenceDef,
 	type PropertyKind,
 	type PropertyValue,
-	type Store,
 	type ValidationError,
-} from "../core/index.js";
-import { dragHandle, el, reorderable, tagFilter, typeDot, type PageMaker } from "../../shared/ui/index.js";
+} from "../core.js";
+import { dragHandle, el, reorderable, tagFilter, typeDot, type PageMaker } from "../../../shared/ui/index.js";
 import { entityForm } from "./entity-form.js";
-import { text } from "./i18n.js";
+import { text } from "../texts.js";
 
 interface UiState {
 	editingTypeId: string | null;

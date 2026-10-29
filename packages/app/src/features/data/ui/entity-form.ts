@@ -1,3 +1,4 @@
+import type { Store } from "../../../legacy/core/index.js";
 import {
 	entityTypeMap,
 	inverseReferences,
@@ -8,11 +9,10 @@ import {
 	type EntityType,
 	type PropertyDef,
 	type PropertyValue,
-	type Store,
-} from "../core/index.js";
-import { el } from "../../shared/ui/index.js";
+} from "../core.js";
+import { el } from "../../../shared/ui/index.js";
 import { detailsBar } from "./entity-card.js";
-import { text } from "./i18n.js";
+import { text } from "../texts.js";
 
 /**
  * The form for a new entity (tagged like the filter shows, `filterTag`) or for editing one. Save or Cancel calls

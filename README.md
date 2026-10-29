@@ -19,7 +19,7 @@ pnpm-Monorepo mit TypeScript:
 
 ### Features
 
-Ein Feature liegt mit allen Schichten in einem Ordner unter `packages/app/src/features/` (bisher: `analyses`):
+Ein Feature liegt mit allen Schichten in einem Ordner unter `packages/app/src/features/` (bisher: `data` für Typen und Entitäten, `analyses`):
 `core.ts` (Modell, Store-Funktionen, Einheit und Datenteil), `ui.ts` (Seite), `api.ts` (Speicherung in Postgres
 und SQLite), `mcp.ts` (Werkzeuge), `texts.ts` (Texte en/de), eigenes CSS und die Tests daneben. Die Laufzeit folgt
 dem Namen: `core` ohne DOM, `ui` im Browser, `api` und `mcp` in Node (je eine tsconfig prueft das).

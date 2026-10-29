@@ -3,6 +3,7 @@ import { freshDom } from "../../shared/ui/test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setLanguage, text } from "./i18n.js";
+import { text as dataText } from "../../features/data/texts.js";
 import { createWorkspaces } from "../core/index.js";
 import { render } from "../../features.ui.js";
 import { activeWorkspacePreference, sharedText } from "../../shared/ui/index.js";
@@ -18,14 +19,14 @@ const library = {
 
 test("a type with a property, then an entity of it, can be created through the forms and are saved", async () => {
 	const root = await startApp(undefined, "#types");
-	byText(root, "button", text.createNewType).click();
+	byText(root, "button", dataText.createNewType).click();
 	const typeForm = root.querySelector<HTMLFormElement>("#type-form")!;
-	typeInto(typeForm.querySelector(`input[placeholder="${text.typeNamePlaceholder}"]`)!, "Book");
-	byText(typeForm, "button", text.addProperty).click();
+	typeInto(typeForm.querySelector(`input[placeholder="${dataText.typeNamePlaceholder}"]`)!, "Book");
+	byText(typeForm, "button", dataText.addProperty).click();
 	// The form was drawn again with the new property; the typed name is kept.
 	const form = root.querySelector<HTMLFormElement>("#type-form")!;
-	typeInto(form.querySelector(`input[placeholder="${text.propertyName}"]`)!, "author");
-	byText(form, "button", text.createType).click();
+	typeInto(form.querySelector(`input[placeholder="${dataText.propertyName}"]`)!, "author");
+	byText(form, "button", dataText.createType).click();
 
 	assert.ok(byText(root, ".type-name", "Book"));
 	const [book] = (await readSaved()).types;
@@ -34,13 +35,13 @@ test("a type with a property, then an entity of it, can be created through the f
 	assert.equal(root.querySelector("#type-form"), null); // created: the form closes
 
 	goTo("#entities");
-	byText(root, "button", text.createNewEntity).click();
+	byText(root, "button", dataText.createNewEntity).click();
 	const entityForm = root.querySelector<HTMLFormElement>("#entity-form")!;
 	const [nameInput, authorInput, tagsInput] = entityForm.querySelectorAll<HTMLInputElement>("label.field input");
 	nameInput!.value = " Dune ";
 	authorInput!.value = "Herbert";
 	tagsInput!.value = "Classic, sci-fi, classic,";
-	byText(entityForm, "button", text.create).click();
+	byText(entityForm, "button", dataText.create).click();
 
 	assert.ok(byText(root, "td", "Dune"));
 	assert.ok(byText(root, "td", "Herbert"));
@@ -54,14 +55,14 @@ test("a type with a property, then an entity of it, can be created through the f
 
 test("Data is the default page; its heading switches between entity types and entities", async () => {
 	const root = await startApp(library);
-	assert.equal(root.querySelector(".app-nav .current")?.textContent, text.tabEntities);
-	assert.equal(root.querySelector(".data-switch .current")?.textContent, text.entities);
+	assert.equal(root.querySelector(".app-nav .current")?.textContent, dataText.tabEntities);
+	assert.equal(root.querySelector(".data-switch .current")?.textContent, dataText.entities);
 	assert.ok(byText(root, "td", "Dune"));
 	assert.equal(root.querySelector(".type-item"), null);
 
 	goTo("#types");
-	assert.equal(root.querySelector(".app-nav .current")?.textContent, text.tabEntities);
-	assert.equal(root.querySelector(".data-switch .current")?.textContent, text.entityTypes);
+	assert.equal(root.querySelector(".app-nav .current")?.textContent, dataText.tabEntities);
+	assert.equal(root.querySelector(".data-switch .current")?.textContent, dataText.entityTypes);
 	assert.ok(byText(root, ".type-name", "Book"));
 	assert.equal(root.querySelector("td"), null);
 
@@ -113,18 +114,18 @@ test("types and entities are reordered with their drag handles' arrow keys; focu
 test("the forms for a new type and a new entity are hidden until asked for, and Cancel hides them again", async () => {
 	const root = await startApp(library, "#types");
 	assert.equal(root.querySelector("#type-form"), null);
-	byText(root, "button", text.createNewType).click();
-	byText(root.querySelector("#type-form")!, "button", text.cancel).click();
+	byText(root, "button", dataText.createNewType).click();
+	byText(root.querySelector("#type-form")!, "button", dataText.cancel).click();
 	assert.equal(root.querySelector("#type-form"), null);
 
 	goTo("#entities");
 	assert.equal(root.querySelector("#entity-form"), null);
-	byText(root, "button", text.createNewEntity).click();
-	byText(root.querySelector("#entity-form")!, "button", text.cancel).click();
+	byText(root, "button", dataText.createNewEntity).click();
+	byText(root.querySelector("#entity-form")!, "button", dataText.cancel).click();
 	assert.equal(root.querySelector("#entity-form"), null);
 
 	// Edit opens the form too.
-	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.edit).click();
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", dataText.edit).click();
 	assert.equal(root.querySelector<HTMLInputElement>("#entity-form input")?.value, "Dune");
 });
 
@@ -142,7 +143,7 @@ test("a reference allowing several values shows them as tags: × removes one, th
 		],
 		boards: [],
 	});
-	byText(byText(root, "td", "Core").closest("tr")!, "button", text.edit).click();
+	byText(byText(root, "td", "Core").closest("tr")!, "button", dataText.edit).click();
 	const form = root.querySelector<HTMLFormElement>("#entity-form")!;
 	const tags = () => [...form.querySelectorAll(".reference-type")].map((t) => t.firstChild?.textContent);
 	assert.deepEqual(tags(), ["Ada"]);
@@ -158,7 +159,7 @@ test("a reference allowing several values shows them as tags: × removes one, th
 	assert.deepEqual(tags(), ["Bob"]);
 	assert.equal(nameInput.value, "Core team"); // only the field was drawn again
 
-	byText(form, "button", text.save).click();
+	byText(form, "button", dataText.save).click();
 	const [core] = (await readSaved()).entities;
 	assert.equal(core?.name, "Core team");
 	assert.deepEqual(core?.values.members, ["01J00000000000000000000002"]);
@@ -166,9 +167,9 @@ test("a reference allowing several values shows them as tags: × removes one, th
 
 test("an invalid type shows its problems and isn't saved", async () => {
 	const root = await startApp(undefined, "#types");
-	byText(root, "button", text.createNewType).click();
-	byText(root.querySelector("#type-form")!, "button", text.createType).click();
-	assert.equal(root.querySelector("#type-form .error")?.textContent, text.validation({ code: "typeNameRequired" }));
+	byText(root, "button", dataText.createNewType).click();
+	byText(root.querySelector("#type-form")!, "button", dataText.createType).click();
+	assert.equal(root.querySelector("#type-form .error")?.textContent, dataText.validation({ code: "typeNameRequired" }));
 	assert.deepEqual((await readSaved()).types, []);
 	assert.equal(storage.saves.length, 0);
 });
@@ -183,16 +184,16 @@ test("deleting an entity asks first; cancelling keeps it", async () => {
 			return answer;
 		},
 	});
-	const deleteDune = () => byText(byText(root, "td", "Dune").closest("tr")!, "button", text.delete).click();
+	const deleteDune = () => byText(byText(root, "td", "Dune").closest("tr")!, "button", dataText.delete).click();
 
 	deleteDune();
-	assert.deepEqual(questions, [text.confirmDeleteEntity("Dune", 0)]);
+	assert.deepEqual(questions, [dataText.confirmDeleteEntity("Dune", 0)]);
 	assert.equal((await readSaved()).entities.length, 1);
 
 	answer = true;
 	deleteDune();
 	assert.equal((await readSaved()).entities.length, 0);
-	assert.ok(byText(root, "p", text.noEntitiesOfType("Book")));
+	assert.ok(byText(root, "p", dataText.noEntitiesOfType("Book")));
 });
 
 test("a type other types refer to can't be deleted", async () => {
@@ -203,8 +204,8 @@ test("a type other types refer to can't be deleted", async () => {
 	stub({ alert: (message: string) => void alerts.push(message), confirm: () => assert.fail("shouldn't ask to confirm") });
 
 	const bookItem = root.querySelector(".type-item")!;
-	byText(bookItem, "button", text.delete).click();
-	assert.deepEqual(alerts, [text.cannotDeleteType("Book", "Review.of")]);
+	byText(bookItem, "button", dataText.delete).click();
+	assert.deepEqual(alerts, [dataText.cannotDeleteType("Book", "Review.of")]);
 	assert.equal((await readSaved()).types.length, 2);
 });
 
@@ -212,11 +213,11 @@ test("a new workspace from the menu starts empty and becomes active; switching b
 	const root = await startApp(library, "#types");
 	const newForm = root.querySelector<HTMLFormElement>(".workspace-new")!;
 	newForm.querySelector<HTMLInputElement>("input:not([type])")!.value = "Second";
-	byText(newForm, "button", text.create).click();
+	byText(newForm, "button", dataText.create).click();
 	await settle();
 
 	assert.equal(root.querySelector(".workspace-name")?.textContent, "Second");
-	assert.ok(byText(root, "p", text.noTypesYet));
+	assert.ok(byText(root, "p", dataText.noTypesYet));
 
 	byText(root, ".workspace-option", sharedText.defaultWorkspaceName(1)).click();
 	await settle();
@@ -229,7 +230,7 @@ test("workspaces are reordered in the menu with their drag handles' arrow keys; 
 	const root = await startApp(library, "#types", behind);
 	const newForm = root.querySelector<HTMLFormElement>(".workspace-new")!;
 	newForm.querySelector<HTMLInputElement>("input:not([type])")!.value = "Second";
-	byText(newForm, "button", text.create).click();
+	byText(newForm, "button", dataText.create).click();
 	await settle();
 
 	root.querySelectorAll<HTMLElement>(".workspace-list .drag-handle")[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
@@ -259,7 +260,7 @@ test("a page that can't be drawn shows the error screen, which can still export"
 		return createElement(tag);
 	}) as typeof document.createElement;
 
-	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.edit).click(); // draws the page again
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", dataText.edit).click(); // draws the page again
 
 	const screen = root.querySelector(".error-screen");
 	assert.ok(screen);
@@ -286,7 +287,7 @@ test("a deleted entity comes back with the Undo button, and goes again with Ctrl
 	assert.equal(undo.disabled, true);
 
 	stub({ confirm: () => true });
-	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.delete).click();
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", dataText.delete).click();
 	assert.equal(undo.disabled, false);
 
 	undo.click();
@@ -302,9 +303,9 @@ test("a deleted entity comes back with the Undo button, and goes again with Ctrl
 test("Ctrl+Z undoes outside text fields; inside one it's left to the browser's text undo", async () => {
 	const root = await startApp(library);
 	stub({ confirm: () => true });
-	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.delete).click();
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", dataText.delete).click();
 
-	byText(root, "button", text.createNewEntity).click();
+	byText(root, "button", dataText.createNewEntity).click();
 	const nameInput = root.querySelector<HTMLInputElement>("#entity-form input")!;
 	assert.equal(press(nameInput, "z"), true); // not handled: the default (text undo) isn't prevented
 	assert.equal((await readSaved()).entities.length, 0);
@@ -431,10 +432,10 @@ test("a save that collided warns of the conflict, not of a failing storage, and 
 	const behind = memoryStorage();
 	behind.port.saveChanges = async (_id, changes) => ({ version: "9", collided: changes.map((c) => c.id) });
 	const root = await startApp(undefined, "#types", behind);
-	byText(root, "button", text.createNewType).click();
+	byText(root, "button", dataText.createNewType).click();
 	const typeForm = root.querySelector<HTMLFormElement>("#type-form")!;
-	typeInto(typeForm.querySelector(`input[placeholder="${text.typeNamePlaceholder}"]`)!, "Book");
-	byText(typeForm, "button", text.createType).click();
+	typeInto(typeForm.querySelector(`input[placeholder="${dataText.typeNamePlaceholder}"]`)!, "Book");
+	byText(typeForm, "button", dataText.createType).click();
 	await settle();
 
 	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
@@ -501,7 +502,7 @@ test("drawing the page again and again starts no further timers: one watch for t
 	// faster with every re-draw): a route switch, a form opening, a language change from the menu.
 	window.dispatchEvent(new Event("hashchange"));
 	assert.equal(started.mock.callCount(), 1);
-	byText(byText(root, "td", "Dune").closest("tr")!, "button", text.edit).click();
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", dataText.edit).click();
 	assert.equal(started.mock.callCount(), 1);
 	setLanguage("de"); // a language change draws the page again, every label of it
 	window.dispatchEvent(new Event("hashchange"));
@@ -539,7 +540,7 @@ test("the Entities page filters by tag, remembers it, tags new entities with it,
 	root.querySelectorAll<HTMLElement>("tbody .drag-handle")[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
 	assert.deepEqual((await readSaved()).entities.map((e) => e.name), ["Emma", "Dune", "Foundation"]);
 
-	byText(root, "button", text.createNewEntity).click();
+	byText(root, "button", dataText.createNewEntity).click();
 	const tagsInput = [...root.querySelectorAll<HTMLInputElement>("#entity-form label.field input")].at(-1)!;
 	// Emma comes first now: the tag is spelled as on her, and the filter still shows the set.
 	assert.equal(tagsInput.value, "classic", "a new entity starts in the set shown");
@@ -584,7 +585,7 @@ test("the settings switch the theme: dark or light on <html>, or none to follow 
 
 test("the settings let references on cards wrap instead of being cut off, remembered in this browser", async () => {
 	const root = await startApp();
-	const checkbox = () => byText(root, "#settings-menu label", text.wrapReferences).querySelector("input")!;
+	const checkbox = () => byText(root, "#settings-menu label", dataText.wrapReferences).querySelector("input")!;
 	assert.equal(checkbox().checked, false);
 	assert.equal(document.documentElement.dataset.wrapReferences, undefined);
 
