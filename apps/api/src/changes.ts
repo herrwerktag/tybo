@@ -3,7 +3,7 @@ import { inKindOrder, unitStandsOf, untouched } from "@tybo/app/core";
 import { readAppData } from "./data.js";
 import { changeEntries, recordHistory } from "./history.js";
 import type { Queries, Sql } from "./schema.js";
-import { STORED_KINDS, storageOf } from "./units.js";
+import { STORED_KINDS, storageOf } from "@tybo/app/api";
 
 /**
  * The change-set writer: the one way the app's data is written. A save never carries the whole document —

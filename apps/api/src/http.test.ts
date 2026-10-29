@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DATA_VERSION, moveItem } from "@tybo/app/core";
+import { DATA_VERSION, moveItem, storedFeatureData } from "@tybo/app/core";
 import type { HistoryPage } from "./history.js";
 import { DEFAULT_PORT, portFromEnv, type Api } from "./http.js";
 import { call, startApp } from "./test-server.js";
@@ -47,7 +47,7 @@ function memoryApi(
 		readWorkspace: async (id) => {
 			const workspace = workspaces.get(id);
 			if (!workspace) return null;
-			return { data: { version: workspace.dataVersion, types: [], entities: [], boards: [], analyses: [] }, revision: String(workspace.revision) };
+			return { data: { version: workspace.dataVersion, types: [], entities: [], boards: [], ...storedFeatureData({}) }, revision: String(workspace.revision) };
 		},
 		workspaceRevision: async (id) => {
 			const workspace = workspaces.get(id);
@@ -161,7 +161,7 @@ test("a workspace's data is answered as JSON with its revision in etag; HEAD ans
 		const got = await call(api.url, "workspaces/ws-1/data");
 		assert.equal(got.status, 200);
 		assert.equal(got.header("content-type"), "application/json; charset=utf-8");
-		assert.deepEqual(JSON.parse(got.text), { version: 1, types: [], entities: [], boards: [], analyses: [] });
+		assert.deepEqual(JSON.parse(got.text), { version: 1, types: [], entities: [], boards: [], ...storedFeatureData({}) });
 		assert.equal(got.header("etag"), "0");
 
 		const head = await call(api.url, "workspaces/ws-1/data", { method: "HEAD" });

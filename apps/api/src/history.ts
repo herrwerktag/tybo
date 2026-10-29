@@ -1,6 +1,6 @@
 import { DATA_VERSION, type Change, type UnitStands } from "@tybo/app/core";
 import type { Queries } from "./schema.js";
-import { storageOf } from "./units.js";
+import { storageOf } from "@tybo/app/api";
 
 /**
  * The history: every write, kept. A save leaves one entry per unit it wrote — with the stand the tables held

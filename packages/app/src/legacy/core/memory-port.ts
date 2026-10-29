@@ -1,5 +1,5 @@
 import { moveItem, untouched, withChanges, type Change } from "../../shared/core/index.js";
-import { UNIT_KINDS, unitStands } from "./changes.js";
+import { UNIT_KINDS, storedFeatureData, unitStands } from "../../features.core.js";
 import type { AppData, Board } from "./model.js";
 import type { DataPort, SavedChanges, WorkspaceInfo } from "./ports.js";
 
@@ -108,6 +108,6 @@ function asAppData(data: Record<string, unknown>): AppData {
 		types: list(data.types),
 		entities: list(data.entities),
 		boards: list(data.boards).map((board: Partial<Board>) => ({ ...board, cards: list(board.cards), drawings: list(board.drawings) })),
-		analyses: list(data.analyses),
+		...storedFeatureData(data),
 	} as AppData;
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
-import { DATA_VERSION, changesBetween, type AppData } from "@tybo/app/core";
+import { DATA_VERSION, changesBetween, storedFeatureData, type AppData } from "@tybo/app/core";
 import postgres from "postgres";
 import { postgresStorage } from "./postgres.js";
 import { call, startApp } from "./test-server.js";
@@ -39,7 +39,7 @@ function sample(): AppData {
 	};
 }
 
-const empty = (): AppData => ({ types: [], entities: [], boards: [], analyses: [] });
+const empty = (): AppData => ({ types: [], entities: [], boards: [], ...storedFeatureData({}) });
 
 test("starting again and again leaves the schema as it is — nothing runs twice", { skip: !url }, async () => {
 	const storage = postgresStorage(url!);
@@ -61,7 +61,7 @@ test("a workspace is made empty, renamed, listed, and deleted with every row of 
 		assert.equal(await storage.createWorkspace({ id, name: "Noch mal" }, 1), false, "an id is made once");
 
 		const made = await storage.readWorkspace(id);
-		assert.deepEqual(made, { data: { version: 1, types: [], entities: [], boards: [], analyses: [] }, revision: "0" });
+		assert.deepEqual(made, { data: { version: 1, ...empty() }, revision: "0" });
 
 		assert.equal(await storage.renameWorkspace(id, "Umbenannt"), true);
 		assert.equal(await storage.renameWorkspace(freshId(), "Niemand"), false);

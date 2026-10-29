@@ -8,16 +8,19 @@
 	"exports": {
 		"./core": "./src/core.ts",
 		"./ui": "./src/ui.ts",
+		"./api": "./src/api.ts",
+		"./mcp": "./src/mcp.ts",
 		"./testing": "./src/legacy/core/memory-port.ts"
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.core.json && tsc --noEmit -p tsconfig.ui.json",
+		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.core.json && tsc --noEmit -p tsconfig.ui.json && tsc --noEmit -p tsconfig.node.json",
 		"test": "tsx --test 'src/**/*.test.ts'",
-		"build": "tsc --noEmit -p tsconfig.core.json && tsc --noEmit -p tsconfig.ui.json"
+		"build": "tsc --noEmit -p tsconfig.core.json && tsc --noEmit -p tsconfig.ui.json && tsc --noEmit -p tsconfig.node.json"
 	},
 	"devDependencies": {
 		"@types/node": "^26.6.3",
 		"happy-dom": "^20.14.5",
+		"postgres": "^3.4.5",
 		"tsx": "^4.23.15",
 		"typescript": "^7.0.2"
 	}

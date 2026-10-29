@@ -1,0 +1,10 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		// Node, without the browser's library: the storage runs in the API's server, the tools in the MCP server.
+		"types": ["node"],
+		"lib": ["esnext"]
+	},
+	"include": ["src/api.ts", "src/mcp.ts", "src/**/api/**/*.ts", "src/**/api.ts", "src/**/mcp/**/*.ts", "src/**/mcp.ts"],
+	"exclude": ["src/**/*.test.ts", "src/**/test-*.ts"]
+}

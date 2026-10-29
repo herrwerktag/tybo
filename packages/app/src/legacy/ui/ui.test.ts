@@ -1,63 +1,11 @@
+import { WS, byText, goTo, memoryStorage, readSaved, settle, startApp, storage, stub, typeInto } from "./test-app.js";
 import { freshDom } from "../../shared/ui/test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setLanguage, text } from "./i18n.js";
-import type { AppData } from "../core/index.js";
+import { createWorkspaces } from "../core/index.js";
 import { render } from "./ui.js";
-import { DATA_VERSION, createWorkspaces, ulid } from "../core/index.js";
-import { memoryDataPort } from "../core/memory-port.js";
 import { activeWorkspacePreference, sharedText } from "../../shared/ui/index.js";
-
-/** Lets work started by a click or an event finish first (the stores open and save through the async port). */
-const settle = () => new Promise<void>((resolve) => setTimeout(resolve));
-
-/** The workspace the tests' saved data is in. */
-const WS = "ws";
-
-/** The storage in memory, with `saved` as the data of the workspace WS (named as the first workspace is) — or
- * no workspace at all, the way the very first start finds it. */
-function memoryStorage(saved?: unknown) {
-	const behind = memoryDataPort(saved === undefined ? {} : { [WS]: saved });
-	if (saved !== undefined) void behind.port.renameWorkspace(WS, text.defaultWorkspaceName(1)); // done at once, in memory
-	return behind;
-}
-
-/** The storage behind the app the last startApp started. */
-let storage = memoryStorage();
-
-/** Renders the app on a fresh page (at `hash`, e.g. "#boards"), with `saved` already in the storage. A different
- * storage `behind` it shows what the app does with one that answers otherwise (with collisions, for instance). */
-async function startApp(saved?: unknown, hash = "", behind = memoryStorage(saved), options: { viewScript?: string } = {}): Promise<HTMLElement> {
-	freshDom();
-	location.hash = hash;
-	storage = behind;
-	const root = document.querySelector<HTMLElement>("#app")!;
-	const workspaces = await createWorkspaces(behind.port, text.defaultWorkspaceName, activeWorkspacePreference);
-	await render(root, workspaces, options);
-	return root;
-}
-
-/** The element matching `selector` whose text is `label`. */
-function byText<T extends HTMLElement = HTMLElement>(root: ParentNode, selector: string, label: string): T {
-	const found = [...root.querySelectorAll<T>(selector)].find((node) => node.textContent?.trim() === label);
-	assert.ok(found, `no ${selector} with text "${label}"`);
-	return found;
-}
-
-function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string): void {
-	input.value = value;
-	input.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
-/** Replaces browser dialogs (alert, confirm, prompt) for the current page. */
-const stub = (dialogs: Partial<Record<"alert" | "confirm" | "prompt", (message: string) => unknown>>) => Object.assign(globalThis, dialogs);
-
-/** The data of the first workspace, as the storage holds it once the saves on their way have landed. */
-async function readSaved(): Promise<AppData> {
-	await settle();
-	const [first] = await storage.port.listWorkspaces();
-	return storage.data(first!.id) as unknown as AppData;
-}
 
 /** One type (Book, with a text property "author") and one entity (Dune), as saved data. */
 const library = {
@@ -67,12 +15,6 @@ const library = {
 	entities: [{ id: "01J00000000000000000000000", typeId: "book", name: "Dune", content: "", description: "", values: { author: "Herbert" } }],
 	boards: [],
 };
-
-/** Shows another page, the way a click on a nav link does. */
-function goTo(hash: string): void {
-	location.hash = hash;
-	window.dispatchEvent(new Event("hashchange"));
-}
 
 test("a type with a property, then an entity of it, can be created through the forms and are saved", async () => {
 	const root = await startApp(undefined, "#types");
@@ -621,99 +563,6 @@ test("without tags in use there's no tag filter", async () => {
 	assert.equal(tagSelectIn(root), null);
 	goTo("#boards");
 	assert.equal(tagSelectIn(root), null);
-});
-
-test("Analyses: an analysis set up step by step lists the rows grouped, is saved, and shows the card and details of the entities it names", async () => {
-	const reference = (id: string, name: string, typeId: string, inverseLabel = "") => ({
-		id,
-		name,
-		kind: "reference",
-		options: [],
-		reference: { typeIds: [typeId], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel },
-		cardDisplay: "list",
-	});
-	// Entity ids are ULIDs (others are replaced on loading, losing the references to them).
-	const ids = { Build: ulid(), Sort: ulid(), Developer: ulid(), Delivery: ulid() };
-	const entity = (name: keyof typeof ids, typeId: string, values: Record<string, string> = {}) => ({
-		id: ids[name],
-		typeId,
-		name,
-		content: "",
-		description: "",
-		tags: [],
-		values,
-	});
-	const root = await startApp(
-		{
-			version: DATA_VERSION,
-			types: [
-				{ id: "activity", name: "Activity", color: "#c4dafa", contentTemplate: "", properties: [reference("role", "Responsible", "role"), reference("process", "Process", "process", "includes")] },
-				{ id: "role", name: "Role", color: "#f9c9c9", contentTemplate: "", properties: [] },
-				{ id: "process", name: "Process", color: "#c8ebbf", contentTemplate: "", properties: [] },
-			],
-			entities: [
-				entity("Build", "activity", { role: ids.Developer, process: ids.Delivery }),
-				entity("Sort", "activity", { process: ids.Delivery }),
-				entity("Developer", "role"),
-				entity("Delivery", "process"),
-			],
-			boards: [],
-		},
-		"#analysis",
-	);
-	assert.equal(root.querySelector(".tab.current")?.textContent, text.tabAnalysis);
-	assert.ok(byText(root, "p", text.analysisEmpty));
-
-	byText<HTMLButtonElement>(root, "button", text.newAnalysis).click();
-	const choose = (select: HTMLSelectElement, label: string) => {
-		select.value = [...select.options].find((o) => o.textContent === label)!.value;
-		select.dispatchEvent(new Event("change"));
-	};
-	choose(root.querySelector<HTMLSelectElement>(".analysis-meta select")!, "Activity");
-	byText<HTMLButtonElement>(root, "button", `+ ${text.addGroupLevel}`).click();
-	choose(root.querySelector<HTMLSelectElement>(".path-list .path-editor select")!, "Responsible → Role");
-	byText<HTMLButtonElement>(root, "button", `+ ${text.addColumn}`).click();
-	choose(root.querySelectorAll<HTMLSelectElement>(".path-list")[1]!.querySelector("select")!, "Process → Process");
-
-	const headings = [...root.querySelectorAll(".analysis-result h3")].map((h) => h.textContent);
-	assert.deepEqual(headings, [`Developer${text.analysisCount(1)}`, `${text.analysisNoValue("Responsible")}${text.analysisCount(1)}`]);
-	const rows = [...root.querySelectorAll(".analysis-result tbody tr")].map((tr) => [...tr.querySelectorAll("td")].map((td) => td.textContent));
-	assert.deepEqual(rows, [["Build", "Delivery"], ["Sort", "Delivery"]]);
-	assert.ok(byText(root, ".analysis-result .section-header button", text.exportAnalysisMarkdown), "the result can be exported");
-
-	const saved = await readSaved();
-	assert.deepEqual(saved.analyses.map(({ name, typeId, groups, columns }) => ({ name, typeId, groups, columns })), [
-		{
-			name: text.defaultAnalysisName(1),
-			typeId: "activity",
-			groups: [[{ propertyId: "role", direction: "forward" }]],
-			columns: [[{ propertyId: "process", direction: "forward" }]],
-		},
-	]);
-
-	// Hovering (or focusing) an entity shows its card; clicking it, its details beside, where Edit shows its form.
-	const delivery = byText<HTMLButtonElement>(root, ".analysis-result button", "Delivery");
-	delivery.dispatchEvent(new Event("focus"));
-	const preview = root.querySelector<HTMLElement>(".card-preview")!;
-	assert.equal(preview.hidden, false);
-	assert.equal(preview.querySelector(".card-title")?.textContent, "Delivery");
-	delivery.click();
-	const details = root.querySelector<HTMLElement>(".analysis-view .details-panel")!;
-	assert.equal(details.hidden, false);
-	assert.equal(details.querySelector(".details-title")?.textContent, "Delivery");
-	assert.equal(root.querySelectorAll(".entity-link.selected").length, 2, "both of its links in the result are marked");
-	// Its details name the activities the process includes (the other side of the references): clicking one shows that.
-	byText<HTMLButtonElement>(details, ".ref-tag", "Build").click();
-	assert.equal(details.querySelector(".details-title")?.textContent, "Build");
-	byText<HTMLButtonElement>(details, "button", text.edit).click();
-	const form = details.querySelector<HTMLFormElement>("#entity-form")!;
-	assert.equal(details.querySelector(".card-type")?.textContent, "Activity", "below the bar of its type");
-	form.querySelector<HTMLInputElement>("input")!.value = "Build it";
-	form.requestSubmit();
-	await settle();
-	assert.equal(location.hash, "#analysis", "it stays in the analysis");
-	assert.equal(details.querySelector(".details-title")?.textContent, "Build it");
-	assert.ok(byText(root, ".analysis-result button", "Build it"), "the result names it anew");
 });
 
 test("the settings switch the theme: dark or light on <html>, or none to follow the system, remembered in this browser", async () => {

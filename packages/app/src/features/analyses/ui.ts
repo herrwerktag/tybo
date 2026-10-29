@@ -1,25 +1,25 @@
+import type { EntityType, Store } from "../../legacy/core/index.js";
+import { DETAILS_WIDTH_KEY, createCardPreview, entityDetails } from "../../legacy/ui/entity-card.js";
+import { showEntityEditor } from "../../legacy/ui/entity-form.js";
+import { text as legacyText } from "../../legacy/ui/i18n.js";
+import { moveItem } from "../../shared/core/index.js";
+import { downloadFile, el, readPreference, resizeHandle, safeFileName, typeDot, writePreference, zipFiles, type Page } from "../../shared/ui/index.js";
 import {
-	moveItem,
+	addAnalysis,
+	deleteAnalysis,
 	pathOptions,
 	resolvePath,
 	runAnalysis,
+	updateAnalysis,
 	type Analysis,
 	type AnalysisGroup,
 	type AnalysisRow,
 	type AnalysisValue,
-	type EntityType,
 	type PathOption,
 	type PathStep,
-	type Store,
-} from "../core/index.js";
-import { analysisMarkdownFiles, pathLabel } from "./analysis-export.js";
-import { DETAILS_WIDTH_KEY } from "./canvas.js";
-import { downloadFile, el, resizeHandle, safeFileName, typeDot } from "../../shared/ui/index.js";
-import { createCardPreview, entityDetails } from "./entity-card.js";
-import { showEntityEditor } from "./entity-form.js";
-import { text } from "./i18n.js";
-import { readPreference, writePreference } from "../../shared/ui/index.js";
-import { zipFiles } from "../../shared/ui/index.js";
+} from "./core.js";
+import { analysisMarkdownFiles, pathLabel } from "./export.js";
+import { text } from "./texts.js";
 
 /** The analysis open in the Analyses tab. */
 const SELECTED_KEY = "analysis-selected";
@@ -48,7 +48,7 @@ export function analysisView(store: Store): HTMLElement {
 	let shownEntityId: string | null = null;
 	/** Whether the details panel shows the entity's form instead of its details. */
 	let editing = false;
-	const details = el("aside", { className: "details-panel", ariaLabel: text.details });
+	const details = el("aside", { className: "details-panel", ariaLabel: legacyText.details });
 	const detailsHandle = resizeHandle(details, { key: DETAILS_WIDTH_KEY, side: "right", min: 16, max: 40 });
 	detailsHandle.classList.add("details-resize");
 	const view = el("div", { className: "analysis-view" }, main, detailsHandle, details);
@@ -99,7 +99,7 @@ export function analysisView(store: Store): HTMLElement {
 			details.replaceChildren(
 				...(entity
 					? entityDetails(store, entity, {
-							actions: [el("button", { type: "button", onclick: edit }, text.edit)],
+							actions: [el("button", { type: "button", onclick: edit }, legacyText.edit)],
 							onClose: () => showDetails(null),
 							onSelectEntity: showDetails,
 						})
@@ -118,7 +118,7 @@ export function analysisView(store: Store): HTMLElement {
 				type: "button",
 				className: "primary",
 				onclick: () => {
-					const item = store.addAnalysis(text.defaultAnalysisName(store.data.analyses.length + 1));
+					const item = addAnalysis(store, text.defaultAnalysisName(store.data.analyses.length + 1));
 					writePreference(SELECTED_KEY, item.id);
 					render();
 					view.querySelector<HTMLInputElement>(".analysis-setup input")?.select();
@@ -157,10 +157,10 @@ export function analysisView(store: Store): HTMLElement {
 	}
 
 	function setupSection(analysis: Analysis): HTMLElement {
-		const update = (patch: Partial<Omit<Analysis, "id">>) => store.updateAnalysis(analysis.id, patch);
+		const update = (patch: Partial<Omit<Analysis, "id">>) => updateAnalysis(store, analysis.id, patch);
 		const name = el("input", {
 			value: analysis.name,
-			ariaLabel: text.name,
+			ariaLabel: legacyText.name,
 			onchange: () => update({ name: name.value }),
 		});
 		const rowType = el(
@@ -178,7 +178,7 @@ export function analysisView(store: Store): HTMLElement {
 			{
 				type: "button",
 				onclick: () => {
-					if (confirm(text.confirmDeleteAnalysis(analysis.name))) store.deleteAnalysis(analysis.id);
+					if (confirm(text.confirmDeleteAnalysis(analysis.name))) deleteAnalysis(store, analysis.id);
 				},
 			},
 			text.deleteAnalysis,
@@ -191,7 +191,7 @@ export function analysisView(store: Store): HTMLElement {
 			el(
 				"div",
 				{ className: "analysis-meta" },
-				el("label", { className: "field" }, el("span", {}, text.name), name),
+				el("label", { className: "field" }, el("span", {}, legacyText.name), name),
 				el("label", { className: "field" }, el("span", {}, text.analysisRowType), rowType),
 				remove,
 			),
@@ -417,3 +417,6 @@ export function analysisView(store: Store): HTMLElement {
 function join(nodes: HTMLElement[]): (HTMLElement | string)[] {
 	return nodes.flatMap((node, i) => (i === 0 ? [node] : [", ", node]));
 }
+
+/** The Analyses tab, after the boards. */
+export const ANALYSES_PAGE: Page<Store> = { route: "analysis", label: () => text.tabAnalysis, render: analysisView };

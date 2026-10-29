@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { test } from "node:test";
-import { changesBetween, type AppData, type Change } from "@tybo/app/core";
+import { changesBetween, storedFeatureData, type AppData, type Change } from "@tybo/app/core";
 import { readWorkspace } from "./data.js";
 import { postgresStorage } from "./postgres.js";
 import { call, startApp } from "./test-server.js";
@@ -50,7 +50,7 @@ function state(): AppData {
 }
 
 /** A workspace before its first save: nothing in it, not even a board. */
-const empty = (): AppData => ({ types: [], entities: [], boards: [], analyses: [] });
+const empty = (): AppData => ({ types: [], entities: [], boards: [], ...storedFeatureData({}) });
 
 /** The whole situation of a test: the storage against the database, the API over it, a workspace of the
  * test's own (no other test sees its rows), and a connection of the tests' own to look into the tables

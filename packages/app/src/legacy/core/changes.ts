@@ -1,6 +1,6 @@
-import { changesOf, unitStandsOf, type Change, type UnitKind, type UnitStands } from "../../shared/core/index.js";
+import type { UnitKind } from "../../shared/core/index.js";
 import type { Rect } from "../../shared/core/index.js";
-import type { Analysis, AppData, Board, CanvasCard, Drawing, Entity, EntityType } from "./model.js";
+import type { AppData, Board, CanvasCard, Drawing, Entity, EntityType } from "./model.js";
 import type { Viewport } from "./viewport.js";
 
 /** A board itself — `name`, `viewport` and its frame, without its cards and drawings. The
@@ -30,12 +30,6 @@ export const ENTITY_UNIT: AppUnit<Entity> = {
 		const types = new Set(data.types.map(({ id }) => id));
 		return { ...data, entities: data.entities.filter((entity) => types.has(entity.typeId)) };
 	},
-};
-
-export const ANALYSIS_UNIT: AppUnit<Analysis> = {
-	kind: "analysis",
-	lists: (data) => [{ items: data.analyses }],
-	withList: (data, analyses) => ({ ...data, analyses }),
 };
 
 /** Boards as units without their cards and drawings, so someone panning a board and someone moving a card never
@@ -75,16 +69,3 @@ export const DRAWING_UNIT: AppUnit<Drawing> = {
 	// A new board starts without drawings.
 	settle: (data) => ({ ...data, boards: data.boards.map((board) => ({ ...board, drawings: board.drawings ?? [] })) }),
 };
-
-/** The kinds of unit of the app's data, parents before the children naming them. */
-export const UNIT_KINDS: readonly AppUnit<any>[] = [TYPE_UNIT, ENTITY_UNIT, ANALYSIS_UNIT, BOARD_UNIT, CARD_UNIT, DRAWING_UNIT];
-
-/** The units of a state with their places (see `unitStandsOf`). */
-export function unitStands(data: AppData): UnitStands {
-	return unitStandsOf(UNIT_KINDS, data);
-}
-
-/** The units in which two states of the app's data differ (see `changesOf`). */
-export function changesBetween(before: AppData, after: AppData): Change[] {
-	return changesOf(UNIT_KINDS, before, after);
-}

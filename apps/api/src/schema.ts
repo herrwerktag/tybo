@@ -1,7 +1,8 @@
 import type postgres from "postgres";
 
-/** The driver's query function, a connection's or a transaction's — everything here runs on either. */
-export type Queries = postgres.ISql<{}>;
+import type { Queries } from "@tybo/app/api";
+
+export type { Queries };
 
 /** A connection of the driver, which can open transactions. */
 export type Sql = postgres.Sql<{}>;

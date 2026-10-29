@@ -1,7 +1,7 @@
 import { moveItem, type AppData, type WorkspaceInfo } from "@tybo/app/core";
 import { recordHistory } from "./history.js";
 import type { Queries, Sql } from "./schema.js";
-import { UNIT_STORAGES, assembleAppData } from "./units.js";
+import { UNIT_STORAGES, assembleAppData } from "@tybo/app/api";
 
 /** A workspace's data as a read answers it: its rows put together the way the app holds them, marked with
  * the format they are in (`version`, as an exported file is), and the revision the workspace is at. */

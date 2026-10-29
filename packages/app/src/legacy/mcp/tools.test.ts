@@ -1,45 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DATA_VERSION, createStore } from "@tybo/app/core";
-import { memoryDataPort } from "@tybo/app/testing";
-import { ToolError } from "./protocol.js";
-import { tyboTools } from "./tools.js";
-
-/** The tools on a port in memory holding one empty workspace, "Projekt"; `call` runs one and parses its answer. */
-function setup() {
-	const storage = memoryDataPort({ Projekt: { version: DATA_VERSION, types: [], entities: [], boards: [] } });
-	const tools = tyboTools(storage.port);
-	const call = async (name: string, args: Record<string, unknown> = {}) => {
-		const tool = tools.find((t) => t.name === name);
-		assert.ok(tool, `no tool ${name}`);
-		return JSON.parse(await tool.run({ workspace: "Projekt", ...args }));
-	};
-	/** The tool's refusal, as the model gets to read it. */
-	const refusal = async (name: string, args: Record<string, unknown>) => {
-		const tool = tools.find((t) => t.name === name)!;
-		const error = await tool.run({ workspace: "Projekt", ...args }).then(
-			() => assert.fail(`${name} didn't refuse`),
-			(e: unknown) => e,
-		);
-		assert.ok(error instanceof ToolError, String(error));
-		return error.message;
-	};
-	return { storage, call, refusal };
-}
-
-/** Two types, a Person and a Task referencing its owner, with Ada and Alan and one task of Ada's. */
-async function withPeople() {
-	const tools = setup();
-	await tools.call("create_type", { name: "Person", properties: [{ name: "Role", kind: "options", options: ["Dev", "Lead"] }] });
-	await tools.call("create_type", {
-		name: "Task",
-		properties: [{ name: "Owner", kind: "reference", targets: ["person"], inverseLabel: "owns" }],
-	});
-	await tools.call("create_entity", { type: "Person", name: "Ada", values: { role: "Lead" } });
-	await tools.call("create_entity", { type: "Person", name: "Alan", values: { Role: "Dev" } });
-	await tools.call("create_entity", { type: "Task", name: "Write the spec", values: { Owner: "ada" }, tags: ["q4"] });
-	return tools;
-}
+import { createStore } from "../core/index.js";
+import { withPeople } from "./test-tools.js";
 
 test("types and entities made by the tools are saved, references named by name", async () => {
 	const { storage } = await withPeople();
@@ -66,7 +28,6 @@ test("describe_workspace tells the types with their properties, how many entitie
 	);
 	assert.deepEqual(described.types[1].properties[0].targets, ["Person"]);
 	assert.deepEqual(described.tags, ["q4"]);
-	assert.deepEqual(described.analyses, []);
 });
 
 test("find_entities filters by type, name, tag and values; get_entity tells who references the entity", async () => {
@@ -174,41 +135,6 @@ test("find_entities with missing: true lists the entities lacking a required ref
 	assert.deepEqual(found.entities.map((e: { name: string; missing: string[] }) => [e.name, e.missing]), [["Review", ["Owner"]]]);
 });
 
-test("analyses are made, changed and deleted with their paths named the way run_analysis writes them", async () => {
-	const { call, refusal } = await withPeople();
-	await call("create_entity", { type: "Task", name: "Test it", values: { Owner: "Alan" } });
-	const { analysis } = await call("create_analysis", { name: "Tasks by role", type: "Task", groups: ["Owner › Role"], columns: [["Owner"]] });
-	assert.deepEqual([analysis.type, analysis.groupedBy, analysis.columns], ["Task", ["Owner › Role"], ["Owner"]]);
-	let result = await call("run_analysis", { analysis: "Tasks by role" });
-	assert.deepEqual(result.groups.map((g: { value: string; count: number }) => [g.value, g.count]), [["Dev", 1], ["Lead", 1]]);
-
-	// An inverse step by its label, or by Type.Property.
-	await call("update_analysis", { analysis: "Tasks by role", name: "People", type: "Person", columns: ["owns", "Task.Owner"] });
-	result = await call("run_analysis", { analysis: "people" });
-	assert.deepEqual(result.groupedBy, []);
-	assert.deepEqual(result.columns, ["owns", "owns"]);
-	assert.deepEqual(result.rows.map((r: { cells: string[][] }) => r.cells[0]), [["Write the spec"], ["Test it"]]);
-	assert.deepEqual((await call("describe_workspace")).analyses.map((a: { name: string }) => a.name), ["People"]);
-
-	assert.match(await refusal("update_analysis", { analysis: "People", columns: ["Role › Name"] }), /"Role" is a text or options property/);
-	assert.match(await refusal("update_analysis", { analysis: "People", columns: ["Boss"] }), /no step "Boss" here. Steps: Role, owns/);
-	assert.match(await refusal("create_analysis", { name: "people", type: "Task" }), /already/);
-	assert.match(await refusal("delete_analysis", { analysis: "People", confirm: false }), /confirm: true/);
-	await call("delete_analysis", { analysis: "People", confirm: true });
-	assert.deepEqual((await call("describe_workspace")).analyses, []);
-});
-
-test("run_analysis shows at most `limit` rows, keeping the groups' counts whole", async () => {
-	const { call } = await withPeople();
-	await call("create_entities", { entities: ["A", "B", "C"].map((name) => ({ type: "Task", name, values: { Owner: "Alan" } })) });
-	await call("create_analysis", { name: "By owner", type: "Task", groups: ["Owner"] });
-	const result = await call("run_analysis", { analysis: "By owner", limit: 2 });
-	assert.equal(result.count, 4);
-	assert.deepEqual(result.groups.map((g: { value: string; count: number; rows: unknown[] }) => [g.value, g.count, g.rows.length]), [["Ada", 1, 1], ["Alan", 3, 1]]);
-	assert.match(result.truncated, /first 2 rows/);
-	assert.equal((await call("run_analysis", { analysis: "By owner" })).truncated, undefined);
-});
-
 test("a required reference is saved without an entity, and the entity lists it as missing until it has one", async () => {
 	const { call } = await withPeople();
 	await call("update_type", { type: "Task", properties: [{ name: "Owner", required: true }] });
@@ -243,26 +169,6 @@ test("a save that fails is the tool's failure", async () => {
 	const { refusal, storage } = await withPeople();
 	storage.failing.saves = true;
 	assert.match(await refusal("create_entity", { type: "Person", name: "Grace" }), /couldn't be saved/);
-});
-
-test("run_analysis answers the analysis's groups and columns by name", async () => {
-	const { storage, call } = await withPeople();
-	const store = await createStore(storage.port, "Projekt");
-	const [person, task] = store.data.types;
-	const owner = task!.properties[0]!;
-	const analysis = store.addAnalysis("Tasks by owner");
-	store.updateAnalysis(analysis.id, {
-		typeId: task!.id,
-		groups: [[{ propertyId: owner.id, direction: "forward" }]],
-		columns: [[{ propertyId: owner.id, direction: "forward" }, { propertyId: person!.properties[0]!.id, direction: "forward" }]],
-	});
-	await store.saved();
-
-	const result = await call("run_analysis", { analysis: "tasks by owner" });
-	assert.deepEqual(result.groupedBy, ["Owner"]);
-	assert.deepEqual(result.columns, ["Owner › Role"]);
-	assert.equal(result.count, 1);
-	assert.deepEqual(result.groups, [{ value: "Ada", count: 1, rows: [{ entity: { id: result.groups[0].rows[0].entity.id, name: "Write the spec" }, cells: [["Lead"]] }] }]);
 });
 
 test("place_on_board makes the board and lays the entities out in columns along their references", async () => {

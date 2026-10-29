@@ -1,9 +1,10 @@
 import "../../shared/ui/test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Analysis, AppData, PathStep, PropertyDef } from "../core/index.js";
-import { analysisMarkdownFiles } from "./analysis-export.js";
-import { setLanguage } from "./i18n.js";
+import type { AppData, PropertyDef } from "../../legacy/core/index.js";
+import { setLanguage } from "../../shared/ui/index.js";
+import type { Analysis, PathStep } from "./core.js";
+import { analysisMarkdownFiles } from "./export.js";
 
 const prop = (id: string, name: string, more: Partial<PropertyDef> = {}): PropertyDef => ({
 	id,

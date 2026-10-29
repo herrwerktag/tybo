@@ -25,9 +25,9 @@ import {
 	type PropertyValue,
 	type ValidationError,
 } from "../core/index.js";
+import { PAGES } from "../../features.ui.js";
 import { canvasView } from "./canvas.js";
 import { entityForm } from "./entity-form.js";
-import { analysisView } from "./analysis.js";
 import { downloadFile, dragHandle, el, reorderable, safeFileName, svgEl, tagFilter, typeDot } from "../../shared/ui/index.js";
 import { LANGUAGES, language, setLanguage, text, type Language } from "./i18n.js";
 import { THEMES, setTheme, theme, type Theme } from "./theme.js";
@@ -74,15 +74,16 @@ const WORKSPACE_MIME = "application/x-workspace-index";
 /** The tag the Entities page is filtered by, if any. */
 const ENTITIES_TAG_KEY = "entities-tag";
 
-/** The page shown, from the URL hash: entity types, entities, boards or analyses. */
-type Route = "types" | "entities" | "boards" | "analysis";
+/** The page shown, from the URL hash: entity types, entities, boards, or a feature's page (see `PAGES`). */
+type Route = "types" | "entities" | "boards" | (string & {});
 
 /** Entities is the default page, so old links (e.g. "#data") still land there; "#canvas" is the boards' former
  * name, and the read-only "#view" (formerly "#viewer") is gone: its links open the boards. */
 function routeFromHash(hash: string): Route {
 	const route = hash.slice(1).split("/")[0];
 	if (route === "canvas" || route === "view" || route === "viewer") return "boards";
-	return route === "types" || route === "boards" || route === "analysis" ? route : "entities";
+	if (route === "types" || route === "boards" || PAGES.some((page) => page.route === route)) return route!;
+	return "entities";
 }
 
 /** An arrow bending back (undo); mirrored, forward (redo). Drawn, since the font's arrows come out small and thin. */
@@ -325,6 +326,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 		}
 		const route = routeFromHash(location.hash);
 		const entitiesTab = route === "types" || route === "entities";
+		const page = PAGES.find((p) => p.route === route);
 		renderBanner();
 		renderHistoryButtons();
 		root.replaceChildren(
@@ -332,8 +334,8 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 			el("header", {}, navBar(route), banner),
 			entitiesTab
 				? el("div", { className: "data-view" }, route === "types" ? typesSection() : entitiesSection())
-				: route === "analysis"
-					? analysisView(store)
+				: page
+					? page.render(store)
 					: canvasView(store, {
 						readOnly: false,
 						...(viewScript ? { onExportView: (boardId: string) => exportView(viewScript, boardId) } : {}),
@@ -365,7 +367,7 @@ export async function render(root: HTMLElement, workspaces: Workspaces, { viewSc
 				{ className: "app-tabs" },
 				tab("entities", text.tabEntities, route === "entities" || route === "types"),
 				tab("boards", text.tabBoards),
-				tab("analysis", text.tabAnalysis),
+				...PAGES.map((page) => tab(page.route, page.label())),
 			),
 			el("div", { className: "nav-menus" }, historyButtons, settingsMenu()),
 		);

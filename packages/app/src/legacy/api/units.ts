@@ -1,67 +1,25 @@
 import {
-	ANALYSIS_UNIT,
 	BOARD_UNIT,
 	CARD_UNIT,
 	DRAWING_UNIT,
 	ENTITY_UNIT,
 	TYPE_UNIT,
 	jsonEqual,
-	type Analysis,
 	type AppData,
 	type BoardMeta,
 	type CanvasCard,
 	type Drawing,
 	type Entity,
 	type EntityType,
-	type UnitKind,
 	type UnitStand,
-} from "@tybo/app/core";
-import type { Queries } from "./schema.js";
-import { json, parsed, plain, type All, type Run } from "./sqlite-values.js";
+} from "../core/index.js";
+import { groupBy, jsonbParameter, json, parsed, plain, type Rows, type UnitStorage } from "../../shared/api/index.js";
 
-/**
- * How one kind of unit is kept in the tables, in Postgres and in SQLite alike: the rows it is read from and
- * put together of, and how one unit's rows are written. Deleting a unit is its one row going (`table`); the
- * tables' references cascade what hung below it.
- *
- * `R` is what its reading answers — its rows, the JSON columns already parsed, whichever database answered.
- */
-export interface UnitStorage<T extends { id: string } = any, R = any> {
-	unit: UnitKind<AppData, T>;
-	/** The table holding one row per unit. */
-	table: string;
-	readPostgres(queries: Queries, ws: string): Promise<R>;
-	readSqlite(all: All): R;
-	/** The app's data with its units put in, from the rows read. Kinds are put in parents first. */
-	assemble(data: AppData, rows: R): AppData;
-	/** Writes the unit's rows (an upsert of its own, and of what belongs to it alone). */
-	writePostgres(tx: Queries, ws: string, after: UnitStand<T>, boardId: string | undefined): Promise<void>;
-	writeSqlite(run: Run, ws: string, after: UnitStand<T>, boardId: string | undefined): void;
-	/** Whether a change between the two stands is no news for the history (it's saved, but leaves no entry). */
-	quiet?(before: UnitStand<T> | null, after: UnitStand<T> | null): boolean;
-}
-
-/** The jsonb parameter the driver makes, in the transaction at hand (`null` stays SQL null, not jsonb `null`). */
-function jsonbParameter(queries: Queries, value: unknown) {
-	return value === null || value === undefined ? null : queries.json(value as never);
-}
-
-/** The rows by the parent their `column` names, each turned into what the app holds, in the rows' order. */
-function groupBy<R extends Record<string, unknown>, T>(rows: readonly R[], column: keyof R, make: (row: R) => T): Map<string, T[]> {
-	const groups = new Map<string, T[]>();
-	for (const row of rows) {
-		const parent = row[column] as string;
-		const list = groups.get(parent) ?? [];
-		list.push(make(row));
-		groups.set(parent, list);
-	}
-	return groups;
-}
-
-type Rows = readonly Record<string, any>[];
+/** How a kind of unit of the app's data is kept. */
+type AppStorage<T extends { id: string }, R> = UnitStorage<T, R, AppData>;
 
 /** Types with their properties: a row each, the properties in a table of their own. */
-const TYPE_STORAGE: UnitStorage<EntityType, { types: Rows; properties: Rows }> = {
+export const TYPE_STORAGE: AppStorage<EntityType, { types: Rows; properties: Rows }> = {
 	unit: TYPE_UNIT,
 	table: "entity_types",
 	async readPostgres(queries, ws) {
@@ -150,7 +108,7 @@ const TYPE_STORAGE: UnitStorage<EntityType, { types: Rows; properties: Rows }> =
 };
 
 /** Entities with their values: a row each, the values in a table of their own. */
-const ENTITY_STORAGE: UnitStorage<Entity, { entities: Rows; values: Rows }> = {
+export const ENTITY_STORAGE: AppStorage<Entity, { entities: Rows; values: Rows }> = {
 	unit: ENTITY_UNIT,
 	table: "entities",
 	async readPostgres(queries, ws) {
@@ -234,47 +192,6 @@ const ENTITY_STORAGE: UnitStorage<Entity, { entities: Rows; values: Rows }> = {
 	},
 };
 
-const ANALYSIS_STORAGE: UnitStorage<Analysis, Rows> = {
-	unit: ANALYSIS_UNIT,
-	table: "analyses",
-	readPostgres: (queries, ws) =>
-		queries`select id, name, type_id, group_paths, column_paths from analyses where workspace_id = ${ws} order by position, id`,
-	readSqlite: (all) =>
-		all("select id, name, type_id, group_paths, column_paths from analyses where workspace_id = ? order by position, id").map((row) => ({
-			...row,
-			group_paths: parsed(row.group_paths),
-			column_paths: parsed(row.column_paths),
-		})),
-	assemble: (data, analyses) => ({
-		...data,
-		analyses: analyses.map(({ id, name, type_id, group_paths, column_paths }) => ({
-			id,
-			name,
-			typeId: type_id,
-			groups: group_paths ?? [],
-			columns: column_paths ?? [],
-		})),
-	}),
-	async writePostgres(tx, ws, { value: item, position }) {
-		await tx`insert into analyses (workspace_id, id, position, name, type_id, group_paths, column_paths, updated_at)
-			values (${ws}, ${item.id}, ${position}, ${item.name}, ${item.typeId}, ${jsonbParameter(tx, item.groups)},
-				${jsonbParameter(tx, item.columns)}, now())
-			on conflict (workspace_id, id) do update set
-				position = excluded.position, name = excluded.name, type_id = excluded.type_id, group_paths = excluded.group_paths,
-				column_paths = excluded.column_paths, updated_at = now()`;
-	},
-	writeSqlite(run, ws, { value: item, position }) {
-		run(
-			`insert into analyses (workspace_id, id, position, name, type_id, group_paths, column_paths, updated_at)
-			values (?, ?, ?, ?, ?, ?, ?, current_timestamp)
-			on conflict (workspace_id, id) do update set
-				position = excluded.position, name = excluded.name, type_id = excluded.type_id, group_paths = excluded.group_paths,
-				column_paths = excluded.column_paths, updated_at = current_timestamp`,
-			ws, item.id, position, plain(item.name), plain(item.typeId), json(item.groups), json(item.columns),
-		);
-	},
-};
-
 /** Whether two stands of a board differ in nothing but its viewport — same place, same name, same frame. */
 function onlyViewport(before: UnitStand<BoardMeta> | null, after: UnitStand<BoardMeta> | null): boolean {
 	if (before === null || after === null || before.position !== after.position) return false;
@@ -283,7 +200,7 @@ function onlyViewport(before: UnitStand<BoardMeta> | null, after: UnitStand<Boar
 	return jsonEqual(was, now);
 }
 
-const BOARD_STORAGE: UnitStorage<BoardMeta, Rows> = {
+export const BOARD_STORAGE: AppStorage<BoardMeta, Rows> = {
 	unit: BOARD_UNIT,
 	table: "boards",
 	readPostgres: (queries, ws) => queries`select id, name, viewport, view_frame from boards where workspace_id = ${ws} order by position, id`,
@@ -321,7 +238,7 @@ const BOARD_STORAGE: UnitStorage<BoardMeta, Rows> = {
 	quiet: onlyViewport,
 };
 
-const CARD_STORAGE: UnitStorage<CanvasCard, Rows> = {
+export const CARD_STORAGE: AppStorage<CanvasCard, Rows> = {
 	unit: CARD_UNIT,
 	table: "cards",
 	readPostgres: (queries, ws) =>
@@ -350,7 +267,7 @@ const CARD_STORAGE: UnitStorage<CanvasCard, Rows> = {
 	},
 };
 
-const DRAWING_STORAGE: UnitStorage<Drawing, Rows> = {
+export const DRAWING_STORAGE: AppStorage<Drawing, Rows> = {
 	unit: DRAWING_UNIT,
 	table: "drawings",
 	readPostgres: (queries, ws) => queries`select board_id, body from drawings where workspace_id = ${ws} order by board_id, position, id`,
@@ -376,20 +293,3 @@ const DRAWING_STORAGE: UnitStorage<Drawing, Rows> = {
 		);
 	},
 };
-
-/** How each kind of unit is kept, parents before the children naming them — the order they are read, put
- * together and written in. */
-export const UNIT_STORAGES: readonly UnitStorage[] = [TYPE_STORAGE, ENTITY_STORAGE, ANALYSIS_STORAGE, BOARD_STORAGE, CARD_STORAGE, DRAWING_STORAGE];
-
-/** How the kind named is kept, or undefined for a kind there is none of. */
-export function storageOf(kind: string): UnitStorage | undefined {
-	return UNIT_STORAGES.find((storage) => storage.unit.kind === kind);
-}
-
-/** The app's data put together of every kind's rows, parents first. */
-export function assembleAppData(rows: readonly unknown[]): AppData {
-	return UNIT_STORAGES.reduce((data, storage, index) => storage.assemble(data, rows[index]), {} as AppData);
-}
-
-/** The app's kinds of unit, in the order of their storages. */
-export const STORED_KINDS = UNIT_STORAGES.map(({ unit }) => unit);

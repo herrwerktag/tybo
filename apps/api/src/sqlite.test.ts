@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { DATA_VERSION, changesBetween, type AppData } from "@tybo/app/core";
+import { DATA_VERSION, changesBetween, storedFeatureData, type AppData } from "@tybo/app/core";
 import { DatabaseSync } from "node:sqlite";
 import { SQLITE_MIGRATIONS, sqliteStorage } from "./sqlite.js";
 import { call, startApp } from "./test-server.js";
@@ -36,7 +36,7 @@ function sample(): AppData {
 	};
 }
 
-const empty = (): AppData => ({ types: [], entities: [], boards: [], analyses: [] });
+const empty = (): AppData => ({ types: [], entities: [], boards: [], ...storedFeatureData({}) });
 
 /** A storage on a fresh file of its own; close() closes it and removes the file. */
 async function fresh() {
@@ -263,7 +263,7 @@ test("sqlite: every write goes into the history, newest first, with the stand th
 				["rename", null, "3", null],
 				["change", "entity", "3", "mcp"],
 				["change", "entity", "2", "demo"],
-				...["type", "entity", "analysis", "board", "card", "drawing"].map((kind) => ["change", kind, "1", "demo"]).reverse(),
+				...changesBetween(empty(), base).map(({ kind }) => ["change", kind, "1", "demo"]).reverse(),
 				["create", null, "0", "demo"],
 			],
 			"one entry per unit written; nothing for the empty save",
@@ -301,14 +301,16 @@ test("sqlite: a deleted workspace's history stays, ending with everything it hel
 		await storage.deleteWorkspace("ws", "mcp");
 
 		const history = await storage.readHistory("ws", { limit: 100 });
-		assert.equal(history.length, 8, "the second delete found nothing to delete, and wrote nothing");
+		// Made, each unit saved, deleted.
+		const entries = 1 + changesBetween(empty(), sample()).length + 1;
+		assert.equal(history.length, entries, "the second delete found nothing to delete, and wrote nothing");
 		const [deleted] = history;
 		assert.equal(deleted!.operation, "delete");
 		assert.equal(deleted!.source, "mcp");
 		assert.equal(deleted!.after, null);
 		assert.deepEqual(deleted!.before, { name: "Weg", revision: "1", data: sample() });
 		assert.equal(await storage.renameWorkspace("ws", "Wieder"), false);
-		assert.equal((await storage.readHistory("ws", { limit: 100 })).length, 8);
+		assert.equal((await storage.readHistory("ws", { limit: 100 })).length, entries);
 	} finally {
 		await close();
 	}

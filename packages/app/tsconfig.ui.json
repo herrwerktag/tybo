@@ -5,5 +5,5 @@
 		"types": []
 	},
 	"include": ["src/ui.ts", "src/**/ui/**/*.ts", "src/**/ui.ts"],
-	"exclude": ["src/**/*.test.ts", "src/shared/ui/test-dom.ts"]
+	"exclude": ["src/**/*.test.ts", "src/**/test-*.ts"]
 }

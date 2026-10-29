@@ -1,4 +1,4 @@
-import { changesBetween } from "./changes.js";
+import { changesBetween, storedFeatureData } from "../../features.core.js";
 import { moveItem, ulid } from "../../shared/core/index.js";
 import type { AppData, EntityType } from "./model.js";
 import { DATA_VERSION, createStore, looksLikeAppData, prepareImport, toSaved, type Store } from "./store.js";
@@ -40,7 +40,7 @@ export function readWorkspaceFile(text: string): { name: string | null; data: un
 export type Workspaces = Awaited<ReturnType<typeof createWorkspaces>>;
 
 /** A workspace before its first save: nothing in it, not even a board. */
-const NOTHING: AppData = { types: [], entities: [], boards: [], analyses: [] };
+const NOTHING: AppData = { types: [], entities: [], boards: [], ...storedFeatureData({}) };
 
 /**
  * The list of workspaces and which one is active; `defaultName(n)` names the n-th workspace when no name is

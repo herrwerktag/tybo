@@ -24,7 +24,7 @@ import {
 	type EntityType,
 	type LineArrow,
 } from "../core/index.js";
-import { cardParts, cardSize, createCardPreview, entityDetails } from "./entity-card.js";
+import { DETAILS_WIDTH_KEY, cardParts, cardSize, createCardPreview, entityDetails } from "./entity-card.js";
 import { showEntityEditor } from "./entity-form.js";
 import { readPreference, writePreference } from "../../shared/ui/index.js";
 import type { Store } from "../core/index.js";
@@ -35,7 +35,6 @@ const PICKER_MIME = "application/x-picker-index";
 const PANEL_COLLAPSED_KEY = "canvas-panel-collapsed";
 /** The widths of the side panel and the details panel, if changed by dragging. */
 export const PANEL_WIDTH_KEY = "canvas-panel-width";
-export const DETAILS_WIDTH_KEY = "details-panel-width";
 /** The tag the side panel's entities are filtered by, if any. */
 const PANEL_TAG_KEY = "canvas-panel-tag";
 const ACTIVE_BOARD_KEY = "canvas-active-board";
