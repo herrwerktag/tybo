@@ -1,4 +1,4 @@
-import type { Change } from "../../shared/core/index.js";
+import type { Change } from "./changes.js";
 
 /** A workspace: its own entity types, entities and boards. */
 export interface WorkspaceInfo {
