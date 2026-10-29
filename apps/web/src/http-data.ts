@@ -8,7 +8,7 @@ import { DATA_VERSION, type Change, type DataPort, type SavedChanges, type Works
  * The API answers each workspace's version (the `etag` header) with its data, and with every save: the core
  * keeps it, and asks for it anew (a HEAD) to see whether someone else saved in between.
  *
- * `source` names who writes (say "demo" or "mcp"): every write carries it in `X-Tybo-Source`, and the API's
+ * `source` names who writes (say "web" or "mcp"): every write carries it in `X-Tybo-Source`, and the API's
  * history keeps it with each entry. Reads don't carry it — they write nothing. A save also names the format its
  * units are in (`X-Tybo-Data-Version`); the API refuses one in another format than its own.
  */

@@ -19,7 +19,7 @@ export const CANVAS_LAYERS: readonly CanvasLayer[] = [DRAWING_LAYER];
 
 /**
  * The app in the browser, put together of the shell and the features' parts: a feature joins with a line here, and
- * leaves without a trace by its line going. With `viewScript` — the built standalone viewer (see apps/demo) — a
+ * leaves without a trace by its line going. With `viewScript` — the built standalone viewer (see apps/web) — a
  * board can be exported as an HTML file that shows it without the server.
  */
 export function render(root: HTMLElement, workspaces: Workspaces, { viewScript }: { viewScript?: string } = {}): Promise<void> {

@@ -9,7 +9,7 @@ import { workspaceText } from "./text-export.js";
 const boardName = (store: Store, boardId: string) => store.data.boards.find((b) => b.id === boardId)?.name ?? "";
 
 /** The board as an HTML file that shows it without the server, with `script`, the built standalone viewer (see
- * apps/demo). */
+ * apps/web). */
 function viewExport(script: string): BoardExport {
 	return {
 		label: () => text.exportViewButton,

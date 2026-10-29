@@ -13,7 +13,7 @@
 	},
 	"dependencies": {
 		"@tybo/app": "workspace:*",
-		"@tybo/demo": "workspace:*"
+		"@tybo/web": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/node": "^26.6.3",

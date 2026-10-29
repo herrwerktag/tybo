@@ -233,12 +233,12 @@ test("every write hands the storage the source the request named itself with, or
 	const api = await startApp(behind);
 	try {
 		const from = (source: string) => ({ "x-tybo-source": source });
-		await call(api.url, "workspaces", { method: "POST", headers: from("demo"), body: JSON.stringify({ id: "ws-1", name: "A", dataVersion: 1 }) });
+		await call(api.url, "workspaces", { method: "POST", headers: from("web"), body: JSON.stringify({ id: "ws-1", name: "A", dataVersion: 1 }) });
 		await call(api.url, "workspaces/ws-1", { method: "PATCH", headers: from(" mcp "), body: '{"name":"B"}' });
 		await call(api.url, "workspaces/ws-1", { method: "PATCH", headers: from(""), body: '{"position":0}' });
 		await call(api.url, "workspaces/ws-1/changes", { method: "PUT", headers: from("x".repeat(65)), body: oneNewEntity });
 		await call(api.url, "workspaces/ws-1", { method: "DELETE" });
-		assert.deepEqual(behind.sources, ["demo", "mcp", null, null, null], "trimmed; empty, overlong or missing is none");
+		assert.deepEqual(behind.sources, ["web", "mcp", null, null, null], "trimmed; empty, overlong or missing is none");
 	} finally {
 		await api.close();
 	}
@@ -342,7 +342,7 @@ test("the port comes from PORT, with its fallback", () => {
 });
 
 /** The origin the tests name as allowed, the way CORS_ORIGIN would in a running server. */
-const demoOrigin = "http://the-demo.example:5173";
+const webOrigin = "http://the-web-app.example:5173";
 
 /** Whether an answer says what the browser needs to see it from another origin: whose, which ways, sending
  * what, and which answer headers JavaScript may read. */
@@ -354,21 +354,21 @@ function assertCrossOriginAllowed(response: Awaited<ReturnType<typeof call>>, or
 }
 
 test("the browser's preflight is answered 204 with what it asks for", async () => {
-	const api = await startApp(memoryApi(), demoOrigin);
+	const api = await startApp(memoryApi(), webOrigin);
 	try {
 		const preflight = await call(api.url, "workspaces/ws-1/changes", {
 			method: "OPTIONS",
 			headers: { "access-control-request-method": "PUT", "access-control-request-headers": "content-type, x-tybo-source" },
 		});
 		assert.equal(preflight.status, 204);
-		assertCrossOriginAllowed(preflight, demoOrigin);
+		assertCrossOriginAllowed(preflight, webOrigin);
 	} finally {
 		await api.close();
 	}
 });
 
 test("every answer carries the same allowance, a 404 and a HEAD included, so the browser accepts them", async () => {
-	const api = await startApp(memoryApi(), demoOrigin);
+	const api = await startApp(memoryApi(), webOrigin);
 	try {
 		const answers = [
 			await create(api.url, "ws-1"),
@@ -380,7 +380,7 @@ test("every answer carries the same allowance, a 404 and a HEAD included, so the
 			await call(api.url, "workspaces/none/data"),
 			await call(api.url, "workspaces/ws-1", { method: "DELETE" }),
 		];
-		for (const answer of answers) assertCrossOriginAllowed(answer, demoOrigin);
+		for (const answer of answers) assertCrossOriginAllowed(answer, webOrigin);
 		assert.equal(answers[6]!.status, 404);
 	} finally {
 		await api.close();
