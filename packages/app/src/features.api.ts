@@ -1,6 +1,6 @@
 import type { AppData } from "./shared/core/index.js";
 import { ENTITY_STORAGE, TYPE_STORAGE } from "./features/data/api.js";
-import type { UnitStorage } from "./shared/api/index.js";
+import { postgresStorageOf, sqliteStorageOf, storedUnits, type UnitStorage } from "./shared/api/index.js";
 import { ANALYSIS_STORAGE } from "./features/analyses/api.js";
 import { BOARD_STORAGE, CARD_STORAGE } from "./features/boards/api.js";
 import { DRAWING_STORAGE } from "./features/drawings/api.js";
@@ -14,15 +14,11 @@ import { DRAWING_STORAGE } from "./features/drawings/api.js";
  * together and written in. */
 export const UNIT_STORAGES: readonly UnitStorage<any, any, AppData>[] = [TYPE_STORAGE, ENTITY_STORAGE, ANALYSIS_STORAGE, BOARD_STORAGE, CARD_STORAGE, DRAWING_STORAGE];
 
-/** How the kind named is kept, or undefined for a kind there is none of. */
-export function storageOf(kind: string): UnitStorage | undefined {
-	return UNIT_STORAGES.find((storage) => storage.unit.kind === kind);
-}
+/** The app's kinds of unit as the storage keeps them (see `StoredUnits`). */
+export const STORED_UNITS = storedUnits(UNIT_STORAGES);
 
-/** The app's data put together of every kind's rows, parents first. */
-export function assembleAppData(rows: readonly unknown[]): AppData {
-	return UNIT_STORAGES.reduce((data, storage, index) => storage.assemble(data, rows[index]), {} as AppData);
-}
+/** The app's data in Postgres at `url` (see `postgresStorageOf`). */
+export const postgresStorage = (url: string) => postgresStorageOf(url, STORED_UNITS);
 
-/** The app's kinds of unit, in the order of their storages. */
-export const STORED_KINDS = UNIT_STORAGES.map(({ unit }) => unit);
+/** The app's data in a SQLite file at `path` (see `sqliteStorageOf`). */
+export const sqliteStorage = (path: string) => sqliteStorageOf(path, STORED_UNITS);

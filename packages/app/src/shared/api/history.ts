@@ -1,6 +1,5 @@
-import { DATA_VERSION, type Change, type UnitStands } from "@tybo/app/core";
-import type { Queries } from "./schema.js";
-import { storageOf } from "@tybo/app/api";
+import { DATA_VERSION, type Change, type UnitStands } from "../core/index.js";
+import type { Queries, StoredUnits } from "./storage.js";
 
 /**
  * The history: every write, kept. A save leaves one entry per unit it wrote — with the stand the tables held
@@ -15,7 +14,7 @@ import { storageOf } from "@tybo/app/api";
  *
  * Every entry names the format its stands are in (`dataVersion`, the app's DATA_VERSION when it was written):
  * the format the API reads and writes units in, and the only one a save is taken in (see `X-Tybo-Data-Version`
- * in http.ts). Once the model changes, an older entry is read the way the app reads saved data of its format —
+ * in apps/api, http.ts). Once the model changes, an older entry is read the way the app reads saved data of its format —
  * through its migrations from that version on.
  *
  * Every workspace's history starts from a known stand: a new one's with its making (empty), one made before
@@ -61,10 +60,10 @@ export interface HistoryPage {
 /** The entries of a save: each unit with the stand the tables held before (`stands`, read in the save's own
  * transaction) and the one written, and whether it collided. A change its kind calls quiet (a board that only
  * panned or zoomed) leaves no entry. */
-export function changeEntries(stands: UnitStands, changes: readonly Change[], collided: readonly string[]): NewEntry[] {
+export function changeEntries(stored: StoredUnits, stands: UnitStands, changes: readonly Change[], collided: readonly string[]): NewEntry[] {
 	return changes.flatMap((unit): NewEntry[] => {
 		const before = stands.get(`${unit.kind}:${unit.id}`)?.stand ?? null;
-		if (storageOf(unit.kind)?.quiet?.(before, unit.after)) return [];
+		if (stored.storageOf(unit.kind)?.quiet?.(before, unit.after)) return [];
 		return [
 			{
 				operation: "change",

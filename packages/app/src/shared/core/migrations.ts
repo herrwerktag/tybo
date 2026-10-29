@@ -4,7 +4,7 @@
  */
 
 /** The format of the saved data. When it changes, raise this and add the step from the old version to MIGRATIONS —
- * and a step to the API's schema (apps/api: schema.ts and sqlite.ts) that brings the stored rows to the new format
+ * and a step to the database schema (shared/api: schema.ts and sqlite.ts) that brings the stored rows to the new format
  * and sets `workspaces.data_version` to it. Saves write only the units that changed, so stored data never catches
  * up by itself: without that step, unchanged units stay in the old format under a version that says otherwise. The
  * API's tests fail as long as the step is missing. */

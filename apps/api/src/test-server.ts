@@ -1,5 +1,6 @@
 import type { AddressInfo } from "node:net";
-import { createApp, type Api } from "./http.js";
+import type { Api } from "@tybo/app/api";
+import { createApp } from "./http.js";
 
 /** Starts the API on a free port and says where it answers; close() ends it again. `allowedOrigin` says
  * which origin the answers name as allowed; without it, the server itself falls back to CORS_ORIGIN's. */
