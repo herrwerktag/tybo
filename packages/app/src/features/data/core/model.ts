@@ -477,3 +477,16 @@ export const GRID_SIZE = 24;
 export function snapToGrid(value: number): number {
 	return Math.round(value / GRID_SIZE) * GRID_SIZE;
 }
+
+/** Entity names, made unique within each type: the second "Dune" is "Dune (2)", and so on. */
+export function uniqueNames(entities: readonly Entity[]): Map<string, string> {
+	const seen = new Map<string, number>();
+	return new Map(
+		entities.map((e) => {
+			const key = `${e.typeId}\u0000${e.name}`;
+			const count = (seen.get(key) ?? 0) + 1;
+			seen.set(key, count);
+			return [e.id, count === 1 ? e.name : `${e.name} (${count})`];
+		}),
+	);
+}

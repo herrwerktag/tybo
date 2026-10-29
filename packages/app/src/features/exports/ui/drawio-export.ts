@@ -1,7 +1,7 @@
-import { uniqueFileNames } from "../../shared/ui/index.js";
-import { areaContents, isArea, type BoxDrawing } from "../../features/drawings/core.js";
-import { text } from "./i18n.js";
-import { renderMarkdown } from "../../shared/ui/index.js";
+import { uniqueFileNames } from "../../../shared/ui/index.js";
+import { areaContents, isArea, type BoxDrawing } from "../../drawings/core.js";
+import { text } from "../texts.js";
+import { renderMarkdown } from "../../../shared/ui/index.js";
 import {
 	cardRows,
 	effectiveCardDisplay,
@@ -18,7 +18,7 @@ import {
 	type LineArrow,
 	type Point,
 	type Rect,
-} from "../core/index.js";
+} from "../../../legacy/core/index.js";
 
 /**
  * A board as a draw.io file: its cards as boxes, where they are on the board, showing what the cards show (type bar,

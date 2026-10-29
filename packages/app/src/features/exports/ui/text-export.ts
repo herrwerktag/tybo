@@ -1,6 +1,7 @@
-import { fillPlaceholders, referencedIds, type AppData, type Entity, type EntityType, type PropertyDef } from "../core/index.js";
-import { text } from "./i18n.js";
-import { text as dataText } from "../../features/data/texts.js";
+import type { AppData } from "../../../legacy/core/model.js";
+import { fillPlaceholders, referencedIds, uniqueNames, type Entity, type EntityType, type PropertyDef } from "../../data/core.js";
+import { text as dataText } from "../../data/texts.js";
+import { text } from "../texts.js";
 
 /**
  * A workspace as plain text for reading, e.g. by an LLM: first the entity types, then one section per entity with
@@ -12,7 +13,7 @@ export function workspaceText(name: string, data: Pick<AppData, "types" | "entit
 	const types = new Map(data.types.map((t) => [t.id, t]));
 	const entities = data.entities.filter((e) => types.has(e.typeId));
 	const names = uniqueNames(entities);
-	const mentions = new Map(entities.map((e) => [e.id, text.textExportEntity(types.get(e.typeId)!.name, names.get(e.id)!)]));
+	const mentions = new Map(entities.map((e) => [e.id, dataText.entityMention(types.get(e.typeId)!.name, names.get(e.id)!)]));
 	// The other side of references: per referenced entity and property id, the entities referencing it, in entity order.
 	const referencing = new Map<string, Map<string, string[]>>();
 	for (const e of entities) {
@@ -102,17 +103,4 @@ function escapeHeadings(value: string): string {
 		.split(/\r?\n/)
 		.map((line) => line.replace(/^(\s*)#/, "$1\\#"))
 		.join("\n");
-}
-
-/** Entity names, made unique within each type: the second "Dune" is "Dune (2)", and so on. */
-export function uniqueNames(entities: readonly Entity[]): Map<string, string> {
-	const seen = new Map<string, number>();
-	return new Map(
-		entities.map((e) => {
-			const key = `${e.typeId}\u0000${e.name}`;
-			const count = (seen.get(key) ?? 0) + 1;
-			seen.set(key, count);
-			return [e.id, count === 1 ? e.name : `${e.name} (${count})`];
-		}),
-	);
 }

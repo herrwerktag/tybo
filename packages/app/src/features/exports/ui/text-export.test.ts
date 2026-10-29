@@ -1,8 +1,9 @@
-import "../../shared/ui/test-dom.js";
+import "../../../shared/ui/test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AppData, PropertyDef } from "../core/index.js";
-import { setLanguage, text } from "./i18n.js";
+import type { AppData, PropertyDef } from "../../../legacy/core/index.js";
+import { setLanguage } from "../../../shared/ui/index.js";
+import { text } from "../texts.js";
 import { workspaceText } from "./text-export.js";
 
 const prop = (id: string, name: string, more: Partial<PropertyDef> = {}): PropertyDef => ({

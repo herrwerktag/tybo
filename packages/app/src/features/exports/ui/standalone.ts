@@ -1,6 +1,6 @@
-import { createStore, toSaved, type AppData, type DataPort } from "../core/index.js";
-import { canvasView, type CanvasLayer } from "../../features/boards/ui.js";
-import { LANGUAGES, setLanguage, type Language } from "./i18n.js";
+import { createStore, toSaved, type AppData, type DataPort } from "../../../legacy/core/index.js";
+import { canvasView, type CanvasLayer } from "../../boards/ui.js";
+import { LANGUAGES, setLanguage, type Language } from "../../../shared/ui/index.js";
 
 /** The id of the script element in an exported view that holds its board, language and data. */
 const VIEW_DATA_ID = "tybo-view";
