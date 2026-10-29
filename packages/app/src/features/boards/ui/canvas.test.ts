@@ -1,12 +1,16 @@
-import { freshDom } from "../../shared/ui/test-dom.js";
+import { freshDom } from "../../../shared/ui/test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { canvasView } from "./canvas.js";
-import { CLICK_TOLERANCE } from "../../shared/ui/index.js";
-import { text } from "./i18n.js";
-import { text as dataText } from "../../features/data/texts.js";
-import { createStore, DATA_VERSION, frameInside, newReference, visibleRect, type Store } from "../core/index.js";
-import { memoryDataPort } from "../core/memory-port.js";
+import { CLICK_TOLERANCE } from "../../../shared/ui/index.js";
+import { text } from "../texts.js";
+import { text as dataText } from "../../data/texts.js";
+import { createStore, DATA_VERSION, frameInside, newReference, visibleRect, type Store } from "../../../legacy/core/index.js";
+import { memoryDataPort } from "../../../legacy/core/memory-port.js";
+import { DRAWING_LAYER } from "../../../legacy/ui/drawing-layer.js";
+
+/** The layers the canvas gets in the app. */
+const layers = [DRAWING_LAYER];
 
 /** A board with one card for Dune (with content) and one for Herbert. */
 async function setup({ readOnly = false } = {}) {
@@ -18,7 +22,7 @@ async function setup({ readOnly = false } = {}) {
 	const boardId = store.data.boards[0]!.id;
 	const card = store.addCard(boardId, dune.id, 100, 100);
 	store.addCard(boardId, herbert.id, 400, 100);
-	const view = canvasView(store, { readOnly });
+	const view = canvasView(store, { readOnly, layers });
 	document.body.append(view);
 	return { store, view, boardId, card, dune };
 }
@@ -58,7 +62,7 @@ test("a card and its details point out required references that are still empty"
 	const missing = store.addCard(boardId, store.addEntity(book.id, "Dune", "", {}).id, 100, 100);
 	const authorId = book.properties[0]!.id;
 	const complete = store.addCard(boardId, store.addEntity(book.id, "Emma", "", { [authorId]: frank.id }).id, 400, 100);
-	const view = canvasView(store, { readOnly: false });
+	const view = canvasView(store, { readOnly: false, layers });
 	document.body.append(view);
 
 	assert.equal(cardNode(view, missing.id).querySelector(".card-missing")?.textContent, dataText.missingRequired("Author"));
@@ -253,7 +257,7 @@ test("the drawing tools fold down to the current tool, and stay folded", async (
 	const tools = view.querySelector<HTMLElement>(".drawing-tools")!;
 	tools.querySelector<HTMLButtonElement>(".tools-toggle")!.click();
 	assert.ok(tools.classList.contains("collapsed"));
-	const again = canvasView(store, { readOnly: false });
+	const again = canvasView(store, { readOnly: false, layers });
 	assert.ok(again.querySelector(".drawing-tools")!.classList.contains("collapsed"));
 });
 
@@ -437,7 +441,7 @@ test("dragging a group moves the cards and drawings lying in it along, in one un
 	// Made last, the group is still drawn below the box.
 	const area = store.addDrawing(boardId, { kind: "area", x: 72, y: 72, width: 312, height: 312, color: "#c4dafa", text: "Team", textSize: "m" });
 	first.remove();
-	const view = canvasView(store, { readOnly: false });
+	const view = canvasView(store, { readOnly: false, layers });
 	document.body.append(view);
 	assert.deepEqual([...view.querySelectorAll(".drawings g.drawing")].map((g) => g.getAttribute("data-id")), [area.id, box.id]);
 
@@ -487,7 +491,7 @@ async function connectable() {
 	const book = store.addType("Book", [{ name: "author", kind: "reference", options: [], reference, cardDisplay: "line" }], "");
 	const dune = store.addEntity(book.id, "Dune", "", {});
 	const card = store.addCard(store.data.boards[0]!.id, dune.id, 0, 0);
-	const view = canvasView(store, { readOnly: false });
+	const view = canvasView(store, { readOnly: false, layers });
 	document.body.append(view);
 	cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	return { store, view, person, book, author: book.properties[0]!, dune, card };
@@ -501,7 +505,7 @@ test("{{Property}} in the description shows the value: a reference as a tag that
 	const detailsOf = (values: Record<string, string>) => {
 		store.updateEntity(dune.id, "Dune", "", values, "By **{{ Author }}**, {{typo}}", []);
 		freshDom();
-		const view = canvasView(store, { readOnly: false });
+		const view = canvasView(store, { readOnly: false, layers });
 		document.body.append(view);
 		cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 		return details(view);
@@ -547,7 +551,7 @@ test("selecting a card fades the board but its chain: the cards linked to it eit
 	const sequelCard = store.addCard(boardId, sequel.id, 600, 0);
 	const otherCard = store.addCard(boardId, other.id, 0, 300);
 	freshDom();
-	const view = canvasView(store, { readOnly: false });
+	const view = canvasView(store, { readOnly: false, layers });
 	document.body.append(view);
 	const inChain = () =>
 		[card, frankCard, sequelCard, otherCard].filter((c) => cardNode(view, c.id).classList.contains("in-chain")).map((c) => c.id);
@@ -585,7 +589,7 @@ test("selecting a card keeps the areas it lies in from fading, and only those", 
 	store.addDrawing(boardId, { kind: "area", x: 1200, y: 0, width: 240, height: 240, color: "#c4dafa", text: "", textSize: "m" });
 	store.addDrawing(boardId, { kind: "textbox", x: 0, y: 0, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
 	freshDom();
-	const view = canvasView(store, { readOnly: false });
+	const view = canvasView(store, { readOnly: false, layers });
 	document.body.append(view);
 	const inFocus = () => [...view.querySelectorAll(".drawings g.drawing.in-chain")].map((g) => g.getAttribute("data-id"));
 
@@ -670,7 +674,7 @@ test("in the editor, the frame is only shown, with its controls, while editing i
 	assert.equal(view.querySelector(".view-frame .view-frame-label")?.textContent, "Board frame");
 	assert.ok(view.querySelector(".frame-from-view"));
 
-	const again = canvasView(store, { readOnly: false });
+	const again = canvasView(store, { readOnly: false, layers });
 	assert.ok(again.querySelector(".view-frame"), "still editing the frame when the canvas is shown again");
 
 	toggle().click();
@@ -715,7 +719,7 @@ test("the viewer keeps where it was panned to when the canvas changes size, e.g.
 			observe() {}
 		},
 	});
-	const viewer = canvasView(store, { readOnly: true });
+	const viewer = canvasView(store, { readOnly: true, layers });
 	document.body.replaceChildren(viewer);
 	laidOut(viewer);
 	resized();

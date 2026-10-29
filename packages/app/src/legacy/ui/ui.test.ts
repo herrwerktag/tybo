@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setLanguage, text } from "./i18n.js";
 import { text as dataText } from "../../features/data/texts.js";
+import { text as boardText } from "../../features/boards/texts.js";
 import { createWorkspaces } from "../core/index.js";
 import { render } from "../../features.ui.js";
 import { activeWorkspacePreference, sharedText } from "../../shared/ui/index.js";
@@ -67,13 +68,13 @@ test("Data is the default page; its heading switches between entity types and en
 	assert.equal(root.querySelector("td"), null);
 
 	goTo("#boards");
-	assert.equal(root.querySelector(".app-nav .current")?.textContent, text.tabBoards);
+	assert.equal(root.querySelector(".app-nav .current")?.textContent, boardText.tabBoards);
 	assert.equal(root.querySelector(".data-switch"), null);
 
 	goTo("#canvas"); // the former name still leads there
-	assert.equal(root.querySelector(".app-nav .current")?.textContent, text.tabBoards);
+	assert.equal(root.querySelector(".app-nav .current")?.textContent, boardText.tabBoards);
 	goTo("#view/b"); // and so do the former read-only boards' addresses
-	assert.equal(root.querySelector(".app-nav .current")?.textContent, text.tabBoards);
+	assert.equal(root.querySelector(".app-nav .current")?.textContent, boardText.tabBoards);
 });
 
 
@@ -266,7 +267,7 @@ test("a page that can't be drawn shows the error screen, which can still export"
 	assert.ok(screen);
 	assert.equal(screen.querySelector(".error-detail")?.textContent, "table failed");
 	assert.ok(byText(screen, "button", sharedText.reload));
-	assert.ok(byText(screen, "button", text.exportButton));
+	assert.ok(byText(screen, "button", boardText.exportButton));
 	assert.equal(logged.mock.callCount(), 1);
 });
 

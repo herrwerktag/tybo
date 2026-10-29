@@ -1,5 +1,5 @@
 import { createStore, toSaved, type AppData, type DataPort } from "../core/index.js";
-import { canvasView } from "./canvas.js";
+import { canvasView, type CanvasLayer } from "../../features/boards/ui.js";
 import { LANGUAGES, setLanguage, type Language } from "./i18n.js";
 
 /** The id of the script element in an exported view that holds its board, language and data. */
@@ -35,13 +35,14 @@ export function standaloneViewHtml(script: string, data: AppData, boardId: strin
 `;
 }
 
-/** Shows the board of an exported view (see standaloneViewHtml) in `root`, read-only and without the top bar. */
-export async function renderStandaloneView(root: HTMLElement): Promise<void> {
+/** Shows the board of an exported view (see standaloneViewHtml) in `root`, read-only and without the top bar, with
+ * the features' `layers` (see `CanvasLayer`). */
+export async function renderStandaloneView(root: HTMLElement, layers: readonly CanvasLayer[]): Promise<void> {
 	const view = JSON.parse(document.getElementById(VIEW_DATA_ID)?.textContent ?? "{}") as { language?: string; data?: unknown };
 	const exported = LANGUAGES.find(({ code }) => code === view.language);
 	if (exported) setLanguage(exported.code);
 	const store = await createStore(readOnlyPort(view.data), VIEW_WORKSPACE);
-	root.replaceChildren(canvasView(store, { readOnly: true }));
+	root.replaceChildren(canvasView(store, { readOnly: true, layers }));
 }
 
 /** The data port of an exported view: it reads the embedded data; there's nothing to save to. */

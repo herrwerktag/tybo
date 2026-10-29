@@ -2,6 +2,7 @@ import type { Point } from "../core/index.js";
 import { CLICK_TOLERANCE, el, svgEl, trackPointer } from "../../shared/ui/index.js";
 import {
 	MIN_BOX_SIZE,
+	areaContents,
 	drawingBounds,
 	imageRect,
 	moveDrawing,
@@ -16,6 +17,7 @@ import { text as dataText } from "../../features/data/texts.js";
 import { readPreference, writePreference } from "../../shared/ui/index.js";
 import {
 	DRAWING_COLORS,
+	GRID_SIZE,
 	TEXT_SIZES,
 	isArea,
 	isBox,
@@ -25,7 +27,7 @@ import {
 	type NewDrawing,
 	type Rect,
 } from "../core/index.js";
-import type { Store } from "../core/index.js";
+import type { CanvasLayer, LayerHost, LayerView } from "../../features/boards/ui/layer.js";
 
 const TOOLS: readonly { tool: Tool; icon: string; key: string }[] = [
 	{ tool: "select", icon: "↖", key: "v" },
@@ -77,58 +79,15 @@ function textNode(box: BoxDrawing): SVGForeignObjectElement {
 	return svgEl("foreignObject", { x: box.x, y: box.y, width: box.width, height: box.height }, label);
 }
 
-export interface DrawingLayer {
-	/** The SVG with all drawings; goes into the canvas layer below connectors and cards. */
-	readonly element: SVGSVGElement;
-	/** Tool buttons (editor only). */
-	readonly toolbar: HTMLElement;
-	/** Color for new drawings or the selected one, its text size, and Delete (editor only). */
-	readonly styleBar: HTMLElement;
-	/** Draws the current board's drawings (skipped while text is being edited, so typing isn't interrupted). */
-	render(): void;
-	/** Handles a pointerdown on the canvas when a drawing tool is active; returns whether it did. */
-	startCreate(e: PointerEvent): boolean;
-	/** Puts an image file on the board, centered on `center` (world coordinates), and selects it. */
-	addImage(file: File, center: Point): Promise<void>;
-	/** Selects one drawing (with its handles and style bar), or none. */
-	select(id: string | null): void;
-	deselect(): void;
-	/** The selected drawing, if any (not those in a group, see `group`). */
-	selected(): string | null;
-	/** While a group is dragged: draws its drawings moved by (dx, dy) world units, not saved; null stops it. */
-	previewMove(ids: ReadonlySet<string> | null, dx?: number, dy?: number): void;
-}
-
 /** Whether the drawing tools are folded (see toolsCollapsed). */
 const TOOLS_COLLAPSED_KEY = "drawing-tools-collapsed";
 
 /**
  * Text boxes, groups and images on a board: drawing them, and (unless read-only) creating, selecting, moving, resizing, recoloring, editing text and
- * deleting them.
+ * deleting them. Pressing an area alone moves it together with what lies in it.
  */
-export function createDrawingLayer(options: {
-	store: Store;
-	boardId: () => string;
-	zoom: () => number;
-	/** World coordinates of a point on the screen. */
-	toWorld: (clientX: number, clientY: number) => Point;
-	/** Element that captures the pointer while dragging (it must stay in the page, unlike the redrawn SVG). */
-	captureTarget: () => Element;
-	readOnly: boolean;
-	/** A drawing was selected (or the selection cleared by the layer itself). */
-	onSelect: (drawingId: string | null) => void;
-	/** Drawings selected together with others (several items to move at once): outlined, without handles. */
-	group?: () => ReadonlySet<string>;
-	/** With a card selected, the rest of the board fades: the drawings that don't (the areas the card lies in). */
-	inFocus?: () => ReadonlySet<string>;
-	/** A press on a drawing with Shift, or on one in the group: handled by the owner (adding it to the selection
-	 * or moving the group) instead of selecting and moving the drawing alone. */
-	onGroupPress?: (e: PointerEvent, drawingId: string) => void;
-	/** A press on an area (a named group) alone: handled by the owner, moving it together with what lies in it. */
-	onAreaPress?: (e: PointerEvent, drawingId: string) => void;
-	onToolChange: (tool: Tool) => void;
-}): DrawingLayer {
-	const { store, readOnly } = options;
+function createDrawingLayer(host: LayerHost): LayerView {
+	const { store, readOnly } = host;
 	const svg = svgEl("svg", { class: "drawings", "aria-hidden": "true" });
 	const toolbar = el("div", { className: "toolbar-group drawing-tools", role: "toolbar", ariaLabel: text.drawingTools });
 	const styleBar = el("div", { className: "toolbar-group drawing-style", ariaLabel: text.drawingStyle });
@@ -144,9 +103,11 @@ export function createDrawingLayer(options: {
 	let draft: Drawing | null = null;
 	/** While a group is dragged: its drawings and how far they've moved so far (see previewMove). */
 	let groupMove: { ids: ReadonlySet<string>; dx: number; dy: number } | null = null;
+	/** With a card selected, the rest of the board fades: the areas the card lies in don't (see focus). */
+	let focused: ReadonlySet<string> = new Set();
 
-	const drawings = (): Drawing[] => store.data.boards.find((b) => b.id === options.boardId())?.drawings ?? [];
-	const add = (drawing: NewDrawing): Drawing => store.addDrawing(options.boardId(), drawing);
+	const drawings = (): Drawing[] => store.data.boards.find((b) => b.id === host.boardId())?.drawings ?? [];
+	const add = (drawing: NewDrawing): Drawing => store.addDrawing(host.boardId(), drawing);
 	const find = (id: string): Drawing | undefined => (draft?.id === id ? draft : drawings().find((d) => d.id === id));
 
 	function render(): void {
@@ -162,7 +123,7 @@ export function createDrawingLayer(options: {
 		if (draft && !shown.some((d) => d.id === draft!.id)) shown.push(draft);
 		svg.replaceChildren(
 			...shown.map(drawingNode),
-			...(readOnly ? [] : shown.filter((d) => options.group?.().has(d.id)).map(outlineOf)),
+			...(readOnly ? [] : shown.filter((d) => host.group().has(d.id)).map(outlineOf)),
 			...selectionOverlay(),
 			...(editingId ? [editor(editingId)] : []),
 		);
@@ -175,7 +136,7 @@ export function createDrawingLayer(options: {
 			{ class: "drawing", "data-id": d.id },
 			...drawingShape(d, d.id !== editingId),
 		);
-		if (options.inFocus?.().has(d.id)) group.classList.add("in-chain");
+		if (focused.has(d.id)) group.classList.add("in-chain");
 		if (!readOnly) attachHandlers(group, d.id);
 		return group;
 	}
@@ -189,7 +150,7 @@ export function createDrawingLayer(options: {
 			if (e.button !== 0 || tool !== "select") return;
 			e.preventDefault();
 			e.stopPropagation(); // not a pan
-			if (options.onGroupPress && (e.shiftKey || options.group?.().has(id))) return options.onGroupPress(e, id);
+			if (e.shiftKey || host.group().has(id)) return host.onGroupPress(e, id);
 
 			// The browser's dblclick can't be used: the drag below captures the pointer on the canvas surface,
 			// so the browser sends click and dblclick there instead of to this drawing.
@@ -206,10 +167,10 @@ export function createDrawingLayer(options: {
 			}
 
 			const original = find(id);
-			if (original && isArea(original) && options.onAreaPress) return options.onAreaPress(e, id);
+			if (original && isArea(original)) return moveArea(e, original);
 			select(id);
 			if (!original) return;
-			const zoom = options.zoom();
+			const zoom = host.zoom();
 			let moving = false;
 			trackPointer(
 				e,
@@ -224,14 +185,24 @@ export function createDrawingLayer(options: {
 					draft = null;
 					draw();
 				},
-				options.captureTarget(),
+				host.captureTarget(),
 			);
 		});
 	}
 
+	/** The cards on the board where they are now. */
+	const cards = () => [...host.cardRects()].map(([id, rect]) => ({ id, ...rect }));
+
+	/** Moves an area along with the cards and drawings lying in it (see areaContents), from a press on it. */
+	function moveArea(e: PointerEvent, area: Drawing & Rect): void {
+		const { cardIds, drawingIds } = areaContents(area, cards(), drawings());
+		select(area.id);
+		host.dragItems(e, area.id, { cards: cardIds, drawings: drawingIds.add(area.id) });
+	}
+
 	/** A dashed outline around a drawing, keeping its screen size at any zoom. */
 	function outlineOf(d: Drawing): SVGElement {
-		const zoom = options.zoom();
+		const zoom = host.zoom();
 		const pad = 4 / zoom;
 		const b = drawingBounds(d);
 		const node = svgEl("rect", {
@@ -252,7 +223,7 @@ export function createDrawingLayer(options: {
 		if (readOnly || !found) return [];
 		// A selected area moves with what lies in it (see previewMove), its handles along with it.
 		const selected = groupMove?.ids.has(found.id) ? moveDrawing(found, groupMove.dx, groupMove.dy) : found;
-		const zoom = options.zoom();
+		const zoom = host.zoom();
 		const size = 9 / zoom;
 		const outline = outlineOf(selected);
 
@@ -275,7 +246,7 @@ export function createDrawingLayer(options: {
 						draft = null;
 						draw();
 					},
-					options.captureTarget(),
+					host.captureTarget(),
 				);
 			});
 			return node;
@@ -333,14 +304,14 @@ export function createDrawingLayer(options: {
 		if (selectedId === id) return;
 		selectedId = id;
 		draw();
-		options.onSelect(id);
+		host.onSelect(id);
 	}
 
 	function setTool(next: Tool): void {
 		tool = next;
 		if (next !== "select") select(null);
 		renderToolbars();
-		options.onToolChange(next);
+		host.onToolChange(next !== "select");
 	}
 
 	function startCreate(e: PointerEvent): boolean {
@@ -349,8 +320,8 @@ export function createDrawingLayer(options: {
 		e.stopPropagation();
 		select(null);
 		const kind = tool;
-		const start = options.toWorld(e.clientX, e.clientY);
-		const zoom = options.zoom();
+		const start = host.toWorld(e.clientX, e.clientY);
+		const zoom = host.zoom();
 		const at = (dx: number, dy: number): Point => ({ x: start.x + dx / zoom, y: start.y + dy / zoom });
 		const box = (rect: Rect): NewDrawing => ({ kind, ...rect, color, text: "", textSize: "m" });
 		trackPointer(
@@ -372,9 +343,16 @@ export function createDrawingLayer(options: {
 					draw();
 				}
 			},
-			options.captureTarget(),
+			host.captureTarget(),
 		);
 		return true;
+	}
+
+	/** Puts the image files on the board, centered on `center`; several are staggered. */
+	function drop(files: readonly File[], center: Point): boolean {
+		const images = files.filter((f) => f.type.startsWith("image/"));
+		images.forEach((file, i) => void addImage(file, { x: center.x + i * GRID_SIZE, y: center.y + i * GRID_SIZE }));
+		return images.length > 0;
 	}
 
 	async function addImage(file: File, center: Point): Promise<void> {
@@ -397,7 +375,7 @@ export function createDrawingLayer(options: {
 		store.removeDrawing(selectedId);
 		selectedId = null;
 		draw();
-		options.onSelect(null);
+		host.onSelect(null);
 	}
 
 	function update(change: (d: Drawing) => Drawing): void {
@@ -509,11 +487,10 @@ export function createDrawingLayer(options: {
 	draw();
 	return {
 		element: svg,
-		toolbar,
-		styleBar,
+		controls: readOnly ? [] : [toolbar, styleBar],
 		render,
-		startCreate,
-		addImage,
+		press: startCreate,
+		drop,
 		select,
 		deselect(): void {
 			if (!selectedId) return;
@@ -521,12 +498,25 @@ export function createDrawingLayer(options: {
 			draw();
 		},
 		selected: () => selectedId,
+		touching: (rect) => drawings().filter((d) => touches(rect, drawingBounds(d))).map((d) => d.id),
+		focus(cardId): void {
+			const onBoard = cards();
+			focused = new Set(
+				cardId ? drawings().filter((d) => isArea(d) && areaContents(d, onBoard, drawings()).cardIds.has(cardId)).map((d) => d.id) : [],
+			);
+			for (const node of svg.querySelectorAll<SVGElement>(".drawing[data-id]")) node.classList.toggle("in-chain", focused.has(node.dataset.id!));
+		},
 		previewMove(ids, dx = 0, dy = 0): void {
 			groupMove = ids && { ids, dx, dy };
 			draw();
 		},
 	};
 }
+
+/** The drawings as a layer on the canvas, with their tools. */
+export const DRAWING_LAYER: CanvasLayer = { key: "drawings", create: createDrawingLayer };
+
+const touches = (a: Rect, b: Rect): boolean => a.x <= b.x + b.width && b.x <= a.x + a.width && a.y <= b.y + b.height && b.y <= a.y + a.height;
 
 /**
  * An image file as a data URL with its size in pixels, or null when the browser can't read it as an image. Large

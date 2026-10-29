@@ -18,6 +18,7 @@ const en = {
 		`Can't delete ${name}: used by ${usedBy}. Remove or change those properties first.`,
 	cardDisplays: { list: "List", line: "Line", hidden: "Hidden" } satisfies Record<CardDisplay, string>,
 	closeDetails: "Close details",
+	details: "Details",
 	color: "Color",
 	colorNames: {
 		Red: "Red",
@@ -137,6 +138,7 @@ export const text = messages<typeof en>({
 			`${name} kann nicht gelöscht werden: wird verwendet von ${usedBy}. Entferne oder ändere zuerst diese Eigenschaften.`,
 		cardDisplays: { list: "Liste", line: "Linie", hidden: "Ausgeblendet" },
 		closeDetails: "Details schließen",
+		details: "Details",
 		color: "Farbe",
 		colorNames: {
 			Red: "Rot",

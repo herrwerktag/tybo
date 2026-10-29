@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { language, setLanguage } from "./i18n.js";
 import { renderStandaloneView, standaloneViewHtml } from "./standalone.js";
+import { DRAWING_LAYER } from "./drawing-layer.js";
 import { DATA_VERSION, type AppData } from "../core/index.js";
 
 const viewport = { x: 0, y: 0, zoom: 1 };
@@ -36,7 +37,7 @@ async function openExport(html: string): Promise<HTMLElement> {
 	freshDom();
 	document.body.innerHTML = /<body>([\s\S]*)<\/body>/.exec(html)![1]!;
 	const root = document.querySelector<HTMLElement>("#app")!;
-	await renderStandaloneView(root);
+	await renderStandaloneView(root, [DRAWING_LAYER]);
 	return root;
 }
 

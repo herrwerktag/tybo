@@ -1,7 +1,6 @@
 import type { EntityType, Store } from "../../legacy/core/index.js";
 import { DETAILS_WIDTH_KEY, createCardPreview, entityDetails } from "../data/ui/entity-card.js";
 import { showEntityEditor } from "../data/ui/entity-form.js";
-import { text as legacyText } from "../../legacy/ui/i18n.js";
 import { moveItem } from "../../shared/core/index.js";
 import { downloadFile, el, readPreference, resizeHandle, safeFileName, typeDot, writePreference, zipFiles, type PageMaker } from "../../shared/ui/index.js";
 import {
@@ -49,7 +48,7 @@ export function analysisView(store: Store): HTMLElement {
 	let shownEntityId: string | null = null;
 	/** Whether the details panel shows the entity's form instead of its details. */
 	let editing = false;
-	const details = el("aside", { className: "details-panel", ariaLabel: legacyText.details });
+	const details = el("aside", { className: "details-panel", ariaLabel: dataText.details });
 	const detailsHandle = resizeHandle(details, { key: DETAILS_WIDTH_KEY, side: "right", min: 16, max: 40 });
 	detailsHandle.classList.add("details-resize");
 	const view = el("div", { className: "analysis-view" }, main, detailsHandle, details);
