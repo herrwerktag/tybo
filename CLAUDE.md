@@ -2,6 +2,18 @@
 
 - Follow existing patterns before inventing new abstractions.
 - Prefer modifying existing code over adding dependencies.
+- Implement features as vertical slices end to end instead of horizontal layers.
+
+# Feature slices
+
+- A feature lives in `packages/app/src/features/<name>/` with all its layers and joins with one line in each
+  `features.{core,ui,api,mcp}.ts` it needs.
+- Imports point down only: `shared/` knows no feature; a feature imports `shared/`, itself and the features
+  listed for it in `FEATURES_BELOW` (`packages/app/src/imports.test.ts`); from `features.*.ts` only types.
+- A new feature or a new dependency between features starts with its entry in `FEATURES_BELOW`. Treat it as a
+  design decision and name it in the plan; never add an entry just to make the test pass.
+- Code moves to `shared/` only once two or more features use it.
+- Moving CSS needs byte-identical screenshots before and after.
 
 # Workflow
 

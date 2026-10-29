@@ -63,15 +63,26 @@ function violation(file: string, target: string, typeOnly: boolean): string | nu
 	if (to.startsWith("shared/")) return null;
 	if (to.startsWith("features/")) {
 		const other = to.slice("features/".length);
-		return FEATURES_BELOW[feature]?.includes(other) ? null : `${feature} doesn't build on ${other}`;
+		return FEATURES_BELOW[feature]?.includes(other)
+			? null
+			: `${feature} doesn't build on ${other} (FEATURES_BELOW): import from below, or decide that it does — see CLAUDE.md`;
 	}
 	if (isTest(file) || typeOnly) return null;
 	return `${feature} imports the app put together above it (only types may come from there)`;
 }
 
 test("every feature is listed with the features it builds on", () => {
-	const features = readdirSync(join(SRC, "features"), { withFileTypes: true }).filter((entry) => entry.isDirectory());
-	assert.deepEqual(features.map((entry) => entry.name).sort(), Object.keys(FEATURES_BELOW).sort());
+	const features = readdirSync(join(SRC, "features"), { withFileTypes: true })
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => entry.name);
+	const listed = Object.keys(FEATURES_BELOW);
+	const problems = [
+		...features
+			.filter((name) => !listed.includes(name))
+			.map((name) => `features/${name} is missing in FEATURES_BELOW: add it with the features it builds on — a design decision, see CLAUDE.md`),
+		...listed.filter((name) => !features.includes(name)).map((name) => `FEATURES_BELOW lists ${name}, which isn't a feature (any more)`),
+	];
+	assert.deepEqual(problems, []);
 });
 
 test("imports point down only: shared below the features, a feature below the ones building on it", () => {
