@@ -48,3 +48,8 @@ export function migrate(data: SavedData, steps = MIGRATIONS, target = DATA_VERSI
 	for (let version = savedVersion(data); version < target; version++) migrated = steps[version]!(migrated);
 	return migrated;
 }
+
+/** The data as it's saved and exported: marked with the format version. */
+export function toSaved(data: object): SavedData {
+	return { version: DATA_VERSION, ...data };
+}

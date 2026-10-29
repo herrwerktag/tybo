@@ -1,5 +1,5 @@
-import { createStore, toSaved } from "../../../features.core.js";
-import type { AppData, DataPort } from "../../../shared/core/index.js";
+import type { Store } from "../../../features.core.js";
+import { toSaved, type AppData, type DataPort } from "../../../shared/core/index.js";
 import { canvasView, type CanvasLayer } from "../../boards/ui.js";
 import { LANGUAGES, setLanguage, type Language } from "../../../shared/ui/index.js";
 
@@ -37,8 +37,11 @@ export function standaloneViewHtml(script: string, data: AppData, boardId: strin
 }
 
 /** Shows the board of an exported view (see standaloneViewHtml) in `root`, read-only and without the top bar, with
- * the features' `layers` (see `CanvasLayer`). */
-export async function renderStandaloneView(root: HTMLElement, layers: readonly CanvasLayer[]): Promise<void> {
+ * the features' `layers` (see `CanvasLayer`), in the app's store (`createStore`) over the data inside. */
+export async function renderStandaloneView(
+	root: HTMLElement,
+	{ layers, createStore }: { layers: readonly CanvasLayer[]; createStore: (port: DataPort, workspaceId: string) => Promise<Store> },
+): Promise<void> {
 	const view = JSON.parse(document.getElementById(VIEW_DATA_ID)?.textContent ?? "{}") as { language?: string; data?: unknown };
 	const exported = LANGUAGES.find(({ code }) => code === view.language);
 	if (exported) setLanguage(exported.code);

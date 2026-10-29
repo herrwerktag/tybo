@@ -1,4 +1,4 @@
-import { APP_FORMAT, type Store, type Workspaces } from "./features.core.js";
+import { APP_FORMAT, createStore, type Store, type Workspaces } from "./features.core.js";
 import type { AppData } from "./shared/core/index.js";
 import { renderShell } from "./shared/ui/index.js";
 import type { CanvasLayer } from "./features/boards/ui.js";
@@ -6,7 +6,7 @@ import { COPY_TYPES, DATA_PAGE, WRAP_REFERENCES, deleteQuestion } from "./featur
 import { ANALYSES_PAGE } from "./features/analyses/ui.js";
 import { boardsPage } from "./features/boards/ui.js";
 import { DRAWING_LAYER } from "./features/drawings/ui.js";
-import { TEXT_EXPORT, boardExports } from "./features/exports/ui.js";
+import { TEXT_EXPORT, boardExports, renderStandaloneView } from "./features/exports/ui.js";
 
 export * from "./features/data/ui.js";
 export * from "./features/analyses/ui.js";
@@ -32,4 +32,9 @@ export function render(root: HTMLElement, workspaces: Workspaces, { viewScript }
 		settings: [WRAP_REFERENCES],
 		deleteQuestion,
 	});
+}
+
+/** An exported board's page (see standaloneViewHtml): its board in `root`, read-only, with the features' layers. */
+export function renderExportedView(root: HTMLElement): Promise<void> {
+	return renderStandaloneView(root, { layers: CANVAS_LAYERS, createStore });
 }
