@@ -12,10 +12,22 @@ pnpm-Monorepo mit TypeScript:
 
 | Paket | Inhalt |
 | --- | --- |
-| `packages/app` (`@tybo/app`) | Die Anwendung ohne Laufzeit-Huelle, unterwegs zu je einem Ordner pro Feature: `shared/` (was mehrere Features nutzen) und `legacy/` (`core`: Datenmodell, Validierung, Arbeitsbereiche, Speicher-Port; `ui`: Formulare, Canvas, Zeichnungen, Texte), das Feature fuer Feature in `features/` umzieht. Ordner namens `core` laufen ohne DOM, `ui` im Browser; `@tybo/app/core` und `@tybo/app/ui` sind die Einstiege |
+| `packages/app` (`@tybo/app`) | Die Anwendung ohne Laufzeit-Huelle, je Feature ein Ordner (siehe unten). Einstiege: `@tybo/app/core`, `/ui`, `/api`, `/mcp` |
 | `apps/api` (`@tybo/api`) | HTTP-API ueber Postgres oder SQLite, Schema-Migrationen beim Start |
 | `apps/demo` (`@tybo/demo`) | Die Anwendung im Browser (Vite), spricht nur mit der API |
 | `apps/mcp` (`@tybo/mcp`) | MCP-Server (stdio) fuer LLM-Clients, spricht nur mit der API |
+
+### Features
+
+Ein Feature liegt mit allen Schichten in einem Ordner unter `packages/app/src/features/` (bisher: `analyses`):
+`core.ts` (Modell, Store-Funktionen, Einheit und Datenteil), `ui.ts` (Seite), `api.ts` (Speicherung in Postgres
+und SQLite), `mcp.ts` (Werkzeuge), `texts.ts` (Texte en/de), eigenes CSS und die Tests daneben. Die Laufzeit folgt
+dem Namen: `core` ohne DOM, `ui` im Browser, `api` und `mcp` in Node (je eine tsconfig prueft das).
+
+Eingehaengt wird ein Feature mit je einer Zeile in `features.core.ts`, `features.ui.ts`, `features.api.ts` und
+`features.mcp.ts`; das CSS findet die Demo von selbst. Global bleiben nur die Migrationen (Datenformat und
+Datenbankschema), die immer nur wachsen. Was mehrere Features nutzen, liegt in `shared/`; `legacy/` ist der Teil,
+der noch Feature fuer Feature in `features/` umzieht.
 
 ## Voraussetzungen
 

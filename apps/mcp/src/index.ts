@@ -1,6 +1,6 @@
 import { httpData } from "@tybo/demo/http-data";
 import { serve } from "./protocol.js";
-import { tyboTools } from "./tools.js";
+import { tyboTools } from "@tybo/app/mcp";
 
 // The MCP server for tybo, over stdio: a client (Claude Desktop, Claude Code …) starts it and talks to it on
 // stdin/stdout, so nothing else may write to stdout. It reaches the data through the running API, like the app.

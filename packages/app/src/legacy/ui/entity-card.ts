@@ -18,6 +18,9 @@ import { text } from "./i18n.js";
 import { renderMarkdown } from "../../shared/ui/index.js";
 
 /** A read-only card shown while hovering or focusing an entity's tag or link (see createCardPreview). */
+/** The width of the panel showing an entity's details, beside a board or an analysis. */
+export const DETAILS_WIDTH_KEY = "details-panel-width";
+
 export interface CardPreview {
 	element: HTMLElement;
 	/** Shows the entity's card while `tag` is hovered or focused. */

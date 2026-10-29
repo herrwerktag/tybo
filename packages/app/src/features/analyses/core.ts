@@ -1,4 +1,38 @@
-import { referencedIds, type Analysis, type AppData, type Entity, type EntityType, type PathStep, type PropertyDef } from "./model.js";
+import { ulid, type DataPart, type UnitKind } from "../../shared/core/index.js";
+import { referencedIds, type AppData, type Entity, type EntityType, type PropertyDef } from "../../legacy/core/model.js";
+import type { Store } from "../../legacy/core/store.js";
+
+/**
+ * Analyses: grouped listings of one type's entities, saved with the workspace. Their part of the app's data is
+ * `analyses`, each one unit of its own.
+ */
+declare module "../../legacy/core/model.js" {
+	interface AppData {
+		/** Saved analyses, in the order they were made. */
+		analyses: Analysis[];
+	}
+}
+
+/** One hop from an entity: one of its own properties (`forward`), or a reference property of another type
+ * pointing at it (`inverse`, to the entities holding that reference). */
+export interface PathStep {
+	propertyId: string;
+	direction: "forward" | "inverse";
+}
+
+/**
+ * A grouped listing of one type's entities: each row is an entity of `typeId`, sorted into nested groups by
+ * what the `groups` paths lead to from it (outermost first), with a column per path in `columns`. A path is a
+ * chain of references, and may end in a text or options property.
+ */
+export interface Analysis {
+	id: string;
+	name: string;
+	/** The type of the entities listed as rows; null until one is picked. */
+	typeId: string | null;
+	groups: PathStep[][];
+	columns: PathStep[][];
+}
 
 /** A step a path can take from entities of some types, with what it leads to. */
 export interface PathOption {
@@ -190,4 +224,68 @@ export function runAnalysis(data: Pick<AppData, "types" | "entities">, analysis:
 
 	const groups = group(rows, 0);
 	return { count: rows.length, groups, rows: groups.length > 0 ? [] : rows };
+}
+
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
+
+/** A path's well-formed steps. */
+function normalizePath(raw: unknown): PathStep[] {
+	if (!Array.isArray(raw)) return [];
+	return raw.flatMap((step: unknown) =>
+		isObject(step) && typeof step.propertyId === "string" && (step.direction === "forward" || step.direction === "inverse")
+			? [{ propertyId: step.propertyId, direction: step.direction }]
+			: [],
+	);
+}
+
+/** The well-formed analyses, each with only well-formed paths. Steps whose property is gone stay: the analysis shows
+ * them as not fitting, so they can be fixed. Data saved before analyses (version 7) has none. */
+function normalizeAnalyses(raw: unknown): Analysis[] {
+	if (!Array.isArray(raw)) return [];
+	return raw.flatMap((item: unknown, i) => {
+		if (!isObject(item) || typeof item.id !== "string") return [];
+		const paths = (value: unknown) => (Array.isArray(value) ? value.map(normalizePath) : []);
+		return [
+			{
+				id: item.id,
+				name: typeof item.name === "string" && item.name.trim() !== "" ? item.name : `Analysis ${i + 1}`,
+				typeId: typeof item.typeId === "string" ? item.typeId : null,
+				groups: paths(item.groups),
+				columns: paths(item.columns),
+			},
+		];
+	});
+}
+
+/** The analyses' part of the app's data. */
+export const ANALYSES_PART: DataPart = { key: "analyses", normalize: normalizeAnalyses };
+
+/** Each analysis is a unit of its own, with its paths. */
+export const ANALYSIS_UNIT: UnitKind<AppData, Analysis> = {
+	kind: "analysis",
+	lists: (data) => [{ items: data.analyses }],
+	withList: (data, analyses) => ({ ...data, analyses }),
+};
+
+/** Adds an analysis without a type yet. */
+export function addAnalysis(store: Store, name: string): Analysis {
+	const { data } = store;
+	const item: Analysis = { id: ulid(), name: name.trim() || `Analysis ${data.analyses.length + 1}`, typeId: null, groups: [], columns: [] };
+	store.change({ ...data, analyses: [...data.analyses, item] });
+	return item;
+}
+
+/** Renames the analysis or sets its type, groups or columns; an empty name is ignored. */
+export function updateAnalysis(store: Store, analysisId: string, patch: Partial<Omit<Analysis, "id">>): void {
+	const { data } = store;
+	const name = patch.name?.trim();
+	store.change({
+		...data,
+		analyses: data.analyses.map((item) => (item.id === analysisId ? { ...item, ...patch, name: name || item.name } : item)),
+	});
+}
+
+export function deleteAnalysis(store: Store, analysisId: string): void {
+	const { data } = store;
+	store.change({ ...data, analyses: data.analyses.filter((item) => item.id !== analysisId) });
 }

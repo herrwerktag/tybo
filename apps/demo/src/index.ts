@@ -3,6 +3,9 @@ import { httpData } from "./http-data.js";
 import viewScript from "virtual:standalone-view";
 import { activeWorkspacePreference, render, renderServerUnreachable, text } from "@tybo/app/ui";
 
+// Each feature brings its own styles beside its code; they come after app.css (see index.html).
+import.meta.glob("../../../packages/app/src/features/**/*.css", { eager: true });
+
 const root = document.querySelector<HTMLElement>("#app");
 if (!root) throw new Error("#app element not found");
 

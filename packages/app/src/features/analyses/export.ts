@@ -1,21 +1,9 @@
-import {
-	fillPlaceholders,
-	referencedIds,
-	resolvePath,
-	runAnalysis,
-	type Analysis,
-	type AnalysisGroup,
-	type AnalysisRow,
-	type AnalysisValue,
-	type AppData,
-	type Entity,
-	type EntityType,
-	type PathStep,
-	type PropertyDef,
-} from "../core/index.js";
+import { fillPlaceholders, referencedIds, type AppData, type Entity, type EntityType, type PropertyDef } from "../../legacy/core/index.js";
+import { text as legacyText } from "../../legacy/ui/i18n.js";
+import { uniqueNames } from "../../legacy/ui/text-export.js";
 import { uniqueFileNames } from "../../shared/ui/index.js";
-import { text } from "./i18n.js";
-import { uniqueNames } from "./text-export.js";
+import { resolvePath, runAnalysis, type Analysis, type AnalysisGroup, type AnalysisRow, type AnalysisValue, type PathStep } from "./core.js";
+import { text } from "./texts.js";
 
 /** How a path reads as a heading: its steps' names. */
 export function pathLabel(types: readonly EntityType[], typeId: string, path: readonly PathStep[]): string {
@@ -50,7 +38,7 @@ export function analysisMarkdownFiles(
 	const types = new Map(data.types.map((t) => [t.id, t]));
 	const entities = data.entities.filter((e) => types.has(e.typeId));
 	const names = uniqueNames(entities);
-	const mentions = new Map(entities.map((e) => [e.id, text.textExportEntity(types.get(e.typeId)!.name, names.get(e.id)!)]));
+	const mentions = new Map(entities.map((e) => [e.id, legacyText.textExportEntity(types.get(e.typeId)!.name, names.get(e.id)!)]));
 	const mention = (value: AnalysisValue) => (value.entityId !== null ? (mentions.get(value.entityId) ?? value.label) : value.label);
 
 	const result = runAnalysis(data, analysis);

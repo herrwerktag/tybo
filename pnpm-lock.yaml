@@ -231,6 +231,9 @@ importers:
       happy-dom:
         specifier: ^20.14.5
         version: 20.14.5
+      postgres:
+        specifier: ^3.4.5
+        version: 3.4.9
       tsx:
         specifier: ^4.23.15
         version: 4.23.15

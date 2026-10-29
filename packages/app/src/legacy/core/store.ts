@@ -1,5 +1,5 @@
 import { isUlid, moveItem, ulid, type Point, type Rect } from "../../shared/core/index.js";
-import { changesBetween } from "./changes.js";
+import { changesBetween, normalizedFeatureData, storedFeatureData } from "../../features.core.js";
 import type { DataPort } from "./ports.js";
 import { clampZoom, defaultViewport, visibleRect, type Viewport } from "./viewport.js";
 import {
@@ -18,8 +18,6 @@ import {
 	referencedIds,
 	type Relation,
 	type AppData,
-	type Analysis,
-	type PathStep,
 	TEXT_SIZES,
 	parseTags,
 	type Board,
@@ -147,7 +145,7 @@ function linkOnBoard(data: AppData, sourceCardId: string, link: Link, other: Ent
 }
 
 function emptyData(): AppData {
-	return { types: [], entities: [], boards: [newBoard("Board 1")], analyses: [] };
+	return { types: [], entities: [], boards: [newBoard("Board 1")], ...storedFeatureData({}) };
 }
 
 const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -231,35 +229,6 @@ function normalizeBoards(data: AppData & { canvas?: Partial<Board> }): Board[] {
 	const raw: Partial<Board>[] = Array.isArray(data.boards) ? data.boards : data.canvas ? [data.canvas] : [];
 	const boards = raw.map((b, i) => normalizeBoard(b, `Board ${i + 1}`));
 	return boards.length > 0 || data.entities.length > 0 ? boards : [newBoard("Board 1")];
-}
-
-/** A path's well-formed steps. */
-function normalizePath(raw: unknown): PathStep[] {
-	if (!Array.isArray(raw)) return [];
-	return raw.flatMap((step: unknown) =>
-		isObject(step) && typeof step.propertyId === "string" && (step.direction === "forward" || step.direction === "inverse")
-			? [{ propertyId: step.propertyId, direction: step.direction }]
-			: [],
-	);
-}
-
-/** The well-formed analyses, each with only well-formed paths. Steps whose property is gone stay: the analysis shows
- * them as not fitting, so they can be fixed. */
-function normalizeAnalyses(raw: unknown): Analysis[] {
-	if (!Array.isArray(raw)) return [];
-	return raw.flatMap((item: unknown, i) => {
-		if (!isObject(item) || typeof item.id !== "string") return [];
-		const paths = (value: unknown) => (Array.isArray(value) ? value.map(normalizePath) : []);
-		return [
-			{
-				id: item.id,
-				name: typeof item.name === "string" && item.name.trim() !== "" ? item.name : `Analysis ${i + 1}`,
-				typeId: typeof item.typeId === "string" ? item.typeId : null,
-				groups: paths(item.groups),
-				columns: paths(item.columns),
-			},
-		];
-	});
 }
 
 /** Re-validates every entity's values against its type's current properties, e.g. dropping references to deleted entities,
@@ -349,7 +318,7 @@ function storedStand(data: AppData): AppData {
 			cards: Array.isArray(board.cards) ? board.cards : [],
 			drawings: Array.isArray(board.drawings) ? board.drawings : [],
 		})),
-		analyses: Array.isArray(data.analyses) ? data.analyses : [],
+		...storedFeatureData(data),
 	};
 }
 
@@ -365,7 +334,7 @@ function normalize(data: AppData): AppData {
 	};
 	return {
 		boards: normalizeBoards(data),
-		analyses: normalizeAnalyses(data.analyses),
+		...normalizedFeatureData(data),
 		types: data.types.map((type) => ({
 			...type,
 			color: colorFor(type.color),
@@ -551,6 +520,10 @@ export async function createStore(port: DataPort, workspaceId: string) {
 		get data(): AppData {
 			return data;
 		},
+
+		/** Makes `next` the data and saves it, one step in the undo history — how the features change their part
+		 * of it (see e.g. `addAnalysis`). Changes that change nothing are skipped. */
+		change,
 
 		/** Problems reading the saved data, whether the last save failed (changes are then only in memory),
 		 * and whether one collided with someone else's save in between (then saving stops until the data is
@@ -872,26 +845,6 @@ export async function createStore(port: DataPort, workspaceId: string) {
 
 		removeDrawing(drawingId: string): void {
 			updateDrawingBoard(drawingId, (b) => takeOff(b, "drawings", drawingId));
-		},
-
-		/** Adds an analysis without a type yet. */
-		addAnalysis(name: string): Analysis {
-			const item: Analysis = { id: ulid(), name: name.trim() || `Analysis ${data.analyses.length + 1}`, typeId: null, groups: [], columns: [] };
-			change({ ...data, analyses: [...data.analyses, item] });
-			return item;
-		},
-
-		/** Renames the analysis or sets its type, groups or columns; an empty name is ignored. */
-		updateAnalysis(analysisId: string, patch: Partial<Omit<Analysis, "id">>): void {
-			const name = patch.name?.trim();
-			change({
-				...data,
-				analyses: data.analyses.map((item) => (item.id === analysisId ? { ...item, ...patch, name: name || item.name } : item)),
-			});
-		},
-
-		deleteAnalysis(analysisId: string): void {
-			change({ ...data, analyses: data.analyses.filter((item) => item.id !== analysisId) });
 		},
 
 		/** Pan and zoom are saved, but not part of the undo history. */

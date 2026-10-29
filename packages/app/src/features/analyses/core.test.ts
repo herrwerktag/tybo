@@ -1,7 +1,22 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { pathOptions, resolvePath, runAnalysis, type AnalysisGroup, type AnalysisResult } from "./analysis.js";
-import { newReference, type Analysis, type AppData, type Entity, type EntityType, type PathStep, type PropertyDef } from "./model.js";
+import { memoryDataPort } from "../../legacy/core/memory-port.js";
+import { newReference, type AppData, type Entity, type EntityType, type PropertyDef } from "../../legacy/core/model.js";
+import { DATA_VERSION, createStore } from "../../legacy/core/store.js";
+import { changesBetween } from "../../features.core.js";
+import type { Change } from "../../shared/core/index.js";
+import {
+	addAnalysis,
+	deleteAnalysis,
+	pathOptions,
+	resolvePath,
+	runAnalysis,
+	updateAnalysis,
+	type Analysis,
+	type AnalysisGroup,
+	type AnalysisResult,
+	type PathStep,
+} from "./core.js";
 
 const reference = (id: string, name: string, typeIds: string[], multiple = false): PropertyDef => ({
 	id,
@@ -175,4 +190,91 @@ test("paths that don't fit are left out of the groups and give empty cells; with
 	assert.deepEqual(outline(result), ["Sortieren |  | ", "Umsetzen |  | ", "Deployen |  | ", "Aufräumen |  | "]);
 	assert.deepEqual(runAnalysis(data, analysis(null, [])), { count: 0, groups: [], rows: [] });
 	assert.deepEqual(runAnalysis(data, analysis("deleted", [])), { count: 0, groups: [], rows: [] });
+});
+
+/** The workspace the tests' stores open. */
+const WS = "ws";
+
+/** The data port in memory, with the workspace WS already there, holding `saved` (or nothing at all). */
+function memoryStorage(saved: unknown = { version: DATA_VERSION, types: [], entities: [], boards: [] }) {
+	return memoryDataPort({ [WS]: saved });
+}
+
+/** Lets the saves on their way land. */
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve));
+
+/** The store of the workspace WS, once the saves on their way have landed. */
+const open = async (storage: ReturnType<typeof memoryStorage>) => {
+	await settle();
+	return createStore(storage.port, WS);
+};
+
+test("analyses can be added, changed and deleted, each one undo step, and are saved", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
+	const first = addAnalysis(store, " Rollen ");
+	assert.deepEqual(first, { id: first.id, name: "Rollen", typeId: null, groups: [], columns: [] });
+	const path = [{ propertyId: "p", direction: "inverse" as const }, { propertyId: "q", direction: "forward" as const }];
+	updateAnalysis(store, first.id, { typeId: "t", groups: [path], columns: [[path[1]!]] });
+	updateAnalysis(store, first.id, { name: "  " });
+	const second = addAnalysis(store, "");
+	assert.equal(second.name, "Analysis 2");
+
+	const reopened = await open(storage);
+	assert.deepEqual(reopened.data.analyses, [
+		{ id: first.id, name: "Rollen", typeId: "t", groups: [path], columns: [[path[1]]] },
+		{ id: second.id, name: "Analysis 2", typeId: null, groups: [], columns: [] },
+	]);
+
+	deleteAnalysis(store, first.id);
+	assert.deepEqual(store.data.analyses.map((a) => a.name), ["Analysis 2"]);
+	store.undo();
+	assert.deepEqual(store.data.analyses.map((a) => a.name), ["Rollen", "Analysis 2"]);
+	store.undo();
+	store.undo();
+	assert.deepEqual(store.data.analyses[0]!.groups, [], "undoing the change brings back the analysis before it");
+});
+
+test("analyses: data from version 6 gets none; malformed analyses and steps are dropped, steps of deleted properties kept", async () => {
+	const old = await open(memoryStorage({ version: 6, types: [], entities: [], boards: [] }));
+	assert.deepEqual(old.data.analyses, []);
+
+	const store = await open(
+		memoryStorage({
+			version: DATA_VERSION,
+			types: [],
+			entities: [],
+			boards: [],
+			analyses: [
+				{
+					id: "a",
+					name: "",
+					typeId: 3,
+					groups: [[{ propertyId: "gone", direction: "forward" }, { propertyId: "x", direction: "sideways" }, "nonsense"], "no path"],
+					columns: "no list",
+				},
+				{ name: "without id" },
+			],
+		}),
+	);
+	assert.deepEqual(store.data.analyses, [
+		{ id: "a", name: "Analysis 1", typeId: null, groups: [[{ propertyId: "gone", direction: "forward" }], []], columns: [] },
+	]);
+});
+
+test("an analysis is one unit with its paths; changing one of them touches nothing else", () => {
+	const before: AppData = {
+		types: [],
+		entities: [],
+		boards: [],
+		analyses: [{ id: "ana-notes", name: "Notizen", typeId: "type-person", groups: [], columns: [[{ propertyId: "p-note", direction: "forward" }]] }],
+	};
+	const after = structuredClone(before);
+	after.analyses[0]!.groups = [[{ propertyId: "p-note", direction: "forward" }]];
+	after.analyses.push({ id: "ana-new", name: "Neu", typeId: null, groups: [], columns: [] });
+
+	const changes = changesBetween(before, after);
+	assert.deepEqual(changes.map((c) => `${c.kind}:${c.id}`), ["analysis:ana-notes", "analysis:ana-new"]);
+	const [changed] = changes as [Change<Analysis>];
+	assert.deepEqual(changed.after!.value.groups, [[{ propertyId: "p-note", direction: "forward" }]]);
 });

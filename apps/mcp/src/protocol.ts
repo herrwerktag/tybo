@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
+import { ToolError, type Tool } from "@tybo/app/mcp";
 
 /**
  * The Model Context Protocol over stdio, as far as a server offering tools needs it: JSON-RPC 2.0, one message
@@ -7,19 +8,6 @@ import type { Readable, Writable } from "node:stream";
  * resources, no prompts). Kept to the few methods by hand rather than pulling in the SDK, which brings a web
  * server and its kin along for a transport this server doesn't use.
  */
-
-/** One tool as the client sees it — `inputSchema` is a JSON Schema of its arguments — and what it does. */
-export interface Tool {
-	name: string;
-	description: string;
-	inputSchema: object;
-	/** The tool's answer, as text for the model. Throws a `ToolError` for what the model asked wrongly. */
-	run(args: Record<string, unknown>): Promise<string>;
-}
-
-/** What the model asked for doesn't fit (an unknown type, an option that isn't one …): its message goes back to
- * the model as the tool's answer, so it can ask again. */
-export class ToolError extends Error {}
 
 /** The protocol versions this server speaks, newest first; a client asking for another gets the newest. */
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];

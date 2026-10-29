@@ -326,29 +326,7 @@ export interface AppData {
 	entities: Entity[];
 	/** Empty once the last board was deleted (a new workspace starts with one). */
 	boards: Board[];
-	/** Saved analyses, in the order they were made. */
-	analyses: Analysis[];
-}
-
-/** One hop from an entity: one of its own properties (`forward`), or a reference property of another type
- * pointing at it (`inverse`, to the entities holding that reference). */
-export interface PathStep {
-	propertyId: string;
-	direction: "forward" | "inverse";
-}
-
-/**
- * A grouped listing of one type's entities: each row is an entity of `typeId`, sorted into nested groups by
- * what the `groups` paths lead to from it (outermost first), with a column per path in `columns`. A path is a
- * chain of references, and may end in a text or options property.
- */
-export interface Analysis {
-	id: string;
-	name: string;
-	/** The type of the entities listed as rows; null until one is picked. */
-	typeId: string | null;
-	groups: PathStep[][];
-	columns: PathStep[][];
+	// The features add their own parts (see `DataPart`).
 }
 
 /** One label/value row on a canvas card. */

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
-import { ToolError, answer, serve, type Tool } from "./protocol.js";
+import { ToolError, type Tool } from "@tybo/app/mcp";
+import { answer, serve } from "./protocol.js";
 
 const SERVER = { name: "tybo", version: "1.0.0" };
 
