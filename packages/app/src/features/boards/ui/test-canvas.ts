@@ -1,7 +1,8 @@
 /** The canvas on a store in memory, for its tests and those of the features with layers on it. */
 import { freshDom } from "../../../shared/ui/test-dom.js";
-import { createStore, DATA_VERSION, type Store } from "../../../legacy/core/index.js";
-import { memoryDataPort } from "../../../legacy/core/memory-port.js";
+import { createStore, type Store } from "../../../features.core.js";
+import { DATA_VERSION } from "../../../shared/core/index.js";
+import { memoryDataPort } from "../../../memory-port.js";
 import { canvasView } from "./canvas.js";
 import type { CanvasLayer } from "./layer.js";
 

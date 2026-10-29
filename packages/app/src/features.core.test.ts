@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AppData, Entity } from "./model.js";
-import { DATA_VERSION, MIGRATIONS, createStore, migrate } from "./store.js";
+import { DATA_VERSION, MIGRATIONS, migrate, type AppData } from "./shared/core/index.js";
+import type { Entity } from "./features/data/core.js";
+import { createStore } from "./features.core.js";
 import { settle, WS, memoryStorage, open, assertEmpty, firstBoard, titleDraft, storedBoards } from "./test-store.js";
 
 test("data persists across store instances", async () => {

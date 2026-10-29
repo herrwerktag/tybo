@@ -2,13 +2,13 @@
  * The app on a fresh page for UI tests: started with saved data in a storage in memory, and the little helpers the
  * tests click and read it with. Import it before any module that touches the DOM at load (it brings test-dom).
  */
-import { freshDom } from "../../shared/ui/test-dom.js";
+import { freshDom } from "./shared/ui/test-dom.js";
 import assert from "node:assert/strict";
-import type { AppData } from "../core/index.js";
-import { render } from "../../features.ui.js";
-import { createWorkspaces } from "../core/index.js";
-import { memoryDataPort } from "../core/memory-port.js";
-import { activeWorkspacePreference, sharedText } from "../../shared/ui/index.js";
+import type { AppData } from "./shared/core/index.js";
+import { render } from "./features.ui.js";
+import { createWorkspaces } from "./features.core.js";
+import { memoryDataPort } from "./memory-port.js";
+import { activeWorkspacePreference, sharedText } from "./shared/ui/index.js";
 
 /** Lets work started by a click or an event finish first (the stores open and save through the async port). */
 export const settle = () => new Promise<void>((resolve) => setTimeout(resolve));

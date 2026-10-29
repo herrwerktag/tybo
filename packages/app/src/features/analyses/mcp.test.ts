@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createStore } from "../../legacy/core/index.js";
-import { withPeople } from "../../legacy/mcp/test-tools.js";
+import { createStore } from "../../features.core.js";
+import { withPeople } from "../../test-tools.js";
 import { addAnalysis, updateAnalysis } from "./core.js";
 
 test("analyses are made, changed and deleted with their paths named the way run_analysis writes them", async () => {

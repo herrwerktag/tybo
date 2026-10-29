@@ -1,13 +1,12 @@
 import { WS, byText, goTo, library, memoryStorage, readSaved, settle, startApp, storage, stub, typeInto } from "./test-app.js";
-import { freshDom } from "../../shared/ui/test-dom.js";
+import { freshDom } from "./shared/ui/test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { setLanguage } from "../../shared/ui/index.js";
-import { text as dataText } from "../../features/data/texts.js";
-import { text as boardText } from "../../features/boards/texts.js";
-import { createWorkspaces } from "../core/index.js";
-import { render } from "../../features.ui.js";
-import { activeWorkspacePreference, sharedText } from "../../shared/ui/index.js";
+import { setLanguage, activeWorkspacePreference, sharedText } from "./shared/ui/index.js";
+import { text as dataText } from "./features/data/texts.js";
+import { text as boardText } from "./features/boards/texts.js";
+import { createWorkspaces } from "./features.core.js";
+import { render } from "./features.ui.js";
 
 test("a type with a property, then an entity of it, can be created through the forms and are saved", async () => {
 	const root = await startApp(undefined, "#types");

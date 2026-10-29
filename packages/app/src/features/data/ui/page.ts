@@ -1,4 +1,4 @@
-import type { Store } from "../../../legacy/core/index.js";
+import type { Store } from "../../../features.core.js";
 import { moveItem } from "../../../shared/core/index.js";
 import {
 	CARD_DISPLAYS,

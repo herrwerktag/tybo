@@ -1,13 +1,12 @@
-import type { AppData } from "../../legacy/core/model.js";
-import type { Store } from "../../legacy/core/store.js";
-import type { ToolContext } from "../../legacy/mcp/tools.js";
+import type { AppData } from "../../shared/core/index.js";
+import type { Store } from "../../features.core.js";
 import { ENTITY, TYPE_HINT, entityOf, typeOf } from "../data/mcp.js";
 import { GRID_SIZE, snapToGrid, type Entity } from "../data/core.js";
-import { ToolError, WORKSPACE, object, record, sameName, text, texts, type Tool } from "../../shared/mcp/index.js";
+import { ToolError, WORKSPACE, object, record, sameName, text, texts, type Tool, type ToolContext } from "../../shared/mcp/index.js";
 import { layeredLayout, type Board } from "./core.js";
 
 /** The tools on a workspace's boards: put entities on one. */
-export function boardTools({ open, answerSaved }: ToolContext): Tool[] {
+export function boardTools({ open, answerSaved }: ToolContext<Store>): Tool[] {
 	return [
 	{
 		name: "place_on_board",

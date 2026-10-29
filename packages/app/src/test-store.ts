@@ -1,10 +1,10 @@
 /** The app's store on a port in memory, for its tests and the features'. */
 import assert from "node:assert/strict";
-import type { AppData, DraftProperty } from "./model.js";
+import { DATA_VERSION, type AppData } from "./shared/core/index.js";
+import type { DraftProperty } from "./features/data/core.js";
 import { memoryDataPort } from "./memory-port.js";
-import { DATA_VERSION, createStore, type Store } from "./store.js";
-import { REFERENCE_SCREEN } from "../../features/boards/core.js";
-import { BOARD_LISTS } from "../../features.core.js";
+import { createStore, type Store, BOARD_LISTS } from "./features.core.js";
+import { REFERENCE_SCREEN } from "./features/boards/core.js";
 
 /** Lets background saves finish and report how they went (a failed save flips `problems.saveFailed` only then). */
 export const settle = () => new Promise<void>((resolve) => setTimeout(resolve));

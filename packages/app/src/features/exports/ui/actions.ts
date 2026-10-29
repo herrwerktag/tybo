@@ -1,4 +1,4 @@
-import type { Store } from "../../../legacy/core/index.js";
+import type { Store } from "../../../features.core.js";
 import { downloadFile, language, safeFileName, zipFiles, type WorkspaceAction } from "../../../shared/ui/index.js";
 import type { BoardExport } from "../../boards/ui.js";
 import { boardDrawioFiles } from "./drawio-export.js";

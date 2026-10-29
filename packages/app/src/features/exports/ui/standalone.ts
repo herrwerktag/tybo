@@ -1,4 +1,5 @@
-import { createStore, toSaved, type AppData, type DataPort } from "../../../legacy/core/index.js";
+import { createStore, toSaved } from "../../../features.core.js";
+import type { AppData, DataPort } from "../../../shared/core/index.js";
 import { canvasView, type CanvasLayer } from "../../boards/ui.js";
 import { LANGUAGES, setLanguage, type Language } from "../../../shared/ui/index.js";
 

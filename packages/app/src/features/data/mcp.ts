@@ -1,4 +1,4 @@
-import type { AppData } from "../../legacy/core/model.js";
+import { ulid, type AppData } from "../../shared/core/index.js";
 import {
 	CARD_DISPLAYS,
 	PROPERTY_KINDS,
@@ -20,12 +20,11 @@ import {
 	type NewEntity,
 	type ValidationError,
 } from "./core.js";
-import type { ToolContext } from "../../legacy/mcp/tools.js";
-import { ulid } from "../../shared/core/index.js";
-import { ToolError, WORKSPACE, json, object, record, sameName, text, texts, type Tool } from "../../shared/mcp/index.js";
+import type { Store } from "../../features.core.js";
+import { ToolError, WORKSPACE, json, object, record, sameName, text, texts, type Tool, type ToolContext } from "../../shared/mcp/index.js";
 
 /** The tools on a workspace's types and entities: find and read them, make and change them. */
-export function dataTools({ open, answerSaved }: ToolContext): Tool[] {
+export function dataTools({ open, answerSaved }: ToolContext<Store>): Tool[] {
 	return [
 		{
 			name: "find_entities",

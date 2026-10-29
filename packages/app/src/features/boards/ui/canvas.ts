@@ -1,6 +1,6 @@
 import type { Rect } from "../../../shared/core/index.js";
 import { CLICK_TOLERANCE, el, readPreference, resizeHandle, trackPointer, wheelGesture, writePreference } from "../../../shared/ui/index.js";
-import type { Store } from "../../../legacy/core/store.js";
+import type { Store } from "../../../features.core.js";
 import { DEFAULT_CARD_SIZE, GRID_SIZE, effectiveCardDisplay, referencedIds, snapToGrid, type Entity, type EntityType } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import { DETAILS_WIDTH_KEY, cardParts, cardSize, createCardPreview, entityDetails } from "../../data/ui/entity-card.js";

@@ -1,6 +1,11 @@
 /* The Boards tab: the canvas with its side panel, cards' states, lines, frame, controls and dialogs. What the cards
    show and the details panel come with the entities (app.css); the drawings with their layer. */
 
+/* The canvas fills the screen instead of growing the page. */
+main:has(.canvas-view) {
+	height: 100dvh;
+}
+
 /* Side panel | canvas | details panel. Flex, so each side can come and go (collapsed, viewer, nothing selected). */
 .canvas-view {
 	display: flex;

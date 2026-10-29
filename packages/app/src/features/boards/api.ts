@@ -1,6 +1,5 @@
-import { jsonEqual, type UnitStand } from "../../shared/core/index.js";
+import { jsonEqual, type UnitStand, type AppData } from "../../shared/core/index.js";
 import { groupBy, jsonbParameter, json, parsed, plain, type Rows, type UnitStorage } from "../../shared/api/index.js";
-import type { AppData } from "../../legacy/core/model.js";
 import { BOARD_UNIT, CARD_UNIT, type BoardMeta, type CanvasCard } from "./core.js";
 
 /** How a kind of unit of the app's data is kept. */

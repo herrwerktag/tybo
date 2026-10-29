@@ -5,8 +5,11 @@ import { canvasView } from "./canvas.js";
 import { CLICK_TOLERANCE } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
 import { text as dataText } from "../../data/texts.js";
-import { createStore, DATA_VERSION, frameInside, newReference, visibleRect } from "../../../legacy/core/index.js";
-import { memoryDataPort } from "../../../legacy/core/memory-port.js";
+import { createStore } from "../../../features.core.js";
+import { DATA_VERSION } from "../../../shared/core/index.js";
+import { frameInside, visibleRect } from "../core.js";
+import { newReference } from "../../data/core.js";
+import { memoryDataPort } from "../../../memory-port.js";
 import { cardNode, details, dragBy, press, savedCard, selectedCards, setup, shiftClick } from "./test-canvas.js";
 
 

@@ -2,23 +2,9 @@ import { uniqueFileNames } from "../../../shared/ui/index.js";
 import { areaContents, isArea, type BoxDrawing } from "../../drawings/core.js";
 import { text } from "../texts.js";
 import { renderMarkdown } from "../../../shared/ui/index.js";
-import {
-	cardRows,
-	effectiveCardDisplay,
-	inverseCardRows,
-	nearest,
-	placeholderProperty,
-	referencedIds,
-	type AppData,
-	type Board,
-	type CanvasCard,
-	type CardRow,
-	type Entity,
-	type EntityType,
-	type LineArrow,
-	type Point,
-	type Rect,
-} from "../../../legacy/core/index.js";
+import { cardRows, effectiveCardDisplay, inverseCardRows, placeholderProperty, referencedIds, type CardRow, type Entity, type EntityType, type LineArrow } from "../../data/core.js";
+import { nearest, type Board, type CanvasCard } from "../../boards/core.js";
+import type { AppData, Point, Rect } from "../../../shared/core/index.js";
 
 /**
  * A board as a draw.io file: its cards as boxes, where they are on the board, showing what the cards show (type bar,

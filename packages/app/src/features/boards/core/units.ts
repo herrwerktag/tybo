@@ -1,5 +1,4 @@
-import type { Rect, UnitKind } from "../../../shared/core/index.js";
-import type { AppData } from "../../../legacy/core/model.js";
+import type { Rect, UnitKind, AppData } from "../../../shared/core/index.js";
 import type { Board, CanvasCard } from "./model.js";
 import type { Viewport } from "./viewport.js";
 

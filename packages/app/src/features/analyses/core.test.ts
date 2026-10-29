@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { memoryDataPort } from "../../legacy/core/memory-port.js";
-import { newReference, type AppData, type Entity, type EntityType, type PropertyDef } from "../../legacy/core/model.js";
-import { DATA_VERSION, createStore } from "../../legacy/core/store.js";
-import { changesBetween } from "../../features.core.js";
-import type { Change } from "../../shared/core/index.js";
+import { memoryDataPort } from "../../memory-port.js";
+import { newReference, type Entity, type EntityType, type PropertyDef } from "../data/core.js";
+import { DATA_VERSION, type AppData, type Change } from "../../shared/core/index.js";
+import { createStore, changesBetween } from "../../features.core.js";
 import {
 	addAnalysis,
 	deleteAnalysis,

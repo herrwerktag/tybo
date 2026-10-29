@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Change } from "../../shared/core/index.js";
-import { changesBetween, storedFeatureData } from "../../features.core.js";
-import type { BoardMeta, CanvasCard } from "../../features/boards/core.js";
-import type { Drawing } from "../../features/drawings/core.js";
-import type { AppData, Entity, EntityType } from "./model.js";
+import type { Change, AppData } from "./shared/core/index.js";
+import { changesBetween, storedFeatureData } from "./features.core.js";
+import type { BoardMeta, CanvasCard } from "./features/boards/core.js";
+import type { Drawing } from "./features/drawings/core.js";
+import type { Entity, EntityType } from "./features/data/core.js";
 
 /** A state to build stands from: one type with a text property, two entities, one board with two cards and
  * one drawing — enough of every unit to change, add and delete one each without touching another. */

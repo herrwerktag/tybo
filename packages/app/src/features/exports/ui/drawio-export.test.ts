@@ -1,7 +1,9 @@
 import "../../../shared/ui/test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AppData, Board, PropertyDef } from "../../../legacy/core/index.js";
+import type { AppData } from "../../../shared/core/index.js";
+import type { Board } from "../../boards/core.js";
+import type { PropertyDef } from "../../data/core.js";
 import { boardDrawio, boardDrawioFiles } from "./drawio-export.js";
 import { text } from "../texts.js";
 

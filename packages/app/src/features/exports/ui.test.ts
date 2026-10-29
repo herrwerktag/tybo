@@ -1,4 +1,4 @@
-import { library, memoryStorage, startApp } from "../../legacy/ui/test-app.js";
+import { library, memoryStorage, startApp } from "../../test-app.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { text } from "./texts.js";

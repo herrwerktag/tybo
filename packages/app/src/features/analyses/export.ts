@@ -1,6 +1,6 @@
-import { fillPlaceholders, referencedIds, type AppData, type Entity, type EntityType, type PropertyDef } from "../../legacy/core/index.js";
+import { fillPlaceholders, referencedIds, type Entity, type EntityType, type PropertyDef, uniqueNames } from "../data/core.js";
+import type { AppData } from "../../shared/core/index.js";
 import { uniqueFileNames } from "../../shared/ui/index.js";
-import { uniqueNames } from "../data/core.js";
 import { text as dataText } from "../data/texts.js";
 import { resolvePath, runAnalysis, type Analysis, type AnalysisGroup, type AnalysisRow, type AnalysisValue, type PathStep } from "./core.js";
 import { text } from "./texts.js";

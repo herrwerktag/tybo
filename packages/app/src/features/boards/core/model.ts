@@ -6,7 +6,7 @@ import type { Viewport } from "./viewport.js";
  * Boards: named canvases holding cards of the entities. Their part of the app's data is `boards`; what else a board
  * holds (e.g. drawings) the features on top add as lists of their own (see `BoardList`).
  */
-declare module "../../../legacy/core/model.js" {
+declare module "../../../shared/core/data.js" {
 	interface AppData {
 		/** Empty once the last board was deleted (a new workspace starts with one). */
 		boards: Board[];

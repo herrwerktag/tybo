@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { DATA_VERSION } from "../core/index.js";
-import { memoryDataPort } from "../core/memory-port.js";
-import { tyboTools } from "../../features.mcp.js";
-import { ToolError } from "../../shared/mcp/index.js";
+import { DATA_VERSION } from "./shared/core/index.js";
+import { memoryDataPort } from "./memory-port.js";
+import { tyboTools } from "./features.mcp.js";
+import { ToolError } from "./shared/mcp/index.js";
 
 /** The tools on a port in memory holding one empty workspace, "Projekt"; `call` runs one and parses its answer. */
 export function setup() {

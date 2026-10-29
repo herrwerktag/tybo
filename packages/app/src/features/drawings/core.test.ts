@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { memoryStorage, open, firstBoard } from "../../legacy/core/test-store.js";
+import { memoryStorage, open, firstBoard } from "../../test-store.js";
 import { addDrawing, removeDrawing, replaceDrawing } from "./core.js";
 
 test("moveItems moves several cards and drawings together, in one undo step", async () => {

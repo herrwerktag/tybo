@@ -1,4 +1,5 @@
-import type { EntityType, Store } from "../../legacy/core/index.js";
+import type { EntityType } from "../data/core.js";
+import type { Store } from "../../features.core.js";
 import { DETAILS_WIDTH_KEY, createCardPreview, entityDetails } from "../data/ui/entity-card.js";
 import { showEntityEditor } from "../data/ui/entity-form.js";
 import { moveItem } from "../../shared/core/index.js";
