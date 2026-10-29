@@ -102,11 +102,12 @@ export async function recordHistory(tx: Queries, workspaceId: string, source: st
 
 /** The workspace's entries, newest first — also of a workspace that is gone. */
 export async function readHistory(queries: Queries, workspaceId: string, page: HistoryPage): Promise<HistoryEntry[]> {
+	// Ordered by the column itself: a plain `id` would name the text the select makes of it, and "99" comes after "100".
 	const rows = await queries`select id::text as id, workspace_id, revision::text as revision, at, source, operation, data_version, kind, unit_id, board_id,
 			before, after, collided
 		from history
 		where workspace_id = ${workspaceId} ${page.before === undefined ? queries`` : queries`and id < ${page.before}`}
-		order by id desc
+		order by history.id desc
 		limit ${page.limit}`;
 	return rows.map((row) => ({
 		id: row.id as string,
