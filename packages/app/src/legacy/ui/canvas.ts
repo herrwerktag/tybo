@@ -901,7 +901,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 				}
 				if ("cardNode" in pressed) pressed.cardNode.dataset.dragged = "true";
 				const o = offset(dx, dy);
-				store.moveItems(board.id, [...cardIds], [...drawingIds], o.x, o.y);
+				store.moveItems(board.id, { cards: [...cardIds], drawings: [...drawingIds] }, o.x, o.y);
 				renderCards();
 			},
 			surface,

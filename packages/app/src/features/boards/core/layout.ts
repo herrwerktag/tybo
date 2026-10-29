@@ -1,5 +1,5 @@
-import type { Point } from "../../shared/core/index.js";
-import { DEFAULT_CARD_SIZE, GRID_SIZE, referencedIds, snapToGrid, type Entity, type EntityType } from "./model.js";
+import type { Point } from "../../../shared/core/index.js";
+import { DEFAULT_CARD_SIZE, GRID_SIZE, referencedIds, snapToGrid, type Entity, type EntityType } from "../../data/core/model.js";
 
 /** Space between two columns, and between two cards of a column. */
 const COLUMN_GAP = 4 * GRID_SIZE;

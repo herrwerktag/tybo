@@ -1,6 +1,6 @@
 /** Geometry for connector lines between canvas cards, in world coordinates. */
 
-import type { Point, Rect } from "../../shared/core/index.js";
+import type { Point, Rect } from "../../../shared/core/index.js";
 
 export type Side = "left" | "right" | "top" | "bottom";
 

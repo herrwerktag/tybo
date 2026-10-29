@@ -3,17 +3,18 @@ import { legacyTools, toolContext } from "./legacy/mcp/tools.js";
 import type { Tool } from "./shared/mcp/index.js";
 import { dataTools, describeData } from "./features/data/mcp.js";
 import { analysisTools, describeAnalyses } from "./features/analyses/mcp.js";
+import { boardTools, describeBoards } from "./features/boards/mcp.js";
 
 /**
  * The features' parts of the MCP server, in one place: a feature joins with a line in each list, and leaves without
  * a trace by its lines going.
  */
 
-/** The features' tools, on the store of the workspace a call names. */
-const TOOLS = [dataTools, analysisTools];
+/** The features' tools, on the store of the workspace a call names, in the order the model gets them. */
+const TOOLS = [boardTools, dataTools, analysisTools];
 
 /** What the features add to describe_workspace. */
-const DESCRIBES = [describeData, describeAnalyses];
+const DESCRIBES = [describeData, describeAnalyses, describeBoards];
 
 /**
  * The tools a model gets on tybo: read a workspace's types and entities, run its analyses, and make or change
