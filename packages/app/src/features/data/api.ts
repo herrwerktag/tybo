@@ -1,0 +1,177 @@
+import type { AppData } from "../../legacy/core/model.js";
+import { groupBy, jsonbParameter, json, parsed, plain, type Rows, type UnitStorage } from "../../shared/api/index.js";
+import { ENTITY_UNIT, TYPE_UNIT, type Entity, type EntityType } from "./core.js";
+
+/** Types with their properties: a row each, the properties in a table of their own. */
+export const TYPE_STORAGE: UnitStorage<EntityType, { types: Rows; properties: Rows }, AppData> = {
+	unit: TYPE_UNIT,
+	table: "entity_types",
+	async readPostgres(queries, ws) {
+		const [types, properties] = await Promise.all([
+			queries`select id, name, content_template, color from entity_types where workspace_id = ${ws} order by position, id`,
+			queries`select id, type_id, name, kind, options, reference, card_display from properties where workspace_id = ${ws} order by type_id, position, id`,
+		]);
+		return { types, properties };
+	},
+	readSqlite: (all) => ({
+		types: all("select id, name, content_template, color from entity_types where workspace_id = ? order by position, id"),
+		properties: all(
+			"select id, type_id, name, kind, options, reference, card_display from properties where workspace_id = ? order by type_id, position, id",
+		).map((row) => ({ ...row, options: parsed(row.options), reference: parsed(row.reference) })),
+	}),
+	assemble(data, { types, properties }) {
+		const propertiesOf = groupBy(properties, "type_id", (property) => ({
+			id: property.id,
+			name: property.name,
+			kind: property.kind,
+			options: property.options ?? [],
+			reference: property.reference ?? null,
+			cardDisplay: property.card_display,
+		}));
+		return {
+			...data,
+			types: types.map(({ id, name, content_template, color }) => ({
+				id,
+				name,
+				properties: propertiesOf.get(id) ?? [],
+				contentTemplate: content_template,
+				color,
+			})),
+		};
+	},
+	async writePostgres(tx, ws, { value: type, position }) {
+		await tx`insert into entity_types (workspace_id, id, position, name, content_template, color, updated_at)
+			values (${ws}, ${type.id}, ${position}, ${type.name}, ${type.contentTemplate}, ${type.color}, now())
+			on conflict (workspace_id, id) do update set
+				position = excluded.position, name = excluded.name,
+				content_template = excluded.content_template, color = excluded.color, updated_at = now()`;
+		const properties = type.properties ?? [];
+		// Properties the type no longer has lose their rows — their values go with them, the tables'
+		// references take care of what hangs below a property (or its type) going away.
+		if (properties.length === 0) await tx`delete from properties where workspace_id = ${ws} and type_id = ${type.id}`;
+		else
+			await tx`delete from properties
+				where workspace_id = ${ws} and type_id = ${type.id} and id <> all(${properties.map((p) => p.id)})`;
+		for (const [index, property] of properties.entries()) {
+			await tx`insert into properties (workspace_id, id, type_id, position, name, kind, options, reference, card_display)
+				values (${ws}, ${property.id}, ${type.id}, ${index}, ${property.name}, ${property.kind},
+					${jsonbParameter(tx, property.options)}, ${jsonbParameter(tx, property.reference)}, ${property.cardDisplay})
+				on conflict (workspace_id, id) do update set
+					type_id = excluded.type_id, position = excluded.position, name = excluded.name,
+					kind = excluded.kind, options = excluded.options, reference = excluded.reference,
+					card_display = excluded.card_display`;
+		}
+	},
+	writeSqlite(run, ws, { value: type, position }) {
+		run(
+			`insert into entity_types (workspace_id, id, position, name, content_template, color, updated_at)
+			values (?, ?, ?, ?, ?, ?, current_timestamp)
+			on conflict (workspace_id, id) do update set
+				position = excluded.position, name = excluded.name,
+				content_template = excluded.content_template, color = excluded.color, updated_at = current_timestamp`,
+			ws, type.id, position, plain(type.name), plain(type.contentTemplate), plain(type.color),
+		);
+		const properties = type.properties ?? [];
+		run(
+			"delete from properties where workspace_id = ? and type_id = ? and id not in (select value from json_each(?))",
+			ws, type.id, JSON.stringify(properties.map((p) => p.id)),
+		);
+		for (const [index, property] of properties.entries()) {
+			run(
+				`insert into properties (workspace_id, id, type_id, position, name, kind, options, reference, card_display)
+				values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				on conflict (workspace_id, id) do update set
+					type_id = excluded.type_id, position = excluded.position, name = excluded.name,
+					kind = excluded.kind, options = excluded.options, reference = excluded.reference,
+					card_display = excluded.card_display`,
+				ws, property.id, type.id, index, plain(property.name), plain(property.kind),
+				json(property.options), json(property.reference), plain(property.cardDisplay),
+			);
+		}
+	},
+};
+
+/** Entities with their values: a row each, the values in a table of their own. */
+export const ENTITY_STORAGE: UnitStorage<Entity, { entities: Rows; values: Rows }, AppData> = {
+	unit: ENTITY_UNIT,
+	table: "entities",
+	async readPostgres(queries, ws) {
+		const [entities, values] = await Promise.all([
+			queries`select id, type_id, name, content, description, tags from entities where workspace_id = ${ws} order by position, id`,
+			queries`select entity_id, property_id, value from entity_values where workspace_id = ${ws} order by entity_id, position, property_id`,
+		]);
+		return { entities, values };
+	},
+	readSqlite: (all) => ({
+		entities: all("select id, type_id, name, content, description, tags from entities where workspace_id = ? order by position, id").map(
+			(row) => ({ ...row, tags: parsed(row.tags) }),
+		),
+		values: all("select entity_id, property_id, value from entity_values where workspace_id = ? order by entity_id, position, property_id").map(
+			(row) => ({ ...row, value: parsed(row.value) }),
+		),
+	}),
+	assemble(data, { entities, values }) {
+		const valuesOf = new Map<string, Record<string, unknown>>();
+		for (const { entity_id, property_id, value } of values) {
+			const record = valuesOf.get(entity_id) ?? {};
+			record[property_id] = value;
+			valuesOf.set(entity_id, record);
+		}
+		return {
+			...data,
+			entities: entities.map(({ id, type_id, name, content, description, tags }) => ({
+				id,
+				typeId: type_id,
+				name,
+				content,
+				description,
+				tags: tags ?? [],
+				values: (valuesOf.get(id) ?? {}) as Entity["values"],
+			})),
+		};
+	},
+	async writePostgres(tx, ws, { value: entity, position }) {
+		await tx`insert into entities (workspace_id, id, type_id, position, name, content, description, tags, updated_at)
+			values (${ws}, ${entity.id}, ${entity.typeId}, ${position}, ${entity.name}, ${entity.content}, ${entity.description},
+				${jsonbParameter(tx, entity.tags ?? [])}, now())
+			on conflict (workspace_id, id) do update set
+				type_id = excluded.type_id, position = excluded.position, name = excluded.name,
+				content = excluded.content, description = excluded.description, tags = excluded.tags, updated_at = now()`;
+		// The values the entity no longer has lose their rows; the ones it has are written — the place
+		// is the record's own order, the read assembles the record either way.
+		const values = Object.entries(entity.values ?? {});
+		if (values.length === 0) await tx`delete from entity_values where workspace_id = ${ws} and entity_id = ${entity.id}`;
+		else
+			await tx`delete from entity_values
+				where workspace_id = ${ws} and entity_id = ${entity.id} and property_id <> all(${values.map(([propertyId]) => propertyId)})`;
+		for (const [index, [propertyId, value]] of values.entries()) {
+			await tx`insert into entity_values (workspace_id, entity_id, property_id, position, value)
+				values (${ws}, ${entity.id}, ${propertyId}, ${index}, ${jsonbParameter(tx, value)})
+				on conflict (workspace_id, entity_id, property_id) do update set position = excluded.position, value = excluded.value`;
+		}
+	},
+	writeSqlite(run, ws, { value: entity, position }) {
+		run(
+			`insert into entities (workspace_id, id, type_id, position, name, content, description, tags, updated_at)
+			values (?, ?, ?, ?, ?, ?, ?, ?, current_timestamp)
+			on conflict (workspace_id, id) do update set
+				type_id = excluded.type_id, position = excluded.position, name = excluded.name,
+				content = excluded.content, description = excluded.description, tags = excluded.tags, updated_at = current_timestamp`,
+			ws, entity.id, entity.typeId, position, plain(entity.name), plain(entity.content), plain(entity.description),
+			json(entity.tags ?? []),
+		);
+		const values = Object.entries(entity.values ?? {});
+		run(
+			"delete from entity_values where workspace_id = ? and entity_id = ? and property_id not in (select value from json_each(?))",
+			ws, entity.id, JSON.stringify(values.map(([propertyId]) => propertyId)),
+		);
+		for (const [index, [propertyId, value]] of values.entries()) {
+			run(
+				`insert into entity_values (workspace_id, entity_id, property_id, position, value)
+				values (?, ?, ?, ?, ?)
+				on conflict (workspace_id, entity_id, property_id) do update set position = excluded.position, value = excluded.value`,
+				ws, entity.id, propertyId, index, json(value),
+			);
+		}
+	},
+};

@@ -1,8 +1,10 @@
 import { changesOf, normalizedParts, storedParts, unitStandsOf, type Change, type DataPart, type UnitKind, type UnitStands } from "./shared/core/index.js";
-import { BOARD_UNIT, CARD_UNIT, DRAWING_UNIT, ENTITY_UNIT, TYPE_UNIT } from "./legacy/core/changes.js";
+import { BOARD_UNIT, CARD_UNIT, DRAWING_UNIT } from "./legacy/core/changes.js";
+import { ENTITY_UNIT, TYPE_UNIT } from "./features/data/core.js";
 import type { AppData } from "./legacy/core/model.js";
 import { ANALYSES_PART, ANALYSIS_UNIT } from "./features/analyses/core.js";
 
+export * from "./features/data/core.js";
 export * from "./features/analyses/core.js";
 
 /**

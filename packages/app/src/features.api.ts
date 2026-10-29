@@ -1,5 +1,6 @@
 import type { AppData } from "./legacy/core/model.js";
-import { BOARD_STORAGE, CARD_STORAGE, DRAWING_STORAGE, ENTITY_STORAGE, TYPE_STORAGE } from "./legacy/api/units.js";
+import { BOARD_STORAGE, CARD_STORAGE, DRAWING_STORAGE } from "./legacy/api/units.js";
+import { ENTITY_STORAGE, TYPE_STORAGE } from "./features/data/api.js";
 import type { UnitStorage } from "./shared/api/index.js";
 import { ANALYSIS_STORAGE } from "./features/analyses/api.js";
 
