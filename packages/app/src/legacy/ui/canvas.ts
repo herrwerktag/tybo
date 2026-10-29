@@ -3,6 +3,7 @@ import { createDrawingLayer } from "./drawing-layer.js";
 import { areaContents, drawingBounds } from "./drawings.js";
 import { CLICK_TOLERANCE, dragHandle, el, reorderable, resizeHandle, svgEl, tagFilter, trackPointer, typeDot, wheelGesture } from "../../shared/ui/index.js";
 import { text } from "./i18n.js";
+import { text as dataText } from "../../features/data/texts.js";
 import {
 	DEFAULT_CARD_SIZE,
 	GRID_SIZE,
@@ -24,8 +25,8 @@ import {
 	type EntityType,
 	type LineArrow,
 } from "../core/index.js";
-import { DETAILS_WIDTH_KEY, cardParts, cardSize, createCardPreview, entityDetails } from "./entity-card.js";
-import { showEntityEditor } from "./entity-form.js";
+import { DETAILS_WIDTH_KEY, cardParts, cardSize, createCardPreview, entityDetails } from "../../features/data/ui/entity-card.js";
+import { showEntityEditor } from "../../features/data/ui/entity-form.js";
 import { readPreference, writePreference } from "../../shared/ui/index.js";
 import type { Store } from "../core/index.js";
 import { defaultViewport, fitRect, screenToWorld, snapZoom, stepZoom, visibleRect, zoomAt, type Viewport } from "../core/index.js";
@@ -395,8 +396,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 							},
 						},
 						input,
-						el("button", { type: "submit", className: "primary" }, text.save),
-						el("button", { type: "button", onclick: () => rerender() }, text.cancel),
+						el("button", { type: "submit", className: "primary" }, dataText.save),
+						el("button", { type: "button", onclick: () => rerender() }, dataText.cancel),
 					),
 				);
 			}
@@ -441,7 +442,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			return row;
 		});
 
-		const nameInput = el("input", { ariaLabel: text.name, value: editing?.newName ?? "", required: true });
+		const nameInput = el("input", { ariaLabel: dataText.name, value: editing?.newName ?? "", required: true });
 		const newForm = el(
 			"form",
 			{
@@ -454,7 +455,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			},
 			el("h3", {}, editing?.newTitle ?? ""),
 			nameInput,
-			el("button", { type: "submit", className: "primary" }, text.create),
+			el("button", { type: "submit", className: "primary" }, dataText.create),
 		);
 		dialog.replaceChildren(el("h2", {}, title), el("ul", { className: "picker-list" }, ...rows), ...(editing ? [newForm] : []));
 	}
@@ -701,7 +702,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		panelTag = byTag.tag;
 		const entityFilters = el("div", { className: "panel-filters" }, search, typeFilter, ...(tags.length > 0 ? [byTag.select] : []));
 		panel.replaceChildren(
-			el("div", { className: "panel-header" }, el("h2", {}, text.entities), toggle),
+			el("div", { className: "panel-header" }, el("h2", {}, dataText.entities), toggle),
 			el("p", { className: "muted" }, text.dragOntoCanvas),
 			entityFilters,
 			panelList,
@@ -992,7 +993,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			ariaLabel: text.searchEntities,
 			oninput: () => renderList(search.value),
 		});
-		const name = el("input", { required: true, pattern: ".*\\S.*", placeholder: text.name, ariaLabel: text.name });
+		const name = el("input", { required: true, pattern: ".*\\S.*", placeholder: dataText.name, ariaLabel: dataText.name });
 		connectDialog.replaceChildren(
 			dialogHeader(connectDialog, text.connectNamed(entity.name)),
 			el("label", { className: "field" }, el("span", {}, text.relation), choice),
@@ -1005,8 +1006,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 						done(store.addLinkedEntity(cardId, link, relation.typeId, name.value)?.card);
 					},
 				},
-				el("h3", {}, text.newEntity(typeName)),
-				el("div", { className: "row" }, name, el("button", { type: "submit", className: "primary" }, text.create)),
+				el("h3", {}, dataText.newEntity(typeName)),
+				el("div", { className: "row" }, name, el("button", { type: "submit", className: "primary" }, dataText.create)),
 			),
 			el("div", { className: "connect-existing" }, el("h3", {}, text.existingEntity(typeName)), search, list),
 		);
@@ -1017,12 +1018,12 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 
 	function openNewEntity(): void {
 		const types = store.data.types;
-		const typeSelect = el("select", { ariaLabel: text.entityType }, ...types.map((t) => el("option", { value: t.id }, t.name)));
-		const name = el("input", { required: true, pattern: ".*\\S.*", placeholder: text.name, ariaLabel: text.name });
+		const typeSelect = el("select", { ariaLabel: dataText.entityType }, ...types.map((t) => el("option", { value: t.id }, t.name)));
+		const name = el("input", { required: true, pattern: ".*\\S.*", placeholder: dataText.name, ariaLabel: dataText.name });
 		newEntityDialog.replaceChildren(
 			dialogHeader(newEntityDialog, text.newEntityTitle),
 			types.length === 0
-				? el("p", { className: "muted" }, text.createTypeFirst)
+				? el("p", { className: "muted" }, dataText.createTypeFirst)
 				: el(
 						"form",
 						{
@@ -1045,8 +1046,8 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 								reveal(cardRects.get(made.card.id) ?? made.card);
 							},
 						},
-						el("label", { className: "field" }, el("span", {}, text.entityType), typeSelect),
-						el("div", { className: "row" }, name, el("button", { type: "submit", className: "primary" }, text.create)),
+						el("label", { className: "field" }, el("span", {}, dataText.entityType), typeSelect),
+						el("div", { className: "row" }, name, el("button", { type: "submit", className: "primary" }, dataText.create)),
 					),
 		);
 		newEntityDialog.showModal();
@@ -1085,7 +1086,7 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		const actions = readOnly
 			? []
 			: [
-					el("button", { type: "button", onclick: edit }, text.edit),
+					el("button", { type: "button", onclick: edit }, dataText.edit),
 					...(selected?.cardId ? [connectButton(entity, selected.cardId)] : []),
 				];
 		details.replaceChildren(...entityDetails(store, entity, { actions, onClose: () => select(null), onSelectEntity: selectEntity }));

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { canvasView } from "./canvas.js";
 import { CLICK_TOLERANCE } from "../../shared/ui/index.js";
 import { text } from "./i18n.js";
+import { text as dataText } from "../../features/data/texts.js";
 import { createStore, DATA_VERSION, frameInside, newReference, visibleRect, type Store } from "../core/index.js";
 import { memoryDataPort } from "../core/memory-port.js";
 
@@ -60,11 +61,11 @@ test("a card and its details point out required references that are still empty"
 	const view = canvasView(store, { readOnly: false });
 	document.body.append(view);
 
-	assert.equal(cardNode(view, missing.id).querySelector(".card-missing")?.textContent, text.missingRequired("Author"));
+	assert.equal(cardNode(view, missing.id).querySelector(".card-missing")?.textContent, dataText.missingRequired("Author"));
 	assert.equal(cardNode(view, complete.id).querySelector(".card-missing"), null);
 
 	dragBy(cardNode(view, missing.id).querySelector("header")!, 0, 0);
-	assert.equal(details(view).querySelector(".details-props dd.missing")?.textContent, text.missingValue);
+	assert.equal(details(view).querySelector(".details-props dd.missing")?.textContent, dataText.missingValue);
 	dragBy(cardNode(view, complete.id).querySelector("header")!, 0, 0);
 	assert.equal(details(view).querySelector(".details-props dd.missing"), null);
 });
@@ -88,7 +89,7 @@ test("a click with a little jitter selects the card and shows its details withou
 
 test("Edit in the details shows the entity's form there: saving updates the entity and its card, Cancel changes nothing", async () => {
 	const { store, view, card, dune } = await setup();
-	const editButton = () => [...details(view).querySelectorAll("button")].find((b) => b.textContent === text.edit)!;
+	const editButton = () => [...details(view).querySelectorAll("button")].find((b) => b.textContent === dataText.edit)!;
 	const form = () => details(view).querySelector<HTMLFormElement>("#entity-form")!;
 	const nameInput = () => form().querySelector<HTMLInputElement>("input")!;
 	dragBy(cardNode(view, card.id).querySelector("header")!, 0, 0);
@@ -99,7 +100,7 @@ test("Edit in the details shows the entity's form there: saving updates the enti
 
 	// Cancel shows the details again, unchanged.
 	nameInput().value = "Arrakis";
-	[...form().querySelectorAll("button")].find((b) => b.textContent === text.cancel)!.click();
+	[...form().querySelectorAll("button")].find((b) => b.textContent === dataText.cancel)!.click();
 	assert.equal(details(view).querySelector(".details-title")?.textContent, "Dune");
 	assert.equal(store.data.entities.find((e) => e.id === dune.id)?.name, "Dune");
 
@@ -119,7 +120,7 @@ test("the viewer's details have no Edit", async () => {
 	const { view, card } = await setup({ readOnly: true });
 	dragBy(cardNode(view, card.id).querySelector("header")!, 0, 0);
 	assert.equal(details(view).hidden, false);
-	assert.ok(![...details(view).querySelectorAll("button")].some((b) => b.textContent === text.edit));
+	assert.ok(![...details(view).querySelectorAll("button")].some((b) => b.textContent === dataText.edit));
 });
 
 /**

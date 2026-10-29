@@ -1,6 +1,5 @@
+import type { Store } from "../../../legacy/core/index.js";
 import {
-	CARD_WIDTH,
-	GRID_SIZE,
 	cardRows,
 	detailRows,
 	entityTypeMap,
@@ -11,11 +10,12 @@ import {
 	type CardRow,
 	type Entity,
 	type EntityType,
-	type Store,
-} from "../core/index.js";
-import { el } from "../../shared/ui/index.js";
-import { text } from "./i18n.js";
-import { renderMarkdown } from "../../shared/ui/index.js";
+	CARD_WIDTH,
+	GRID_SIZE,
+} from "../core.js";
+import { el } from "../../../shared/ui/index.js";
+import { text } from "../texts.js";
+import { renderMarkdown } from "../../../shared/ui/index.js";
 
 /** A read-only card shown while hovering or focusing an entity's tag or link (see createCardPreview). */
 /** The width of the panel showing an entity's details, beside a board or an analysis. */

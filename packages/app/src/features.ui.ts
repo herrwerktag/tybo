@@ -1,10 +1,11 @@
 import { APP_FORMAT, type AppData, type Store, type Workspaces } from "./legacy/core/index.js";
 import { boardsPage } from "./legacy/ui/boards-page.js";
-import { DATA_PAGE } from "./legacy/ui/data-page.js";
-import { COPY_TYPES, TEXT_EXPORT, WRAP_REFERENCES, deleteQuestion } from "./legacy/ui/shell-parts.js";
+import { TEXT_EXPORT } from "./legacy/ui/shell-parts.js";
 import { renderShell } from "./shared/ui/index.js";
+import { COPY_TYPES, DATA_PAGE, WRAP_REFERENCES, deleteQuestion } from "./features/data/ui.js";
 import { ANALYSES_PAGE } from "./features/analyses/ui.js";
 
+export * from "./features/data/ui.js";
 export * from "./features/analyses/ui.js";
 
 /**

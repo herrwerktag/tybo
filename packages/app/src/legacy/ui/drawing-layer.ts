@@ -12,6 +12,7 @@ import {
 	type Tool,
 } from "./drawings.js";
 import { text } from "./i18n.js";
+import { text as dataText } from "../../features/data/texts.js";
 import { readPreference, writePreference } from "../../shared/ui/index.js";
 import {
 	DRAWING_COLORS,
@@ -455,8 +456,8 @@ export function createDrawingLayer(options: {
 				const swatch = el("button", {
 					type: "button",
 					className: "swatch toolbar-swatch",
-					title: text.colorNames[name] ?? name,
-					ariaLabel: text.colorNames[name] ?? name,
+					title: dataText.colorNames[name] ?? name,
+					ariaLabel: dataText.colorNames[name] ?? name,
 					ariaPressed: String(value === current),
 					onclick: () => {
 						color = value;
@@ -482,7 +483,7 @@ export function createDrawingLayer(options: {
 					)
 				: []),
 			...(selected
-				? [el("button", { type: "button", title: text.deleteDrawing, onclick: () => removeSelected() }, text.delete)]
+				? [el("button", { type: "button", title: text.deleteDrawing, onclick: () => removeSelected() }, dataText.delete)]
 				: []),
 		);
 	}

@@ -1,6 +1,6 @@
 import type { EntityType, Store } from "../../legacy/core/index.js";
-import { DETAILS_WIDTH_KEY, createCardPreview, entityDetails } from "../../legacy/ui/entity-card.js";
-import { showEntityEditor } from "../../legacy/ui/entity-form.js";
+import { DETAILS_WIDTH_KEY, createCardPreview, entityDetails } from "../data/ui/entity-card.js";
+import { showEntityEditor } from "../data/ui/entity-form.js";
 import { text as legacyText } from "../../legacy/ui/i18n.js";
 import { moveItem } from "../../shared/core/index.js";
 import { downloadFile, el, readPreference, resizeHandle, safeFileName, typeDot, writePreference, zipFiles, type PageMaker } from "../../shared/ui/index.js";
@@ -19,6 +19,7 @@ import {
 	type PathStep,
 } from "./core.js";
 import { analysisMarkdownFiles, pathLabel } from "./export.js";
+import { text as dataText } from "../data/texts.js";
 import { text } from "./texts.js";
 
 /** The analysis open in the Analyses tab. */
@@ -99,7 +100,7 @@ export function analysisView(store: Store): HTMLElement {
 			details.replaceChildren(
 				...(entity
 					? entityDetails(store, entity, {
-							actions: [el("button", { type: "button", onclick: edit }, legacyText.edit)],
+							actions: [el("button", { type: "button", onclick: edit }, dataText.edit)],
 							onClose: () => showDetails(null),
 							onSelectEntity: showDetails,
 						})
@@ -160,7 +161,7 @@ export function analysisView(store: Store): HTMLElement {
 		const update = (patch: Partial<Omit<Analysis, "id">>) => updateAnalysis(store, analysis.id, patch);
 		const name = el("input", {
 			value: analysis.name,
-			ariaLabel: legacyText.name,
+			ariaLabel: dataText.name,
 			onchange: () => update({ name: name.value }),
 		});
 		const rowType = el(
@@ -191,7 +192,7 @@ export function analysisView(store: Store): HTMLElement {
 			el(
 				"div",
 				{ className: "analysis-meta" },
-				el("label", { className: "field" }, el("span", {}, legacyText.name), name),
+				el("label", { className: "field" }, el("span", {}, dataText.name), name),
 				el("label", { className: "field" }, el("span", {}, text.analysisRowType), rowType),
 				remove,
 			),

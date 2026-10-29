@@ -1,5 +1,5 @@
 import type { Point, Rect } from "../../shared/core/index.js";
-import { TYPE_COLORS } from "../../features/data/core/model.js";
+import { GRID_SIZE, TYPE_COLORS, snapToGrid } from "../../features/data/core/model.js";
 import type { Viewport } from "./viewport.js";
 
 export * from "../../features/data/core/model.js";
@@ -102,20 +102,6 @@ export function isImage(drawing: Drawing): drawing is ImageDrawing {
 }
 
 export type NewDrawing = Omit<BoxDrawing, "id"> | Omit<ImageDrawing, "id">;
-
-/** A card's size until the editor has measured what it shows (see CanvasCard). */
-export const DEFAULT_CARD_SIZE = { width: 240, height: 168 } as const;
-/** How narrow and how wide a card gets: short contents make it narrower, longer ones wrap at the widest (about 50
- * characters a line, easy to read). */
-export const CARD_WIDTH = { min: 168, max: 384 } as const;
-
-/** Spacing of the board's grid, in world units: cards are placed and sized on it. */
-export const GRID_SIZE = 24;
-
-/** The nearest grid line to `value`. */
-export function snapToGrid(value: number): number {
-	return Math.round(value / GRID_SIZE) * GRID_SIZE;
-}
 
 /**
  * Where a card of `size` goes from `start` (snapped to the grid): moved down a grid step at a time until it overlaps
