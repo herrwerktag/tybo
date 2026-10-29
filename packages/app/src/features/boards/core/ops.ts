@@ -1,5 +1,4 @@
-import { moveItem, ulid, type Point, type Rect, type StoreCore } from "../../../shared/core/index.js";
-import type { AppData } from "../../../legacy/core/model.js";
+import { moveItem, ulid, type Point, type Rect, type StoreCore, type AppData } from "../../../shared/core/index.js";
 import { DEFAULT_CARD_SIZE, canTakeMore, parseTags, referencedIds, type Entity, type Relation } from "../../data/core/model.js";
 import { freeSpot, frameShape, placeBeside, type Board, type BoardList, type CanvasCard } from "./model.js";
 import { newBoard } from "./normalize.js";

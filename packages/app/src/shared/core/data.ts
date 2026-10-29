@@ -1,7 +1,13 @@
 /**
+ * The app's data: what a workspace holds. Each feature adds its part with `declare module` on this interface, e.g.
+ * the types and entities (data feature), the boards, the analyses.
+ */
+export interface AppData {}
+
+/**
  * A feature's own part of the app's data: one field of it, the list of the feature's units (e.g. `analyses`).
  * The store reads, completes and keeps it without knowing the feature; the feature adds the field to the data's
- * type itself (`declare module` on the model's `AppData`).
+ * type itself (`declare module` on `AppData`).
  */
 export interface DataPart {
 	key: string;

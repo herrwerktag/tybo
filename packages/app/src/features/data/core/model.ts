@@ -9,7 +9,7 @@ export interface EntityData {
 	entities: Entity[];
 }
 
-declare module "../../../legacy/core/model.js" {
+declare module "../../../shared/core/data.js" {
 	interface AppData extends EntityData {}
 }
 

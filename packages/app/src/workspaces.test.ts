@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { memoryDataPort } from "./memory-port.js";
-import { DATA_VERSION } from "./store.js";
-import type { ActiveWorkspacePreference } from "../../shared/core/index.js";
-import { createWorkspaces, exportWorkspace, readWorkspaceFile } from "./workspaces.js";
+import { DATA_VERSION, type ActiveWorkspacePreference } from "./shared/core/index.js";
+import { createWorkspaces, exportWorkspace, readWorkspaceFile } from "./features.core.js";
 
 /** Lets background saves finish (a store's saves go out after the change that made them). */
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve));

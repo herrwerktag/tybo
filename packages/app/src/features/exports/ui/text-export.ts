@@ -1,4 +1,4 @@
-import type { AppData } from "../../../legacy/core/model.js";
+import type { AppData } from "../../../shared/core/index.js";
 import { fillPlaceholders, referencedIds, uniqueNames, type Entity, type EntityType, type PropertyDef } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import { text } from "../texts.js";

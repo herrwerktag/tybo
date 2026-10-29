@@ -1,4 +1,4 @@
-import type { AppData } from "../../legacy/core/model.js";
+import type { AppData } from "../../shared/core/index.js";
 import { groupBy, jsonbParameter, json, parsed, plain, type Rows, type UnitStorage } from "../../shared/api/index.js";
 import { ENTITY_UNIT, TYPE_UNIT, type Entity, type EntityType } from "./core.js";
 

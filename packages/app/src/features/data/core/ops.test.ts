@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isUlid } from "../../../shared/core/index.js";
-import { TYPE_COLORS } from "../../../legacy/core/model.js";
-import { settle, WS, memoryStorage, open, titleDraft, referenceSetup } from "../../../legacy/core/test-store.js";
+import { TYPE_COLORS } from "../core.js";
+import { settle, WS, memoryStorage, open, titleDraft, referenceSetup } from "../../../test-store.js";
 
 test("addEntities adds several entities as one change, keeping the ids given", async () => {
 	const storage = memoryStorage();

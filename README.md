@@ -30,9 +30,11 @@ beisteuern, Eintraege im Arbeitsbereich-Menue, eine Option fuer neue Arbeitsbere
 `ShellParts` in `shared/ui/shell.ts`). Auf jedem Board kann ein Feature eine eigene Liste neben den Karten fuehren
 (`BOARD_LISTS` in `features.core.ts`, siehe `BoardList`) und sie auf dem Canvas als Ebene mit eigenen Werkzeugen zeigen
 (`CANVAS_LAYERS` in `features.ui.ts`, siehe `CanvasLayer`), so wie die Zeichnungen; Exporte eines Boards kommen als
-`BoardExport` ins Export-Menue. Die Huelle selbst (Store-Kern, Arbeitsbereiche, Top-Bar) liegt in `shared/`. Global bleiben nur die Migrationen (Datenformat und
-Datenbankschema), die immer nur wachsen. Was mehrere Features nutzen, liegt in `shared/`; `legacy/` ist der Teil,
-der noch Feature fuer Feature in `features/` umzieht.
+`BoardExport` ins Export-Menue. Die Huelle selbst (Store-Kern, Arbeitsbereiche, Top-Bar) liegt in `shared/`. Global bleiben nur die Migrationen (Datenformat in
+`shared/core/migrations.ts`, Datenbankschema), die immer nur wachsen. Was mehrere Features nutzen, liegt in `shared/`,
+auch `AppData`, an das jedes Feature seinen Teil haengt. Zusammengesetzt wird die App in `features.*.ts`: Store und
+Arbeitsbereiche in `features.core.ts`, die Arbeitsbereich-Werkzeuge in `features.mcp.ts`; daneben liegen die Tests der
+ganzen App und ihre Hilfen (`test-*.ts`, `memory-port.ts`).
 
 ## Voraussetzungen
 

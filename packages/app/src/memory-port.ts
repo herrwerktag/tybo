@@ -1,8 +1,6 @@
-import { moveItem, untouched, withChanges, type Change } from "../../shared/core/index.js";
-import { BOARD_LISTS, UNIT_KINDS, storedFeatureData, unitStands } from "../../features.core.js";
-import type { AppData } from "./model.js";
-import { storedLists, type Board } from "../../features/boards/core.js";
-import type { DataPort, SavedChanges, WorkspaceInfo } from "../../shared/core/index.js";
+import { moveItem, untouched, withChanges, type Change, type AppData, type DataPort, type SavedChanges, type WorkspaceInfo } from "./shared/core/index.js";
+import { BOARD_LISTS, UNIT_KINDS, storedFeatureData, unitStands } from "./features.core.js";
+import { storedLists, type Board } from "./features/boards/core.js";
 
 /** One workspace as the memory holds it: its data as saved (in whatever shape a test put there), and the
  * version it is at. */

@@ -1,5 +1,5 @@
 import { el, tagFilter, typeDot } from "../../../shared/ui/index.js";
-import type { Store } from "../../../legacy/core/store.js";
+import type { Store } from "../../../features.core.js";
 import { entityTags, filterEntities } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import type { Board } from "../core.js";

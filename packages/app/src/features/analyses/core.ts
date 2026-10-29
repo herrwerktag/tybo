@@ -1,12 +1,12 @@
-import { ulid, type DataPart, type UnitKind } from "../../shared/core/index.js";
-import { referencedIds, type AppData, type Entity, type EntityType, type PropertyDef } from "../../legacy/core/model.js";
-import type { Store } from "../../legacy/core/store.js";
+import { ulid, type DataPart, type UnitKind, type AppData } from "../../shared/core/index.js";
+import { referencedIds, type Entity, type EntityType, type PropertyDef } from "../data/core.js";
+import type { Store } from "../../features.core.js";
 
 /**
  * Analyses: grouped listings of one type's entities, saved with the workspace. Their part of the app's data is
  * `analyses`, each one unit of its own.
  */
-declare module "../../legacy/core/model.js" {
+declare module "../../shared/core/data.js" {
 	interface AppData {
 		/** Saved analyses, in the order they were made. */
 		analyses: Analysis[];

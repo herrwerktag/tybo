@@ -10,7 +10,7 @@
 		"./ui": "./src/ui.ts",
 		"./api": "./src/api.ts",
 		"./mcp": "./src/mcp.ts",
-		"./testing": "./src/legacy/core/memory-port.ts"
+		"./testing": "./src/memory-port.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.core.json && tsc --noEmit -p tsconfig.ui.json && tsc --noEmit -p tsconfig.node.json",

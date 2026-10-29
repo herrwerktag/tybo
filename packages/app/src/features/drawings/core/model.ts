@@ -1,5 +1,4 @@
-import type { UnitKind } from "../../../shared/core/index.js";
-import type { AppData } from "../../../legacy/core/model.js";
+import type { UnitKind, AppData } from "../../../shared/core/index.js";
 import { TYPE_COLORS } from "../../data/core.js";
 import { withBoardList, type BoardList } from "../../boards/core.js";
 

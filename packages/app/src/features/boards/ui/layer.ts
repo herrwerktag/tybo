@@ -1,5 +1,5 @@
 import type { Point, Rect } from "../../../shared/core/index.js";
-import type { Store } from "../../../legacy/core/store.js";
+import type { Store } from "../../../features.core.js";
 
 /**
  * The things on a board to select or move together, by list: `cards`, and each layer's `key` (the key of the board

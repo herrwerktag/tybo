@@ -1,4 +1,4 @@
-import type { Store } from "../../../legacy/core/store.js";
+import type { Store } from "../../../features.core.js";
 import type { PageMaker } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
 import { canvasView, type CanvasOptions } from "./canvas.js";

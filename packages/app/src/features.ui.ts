@@ -1,4 +1,5 @@
-import { APP_FORMAT, type AppData, type Store, type Workspaces } from "./legacy/core/index.js";
+import { APP_FORMAT, type Store, type Workspaces } from "./features.core.js";
+import type { AppData } from "./shared/core/index.js";
 import { renderShell } from "./shared/ui/index.js";
 import type { CanvasLayer } from "./features/boards/ui.js";
 import { COPY_TYPES, DATA_PAGE, WRAP_REFERENCES, deleteQuestion } from "./features/data/ui.js";

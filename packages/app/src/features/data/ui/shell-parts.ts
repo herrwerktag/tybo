@@ -1,4 +1,5 @@
-import type { AppData, Store } from "../../../legacy/core/index.js";
+import type { AppData } from "../../../shared/core/index.js";
+import type { Store } from "../../../features.core.js";
 import { el, type NewWorkspaceOption, type SettingMaker } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
 import { setWrapReferences, wrapReferences } from "./wrap-references.js";

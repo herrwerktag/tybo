@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { language, setLanguage } from "../../../shared/ui/index.js";
 import { renderStandaloneView, standaloneViewHtml } from "./standalone.js";
 import { DRAWING_LAYER } from "../../drawings/ui.js";
-import { DATA_VERSION, type AppData } from "../../../legacy/core/index.js";
+import { DATA_VERSION, type AppData } from "../../../shared/core/index.js";
 
 const viewport = { x: 0, y: 0, zoom: 1 };
 /** Entity ids are ULIDs; others are given new ones on load. */

@@ -1,5 +1,4 @@
-import { ulid, type StoreCore } from "../../../shared/core/index.js";
-import type { AppData } from "../../../legacy/core/model.js";
+import { ulid, type StoreCore, type AppData } from "../../../shared/core/index.js";
 import type { Board } from "../../boards/core.js";
 import type { Drawing, NewDrawing } from "./model.js";
 

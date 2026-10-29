@@ -1,7 +1,8 @@
 import "../../shared/ui/test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AppData, PropertyDef } from "../../legacy/core/index.js";
+import type { AppData } from "../../shared/core/index.js";
+import type { PropertyDef } from "../data/core.js";
 import { setLanguage } from "../../shared/ui/index.js";
 import type { Analysis, PathStep } from "./core.js";
 import { analysisMarkdownFiles } from "./export.js";

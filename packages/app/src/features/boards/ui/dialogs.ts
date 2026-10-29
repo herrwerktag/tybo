@@ -1,6 +1,6 @@
 import type { Point } from "../../../shared/core/index.js";
 import { el } from "../../../shared/ui/index.js";
-import type { Store } from "../../../legacy/core/store.js";
+import type { Store } from "../../../features.core.js";
 import { filterEntities, linkCandidates, relationsOf, type Entity, type Relation } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import type { CanvasCard } from "../core.js";

@@ -1,5 +1,4 @@
-import { ulid, type Rect } from "../../../shared/core/index.js";
-import type { AppData } from "../../../legacy/core/model.js";
+import { ulid, type Rect, type AppData } from "../../../shared/core/index.js";
 import { frameShape, storedLists, type Board, type BoardList, type CanvasCard } from "./model.js";
 import { clampZoom, defaultViewport, visibleRect, type Viewport } from "./viewport.js";
 

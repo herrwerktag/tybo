@@ -1,4 +1,4 @@
-import type { AppData } from "./legacy/core/model.js";
+import type { AppData } from "./shared/core/index.js";
 import { ENTITY_STORAGE, TYPE_STORAGE } from "./features/data/api.js";
 import type { UnitStorage } from "./shared/api/index.js";
 import { ANALYSIS_STORAGE } from "./features/analyses/api.js";

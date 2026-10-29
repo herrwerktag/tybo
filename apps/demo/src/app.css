@@ -71,11 +71,6 @@ main {
 	grid-template-rows: auto minmax(0, 1fr);
 }
 
-/* The canvas fills the screen instead of growing the page. */
-main:has(.canvas-view) {
-	height: 100dvh;
-}
-
 /* The top bar: the workspace, the tabs, then undo, redo and settings at the right end. */
 .app-nav {
 	display: flex;

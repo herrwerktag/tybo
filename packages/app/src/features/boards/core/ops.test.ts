@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { DraftProperty } from "../../../legacy/core/model.js";
-import { DATA_VERSION } from "../../../legacy/core/store.js";
-import { memoryStorage, open, assertEmpty, firstBoard, noLists, valueOf } from "../../../legacy/core/test-store.js";
+import type { DraftProperty } from "../../data/core.js";
+import { DATA_VERSION } from "../../../shared/core/index.js";
+import { memoryStorage, open, assertEmpty, firstBoard, noLists, valueOf } from "../../../test-store.js";
 import { REFERENCE_SCREEN } from "./normalize.js";
 
 test("moveBoard reorders the boards, and the order is saved", async () => {

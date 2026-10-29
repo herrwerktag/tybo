@@ -11,7 +11,7 @@ export type LoadProblem =
 
 /**
  * What the store and the workspaces need to know of the data they hold: how it is read, saved, compared and
- * imported. The app's own format puts its parts together (see the store in legacy/core).
+ * imported. The app's own format puts its parts together (see `APP_FORMAT` in features.core.ts).
  */
 export interface DataFormat<D> {
 	/** The version data is saved in now. */

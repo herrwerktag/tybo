@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createStore } from "../../legacy/core/index.js";
-import { withPeople } from "../../legacy/mcp/test-tools.js";
+import { createStore } from "../../features.core.js";
+import { withPeople } from "../../test-tools.js";
 
 test("types and entities made by the tools are saved, references named by name", async () => {
 	const { storage } = await withPeople();

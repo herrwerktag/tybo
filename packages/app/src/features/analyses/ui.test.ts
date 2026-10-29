@@ -1,7 +1,7 @@
-import { byText, readSaved, settle, startApp } from "../../legacy/ui/test-app.js";
+import { byText, readSaved, settle, startApp } from "../../test-app.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DATA_VERSION, ulid } from "../../legacy/core/index.js";
+import { DATA_VERSION, ulid } from "../../shared/core/index.js";
 import { text as dataText } from "../data/texts.js";
 import { text } from "./texts.js";
 

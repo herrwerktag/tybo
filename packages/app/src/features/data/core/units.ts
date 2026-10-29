@@ -1,5 +1,4 @@
-import type { UnitKind } from "../../../shared/core/index.js";
-import type { AppData } from "../../../legacy/core/model.js";
+import type { UnitKind, AppData } from "../../../shared/core/index.js";
 import type { Entity, EntityType } from "./model.js";
 
 /** Each type is a unit of its own, with its properties. */
