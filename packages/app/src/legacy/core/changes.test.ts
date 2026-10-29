@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { Change } from "../../shared/core/index.js";
 import { changesBetween, storedFeatureData } from "../../features.core.js";
 import type { BoardMeta, CanvasCard } from "../../features/boards/core.js";
-import type { Drawing } from "./drawings.js";
+import type { Drawing } from "../../features/drawings/core.js";
 import type { AppData, Entity, EntityType } from "./model.js";
 
 /** A state to build stands from: one type with a text property, two entities, one board with two cards and

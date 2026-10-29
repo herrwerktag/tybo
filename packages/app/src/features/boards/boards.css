@@ -168,6 +168,12 @@
 	user-select: text;
 }
 
+/* While a layer's tool is active (see CanvasLayer), e.g. a drawing tool, pressing the canvas uses it instead of
+   panning. */
+.canvas-surface.tool-active {
+	cursor: crosshair;
+}
+
 /* The viewer pans by dragging; the editor with Space held (dragging the background frames a selection). */
 .read-only .canvas-surface,
 .canvas-surface.space-pan {
@@ -215,10 +221,10 @@
 }
 
 /* Narrow screens: too little room for the control groups to float side by side, and how tall each gets depends
-   on how it wraps. So they're laid out in a grid over the canvas: boards (and the drawing tools) at the top; the
-   drawing style, then the zoom at the bottom. Only what's needed to look around is shown: the board and the zoom.
-   The rest (editing the board, the drawing tools, resetting the view) waits behind ⋯ (.show-more), so the canvas
-   keeps its room. */
+   on how it wraps. So they're laid out in a grid over the canvas: boards (and a layer's tools, area "tools") at the
+   top; a layer's style (area "style"), then the zoom at the bottom. Only what's needed to look around is shown: the
+   board and the zoom. The rest (editing the board, the layers' tools, resetting the view) waits behind ⋯
+   (.show-more), so the canvas keeps its room. */
 @media (max-width: 40rem) {
 	.canvas-main {
 		display: grid;
@@ -243,7 +249,7 @@
 			"zoom zoom";
 	}
 
-	.canvas-main > :is(.canvas-toolbar, .drawing-tools, .drawing-style, .canvas-zoom) {
+	.canvas-main > :is(.canvas-toolbar, .canvas-zoom) {
 		position: relative;
 		z-index: 1;
 		inset: auto;
@@ -254,17 +260,6 @@
 
 	.canvas-main > .canvas-toolbar {
 		grid-area: top;
-	}
-
-	.canvas-main > .drawing-tools {
-		grid-area: tools;
-		flex-direction: row;
-		margin-top: 0.5rem;
-	}
-
-	.canvas-main > .drawing-style {
-		grid-area: style;
-		margin-bottom: 0.5rem;
 	}
 
 	.canvas-main > .canvas-zoom {
@@ -291,7 +286,6 @@
 	.canvas-view:not(.show-more)
 		:is(
 			.board-controls > :not(.board-switch),
-			.drawing-tools,
 			.canvas-zoom > button:last-child
 		) {
 		display: none;
@@ -310,7 +304,7 @@
 		flex-wrap: wrap;
 	}
 
-	.canvas-main > :is(.drawing-tools, .canvas-zoom) > :not(.zoom-label),
+	.canvas-main > .canvas-zoom > :not(.zoom-label),
 	.canvas-toolbar .board-controls > * {
 		flex: 1 1 auto;
 	}
@@ -429,7 +423,7 @@
 	left: 0;
 	top: 0;
 	width: 1px;
-	max-width: none; /* see .drawings */
+	max-width: none; /* not squeezed to the zero-width layer by the reset, or nothing is drawn */
 	height: 1px;
 	overflow: visible;
 	pointer-events: none;

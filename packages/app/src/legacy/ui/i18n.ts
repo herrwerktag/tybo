@@ -1,5 +1,3 @@
-import type { Tool } from "./drawings.js";
-import type { TextSize } from "../core/index.js";
 import { messages } from "../../shared/ui/index.js";
 
 export { LANGUAGES, language, setLanguage, type Language } from "../../shared/ui/index.js";
@@ -21,20 +19,6 @@ const en = {
 	exportDrawioButton: "For draw.io",
 	exportDrawio: "Download this board's cards and lines as a draw.io file; with groups, as a ZIP with one more file per group",
 	groupFallbackName: "Group",
-
-	// Drawing tools
-	drawingTools: "Drawing tools",
-	showDrawingTools: "Show all drawing tools",
-	hideDrawingTools: "Fold the drawing tools",
-	drawingStyle: "Drawing style",
-	tools: {
-		select: "Select",
-		textbox: "Textbox",
-		area: "Group",
-	} satisfies Record<Tool, string>,
-	textSize: "Text size",
-	textSizes: { s: "small", m: "medium", l: "large" } satisfies Record<TextSize, string>,
-	deleteDrawing: "Delete drawing",
 };
 
 export type Messages = typeof en;
@@ -55,19 +39,6 @@ const de: Messages = {
 	exportDrawioButton: "Für draw.io",
 	exportDrawio: "Karten und Linien dieses Boards als draw.io-Datei herunterladen; mit Gruppen als ZIP mit je einer weiteren Datei pro Gruppe",
 	groupFallbackName: "Gruppe",
-
-	drawingTools: "Zeichenwerkzeuge",
-	showDrawingTools: "Alle Zeichenwerkzeuge zeigen",
-	hideDrawingTools: "Zeichenwerkzeuge einklappen",
-	drawingStyle: "Zeichenstil",
-	tools: {
-		select: "Auswählen",
-		textbox: "Textbox",
-		area: "Gruppe",
-	},
-	textSize: "Textgröße",
-	textSizes: { s: "klein", m: "mittel", l: "groß" },
-	deleteDrawing: "Zeichnung löschen",
 };
 
 /** The current language's messages; setLanguage (@tybo/app/ui) swaps them. */

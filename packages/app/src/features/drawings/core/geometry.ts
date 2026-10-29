@@ -1,10 +1,7 @@
 /** Geometry for drawings on the canvas (text boxes, groups, images), in world coordinates. */
 
-import type { Point, Rect } from "../core/index.js";
-import type { Drawing } from "../core/index.js";
-
-/** The canvas tools: select (and move, resize, edit), or draw a text box or a group. */
-export type Tool = "select" | "textbox" | "area";
+import type { Point, Rect } from "../../../shared/core/index.js";
+import type { Drawing } from "./model.js";
 
 /** Boxes never get smaller than this, so they stay visible and grabbable. */
 export const MIN_BOX_SIZE = 12;

@@ -1,16 +1,17 @@
 import { APP_FORMAT, type AppData, type Store, type Workspaces } from "./legacy/core/index.js";
 import { boardExports } from "./legacy/ui/board-exports.js";
-import { DRAWING_LAYER } from "./legacy/ui/drawing-layer.js";
 import { TEXT_EXPORT } from "./legacy/ui/shell-parts.js";
 import { renderShell } from "./shared/ui/index.js";
 import type { CanvasLayer } from "./features/boards/ui.js";
 import { COPY_TYPES, DATA_PAGE, WRAP_REFERENCES, deleteQuestion } from "./features/data/ui.js";
 import { ANALYSES_PAGE } from "./features/analyses/ui.js";
 import { boardsPage } from "./features/boards/ui.js";
+import { DRAWING_LAYER } from "./features/drawings/ui.js";
 
 export * from "./features/data/ui.js";
 export * from "./features/analyses/ui.js";
 export * from "./features/boards/ui.js";
+export * from "./features/drawings/ui.js";
 
 /** The features' layers on the boards' canvas (see `CanvasLayer`), the first drawn lowest. */
 export const CANVAS_LAYERS: readonly CanvasLayer[] = [DRAWING_LAYER];

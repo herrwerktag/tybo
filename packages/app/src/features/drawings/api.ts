@@ -1,5 +1,6 @@
-import { DRAWING_UNIT, type AppData, type Drawing } from "../core/index.js";
+import type { AppData } from "../../legacy/core/model.js";
 import { groupBy, jsonbParameter, parsed, plain, type Rows, type UnitStorage } from "../../shared/api/index.js";
+import { DRAWING_UNIT, type Drawing } from "./core.js";
 
 export const DRAWING_STORAGE: UnitStorage<Drawing, Rows, AppData> = {
 	unit: DRAWING_UNIT,

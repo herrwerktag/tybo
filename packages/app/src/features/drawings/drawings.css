@@ -1,0 +1,217 @@
+/* Drawings: text boxes, areas and images on a board, their tools and style bar. */
+
+/* Folded drawing tools: only the fold button and the current tool are left (narrow screens have the ⋯ button). */
+@media not (max-width: 40rem) {
+	.drawing-tools.collapsed > .tool-button:not(.tools-toggle, [aria-pressed="true"]) {
+		display: none;
+	}
+}
+
+/* Narrow screens: the tools are laid out in a row (see below), so they don't fold. */
+@media (max-width: 40rem) {
+	.tools-toggle {
+		display: none;
+	}
+}
+
+/* Drawings (shapes, lines, text, pen) in world coordinates, below connectors and cards. The SVG itself never
+   catches the pointer; the drawings in it do (in the editor). */
+.drawings {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 1px;
+	max-width: none; /* not squeezed to the zero-width layer by the reset, or nothing is drawn */
+	height: 1px;
+	overflow: visible;
+	pointer-events: none;
+}
+
+.drawing {
+	pointer-events: auto;
+	cursor: move;
+}
+
+.read-only .drawing {
+	pointer-events: none;
+}
+
+.drawing-shape {
+	stroke-width: 1.5;
+}
+
+/* An area (a named group): a light, see-through box with a dashed border, its name as the title. */
+.drawing-area {
+	fill-opacity: 0.35;
+	stroke-width: 1.5;
+	stroke-dasharray: 8 5;
+}
+
+/* Images can't be dragged out of the page by the browser; dragging moves them. */
+.drawing-image {
+	-webkit-user-drag: none;
+}
+
+.drawings foreignObject {
+	overflow: visible;
+}
+
+/* The text editor sits in the SVG, which ignores the pointer; the editor itself must not. */
+.drawing-editor-box {
+	pointer-events: auto;
+}
+
+/* Text in a text box is centered; an area's name starts at the top left. Both wrap. */
+.drawing-label,
+.drawing-editor {
+	width: 100%;
+	height: 100%;
+	padding: 6px 8px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	line-height: 1.3;
+}
+
+.drawing-label {
+	display: flex;
+}
+
+.drawing-label.centered {
+	align-items: center;
+	justify-content: center;
+	text-align: center;
+}
+
+.drawing-editor {
+	display: block;
+	resize: none;
+	border: 1px dashed var(--focus);
+	border-radius: 4px;
+	background: color-mix(in srgb, var(--surface) 85%, transparent);
+	font: inherit;
+}
+
+.drawing-editor.centered {
+	text-align: center;
+}
+
+.drawing-label.area-name {
+	font-weight: 600;
+}
+
+.drawing-editor.area-name {
+	height: 2.6em;
+}
+
+.size-s {
+	font-size: 13px;
+}
+
+.size-m {
+	font-size: 16px;
+}
+
+.size-l {
+	font-size: 24px;
+	font-weight: 600;
+}
+
+.selection-outline {
+	fill: none;
+	stroke: var(--focus);
+	pointer-events: none;
+}
+
+.selection-handle {
+	fill: var(--surface);
+	stroke: var(--focus);
+	pointer-events: auto;
+}
+
+/* With a drawing tool picked, drawings are drawn over, not moved. */
+.canvas-surface.tool-active .drawing {
+	cursor: crosshair;
+}
+
+.tool-button {
+	min-width: 2rem;
+	padding: 0.25rem 0.5rem;
+}
+
+.tool-button[aria-pressed="true"] {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--on-accent);
+}
+
+/* More specific than the general button hover, which would make the icon unreadable on the inset color. */
+.tool-button[aria-pressed="true"]:hover:not(:disabled) {
+	background: var(--accent-hover);
+}
+
+/* Drawing tools: a vertical column on the left edge of the canvas. */
+.drawing-tools {
+	position: absolute;
+	left: 0.75rem;
+	top: 50%;
+	transform: translateY(-50%);
+	flex-direction: column;
+}
+
+/* Colors, text size and Delete: bottom left, next to the tools; shown only while drawing or with a selection. */
+.drawing-style {
+	position: absolute;
+	left: 0.75rem;
+	bottom: 0.75rem;
+	/* Leave room for the zoom controls on the right. */
+	max-width: calc(100% - 23rem);
+	flex-wrap: wrap;
+}
+
+/* With one card selected, the drawings fade too, but for the areas it lies in (see the fading in the boards feature). */
+.focusing .drawing:not(.in-chain) {
+	opacity: 0.2;
+	filter: grayscale(1);
+}
+
+/* Smaller than the swatches in the type form (more specific than .swatch). */
+.swatch.toolbar-swatch {
+	width: 1.25rem;
+	height: 1.25rem;
+}
+
+.swatch.toolbar-swatch[aria-pressed="true"] {
+	outline-offset: 1px;
+}
+
+/* Narrow screens: the drawing tools in a row at the top of the canvas' grid, the style above the zoom (see the
+   canvas' narrow layout); the tools wait behind ⋯ like the board's other controls. */
+@media (max-width: 40rem) {
+	.canvas-main > :is(.drawing-tools, .drawing-style) {
+		position: relative;
+		z-index: 1;
+		inset: auto;
+		transform: none;
+		max-width: 100%;
+		flex-wrap: wrap;
+	}
+
+	.canvas-main > .drawing-tools {
+		grid-area: tools;
+		flex-direction: row;
+		margin-top: 0.5rem;
+	}
+
+	.canvas-main > .drawing-style {
+		grid-area: style;
+		margin-bottom: 0.5rem;
+	}
+
+	.canvas-view:not(.show-more) .drawing-tools {
+		display: none;
+	}
+
+	.canvas-main > .drawing-tools > * {
+		flex: 1 1 auto;
+	}
+}

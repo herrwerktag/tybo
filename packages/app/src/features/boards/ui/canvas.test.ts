@@ -5,41 +5,10 @@ import { canvasView } from "./canvas.js";
 import { CLICK_TOLERANCE } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
 import { text as dataText } from "../../data/texts.js";
-import { createStore, DATA_VERSION, frameInside, newReference, visibleRect, type Store } from "../../../legacy/core/index.js";
+import { createStore, DATA_VERSION, frameInside, newReference, visibleRect } from "../../../legacy/core/index.js";
 import { memoryDataPort } from "../../../legacy/core/memory-port.js";
-import { DRAWING_LAYER } from "../../../legacy/ui/drawing-layer.js";
+import { cardNode, details, dragBy, press, savedCard, selectedCards, setup, shiftClick } from "./test-canvas.js";
 
-/** The layers the canvas gets in the app. */
-const layers = [DRAWING_LAYER];
-
-/** A board with one card for Dune (with content) and one for Herbert. */
-async function setup({ readOnly = false } = {}) {
-	freshDom();
-	const store = await createStore(memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } }).port, "ws");
-	const book = store.addType("Book", [], "");
-	const dune = store.addEntity(book.id, "Dune", "A desert planet.", {}, "A **desert** planet.");
-	const herbert = store.addEntity(book.id, "Herbert", "", {});
-	const boardId = store.data.boards[0]!.id;
-	const card = store.addCard(boardId, dune.id, 100, 100);
-	store.addCard(boardId, herbert.id, 400, 100);
-	const view = canvasView(store, { readOnly, layers });
-	document.body.append(view);
-	return { store, view, boardId, card, dune };
-}
-
-const cardNode = (view: HTMLElement, cardId: string) => view.querySelector<HTMLElement>(`.canvas-card[data-card-id="${cardId}"]`)!;
-const savedCard = (store: Store, cardId: string) => store.data.boards[0]!.cards.find((c) => c.id === cardId);
-const details = (view: HTMLElement) => view.querySelector<HTMLElement>(".details-panel")!;
-
-/** Presses the left button on `target`, moves by (dx, dy) and releases, then sends the click a browser would. */
-function dragBy(target: HTMLElement, dx: number, dy: number): void {
-	const at = (type: string, x: number, y: number) =>
-		target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, clientX: x, clientY: y }));
-	at("pointerdown", 0, 0);
-	at("pointermove", dx, dy);
-	at("pointerup", dx, dy);
-	target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-}
 
 test("dragging a card's header moves it onto the grid and saves the position; it doesn't open the details", async () => {
 	const { store, view, card } = await setup();
@@ -62,7 +31,7 @@ test("a card and its details point out required references that are still empty"
 	const missing = store.addCard(boardId, store.addEntity(book.id, "Dune", "", {}).id, 100, 100);
 	const authorId = book.properties[0]!.id;
 	const complete = store.addCard(boardId, store.addEntity(book.id, "Emma", "", { [authorId]: frank.id }).id, 400, 100);
-	const view = canvasView(store, { readOnly: false, layers });
+	const view = canvasView(store, { readOnly: false, layers: [] });
 	document.body.append(view);
 
 	assert.equal(cardNode(view, missing.id).querySelector(".card-missing")?.textContent, dataText.missingRequired("Author"));
@@ -217,22 +186,6 @@ test("the zoom buttons go one 10% step in or out", async () => {
 	assert.equal(zoom.querySelector(".zoom-label")?.textContent, "110%");
 });
 
-test("the drawing tools are select, text box and group; a text box is drawn with its tool and selected", async () => {
-	const { store, view } = await setup();
-	assert.deepEqual(
-		[...view.querySelectorAll<HTMLButtonElement>(".drawing-tools button:not(.tools-toggle)")].map((b) => b.ariaLabel),
-		["Select", "Textbox", "Group"],
-	);
-	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "t", bubbles: true }));
-	press(view.querySelector<HTMLElement>(".canvas-surface")!, 10, 10, 200, 100);
-
-	const [box] = store.data.boards[0]!.drawings;
-	assert.deepEqual(box && [box.kind, "width" in box && box.width, "height" in box && box.height], ["textbox", 200, 100]);
-	assert.equal(view.querySelectorAll(".drawings rect.drawing-shape").length, 1);
-	assert.equal(view.querySelectorAll(".drawings .selection-handle").length, 4, "selected right away");
-	assert.ok([...view.querySelectorAll(".drawing-style button")].some((b) => b.textContent === "L"), "with its text sizes");
-});
-
 test("a mouse wheel notch zooms in or out by about 10% around the pointer", async () => {
 	const { view } = await setup();
 	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;
@@ -250,15 +203,6 @@ test("the side panel's width can be changed with its handle and is remembered; a
 	assert.equal(localStorage.getItem("canvas-panel-width"), "192px");
 	handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
 	assert.equal(panel.style.getPropertyValue("--panel-width"), "");
-});
-
-test("the drawing tools fold down to the current tool, and stay folded", async () => {
-	const { store, view } = await setup();
-	const tools = view.querySelector<HTMLElement>(".drawing-tools")!;
-	tools.querySelector<HTMLButtonElement>(".tools-toggle")!.click();
-	assert.ok(tools.classList.contains("collapsed"));
-	const again = canvasView(store, { readOnly: false, layers });
-	assert.ok(again.querySelector(".drawing-tools")!.classList.contains("collapsed"));
 });
 
 /** Opens the boards dropdown with the Change board button, which shows the current board's name. */
@@ -363,20 +307,6 @@ test("in the viewer, the boards dropdown only switches boards", async () => {
 	assert.deepEqual([...dialog.querySelectorAll("li button")].map((b) => b.className), ["picker-option"]);
 });
 
-/** Presses `button` on `target` at (x, y) (with Shift or not), moves to (x + dx, y + dy) and releases there. */
-function press(target: Element, x: number, y: number, dx: number, dy: number, { button = 0, shiftKey = false } = {}): void {
-	const at = (type: string, px: number, py: number) =>
-		target.dispatchEvent(
-			new PointerEvent(type, { bubbles: true, cancelable: true, button, shiftKey, pointerId: 1, pointerType: "mouse", clientX: px, clientY: py }),
-		);
-	at("pointerdown", x, y);
-	at("pointermove", x + dx, y + dy);
-	at("pointerup", x + dx, y + dy);
-}
-const shiftClick = (target: Element) => target.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
-const selectedCards = (view: HTMLElement) =>
-	[...view.querySelectorAll<HTMLElement>(".canvas-card.selected[data-card-id]")].map((n) => n.dataset.cardId);
-
 test("Shift+click selects several cards; dragging one moves them all in one undo step, without details", async () => {
 	const { store, view, card } = await setup();
 	const other = store.data.boards[0]!.cards.find((c) => c.id !== card.id)!;
@@ -395,75 +325,6 @@ test("Shift+click selects several cards; dragging one moves them all in one undo
 	shiftClick(cardNode(view, other.id).querySelector("header")!);
 	assert.deepEqual(selectedCards(view), [card.id], "Shift+click again takes one out; one left is selected as usual");
 	assert.equal(details(view).hidden, false);
-});
-
-test("dragging on the empty board frames cards and drawings to select them; a click there clears the selection", async () => {
-	const { store, view, card } = await setup();
-	const boardId = store.data.boards[0]!.id;
-	const box = store.addDrawing(boardId, { kind: "textbox", x: 120, y: 300, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
-	store.addDrawing(boardId, { kind: "textbox", x: 900, y: 900, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
-	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;
-	const { x, y } = store.data.boards[0]!.viewport; // where the world's origin is on the screen (zoom 1)
-
-	press(surface, x + 50, y + 50, 150, 300); // touches Dune's card (100, 100) and the box, not Herbert's card (400, 100)
-	assert.deepEqual(selectedCards(view), [card.id]);
-	assert.equal(view.querySelectorAll(".drawings .selection-outline").length, 1, "the framed drawing is outlined");
-	assert.equal(details(view).hidden, true);
-
-	dragBy(cardNode(view, card.id).querySelector("header")!, 48, 0); // the box goes along
-	assert.deepEqual([savedCard(store, card.id)?.x, store.data.boards[0]!.drawings.find((d) => d.id === box.id)], [148, { ...box, x: 168 }]);
-
-	press(surface, x + 10, y + 10, 0, 0);
-	assert.deepEqual(selectedCards(view), []);
-	assert.equal(view.querySelectorAll(".drawings .selection-outline").length, 0);
-});
-
-test("a group is drawn with its tool and named right away", async () => {
-	const { store, view } = await setup();
-	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "g", bubbles: true }));
-	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;
-	press(surface, 10, 10, 300, 200);
-
-	const [area] = store.data.boards[0]!.drawings;
-	assert.deepEqual(area && [area.kind, "width" in area && area.width, "height" in area && area.height], ["area", 300, 200]);
-	const input = view.querySelector<HTMLTextAreaElement>(".drawings textarea.drawing-editor.area-name")!;
-	input.value = "Team";
-	input.dispatchEvent(new FocusEvent("blur"));
-	assert.equal(store.data.boards[0]!.drawings[0]?.kind === "area" && store.data.boards[0]!.drawings[0].text, "Team");
-	assert.equal(view.querySelector(".drawings .drawing-label.area-name")?.textContent, "Team");
-});
-
-test("dragging a group moves the cards and drawings lying in it along, in one undo step", async () => {
-	const { store, view: first, card } = await setup();
-	const boardId = store.data.boards[0]!.id;
-	const other = store.data.boards[0]!.cards.find((c) => c.id !== card.id)!; // Herbert's card at (400, 100): outside
-	const box = store.addDrawing(boardId, { kind: "textbox", x: 120, y: 300, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
-	// Made last, the group is still drawn below the box.
-	const area = store.addDrawing(boardId, { kind: "area", x: 72, y: 72, width: 312, height: 312, color: "#c4dafa", text: "Team", textSize: "m" });
-	first.remove();
-	const view = canvasView(store, { readOnly: false, layers });
-	document.body.append(view);
-	assert.deepEqual([...view.querySelectorAll(".drawings g.drawing")].map((g) => g.getAttribute("data-id")), [area.id, box.id]);
-
-	// Pressing redraws the drawings; the surface captures the pointer (as the browser would send it there).
-	const surface = view.querySelector<HTMLElement>(".canvas-surface")!;
-	const pointer = (target: Element, type: string, x: number, y: number) =>
-		target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, pointerId: 1, clientX: x, clientY: y }));
-	pointer(view.querySelector(`.drawings g[data-id="${area.id}"] rect`)!, "pointerdown", 0, 0);
-	pointer(surface, "pointermove", 48, 24);
-	pointer(surface, "pointerup", 48, 24);
-	const drawings = () => store.data.boards[0]!.drawings;
-	assert.deepEqual(
-		[savedCard(store, card.id), savedCard(store, other.id), ...drawings()].map((i) => [i && "x" in i && i.x, i && "y" in i && i.y]),
-		[[148, 124], [400, 100], [168, 324], [120, 96]],
-	);
-	assert.deepEqual(selectedCards(view), [], "only the group is selected");
-
-	store.undo();
-	assert.deepEqual(
-		[savedCard(store, card.id), ...drawings()].map((i) => [i && "x" in i && i.x, i && "y" in i && i.y]),
-		[[100, 100], [120, 300], [72, 72]],
-	);
 });
 
 test("the middle button pans instead of selecting; Escape clears a selection", async () => {
@@ -491,7 +352,7 @@ async function connectable() {
 	const book = store.addType("Book", [{ name: "author", kind: "reference", options: [], reference, cardDisplay: "line" }], "");
 	const dune = store.addEntity(book.id, "Dune", "", {});
 	const card = store.addCard(store.data.boards[0]!.id, dune.id, 0, 0);
-	const view = canvasView(store, { readOnly: false, layers });
+	const view = canvasView(store, { readOnly: false, layers: [] });
 	document.body.append(view);
 	cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	return { store, view, person, book, author: book.properties[0]!, dune, card };
@@ -505,7 +366,7 @@ test("{{Property}} in the description shows the value: a reference as a tag that
 	const detailsOf = (values: Record<string, string>) => {
 		store.updateEntity(dune.id, "Dune", "", values, "By **{{ Author }}**, {{typo}}", []);
 		freshDom();
-		const view = canvasView(store, { readOnly: false, layers });
+		const view = canvasView(store, { readOnly: false, layers: [] });
 		document.body.append(view);
 		cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 		return details(view);
@@ -551,7 +412,7 @@ test("selecting a card fades the board but its chain: the cards linked to it eit
 	const sequelCard = store.addCard(boardId, sequel.id, 600, 0);
 	const otherCard = store.addCard(boardId, other.id, 0, 300);
 	freshDom();
-	const view = canvasView(store, { readOnly: false, layers });
+	const view = canvasView(store, { readOnly: false, layers: [] });
 	document.body.append(view);
 	const inChain = () =>
 		[card, frankCard, sequelCard, otherCard].filter((c) => cardNode(view, c.id).classList.contains("in-chain")).map((c) => c.id);
@@ -580,24 +441,6 @@ test("selecting a card fades the board but its chain: the cards linked to it eit
 	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 	assert.ok(!board.classList.contains("focusing"));
 	assert.equal(view.querySelectorAll(".direct").length, 0);
-});
-
-test("selecting a card keeps the areas it lies in from fading, and only those", async () => {
-	const { store, card } = await connectable();
-	const boardId = store.data.boards[0]!.id;
-	const around = store.addDrawing(boardId, { kind: "area", x: -48, y: -48, width: 600, height: 600, color: "#c4dafa", text: "Team", textSize: "m" });
-	store.addDrawing(boardId, { kind: "area", x: 1200, y: 0, width: 240, height: 240, color: "#c4dafa", text: "", textSize: "m" });
-	store.addDrawing(boardId, { kind: "textbox", x: 0, y: 0, width: 48, height: 48, color: "#4a4a4a", text: "", textSize: "m" });
-	freshDom();
-	const view = canvasView(store, { readOnly: false, layers });
-	document.body.append(view);
-	const inFocus = () => [...view.querySelectorAll(".drawings g.drawing.in-chain")].map((g) => g.getAttribute("data-id"));
-
-	cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-	assert.deepEqual(inFocus(), [around.id]);
-
-	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-	assert.deepEqual(inFocus(), []);
 });
 
 test("Connect links an existing entity, found by name, and the other way round too", async () => {
@@ -674,7 +517,7 @@ test("in the editor, the frame is only shown, with its controls, while editing i
 	assert.equal(view.querySelector(".view-frame .view-frame-label")?.textContent, "Board frame");
 	assert.ok(view.querySelector(".frame-from-view"));
 
-	const again = canvasView(store, { readOnly: false, layers });
+	const again = canvasView(store, { readOnly: false, layers: [] });
 	assert.ok(again.querySelector(".view-frame"), "still editing the frame when the canvas is shown again");
 
 	toggle().click();
@@ -719,7 +562,7 @@ test("the viewer keeps where it was panned to when the canvas changes size, e.g.
 			observe() {}
 		},
 	});
-	const viewer = canvasView(store, { readOnly: true, layers });
+	const viewer = canvasView(store, { readOnly: true, layers: [] });
 	document.body.replaceChildren(viewer);
 	laidOut(viewer);
 	resized();

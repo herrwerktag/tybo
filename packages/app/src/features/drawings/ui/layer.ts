@@ -1,33 +1,34 @@
-import type { Point } from "../core/index.js";
-import { CLICK_TOLERANCE, el, svgEl, trackPointer } from "../../shared/ui/index.js";
+import type { Point, Rect } from "../../../shared/core/index.js";
+import { CLICK_TOLERANCE, el, readPreference, svgEl, trackPointer, writePreference } from "../../../shared/ui/index.js";
+import { GRID_SIZE } from "../../data/core.js";
+import { text as dataText } from "../../data/texts.js";
+import type { CanvasLayer, LayerHost, LayerView } from "../../boards/ui.js";
 import {
+	DRAWING_COLORS,
 	MIN_BOX_SIZE,
+	TEXT_SIZES,
+	addDrawing,
 	areaContents,
 	drawingBounds,
 	imageRect,
-	moveDrawing,
-	normalizeRect,
-	resizeBox,
-	resizeImage,
-	type Corner,
-	type Tool,
-} from "./drawings.js";
-import { text } from "./i18n.js";
-import { text as dataText } from "../../features/data/texts.js";
-import { readPreference, writePreference } from "../../shared/ui/index.js";
-import {
-	DRAWING_COLORS,
-	GRID_SIZE,
-	TEXT_SIZES,
 	isArea,
 	isBox,
 	isImage,
+	moveDrawing,
+	normalizeRect,
+	removeDrawing,
+	replaceDrawing,
+	resizeBox,
+	resizeImage,
 	type BoxDrawing,
+	type Corner,
 	type Drawing,
 	type NewDrawing,
-	type Rect,
-} from "../core/index.js";
-import type { CanvasLayer, LayerHost, LayerView } from "../../features/boards/ui/layer.js";
+} from "../core.js";
+import { text } from "../texts.js";
+
+/** The drawing tools: select (and move, resize, edit), or draw a text box or a group. */
+export type Tool = "select" | "textbox" | "area";
 
 const TOOLS: readonly { tool: Tool; icon: string; key: string }[] = [
 	{ tool: "select", icon: "↖", key: "v" },
@@ -107,7 +108,7 @@ function createDrawingLayer(host: LayerHost): LayerView {
 	let focused: ReadonlySet<string> = new Set();
 
 	const drawings = (): Drawing[] => store.data.boards.find((b) => b.id === host.boardId())?.drawings ?? [];
-	const add = (drawing: NewDrawing): Drawing => store.addDrawing(host.boardId(), drawing);
+	const add = (drawing: NewDrawing): Drawing => addDrawing(store, host.boardId(), drawing);
 	const find = (id: string): Drawing | undefined => (draft?.id === id ? draft : drawings().find((d) => d.id === id));
 
 	function render(): void {
@@ -181,7 +182,7 @@ function createDrawingLayer(host: LayerHost): LayerView {
 					draw();
 				},
 				() => {
-					if (moving && draft) store.replaceDrawing(draft);
+					if (moving && draft) replaceDrawing(store, draft);
 					draft = null;
 					draw();
 				},
@@ -242,7 +243,7 @@ function createDrawingLayer(host: LayerHost): LayerView {
 						draw();
 					},
 					() => {
-						if (draft) store.replaceDrawing(draft);
+						if (draft) replaceDrawing(store, draft);
 						draft = null;
 						draw();
 					},
@@ -283,7 +284,7 @@ function createDrawingLayer(host: LayerHost): LayerView {
 			if (editingId !== id) return;
 			editingId = null;
 			const latest = find(id);
-			if (latest && isBox(latest)) store.replaceDrawing({ ...latest, text: input.value });
+			if (latest && isBox(latest)) replaceDrawing(store, { ...latest, text: input.value });
 			draw();
 		});
 		// Focus once it's in the page (right after this render).
@@ -372,7 +373,7 @@ function createDrawingLayer(host: LayerHost): LayerView {
 	/** Deletes the selected drawing. */
 	function removeSelected(): void {
 		if (!selectedId) return;
-		store.removeDrawing(selectedId);
+		removeDrawing(store, selectedId);
 		selectedId = null;
 		draw();
 		host.onSelect(null);
@@ -380,7 +381,7 @@ function createDrawingLayer(host: LayerHost): LayerView {
 
 	function update(change: (d: Drawing) => Drawing): void {
 		const selected = selectedId ? find(selectedId) : undefined;
-		if (selected) store.replaceDrawing(change(selected));
+		if (selected) replaceDrawing(store, change(selected));
 		draw();
 	}
 
