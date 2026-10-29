@@ -4,12 +4,11 @@
  */
 import { freshDom } from "../../shared/ui/test-dom.js";
 import assert from "node:assert/strict";
-import { text } from "./i18n.js";
 import type { AppData } from "../core/index.js";
-import { render } from "./ui.js";
+import { render } from "../../features.ui.js";
 import { createWorkspaces } from "../core/index.js";
 import { memoryDataPort } from "../core/memory-port.js";
-import { activeWorkspacePreference } from "../../shared/ui/index.js";
+import { activeWorkspacePreference, sharedText } from "../../shared/ui/index.js";
 
 /** Lets work started by a click or an event finish first (the stores open and save through the async port). */
 export const settle = () => new Promise<void>((resolve) => setTimeout(resolve));
@@ -21,7 +20,7 @@ export const WS = "ws";
  * no workspace at all, the way the very first start finds it. */
 export function memoryStorage(saved?: unknown) {
 	const behind = memoryDataPort(saved === undefined ? {} : { [WS]: saved });
-	if (saved !== undefined) void behind.port.renameWorkspace(WS, text.defaultWorkspaceName(1)); // done at once, in memory
+	if (saved !== undefined) void behind.port.renameWorkspace(WS, sharedText.defaultWorkspaceName(1)); // done at once, in memory
 	return behind;
 }
 
@@ -35,7 +34,7 @@ export async function startApp(saved?: unknown, hash = "", behind = memoryStorag
 	location.hash = hash;
 	storage = behind;
 	const root = document.querySelector<HTMLElement>("#app")!;
-	const workspaces = await createWorkspaces(behind.port, text.defaultWorkspaceName, activeWorkspacePreference);
+	const workspaces = await createWorkspaces(behind.port, sharedText.defaultWorkspaceName, activeWorkspacePreference);
 	await render(root, workspaces, options);
 	return root;
 }

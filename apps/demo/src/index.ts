@@ -1,7 +1,7 @@
 import { createWorkspaces } from "@tybo/app/core";
 import { httpData } from "./http-data.js";
 import viewScript from "virtual:standalone-view";
-import { activeWorkspacePreference, render, renderServerUnreachable, text } from "@tybo/app/ui";
+import { activeWorkspacePreference, render, renderServerUnreachable, sharedText } from "@tybo/app/ui";
 
 // Each feature brings its own styles beside its code; they come after app.css (see index.html).
 import.meta.glob("../../../packages/app/src/features/**/*.css", { eager: true });
@@ -18,7 +18,7 @@ if (!apiUrl) {
 	renderServerUnreachable(root);
 } else {
 	try {
-		const workspaces = await createWorkspaces(httpData(apiUrl, "demo"), (n) => text.defaultWorkspaceName(n), activeWorkspacePreference);
+		const workspaces = await createWorkspaces(httpData(apiUrl, "demo"), (n) => sharedText.defaultWorkspaceName(n), activeWorkspacePreference);
 		await render(root, workspaces, { viewScript });
 	} catch (error) {
 		console.error(error);

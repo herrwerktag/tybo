@@ -25,7 +25,9 @@ und SQLite), `mcp.ts` (Werkzeuge), `texts.ts` (Texte en/de), eigenes CSS und die
 dem Namen: `core` ohne DOM, `ui` im Browser, `api` und `mcp` in Node (je eine tsconfig prueft das).
 
 Eingehaengt wird ein Feature mit je einer Zeile in `features.core.ts`, `features.ui.ts`, `features.api.ts` und
-`features.mcp.ts`; das CSS findet die Demo von selbst. Global bleiben nur die Migrationen (Datenformat und
+`features.mcp.ts`; das CSS findet die Demo von selbst. In der Oberflaeche kann ein Feature eine Seite mit Tab
+beisteuern, Eintraege im Arbeitsbereich-Menue, eine Option fuer neue Arbeitsbereiche und eine Einstellung (siehe
+`ShellParts` in `shared/ui/shell.ts`). Die Huelle selbst (Store-Kern, Arbeitsbereiche, Top-Bar) liegt in `shared/`. Global bleiben nur die Migrationen (Datenformat und
 Datenbankschema), die immer nur wachsen. Was mehrere Features nutzen, liegt in `shared/`; `legacy/` ist der Teil,
 der noch Feature fuer Feature in `features/` umzieht.
 

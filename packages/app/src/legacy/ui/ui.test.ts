@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setLanguage, text } from "./i18n.js";
 import { createWorkspaces } from "../core/index.js";
-import { render } from "./ui.js";
+import { render } from "../../features.ui.js";
 import { activeWorkspacePreference, sharedText } from "../../shared/ui/index.js";
 
 /** One type (Book, with a text property "author") and one entity (Dune), as saved data. */
@@ -218,9 +218,9 @@ test("a new workspace from the menu starts empty and becomes active; switching b
 	assert.equal(root.querySelector(".workspace-name")?.textContent, "Second");
 	assert.ok(byText(root, "p", text.noTypesYet));
 
-	byText(root, ".workspace-option", text.defaultWorkspaceName(1)).click();
+	byText(root, ".workspace-option", sharedText.defaultWorkspaceName(1)).click();
 	await settle();
-	assert.equal(root.querySelector(".workspace-name")?.textContent, text.defaultWorkspaceName(1));
+	assert.equal(root.querySelector(".workspace-name")?.textContent, sharedText.defaultWorkspaceName(1));
 	assert.ok(byText(root, ".type-name", "Book"));
 });
 
@@ -233,10 +233,10 @@ test("workspaces are reordered in the menu with their drag handles' arrow keys; 
 	await settle();
 
 	root.querySelectorAll<HTMLElement>(".workspace-list .drag-handle")[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
-	assert.deepEqual([...root.querySelectorAll(".workspace-option")].map((b) => b.textContent), ["Second", text.defaultWorkspaceName(1)]);
+	assert.deepEqual([...root.querySelectorAll(".workspace-option")].map((b) => b.textContent), ["Second", sharedText.defaultWorkspaceName(1)]);
 	assert.ok((document.activeElement as HTMLElement).dataset.focusKey?.startsWith("workspace:"));
 	await settle();
-	assert.deepEqual((await behind.port.listWorkspaces()).map((w) => w.name), ["Second", text.defaultWorkspaceName(1)]);
+	assert.deepEqual((await behind.port.listWorkspaces()).map((w) => w.name), ["Second", sharedText.defaultWorkspaceName(1)]);
 	assert.equal(root.querySelector(".workspace-name")?.textContent, "Second", "the active workspace stays");
 });
 
@@ -246,8 +246,8 @@ test("a workspace whose data can't be loaded warns that changes aren't saved, an
 	const root = await startApp(undefined, "", behind);
 	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
 	assert.equal(banner.hidden, false);
-	assert.ok(banner.textContent!.includes(text.loadUnavailable));
-	assert.ok(byText(banner, "button", text.reload));
+	assert.ok(banner.textContent!.includes(sharedText.loadUnavailable));
+	assert.ok(byText(banner, "button", sharedText.reload));
 });
 
 test("a page that can't be drawn shows the error screen, which can still export", async (t) => {
@@ -264,7 +264,7 @@ test("a page that can't be drawn shows the error screen, which can still export"
 	const screen = root.querySelector(".error-screen");
 	assert.ok(screen);
 	assert.equal(screen.querySelector(".error-detail")?.textContent, "table failed");
-	assert.ok(byText(screen, "button", text.reload));
+	assert.ok(byText(screen, "button", sharedText.reload));
 	assert.ok(byText(screen, "button", text.exportButton));
 	assert.equal(logged.mock.callCount(), 1);
 });
@@ -421,9 +421,9 @@ test("a workspace saved by a newer version warns that changes aren't saved, and 
 	const root = await startApp({ version: 999, types: [], entities: [] });
 	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
 	assert.equal(banner.hidden, false);
-	assert.match(banner.textContent ?? "", new RegExp(text.loadNewerVersion.slice(0, 20)));
-	assert.ok(byText(banner, "button", text.reload));
-	assert.equal(banner.querySelector(`button`)?.textContent, text.reload); // nothing to dismiss
+	assert.match(banner.textContent ?? "", new RegExp(sharedText.loadNewerVersion.slice(0, 20)));
+	assert.ok(byText(banner, "button", sharedText.reload));
+	assert.equal(banner.querySelector(`button`)?.textContent, sharedText.reload); // nothing to dismiss
 });
 
 test("a save that collided warns of the conflict, not of a failing storage, and offers a reload", async () => {
@@ -439,9 +439,9 @@ test("a save that collided warns of the conflict, not of a failing storage, and 
 
 	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
 	assert.equal(banner.hidden, false);
-	assert.ok(banner.textContent!.includes(text.saveConflict));
-	assert.equal(banner.textContent!.includes(text.saveFailed), false); // honestly: not a storage problem
-	assert.ok(byText(banner, "button", text.reload));
+	assert.ok(banner.textContent!.includes(sharedText.saveConflict));
+	assert.equal(banner.textContent!.includes(sharedText.saveFailed), false); // honestly: not a storage problem
+	assert.ok(byText(banner, "button", sharedText.reload));
 });
 
 /** What the page does when the tab takes the front again: it looks for a newer stand at once. */
@@ -457,8 +457,8 @@ test("a stand saved elsewhere in between is noticed and offered with the reload 
 	lookNow();
 	await settle();
 	assert.equal(banner.hidden, false);
-	assert.match(banner.textContent ?? "", new RegExp(text.changedElsewhere.slice(0, 20)));
-	assert.ok(byText(banner, "button", text.reload));
+	assert.match(banner.textContent ?? "", new RegExp(sharedText.changedElsewhere.slice(0, 20)));
+	assert.ok(byText(banner, "button", sharedText.reload));
 
 	// The look didn't load anything: the page shows the stand it read, and the saved data wasn't run over.
 	assert.ok(byText(root, "td", "Dune"));
@@ -494,7 +494,7 @@ test("drawing the page again and again starts no further timers: one watch for t
 	freshDom();
 	const started = t.mock.method(window, "setInterval");
 	const root = document.querySelector<HTMLElement>("#app")!;
-	await render(root, await createWorkspaces(memoryStorage(library).port, text.defaultWorkspaceName, activeWorkspacePreference));
+	await render(root, await createWorkspaces(memoryStorage(library).port, sharedText.defaultWorkspaceName, activeWorkspacePreference));
 	assert.equal(started.mock.callCount(), 1);
 
 	// Whatever draws the page anew, none of it may start a watch of its own (or the page would ask faster and
@@ -567,7 +567,7 @@ test("without tags in use there's no tag filter", async () => {
 
 test("the settings switch the theme: dark or light on <html>, or none to follow the system, remembered in this browser", async () => {
 	const root = await startApp();
-	const select = byText(root, "#settings-menu label > span", text.theme).closest("label")!.querySelector("select")!;
+	const select = byText(root, "#settings-menu label > span", sharedText.theme).closest("label")!.querySelector("select")!;
 	assert.equal(select.value, "system");
 	assert.equal(document.documentElement.dataset.theme, undefined);
 
