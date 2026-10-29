@@ -14,7 +14,7 @@ pnpm-Monorepo mit TypeScript:
 | --- | --- |
 | `packages/app` (`@tybo/app`) | Die Anwendung ohne Laufzeit-Huelle, je Feature ein Ordner (siehe unten). Einstiege: `@tybo/app/core`, `/ui`, `/api`, `/mcp`, fuer Tests `/testing` |
 | `apps/api` (`@tybo/api`) | HTTP-API, startet die Speicherung (Postgres oder SQLite, aus `@tybo/app/api`) samt Schema-Migrationen |
-| `apps/demo` (`@tybo/demo`) | Die Anwendung im Browser (Vite), spricht nur mit der API |
+| `apps/web` (`@tybo/web`) | Die Anwendung im Browser (Vite), spricht nur mit der API |
 | `apps/mcp` (`@tybo/mcp`) | MCP-Server (stdio) fuer LLM-Clients, spricht nur mit der API |
 
 ### Features
@@ -25,7 +25,7 @@ und SQLite), `mcp.ts` (Werkzeuge), `texts.ts` (Texte en/de), eigenes CSS und die
 dem Namen: `core` ohne DOM, `ui` im Browser, `api` und `mcp` in Node (je eine tsconfig prueft das).
 
 Eingehaengt wird ein Feature mit je einer Zeile in `features.core.ts`, `features.ui.ts`, `features.api.ts` und
-`features.mcp.ts`; das CSS findet die Demo von selbst. In der Oberflaeche kann ein Feature eine Seite mit Tab
+`features.mcp.ts`; das CSS findet die Web-App von selbst. In der Oberflaeche kann ein Feature eine Seite mit Tab
 beisteuern, Eintraege im Arbeitsbereich-Menue, eine Option fuer neue Arbeitsbereiche und eine Einstellung (siehe
 `ShellParts` in `shared/ui/shell.ts`). Auf jedem Board kann ein Feature eine eigene Liste neben den Karten fuehren
 (`BOARD_LISTS` in `features.core.ts`, siehe `BoardList`) und sie auf dem Canvas als Ebene mit eigenen Werkzeugen zeigen
@@ -50,7 +50,7 @@ Typen; `imports.test.ts` prueft das.
 ```sh
 pnpm install --frozen-lockfile
 cp .env.example .env                       # DATABASE_URL, TEST_DATABASE_URL, optional PORT, LOCAL_DB_PATH
-cp apps/demo/.env.example apps/demo/.env   # VITE_API_URL, Standard http://localhost:3001
+cp apps/web/.env.example apps/web/.env   # VITE_API_URL, Standard http://localhost:3001
 ```
 
 Die `.env`-Dateien bleiben aus Git heraus; eingecheckt sind nur die Vorlagen.
@@ -70,7 +70,7 @@ pnpm dev
 
 startet API (Port 3001) und Vite gemeinsam. Beim Start bringt die API das Datenbankschema auf den
 aktuellen Stand. Ohne `DATABASE_URL` oder ohne erreichbare Datenbank bricht sie ab; ohne erreichbare API
-zeigt die Demo nur einen Hinweis.
+zeigt die Web-App nur einen Hinweis.
 
 Ohne Postgres geht es mit einer lokalen SQLite-Datei (Node-eigenes `node:sqlite`, keine weitere
 Abhaengigkeit):
@@ -87,7 +87,7 @@ Bricht die API mit `EADDRINUSE` ab, laeuft auf Port 3001 schon ein Server (z. B.
 `lsof -iTCP:3001 -sTCP:LISTEN` zeigt ihn, oder die API mit `PORT=…` auf einen anderen Port legen (dann
 auch `VITE_API_URL` anpassen).
 
-Einzeln: `pnpm --filter @tybo/api start` bzw. `pnpm --filter @tybo/demo dev`.
+Einzeln: `pnpm --filter @tybo/api start` bzw. `pnpm --filter @tybo/web dev`.
 
 ## Pruefen
 
@@ -119,7 +119,7 @@ Warnung, nichts wird still verworfen.
 Jedes Schreiben landet im Verlauf (Tabelle `history`): je geschriebener Einheit ein Eintrag mit dem Stand
 davor und danach, dazu Anlegen, Umbenennen, Verschieben und Loeschen eines Arbeitsbereichs. Nur Verschieben
 und Zoomen eines Boards (`viewport`) wird gespeichert, aber nicht in den Verlauf geschrieben. Wer schreibt,
-nennt sich im Header `X-Tybo-Source` (die Demo als `demo`, der MCP-Server als `mcp`). Der Verlauf bleibt
+nennt sich im Header `X-Tybo-Source` (die Web-App als `web`, der MCP-Server als `mcp`). Der Verlauf bleibt
 auch nach dem Loeschen eines Arbeitsbereichs erhalten; der letzte Eintrag enthaelt dann dessen komplette Daten.
 Arbeitsbereiche, die es schon vor dem Verlauf gab, bekommen beim Start der API einmalig einen Eintrag `baseline`
 mit ihren kompletten Daten als Ausgangspunkt; neue beginnen mit ihrem `create`.

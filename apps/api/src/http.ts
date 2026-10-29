@@ -14,13 +14,13 @@ export function portFromEnv(value: string | undefined): number {
 	return Number.isInteger(port) && port > 0 && port <= 65535 ? port : DEFAULT_PORT;
 }
 
-/** The origin the API tells the browser it may be called from, so the demo can save through it from
- * its own origin. CORS_ORIGIN says otherwise; the default fits the development setup, where the demo
+/** The origin the API tells the browser it may be called from, so the web app can save through it from
+ * its own origin. CORS_ORIGIN says otherwise; the default fits the development setup, where the web app
  * runs on its usual Vite port. */
 export const DEFAULT_CORS_ORIGIN = "http://localhost:5173";
 
-/** The folder the built demo is served from when CLIENT_DIR doesn't say otherwise. Empty means the API
- * answers only its own routes, the way it does in development, where Vite serves the demo itself. */
+/** The folder the built web app is served from when CLIENT_DIR doesn't say otherwise. Empty means the API
+ * answers only its own routes, the way it does in development, where Vite serves the web app itself. */
 export const DEFAULT_CLIENT_DIR = process.env.CLIENT_DIR ?? "";
 
 /** The HTTP interface of the app's data.
@@ -50,9 +50,9 @@ export const DEFAULT_CLIENT_DIR = process.env.CLIENT_DIR ?? "";
  *
  * GET /health answers 200 while the database answers, 503 when it doesn't.
  *
- * The demo calls the API from another origin, so the browser checks first: it asks before most of these
+ * The web app calls the API from another origin, so the browser checks first: it asks before most of these
  * (a "preflight" OPTIONS request) and looks at the answer's cross-origin headers. Every answer, the
- * preflight included, says them — without that, the browser keeps the answers from the demo, and it can't
+ * preflight included, says them — without that, the browser keeps the answers from the web app, and it can't
  * even see a 404 or a 503, let alone act on it.
  */
 export function createApp(
@@ -68,7 +68,7 @@ export function createApp(
 	});
 }
 
-/** The types the built demo is served as; anything else goes out as a byte stream. */
+/** The types the built web app is served as; anything else goes out as a byte stream. */
 const CONTENT_TYPES: Record<string, string> = {
 	".html": "text/html; charset=utf-8",
 	".js": "text/javascript; charset=utf-8",
@@ -80,9 +80,9 @@ const CONTENT_TYPES: Record<string, string> = {
 	".woff2": "font/woff2",
 };
 
-/** The built demo from `clientDir`. A GET/HEAD of a file that is there answers it; every other path is
- * answered with index.html, because the demo routes in the browser. Only without a clientDir does the
- * API answer its own routes alone (development, where Vite serves the demo) — then a 404 here. */
+/** The built web app from `clientDir`. A GET/HEAD of a file that is there answers it; every other path is
+ * answered with index.html, because the web app routes in the browser. Only without a clientDir does the
+ * API answer its own routes alone (development, where Vite serves the web app) — then a 404 here. */
 async function serveClient(res: ServerResponse, clientDir: string, pathname: string, head: boolean): Promise<void> {
 	if (clientDir === "") return sendEmpty(res, 404);
 	const requested = pathname === "/" ? "/index.html" : pathname;
@@ -92,7 +92,7 @@ async function serveClient(res: ServerResponse, clientDir: string, pathname: str
 	try {
 		content = await readFile(file);
 	} catch {
-		// Nothing of that name: the demo itself, so its own routing can take over.
+		// Nothing of that name: the web app itself, so its own routing can take over.
 		file = join(clientDir, "index.html");
 		try {
 			content = await readFile(file);
@@ -124,7 +124,7 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api, client
 		}
 		const route = routeOf(url.pathname);
 		if (!route) {
-			// Not one of the API's own paths: hand it to the demo, which routes in the browser itself.
+			// Not one of the API's own paths: hand it to the web app, which routes in the browser itself.
 			if (method === "GET" || method === "HEAD") return await serveClient(res, clientDir, url.pathname, method === "HEAD");
 			return sendEmpty(res, 404);
 		}
@@ -227,7 +227,7 @@ function routeOf(pathname: string): { id: null } | { id: string; part: null | "d
 /** The longest source the history keeps; a longer one is taken as none. */
 const MAX_SOURCE_LENGTH = 64;
 
-/** Who makes the request, as it names itself in `X-Tybo-Source` (say "demo" or "mcp"); null when it doesn't. */
+/** Who makes the request, as it names itself in `X-Tybo-Source` (say "web" or "mcp"); null when it doesn't. */
 function sourceOf(req: IncomingMessage): string | null {
 	const raw = req.headers["x-tybo-source"];
 	const source = (Array.isArray(raw) ? raw[0] : raw)?.trim() ?? "";

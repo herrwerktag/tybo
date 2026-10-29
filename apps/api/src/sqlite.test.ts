@@ -239,16 +239,16 @@ test("sqlite: every write goes into the history, newest first, with the stand th
 	const { storage, close } = await fresh();
 	try {
 		await storage.init();
-		await storage.createWorkspace({ id: "ws", name: "Erst" }, 1, "demo");
+		await storage.createWorkspace({ id: "ws", name: "Erst" }, 1, "web");
 		const base = sample();
-		await storage.writeChanges("ws", changesBetween(empty(), base), "demo");
-		await storage.writeChanges("ws", [], "demo");
+		await storage.writeChanges("ws", changesBetween(empty(), base), "web");
+		await storage.writeChanges("ws", [], "web");
 
 		const mine = structuredClone(base);
 		mine.entities[0]!.name = "Ada A";
 		const theirs = structuredClone(base);
 		theirs.entities[0]!.name = "Ada B";
-		await storage.writeChanges("ws", changesBetween(base, mine), "demo");
+		await storage.writeChanges("ws", changesBetween(base, mine), "web");
 		await storage.writeChanges("ws", changesBetween(base, theirs), "mcp");
 
 		await storage.renameWorkspace("ws", "Zweit");
@@ -262,9 +262,9 @@ test("sqlite: every write goes into the history, newest first, with the stand th
 				["move", null, "3", null],
 				["rename", null, "3", null],
 				["change", "entity", "3", "mcp"],
-				["change", "entity", "2", "demo"],
-				...changesBetween(empty(), base).map(({ kind }) => ["change", kind, "1", "demo"]).reverse(),
-				["create", null, "0", "demo"],
+				["change", "entity", "2", "web"],
+				...changesBetween(empty(), base).map(({ kind }) => ["change", kind, "1", "web"]).reverse(),
+				["create", null, "0", "web"],
 			],
 			"one entry per unit written; nothing for the empty save",
 		);
@@ -353,7 +353,7 @@ test("sqlite: a workspace made before the history gets a baseline of everything 
 		const raw = new DatabaseSync(path);
 		raw.prepare("insert into workspaces (id, position, name, data_version) values ('old', 0, 'Alt', 1)").run();
 		raw.close();
-		await storage.writeChanges("old", changesBetween(empty(), sample()), "demo");
+		await storage.writeChanges("old", changesBetween(empty(), sample()), "web");
 		await storage.createWorkspace({ id: "new", name: "Neu" }, 1);
 
 		assert.equal(await storage.recordBaselines(), 1);

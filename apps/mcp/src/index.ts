@@ -1,4 +1,4 @@
-import { httpData } from "@tybo/demo/http-data";
+import { httpData } from "@tybo/web/http-data";
 import { serve } from "./protocol.js";
 import { tyboTools } from "@tybo/app/mcp";
 

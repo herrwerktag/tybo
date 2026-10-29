@@ -156,16 +156,16 @@ test("every write goes into the history, which outlives the workspace — also o
 	const id = freshId();
 	const path = `workspaces/${encodeURIComponent(id)}`;
 	try {
-		await storage.createWorkspace({ id, name: "Erst" }, 1, "demo");
+		await storage.createWorkspace({ id, name: "Erst" }, 1, "web");
 		const base = sample();
-		await storage.writeChanges(id, changesBetween(empty(), base), "demo");
-		await storage.writeChanges(id, [], "demo");
+		await storage.writeChanges(id, changesBetween(empty(), base), "web");
+		await storage.writeChanges(id, [], "web");
 
 		const mine = structuredClone(base);
 		mine.entities[0]!.name = "Ada A";
 		const theirs = structuredClone(base);
 		theirs.entities[0]!.name = "Ada B";
-		await storage.writeChanges(id, changesBetween(base, mine), "demo");
+		await storage.writeChanges(id, changesBetween(base, mine), "web");
 		const put = await call(api.url, `${path}/changes`, {
 			method: "PUT",
 			headers: { "x-tybo-source": "mcp" },
@@ -182,9 +182,9 @@ test("every write goes into the history, which outlives the workspace — also o
 				["move", null, "3", null],
 				["rename", null, "3", null],
 				["change", "entity", "3", "mcp"],
-				["change", "entity", "2", "demo"],
-				...["type", "entity", "board", "card"].map((kind) => ["change", kind, "1", "demo"]).reverse(),
-				["create", null, "0", "demo"],
+				["change", "entity", "2", "web"],
+				...["type", "entity", "board", "card"].map((kind) => ["change", kind, "1", "web"]).reverse(),
+				["create", null, "0", "web"],
 			],
 		);
 		const [, rename, theirSave, mySave] = history;
@@ -221,8 +221,8 @@ test("the history comes newest first also where its ids gain a digit (…99, the
 		const [row] = await raw`select coalesce(max(id), 0)::text as last from history`;
 		const power = 10 ** String(Number(row!.last) + 2).length;
 		await raw`select setval(pg_get_serial_sequence('history', 'id'), ${power - 2})`;
-		await storage.createWorkspace({ id, name: "Stelle" }, 1, "demo");
-		await storage.writeChanges(id, changesBetween(empty(), sample()), "demo");
+		await storage.createWorkspace({ id, name: "Stelle" }, 1, "web");
+		await storage.writeChanges(id, changesBetween(empty(), sample()), "web");
 
 		const history = await storage.readHistory(id, { limit: 100 });
 		const ids = history.map((e) => Number(e.id));
@@ -244,7 +244,7 @@ test("a workspace made before the history gets a baseline of everything it holds
 		await storage.init();
 		// As before the history: the workspace's row is there, its making never recorded.
 		await raw`insert into workspaces (id, position, name, data_version) values (${id}, 0, 'Alt', 1)`;
-		await storage.writeChanges(id, changesBetween(empty(), sample()), "demo");
+		await storage.writeChanges(id, changesBetween(empty(), sample()), "web");
 
 		assert.ok((await storage.recordBaselines()) >= 1);
 		await storage.recordBaselines();

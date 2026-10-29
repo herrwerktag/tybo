@@ -11,7 +11,7 @@ const VIEW_WORKSPACE = "view";
 
 /**
  * A page that shows one board like the View tab, on its own: `script` (the viewer, built with its styles; see
- * apps/demo) and the data are inside, so it opens from disk, with no server. Only the board `boardId` goes in, with
+ * apps/web) and the data are inside, so it opens from disk, with no server. Only the board `boardId` goes in, with
  * all entity types and entities, so the details of every referenced entity can still be shown.
  */
 export function standaloneViewHtml(script: string, data: AppData, boardId: string, language: Language): string {

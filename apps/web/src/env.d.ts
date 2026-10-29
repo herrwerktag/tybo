@@ -2,7 +2,7 @@
 
 interface ImportMetaEnv {
 	/** Where the storage API (apps/api) answers, e.g. http://localhost:3001 — set when starting Vite
-	 * (VITE_API_URL=…, or in apps/demo/.env). The demo keeps its data there, in Postgres, and nowhere else. */
+	 * (VITE_API_URL=…, or in apps/web/.env). The web app keeps its data there, in Postgres, and nowhere else. */
 	readonly VITE_API_URL?: string;
 }
 
