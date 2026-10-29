@@ -12,7 +12,7 @@ pnpm-Monorepo mit TypeScript:
 
 | Paket | Inhalt |
 | --- | --- |
-| `packages/app` (`@tybo/app`) | Die Anwendung ohne Laufzeit-Huelle, je Feature ein Ordner (siehe unten). Einstiege: `@tybo/app/core`, `/ui`, `/api`, `/mcp` |
+| `packages/app` (`@tybo/app`) | Die Anwendung ohne Laufzeit-Huelle, je Feature ein Ordner (siehe unten). Einstiege: `@tybo/app/core`, `/ui`, `/api`, `/mcp`, fuer Tests `/testing` |
 | `apps/api` (`@tybo/api`) | HTTP-API ueber Postgres oder SQLite, Schema-Migrationen beim Start |
 | `apps/demo` (`@tybo/demo`) | Die Anwendung im Browser (Vite), spricht nur mit der API |
 | `apps/mcp` (`@tybo/mcp`) | MCP-Server (stdio) fuer LLM-Clients, spricht nur mit der API |
@@ -34,7 +34,9 @@ beisteuern, Eintraege im Arbeitsbereich-Menue, eine Option fuer neue Arbeitsbere
 `shared/core/migrations.ts`, Datenbankschema), die immer nur wachsen. Was mehrere Features nutzen, liegt in `shared/`,
 auch `AppData`, an das jedes Feature seinen Teil haengt. Zusammengesetzt wird die App in `features.*.ts`: Store und
 Arbeitsbereiche in `features.core.ts`, die Arbeitsbereich-Werkzeuge in `features.mcp.ts`; daneben liegen die Tests der
-ganzen App und ihre Hilfen (`test-*.ts`, `memory-port.ts`).
+ganzen App und ihre Hilfen (`test-*.ts`, `memory-port.ts`). Importe zeigen nur nach unten: `shared/` kennt keine
+Features, ein Feature nur `shared/` und die Features, auf denen es aufbaut, und von der zusammengesetzten App nur
+Typen; `imports.test.ts` prueft das.
 
 ## Voraussetzungen
 

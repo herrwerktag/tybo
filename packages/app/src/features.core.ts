@@ -8,6 +8,7 @@ import {
 	normalizedParts,
 	readWorkspaceFileOf,
 	savedVersion,
+	toSaved,
 	storedParts,
 	unitStandsOf,
 	type ActiveWorkspacePreference,
@@ -16,7 +17,6 @@ import {
 	type DataFormat,
 	type DataPart,
 	type DataPort,
-	type SavedData,
 	type UnitKind,
 	type UnitStands,
 } from "./shared/core/index.js";
@@ -70,10 +70,6 @@ export function changesBetween(before: AppData, after: AppData): Change[] {
 
 export type Store = Awaited<ReturnType<typeof createStore>>;
 
-/** The data as it's saved and exported: marked with the format version. */
-export function toSaved(data: AppData): SavedData {
-	return { version: DATA_VERSION, ...data };
-}
 
 function emptyData(): AppData {
 	return { types: [], entities: [], boards: [newBoard("Board 1", BOARD_LISTS)], ...storedFeatureData({}) };

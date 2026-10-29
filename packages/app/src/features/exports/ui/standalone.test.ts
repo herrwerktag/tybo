@@ -5,6 +5,7 @@ import { language, setLanguage } from "../../../shared/ui/index.js";
 import { renderStandaloneView, standaloneViewHtml } from "./standalone.js";
 import { DRAWING_LAYER } from "../../drawings/ui.js";
 import { DATA_VERSION, type AppData } from "../../../shared/core/index.js";
+import { createStore } from "../../../features.core.js";
 
 const viewport = { x: 0, y: 0, zoom: 1 };
 /** Entity ids are ULIDs; others are given new ones on load. */
@@ -37,7 +38,7 @@ async function openExport(html: string): Promise<HTMLElement> {
 	freshDom();
 	document.body.innerHTML = /<body>([\s\S]*)<\/body>/.exec(html)![1]!;
 	const root = document.querySelector<HTMLElement>("#app")!;
-	await renderStandaloneView(root, [DRAWING_LAYER]);
+	await renderStandaloneView(root, { layers: [DRAWING_LAYER], createStore });
 	return root;
 }
 
