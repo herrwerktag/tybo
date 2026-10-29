@@ -8,5 +8,5 @@
 		"lib": ["esnext"]
 	},
 	"include": ["src/core.ts", "src/**/core/**/*.ts", "src/**/core.ts"],
-	"exclude": ["src/**/*.test.ts"]
+	"exclude": ["src/**/*.test.ts", "src/**/test-*.ts"]
 }

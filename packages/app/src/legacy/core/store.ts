@@ -1,16 +1,9 @@
-import { createStoreCore, isUlid, moveItem, ulid, type DataFormat, type DataPort, type Point, type Rect } from "../../shared/core/index.js";
-import { changesBetween, normalizedFeatureData, storedFeatureData } from "../../features.core.js";
+import { createStoreCore, moveItem, ulid, type DataFormat, type DataPort, type Point, type Rect } from "../../shared/core/index.js";
+import { changesBetween, dataOps, keepWellFormed, normalizeEntityData, normalizedFeatureData, reconcileValues, storedFeatureData } from "../../features.core.js";
 import { clampZoom, defaultViewport, visibleRect, type Viewport } from "./viewport.js";
 import {
 	DEFAULT_CARD_SIZE,
 	frameShape,
-	CARD_DISPLAYS,
-	LINE_ARROWS,
-	PROPERTY_KINDS,
-	effectiveCardDisplay,
-	entityTypeMap,
-	migrateValues,
-	nextTypeColor,
 	canTakeMore,
 	freeSpot,
 	placeBeside,
@@ -26,26 +19,10 @@ import {
 	type ImageDrawing,
 	type NewDrawing,
 	type TextSize,
-	type DraftProperty,
 	type Entity,
-	type EntityType,
-	type PropertyDef,
-	type ReferenceDef,
-	type PropertyValue,
 } from "./model.js";
 
 export type Store = Awaited<ReturnType<typeof createStore>>;
-
-/** An entity to add with `addEntities`; without an id it gets a new one. */
-export interface NewEntity {
-	id?: string;
-	typeId: string;
-	name: string;
-	content: string;
-	values: Record<string, PropertyValue>;
-	description?: string;
-	tags?: readonly string[];
-}
 
 /** The format of the saved data. When it changes, raise this and add the step from the old version to MIGRATIONS —
  * and a step to the API's schema (apps/api: schema.ts and sqlite.ts) that brings the stored rows to the new format
@@ -230,68 +207,21 @@ function normalizeBoards(data: AppData & { canvas?: Partial<Board> }): Board[] {
 /** Re-validates every entity's values against its type's current properties, e.g. dropping references to deleted entities,
  * and drops cards of deleted entities. */
 function reconcile(data: AppData): AppData {
-	const entityTypes = entityTypeMap(data);
-	const typesById = new Map(data.types.map((t) => [t.id, t]));
-	return {
-		...data,
-		entities: data.entities.map((e) => ({
-			...e,
-			values: migrateValues(e.values, typesById.get(e.typeId)?.properties ?? [], entityTypes),
-		})),
-		boards: data.boards.map((b) => ({ ...b, cards: b.cards.filter((c) => entityTypes.has(c.entityId)) })),
-	};
+	return pruneCards(reconcileValues(data));
 }
 
-/** Reads `cardDisplay`, or converts the `showOnCard` checkbox saved by the previous version. */
-function cardDisplayFor(prop: PropertyDef, showOnCard: unknown): PropertyDef["cardDisplay"] {
-	if (CARD_DISPLAYS.includes(prop.cardDisplay)) return effectiveCardDisplay(prop);
-	return showOnCard === false ? "hidden" : "list";
+/** The boards without the cards of entities that are gone. */
+function pruneCards(data: AppData): AppData {
+	const entities = new Set(data.entities.map((e) => e.id));
+	return { ...data, boards: data.boards.map((b) => ({ ...b, cards: b.cards.filter((c) => entities.has(c.entityId)) })) };
 }
 
-/** Fills in a reference's defaults, and reads the single `typeId` saved before it could target several types. */
-function normalizeReference({ typeId, ...reference }: ReferenceDef & { typeId?: unknown }): ReferenceDef {
-	return {
-		...reference,
-		typeIds: Array.isArray(reference.typeIds)
-			? reference.typeIds.filter((id) => typeof id === "string")
-			: typeof typeId === "string"
-				? [typeId]
-				: [],
-		required: reference.required === true,
-		arrow: LINE_ARROWS.includes(reference.arrow) ? reference.arrow : "to",
-		lineLabel: typeof reference.lineLabel === "string" ? reference.lineLabel : "",
-		inverseLabel: typeof reference.inverseLabel === "string" ? reference.inverseLabel : "",
-	};
-}
-
-const isColor = (v: unknown): v is string => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** Whether `value` has the shape of saved data (types and entities lists), so loading can make use of it. */
 export function looksLikeAppData(value: unknown): value is Record<string, unknown> & Pick<AppData, "types" | "entities"> {
 	return isObject(value) && Array.isArray(value.types) && Array.isArray(value.entities);
-}
-
-/**
- * Drops types and properties without a string id and name, and entities without a type id, one by one, so a
- * single malformed item never costs the rest. Missing property lists and values become empty.
- */
-function keepWellFormed(data: AppData): AppData {
-	return {
-		...data,
-		types: data.types.flatMap((type: unknown) => {
-			if (!isObject(type) || typeof type.id !== "string" || typeof type.name !== "string") return [];
-			const properties = Array.isArray(type.properties)
-				? type.properties.filter((p: unknown) => isObject(p) && typeof p.id === "string" && typeof p.name === "string")
-				: [];
-			return [{ ...(type as unknown as EntityType), properties }];
-		}),
-		entities: data.entities.flatMap((entity: unknown) => {
-			if (!isObject(entity) || typeof entity.typeId !== "string") return [];
-			return [{ ...(entity as unknown as Entity), values: isObject(entity.values) ? (entity.values as Entity["values"]) : {} }];
-		}),
-	};
 }
 
 /** The units the storage holds, as far as they can be compared with this app's — what change sets are
@@ -312,46 +242,10 @@ function storedStand(data: AppData): AppData {
 
 /** Fills in fields that data saved by earlier versions may lack (e.g. number/boolean/date kinds, non-string values, entity names, ULIDs). */
 function normalize(data: AppData): AppData {
-	// Types saved before colors existed get the next free palette colors, in order.
-	const usedColors = data.types.map((t) => t.color).filter(isColor);
-	const colorFor = (color: unknown) => {
-		if (isColor(color)) return color;
-		const next = nextTypeColor(usedColors);
-		usedColors.push(next);
-		return next;
-	};
 	return {
 		boards: normalizeBoards(data),
 		...normalizedFeatureData(data),
-		types: data.types.map((type) => ({
-			...type,
-			color: colorFor(type.color),
-			contentTemplate: typeof type.contentTemplate === "string" ? type.contentTemplate : "",
-			properties: type.properties.map(({ showOnCard, ...prop }: PropertyDef & { showOnCard?: unknown }) => ({
-				...prop,
-				kind: PROPERTY_KINDS.includes(prop.kind) ? prop.kind : "text",
-				options: Array.isArray(prop.options) ? prop.options : [],
-				reference: prop.reference ? normalizeReference(prop.reference) : null,
-				cardDisplay: cardDisplayFor(prop, showOnCard),
-			})),
-		})),
-		entities: data.entities.map((entity) => {
-			const values = Object.fromEntries(
-				Object.entries(entity.values).map(([key, value]): [string, PropertyValue] => [
-					key,
-					value === null || value === undefined ? null : Array.isArray(value) ? value.map(String) : String(value),
-				]),
-			);
-			const propIds = data.types.find((t) => t.id === entity.typeId)?.properties.map((p) => p.id) ?? [];
-			const name =
-				typeof entity.name === "string"
-					? entity.name
-					: (propIds.map((id) => values[id]).find((v) => typeof v === "string") ?? "Untitled");
-			const content = typeof entity.content === "string" ? entity.content : "";
-			const description = typeof entity.description === "string" ? entity.description : "";
-			const tags = Array.isArray(entity.tags) ? parseTags(entity.tags.filter((t) => typeof t === "string").join(",")) : [];
-			return { ...entity, id: isUlid(entity.id) ? entity.id : ulid(), name, content, description, tags, values };
-		}),
+		...normalizeEntityData(data),
 	};
 }
 
@@ -360,20 +254,6 @@ function normalize(data: AppData): AppData {
 export function prepareImport(raw: unknown): AppData | null {
 	if (!looksLikeAppData(raw) || savedVersion(raw) > DATA_VERSION) return null;
 	return reconcile(normalize(keepWellFormed(migrate(raw) as unknown as AppData)));
-}
-
-function toPropertyDefs(properties: DraftProperty[]): PropertyDef[] {
-	return properties.map((p) => ({
-		id: p.id ?? ulid(),
-		name: p.name.trim(),
-		kind: p.kind,
-		options: p.kind === "options" ? p.options.map((o) => o.trim()) : [],
-		reference:
-			p.kind === "reference" && p.reference
-				? { ...p.reference, lineLabel: p.reference.lineLabel.trim(), inverseLabel: p.reference.inverseLabel.trim() }
-				: null,
-		cardDisplay: effectiveCardDisplay(p),
-	}));
 }
 
 /** The app's saved data as the store and the workspaces read, save, compare and import it. */
@@ -429,126 +309,7 @@ export async function createStore(port: DataPort, workspaceId: string) {
 		}
 	}
 
-	return Object.assign(core, {
-		/** Without a color, the type gets the first palette color no other type uses. */
-		addType(
-			name: string,
-			properties: DraftProperty[],
-			contentTemplate: string,
-			color = nextTypeColor(core.data.types.map((t) => t.color)),
-		): EntityType {
-			const type: EntityType = {
-				id: ulid(),
-				name: name.trim(),
-				properties: toPropertyDefs(properties),
-				contentTemplate,
-				color,
-			};
-			core.change({ ...core.data, types: [...core.data.types, type] });
-			return type;
-		},
-
-		/** Existing entities keep their content when the template changes. Without a color, the type keeps its own. */
-		updateType(typeId: string, name: string, properties: DraftProperty[], contentTemplate: string, color?: string): void {
-			const current = core.data.types.find((t) => t.id === typeId);
-			const updated: EntityType = {
-				id: typeId,
-				name: name.trim(),
-				properties: toPropertyDefs(properties),
-				contentTemplate,
-				color: color ?? current?.color ?? nextTypeColor(core.data.types.map((t) => t.color)),
-			};
-			core.change(reconcile({ ...core.data, types: core.data.types.map((t) => (t.id === typeId ? updated : t)) }));
-		},
-
-		deleteType(typeId: string): void {
-			core.change(
-				reconcile({
-					...core.data,
-					types: core.data.types.filter((t) => t.id !== typeId),
-					entities: core.data.entities.filter((e) => e.typeId !== typeId),
-				}),
-			);
-		},
-
-		/** Moves the type to index `to` in the list of types. */
-		moveType(typeId: string, to: number): void {
-			const from = core.data.types.findIndex((t) => t.id === typeId);
-			if (from < 0) return;
-			core.change({ ...core.data, types: moveItem(core.data.types, from, to) });
-		},
-
-		addEntity(
-			typeId: string,
-			name: string,
-			content: string,
-			values: Record<string, PropertyValue>,
-			description = "",
-			tags: readonly string[] = [],
-		): Entity {
-			const entity: Entity = { id: ulid(), typeId, name: name.trim(), content, description, tags: parseTags(tags.join(",")), values };
-			core.change({ ...core.data, entities: [...core.data.entities, entity] });
-			return entity;
-		},
-
-		/** Adds several entities as one change — one save, one step to undo. One given with an id keeps it, so the
-		 * others can already reference it. */
-		addEntities(items: readonly NewEntity[]): Entity[] {
-			const entities = items.map(
-				(item): Entity => ({
-					id: item.id ?? ulid(),
-					typeId: item.typeId,
-					name: item.name.trim(),
-					content: item.content,
-					description: item.description ?? "",
-					tags: parseTags((item.tags ?? []).join(",")),
-					values: item.values,
-				}),
-			);
-			core.change({ ...core.data, entities: [...core.data.entities, ...entities] });
-			return entities;
-		},
-
-		/** Without a description or tags, the entity keeps its current ones. */
-		updateEntity(
-			entityId: string,
-			name: string,
-			content: string,
-			values: Record<string, PropertyValue>,
-			description?: string,
-			tags?: readonly string[],
-		): void {
-			core.change({
-				...core.data,
-				entities: core.data.entities.map((e) =>
-					e.id === entityId
-						? {
-								...e,
-								name: name.trim(),
-								content,
-								description: description ?? e.description,
-								tags: tags ? parseTags(tags.join(",")) : e.tags,
-								values,
-							}
-						: e,
-				),
-			});
-		},
-
-		/** Moves the entity to index `to` among the entities of its type; other types' entities keep their places. */
-		moveEntity(entityId: string, to: number): void {
-			const entity = core.data.entities.find((e) => e.id === entityId);
-			if (!entity) return;
-			const ofType = core.data.entities.filter((e) => e.typeId === entity.typeId);
-			const reordered = moveItem(ofType, ofType.indexOf(entity), to);
-			let next = 0;
-			core.change({ ...core.data, entities: core.data.entities.map((e) => (e.typeId === entity.typeId ? reordered[next++]! : e)) });
-		},
-
-		deleteEntity(entityId: string): void {
-			core.change(reconcile({ ...core.data, entities: core.data.entities.filter((e) => e.id !== entityId) }));
-		},
-
+	return Object.assign(core, dataOps(core, pruneCards), {
 		addBoard(name: string): Board {
 			const board = newBoard(name.trim() || `Board ${core.data.boards.length + 1}`);
 			core.change({ ...core.data, boards: [...core.data.boards, board] });
@@ -711,24 +472,5 @@ export async function createStore(port: DataPort, workspaceId: string) {
 			updateBoard(boardId, (b) => ({ ...b, viewFrame: frameShape({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }) }));
 		},
 
-		/** How many property values (across all entities) point to this entity. */
-		referencesTo(entityId: string): number {
-			let count = 0;
-			for (const entity of core.data.entities) {
-				for (const value of Object.values(entity.values)) {
-					if (value === entityId || (Array.isArray(value) && value.includes(entityId))) count++;
-				}
-			}
-			return count;
-		},
-
-		/** "Type.property" names of other types' reference properties that point to this type. */
-		typeReferrers(typeId: string): string[] {
-			return core.data.types
-				.filter((t) => t.id !== typeId)
-				.flatMap((t) =>
-					t.properties.filter((p) => p.reference?.typeIds.includes(typeId)).map((p) => `${t.name}.${p.name}`),
-				);
-		},
 	});
 }

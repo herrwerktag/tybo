@@ -1,6 +1,6 @@
 import type { UnitKind } from "../../shared/core/index.js";
 import type { Rect } from "../../shared/core/index.js";
-import type { AppData, Board, CanvasCard, Drawing, Entity, EntityType } from "./model.js";
+import type { AppData, Board, CanvasCard, Drawing } from "./model.js";
 import type { Viewport } from "./viewport.js";
 
 /** A board itself — `name`, `viewport` and its frame, without its cards and drawings. The
@@ -14,23 +14,6 @@ export interface BoardMeta {
 
 /** A kind of unit of the app's data. */
 type AppUnit<T extends { id: string }> = UnitKind<AppData, T>;
-
-export const TYPE_UNIT: AppUnit<EntityType> = {
-	kind: "type",
-	lists: (data) => [{ items: data.types }],
-	withList: (data, types) => ({ ...data, types }),
-};
-
-export const ENTITY_UNIT: AppUnit<Entity> = {
-	kind: "entity",
-	lists: (data) => [{ items: data.entities }],
-	withList: (data, entities) => ({ ...data, entities }),
-	// Entities of a type that went go with it.
-	settle: (data) => {
-		const types = new Set(data.types.map(({ id }) => id));
-		return { ...data, entities: data.entities.filter((entity) => types.has(entity.typeId)) };
-	},
-};
 
 /** Boards as units without their cards and drawings, so someone panning a board and someone moving a card never
  * address the same one. */

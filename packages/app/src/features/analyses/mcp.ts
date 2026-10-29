@@ -1,5 +1,6 @@
 import type { AppData } from "../../legacy/core/index.js";
-import { typeName, typeOf, type ToolContext } from "../../legacy/mcp/tools.js";
+import type { ToolContext } from "../../legacy/mcp/tools.js";
+import { typeName, typeOf } from "../data/mcp.js";
 import { ToolError, WORKSPACE, json, object, sameName, text, texts, type Tool } from "../../shared/mcp/index.js";
 import {
 	addAnalysis,
