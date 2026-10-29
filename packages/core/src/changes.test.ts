@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { changesBetween, jsonEqual, type Change } from "./changes.js";
-import type { AppData, CanvasCard, Drawing, Entity, EntityType } from "./model.js";
+import type { Change } from "@tybo/app/core";
+import { changesBetween, type BoardMeta } from "./changes.js";
+import type { Analysis, AppData, CanvasCard, Drawing, Entity, EntityType } from "./model.js";
 
 /** A state to build stands from: one type with a text property, two entities, one board with two cards and
  * one drawing, and one analysis — enough of every unit to change, add and delete one each without touching another. */
@@ -51,17 +52,6 @@ function state(): AppData {
 /** The units of a change set, one line per kind with its ids (in input order). */
 const outline = (changes: Change[]) => changes.map((c) => `${c.kind}:${c.id}${"boardId" in c ? `:${c.boardId}` : ""}`);
 
-test("jsonEqual: equal in value whatever the records' key order is, different in anything else it might be", () => {
-	assert.equal(jsonEqual({ a: 1, b: { c: [2, 3] } }, { b: { c: [2, 3] }, a: 1 }), true);
-	assert.equal(jsonEqual({ a: 1, b: 2 }, { b: 2, a: 1, c: null }), false); // an extra key is a difference
-	assert.equal(jsonEqual({ a: null }, { a: null, b: undefined }), false); // even a missing undefined one
-	assert.equal(jsonEqual([1, 2, 3], [3, 2, 1]), false); // lists keep their order
-	assert.equal(jsonEqual(0.1 + 0.2, 0.3), false); // numbers are compared as they are
-	assert.equal(jsonEqual(null, null), true);
-	assert.equal(jsonEqual("1", 1), false);
-	assert.equal(jsonEqual(null, {}), false);
-});
-
 test("the same state on both sides is no change at all", () => {
 	assert.deepEqual(changesBetween(state(), state()), []);
 });
@@ -89,7 +79,7 @@ test("a card brought to the front is a change even when nothing else about it mo
 	board.cards = [...board.cards.slice(1), board.cards[0]!];
 	const changes = changesBetween(before, after);
 	assert.deepEqual(outline(changes), ["card:card-ada:board-1", "card:card-bob:board-1"]);
-	const [ada, bob] = changes as [Extract<Change, { kind: "card" }>, Extract<Change, { kind: "card" }>];
+	const [ada, bob] = changes as [Change<CanvasCard>, Change<CanvasCard>];
 	assert.deepEqual([ada.before!.position, ada.after!.position], [0, 1]);
 	assert.deepEqual([bob.before!.position, bob.after!.position], [1, 0]);
 	assert.deepEqual(ada.before!.value, ada.after!.value, "its content didn't change — only its place");
@@ -126,7 +116,7 @@ test("a new unit has no before; a deleted one has no after; both say what was th
 
 	const changes = changesBetween(before, after);
 	assert.deepEqual(outline(changes), ["entity:ent-chef", "drawing:draw-box:board-1"]);
-	const [entityChange, drawingChange] = changes as [Extract<Change, { kind: "entity" }>, Extract<Change, { kind: "drawing" }>];
+	const [entityChange, drawingChange] = changes as [Change<Entity>, Change<Drawing>];
 	assert.equal(entityChange.before, null);
 	assert.deepEqual(entityChange.after!.value, added);
 	assert.equal(entityChange.after!.position, 2);
@@ -148,7 +138,7 @@ test("a type is one unit with its properties; a board is one without its cards a
 
 	const changes = changesBetween(before, after);
 	assert.deepEqual(outline(changes), ["type:type-person", "board:board-1"]);
-	const [typeChange, boardChange] = changes as [Extract<Change, { kind: "type" }>, Extract<Change, { kind: "board" }>];
+	const [typeChange, boardChange] = changes as [Change<EntityType>, Change<BoardMeta>];
 	assert.deepEqual(typeChange.after!.value.properties.map((p) => p.id), ["p-note", "p-status"]);
 	const meta = { viewFrame: { x: 0, y: 0, width: 1280, height: 720 } };
 	assert.deepEqual(boardChange.after!.value, { id: "board-1", name: "Unbenannt", viewport: { x: 12, y: 34, zoom: 0.5 }, ...meta });
@@ -163,6 +153,6 @@ test("an analysis is one unit with its paths; changing one of them touches nothi
 
 	const changes = changesBetween(before, after);
 	assert.deepEqual(outline(changes), ["analysis:ana-notes", "analysis:ana-new"]);
-	const [changed] = changes as [Extract<Change, { kind: "analysis" }>];
+	const [changed] = changes as [Change<Analysis>];
 	assert.deepEqual(changed.after!.value.groups, [[{ propertyId: "p-note", direction: "forward" }]]);
 });

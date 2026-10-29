@@ -1,9 +1,11 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type { AppData, Change, SavedChanges } from "@tybo/core";
-import { CHANGE_KINDS, DATA_VERSION, moveItem, unitStands, untouched } from "@tybo/core";
-import { assembleAppData, type StoredWorkspace } from "./data.js";
+import { DATA_VERSION, inKindOrder, moveItem, unitStandsOf, untouched } from "@tybo/core";
+import type { StoredWorkspace } from "./data.js";
 import { changeEntries, type HistoryEntry, type HistoryOperation, type NewEntry } from "./history.js";
 import type { Api } from "./http.js";
+import { json, parsed, plain } from "./sqlite-values.js";
+import { STORED_KINDS, UNIT_STORAGES, assembleAppData, storageOf } from "./units.js";
 
 /** The API's storage in a local SQLite file, plus what running the server against it takes — the same as
  * `PostgresStorage`, for working without a Postgres server at hand. */
@@ -241,25 +243,6 @@ export const SQLITE_MIGRATIONS: readonly Migration[] = [
 	},
 ];
 
-/** The table holding each kind of unit, one row per unit. */
-const TABLES: Record<Change["kind"], string> = {
-	type: "entity_types",
-	entity: "entities",
-	analysis: "analyses",
-	board: "boards",
-	card: "cards",
-	drawing: "drawings",
-};
-
-/** A JSON column's parameter: null stays SQL null, anything else its JSON text. */
-const json = (value: unknown): string | null => (value === null || value === undefined ? null : JSON.stringify(value));
-
-/** A JSON column's value as read: its text parsed, SQL null as null. */
-const parsed = (text: unknown): unknown => (text === null || text === undefined ? null : JSON.parse(text as string));
-
-/** A plain column's parameter: what SQLite can't bind (undefined) as null. */
-const plain = (value: unknown): SQLInputValue => (value === undefined ? null : (value as SQLInputValue));
-
 /** Runs `work` in one transaction: all of it written, or — when it throws — none of it. */
 function transaction<T>(db: DatabaseSync, work: () => T): T {
 	db.exec("begin immediate");
@@ -287,146 +270,18 @@ export function sqliteStorage(path: string): SqliteStorage {
 
 	const readAppData = (ws: string): AppData => {
 		const all = (sql: string) => db.prepare(sql).all(ws) as Record<string, any>[];
-		return assembleAppData({
-			types: all("select id, name, content_template, color from entity_types where workspace_id = ? order by position, id"),
-			properties: all(
-				"select id, type_id, name, kind, options, reference, card_display from properties where workspace_id = ? order by type_id, position, id",
-			).map((row) => ({ ...row, options: parsed(row.options), reference: parsed(row.reference) })),
-			entities: all("select id, type_id, name, content, description, tags from entities where workspace_id = ? order by position, id").map(
-				(row) => ({ ...row, tags: parsed(row.tags) }),
-			),
-			values: all("select entity_id, property_id, value from entity_values where workspace_id = ? order by entity_id, position, property_id").map(
-				(row) => ({ ...row, value: parsed(row.value) }),
-			),
-			boards: all("select id, name, viewport, view_frame from boards where workspace_id = ? order by position, id").map((row) => ({
-				...row,
-				viewport: parsed(row.viewport),
-				view_frame: parsed(row.view_frame),
-			})),
-			cards: all("select id, board_id, entity_id, x, y, width, height from cards where workspace_id = ? order by board_id, position, id"),
-			drawings: all("select board_id, body from drawings where workspace_id = ? order by board_id, position, id").map((row) => ({
-				...row,
-				body: parsed(row.body),
-			})),
-			analyses: all("select id, name, type_id, group_paths, column_paths from analyses where workspace_id = ? order by position, id").map((row) => ({
-				...row,
-				group_paths: parsed(row.group_paths),
-				column_paths: parsed(row.column_paths),
-			})),
-		});
+		return assembleAppData(UNIT_STORAGES.map((storage) => storage.readSqlite(all)));
 	};
 
 	/** Writes one unit's rows — only that unit's own, in its workspace (see `changes.ts`, which does the same in Postgres). */
 	const writeUnit = (ws: string, unit: Change): void => {
-		const run = (sql: string, ...params: SQLInputValue[]) => db.prepare(sql).run(...params);
+		const run = (sql: string, ...params: SQLInputValue[]) => void db.prepare(sql).run(...params);
+		const storage = storageOf(unit.kind)!;
 		if (unit.after === null) {
-			run(`delete from ${TABLES[unit.kind]} where workspace_id = ? and id = ?`, ws, unit.id);
+			run(`delete from ${storage.table} where workspace_id = ? and id = ?`, ws, unit.id);
 			return;
 		}
-		switch (unit.kind) {
-			case "type": {
-				const type = unit.after.value;
-				run(
-					`insert into entity_types (workspace_id, id, position, name, content_template, color, updated_at)
-					values (?, ?, ?, ?, ?, ?, current_timestamp)
-					on conflict (workspace_id, id) do update set
-						position = excluded.position, name = excluded.name,
-						content_template = excluded.content_template, color = excluded.color, updated_at = current_timestamp`,
-					ws, type.id, unit.after.position, plain(type.name), plain(type.contentTemplate), plain(type.color),
-				);
-				const properties = type.properties ?? [];
-				run(
-					"delete from properties where workspace_id = ? and type_id = ? and id not in (select value from json_each(?))",
-					ws, type.id, JSON.stringify(properties.map((p) => p.id)),
-				);
-				for (const [index, property] of properties.entries()) {
-					run(
-						`insert into properties (workspace_id, id, type_id, position, name, kind, options, reference, card_display)
-						values (?, ?, ?, ?, ?, ?, ?, ?, ?)
-						on conflict (workspace_id, id) do update set
-							type_id = excluded.type_id, position = excluded.position, name = excluded.name,
-							kind = excluded.kind, options = excluded.options, reference = excluded.reference,
-							card_display = excluded.card_display`,
-						ws, property.id, type.id, index, plain(property.name), plain(property.kind),
-						json(property.options), json(property.reference), plain(property.cardDisplay),
-					);
-				}
-				return;
-			}
-			case "entity": {
-				const entity = unit.after.value;
-				run(
-					`insert into entities (workspace_id, id, type_id, position, name, content, description, tags, updated_at)
-					values (?, ?, ?, ?, ?, ?, ?, ?, current_timestamp)
-					on conflict (workspace_id, id) do update set
-						type_id = excluded.type_id, position = excluded.position, name = excluded.name,
-						content = excluded.content, description = excluded.description, tags = excluded.tags, updated_at = current_timestamp`,
-					ws, entity.id, entity.typeId, unit.after.position, plain(entity.name), plain(entity.content), plain(entity.description),
-					json(entity.tags ?? []),
-				);
-				const values = Object.entries(entity.values ?? {});
-				run(
-					"delete from entity_values where workspace_id = ? and entity_id = ? and property_id not in (select value from json_each(?))",
-					ws, entity.id, JSON.stringify(values.map(([propertyId]) => propertyId)),
-				);
-				for (const [index, [propertyId, value]] of values.entries()) {
-					run(
-						`insert into entity_values (workspace_id, entity_id, property_id, position, value)
-						values (?, ?, ?, ?, ?)
-						on conflict (workspace_id, entity_id, property_id) do update set position = excluded.position, value = excluded.value`,
-						ws, entity.id, propertyId, index, json(value),
-					);
-				}
-				return;
-			}
-			case "analysis": {
-				const item = unit.after.value;
-				run(
-					`insert into analyses (workspace_id, id, position, name, type_id, group_paths, column_paths, updated_at)
-					values (?, ?, ?, ?, ?, ?, ?, current_timestamp)
-					on conflict (workspace_id, id) do update set
-						position = excluded.position, name = excluded.name, type_id = excluded.type_id, group_paths = excluded.group_paths,
-						column_paths = excluded.column_paths, updated_at = current_timestamp`,
-					ws, item.id, unit.after.position, plain(item.name), plain(item.typeId), json(item.groups), json(item.columns),
-				);
-				return;
-			}
-			case "board": {
-				const board = unit.after.value;
-				run(
-					`insert into boards (workspace_id, id, position, name, viewport, view_frame, updated_at)
-					values (?, ?, ?, ?, ?, ?, current_timestamp)
-					on conflict (workspace_id, id) do update set
-						position = excluded.position, name = excluded.name, viewport = excluded.viewport, view_frame = excluded.view_frame,
-						updated_at = current_timestamp`,
-					ws, board.id, unit.after.position, plain(board.name), json(board.viewport), json(board.viewFrame ?? null),
-				);
-				return;
-			}
-			case "card": {
-				const card = unit.after.value;
-				run(
-					`insert into cards (workspace_id, id, board_id, entity_id, position, x, y, width, height)
-					values (?, ?, ?, ?, ?, ?, ?, ?, ?)
-					on conflict (workspace_id, id) do update set
-						board_id = excluded.board_id, entity_id = excluded.entity_id, position = excluded.position,
-						x = excluded.x, y = excluded.y, width = excluded.width, height = excluded.height`,
-					ws, card.id, unit.boardId, card.entityId, unit.after.position, card.x, card.y, card.width, card.height,
-				);
-				return;
-			}
-			case "drawing": {
-				const drawing = unit.after.value;
-				run(
-					`insert into drawings (workspace_id, id, board_id, position, kind, body)
-					values (?, ?, ?, ?, ?, ?)
-					on conflict (workspace_id, id) do update set
-						board_id = excluded.board_id, position = excluded.position, kind = excluded.kind, body = excluded.body`,
-					ws, drawing.id, unit.boardId, unit.after.position, drawing.kind, JSON.stringify(drawing),
-				);
-				return;
-			}
-		}
+		storage.writeSqlite(run, ws, unit.after, unit.boardId);
 	};
 
 	/** Adds the entries for the workspace, within the transaction of the write they tell of (see `history.ts`). */
@@ -568,8 +423,8 @@ export function sqliteStorage(path: string): SqliteStorage {
 			}
 			return transaction(db, () => {
 				if (revisionOf(id) === null) return null;
-				const stands = unitStands(readAppData(id));
-				const ordered = [...changes].sort((a, b) => CHANGE_KINDS.indexOf(a.kind) - CHANGE_KINDS.indexOf(b.kind));
+				const stands = unitStandsOf(STORED_KINDS, readAppData(id));
+				const ordered = inKindOrder(STORED_KINDS, changes);
 				const collided: string[] = [];
 				for (const unit of ordered) {
 					if (!untouched(stands, unit)) collided.push(unit.id);

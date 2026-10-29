@@ -1,5 +1,6 @@
-import { DATA_VERSION, jsonEqual, type BoardMeta, type Change, type UnitStand, type UnitStands } from "@tybo/core";
+import { DATA_VERSION, type Change, type UnitStands } from "@tybo/core";
 import type { Queries } from "./schema.js";
+import { storageOf } from "./units.js";
 
 /**
  * The history: every write, kept. A save leaves one entry per unit it wrote — with the stand the tables held
@@ -58,32 +59,24 @@ export interface HistoryPage {
 }
 
 /** The entries of a save: each unit with the stand the tables held before (`stands`, read in the save's own
- * transaction) and the one written, and whether it collided. A board that only panned or zoomed leaves no
- * entry: pan and zoom are saved, but they are no part of the undo history either, and would flood this one. */
+ * transaction) and the one written, and whether it collided. A change its kind calls quiet (a board that only
+ * panned or zoomed) leaves no entry. */
 export function changeEntries(stands: UnitStands, changes: readonly Change[], collided: readonly string[]): NewEntry[] {
 	return changes.flatMap((unit): NewEntry[] => {
 		const before = stands.get(`${unit.kind}:${unit.id}`)?.stand ?? null;
-		if (unit.kind === "board" && onlyViewport(before as UnitStand<BoardMeta> | null, unit.after)) return [];
+		if (storageOf(unit.kind)?.quiet?.(before, unit.after)) return [];
 		return [
 			{
 				operation: "change",
 				kind: unit.kind,
 				unitId: unit.id,
-				boardId: "boardId" in unit ? unit.boardId : null,
+				boardId: unit.boardId ?? null,
 				before,
 				after: unit.after,
 				collided: collided.includes(unit.id),
 			},
 		];
 	});
-}
-
-/** Whether two stands of a board differ in nothing but its viewport — same place, same name, same frame. */
-function onlyViewport(before: UnitStand<BoardMeta> | null, after: UnitStand<BoardMeta> | null): boolean {
-	if (before === null || after === null || before.position !== after.position) return false;
-	const { viewport: _was, ...was } = before.value;
-	const { viewport: _now, ...now } = after.value;
-	return jsonEqual(was, now);
 }
 
 /** The jsonb parameter the driver makes (`null` stays SQL null, not jsonb `null`). */
