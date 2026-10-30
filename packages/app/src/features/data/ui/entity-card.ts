@@ -160,6 +160,7 @@ function propertyList(store: Store, rows: CardRow[], preview: CardPreview | null
 								const typeId = store.data.entities.find((e) => e.id === entityId)?.typeId;
 								const color = store.data.types.find((t) => t.id === typeId)?.color;
 								if (color) tag.style.background = color;
+								if (entityId) tag.dataset.entityId = entityId;
 								if (preview && entityId) preview.attach(tag, entityId);
 								return tag;
 							}),

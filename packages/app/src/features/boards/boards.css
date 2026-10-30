@@ -730,3 +730,14 @@ main:has(.canvas-view) {
 	color: var(--error);
 	border-color: var(--error);
 }
+
+/* A reference tag on a card whose entity isn't on the board: dragging it puts that card here (see the canvas). */
+.canvas-card .ref-drag {
+	cursor: grab;
+}
+
+/* The card being dragged out of a reference tag, until it's let go. */
+.card-ghost {
+	pointer-events: none;
+	box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+}

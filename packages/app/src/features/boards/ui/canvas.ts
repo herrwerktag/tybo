@@ -1,4 +1,4 @@
-import type { Rect } from "../../../shared/core/index.js";
+import type { Point, Rect } from "../../../shared/core/index.js";
 import { CLICK_TOLERANCE, el, readPreference, resizeHandle, trackPointer, wheelGesture, writePreference } from "../../../shared/ui/index.js";
 import type { Store } from "../../../features.core.js";
 import { DEFAULT_CARD_SIZE, GRID_SIZE, effectiveCardDisplay, referencedIds, snapToGrid, type Entity, type EntityType } from "../../data/core.js";
@@ -892,6 +892,14 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		// The viewer only looks: no moving.
 		if (readOnly) return node;
 
+		// A reference to an entity without a card on this board: dragging its tag puts that card here.
+		for (const tag of body?.querySelectorAll<HTMLElement>(".ref-tag[data-entity-id]") ?? []) {
+			const entityId = tag.dataset.entityId!;
+			if (currentBoard().cards.some((c) => c.entityId === entityId)) continue;
+			tag.classList.add("ref-drag");
+			tag.addEventListener("pointerdown", (e) => dragReference(e, entityId));
+		}
+
 		header.addEventListener("pointerdown", (e) => {
 			if (e.button !== 0 || e.shiftKey || (e.target as Element).closest("button")) return; // Shift: a click (see above)
 			e.preventDefault();
@@ -924,6 +932,55 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		});
 
 		return node;
+	}
+
+	/**
+	 * Drags the card of the entity `entityId` out of a card's reference tag, from this press: it follows the pointer on
+	 * the grid and lands where it's let go, unless that's off the canvas. The board then shows the reference as its
+	 * card display says: as a line, or still in the list.
+	 */
+	function dragReference(e: PointerEvent, entityId: string): void {
+		const entity = store.data.entities.find((x) => x.id === entityId);
+		if (e.button !== 0 || e.shiftKey || !entity) return;
+		e.preventDefault(); // no text selection
+		let ghost: HTMLElement | null = null;
+		const pointerAt = (dx: number, dy: number) => ({ x: e.clientX + dx, y: e.clientY + dy });
+		// So the pointer ends up on the card's header, as when dropped from the side panel.
+		const spot = (dx: number, dy: number): Point => {
+			const area = surface.getBoundingClientRect();
+			const pointer = pointerAt(dx, dy);
+			const world = screenToWorld(viewport, pointer.x - area.left, pointer.y - area.top);
+			return { x: snapToGrid(world.x - (ghost?.offsetWidth || DEFAULT_CARD_SIZE.width) / 2), y: snapToGrid(world.y - 16) };
+		};
+		trackPointer(
+			e,
+			(dx, dy) => {
+				if (!ghost && Math.hypot(dx, dy) < CLICK_TOLERANCE) return;
+				if (!ghost) {
+					preview.hide();
+					const type = store.data.types.find((t) => t.id === entity.typeId);
+					const names = new Map(store.data.entities.map((x) => [x.id, x.name]));
+					const onBoard = (id: string) => currentBoard().cards.some((c) => c.entityId === id);
+					const { header, body } = cardParts(store, entity, type, names, onBoard, { preview: null });
+					ghost = el("article", { className: "canvas-card dragging in-chain card-ghost" }, header, ...(body ? [body] : []));
+					layer.append(ghost);
+					fitCard(ghost);
+				}
+				const { x, y } = spot(dx, dy);
+				Object.assign(ghost.style, { left: `${x}px`, top: `${y}px` });
+			},
+			(dx, dy) => {
+				if (!ghost) return;
+				const { x, y } = spot(dx, dy);
+				ghost.remove();
+				const area = surface.getBoundingClientRect();
+				const pointer = pointerAt(dx, dy);
+				if (pointer.x < area.left || pointer.x > area.right || pointer.y < area.top || pointer.y > area.bottom) return;
+				store.addCard(boardId, entityId, x, y);
+				renderCards();
+				renderPanel();
+			},
+		);
 	}
 
 	/** Whether Space is held: dragging then pans, wherever it starts. */

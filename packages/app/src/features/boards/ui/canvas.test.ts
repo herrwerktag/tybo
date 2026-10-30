@@ -553,6 +553,96 @@ test("Lay out puts the cards of the references the card lists around it, in one 
 	assert.equal(store.data.boards[0]!.cards.length, 1);
 });
 
+/** Dune (author Frank as a line, characters Paul in the list) with its card alone on a canvas 1000 × 800 big. */
+async function draggable() {
+	freshDom();
+	const store = await createStore(memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } }).port, "ws");
+	const person = store.addType("Person", [], "");
+	const ref = (name: string, cardDisplay: "line" | "list", multiple: boolean, inverseLabel: string) => ({
+		name,
+		kind: "reference" as const,
+		options: [],
+		reference: { typeIds: [person.id], multiple, required: false, arrow: "to" as const, lineLabel: "", inverseLabel },
+		cardDisplay,
+	});
+	const book = store.addType("Book", [ref("author", "line", false, "wrote"), ref("characters", "list", true, "")], "");
+	const frank = store.addEntity(person.id, "Frank", "", {});
+	const paul = store.addEntity(person.id, "Paul", "", {});
+	const [author, characters] = book.properties.map((p) => p.id);
+	const dune = store.addEntity(book.id, "Dune", "", { [author!]: frank.id, [characters!]: [paul.id] });
+	const boardId = store.data.boards[0]!.id;
+	const show = () => {
+		freshDom();
+		const view = canvasView(store, { readOnly: false, layers: [] });
+		document.body.append(view);
+		view.querySelector<HTMLElement>(".canvas-surface")!.getBoundingClientRect = () =>
+			({ x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 800, width: 1000, height: 800 }) as DOMRect;
+		return view;
+	};
+	const dragTag = (view: HTMLElement, cardId: string, name: string, to: { x: number; y: number }) => {
+		const tag = [...cardNode(view, cardId).querySelectorAll<HTMLElement>(".ref-tag")].find((t) => t.textContent === name)!;
+		assert.ok(tag.classList.contains("ref-drag"), `${name} can be dragged`);
+		press(tag, 500, 300, to.x - 500, to.y - 300);
+	};
+	const tags = (view: HTMLElement, cardId: string) => [...cardNode(view, cardId).querySelectorAll(".ref-tag")].map((t) => t.textContent);
+	const cardOf = (entityId: string) => store.data.boards[0]!.cards.find((c) => c.entityId === entityId);
+	return { store, frank, paul, dune, boardId, show, dragTag, tags, cardOf };
+}
+
+test("dragging a reference tag puts its entity's card where it's let go; a line reference becomes a line", async () => {
+	const { store, frank, dune, boardId, show, dragTag, tags, cardOf } = await draggable();
+	const card = store.addCard(boardId, dune.id, 0, 0);
+	const view = show();
+	assert.deepEqual(tags(view, card.id), ["Frank", "Paul"]);
+
+	dragTag(view, card.id, "Frank", { x: 600, y: 400 });
+	// The pointer on the new card's header (half a default card's width left of it), on the grid.
+	assert.deepEqual([cardOf(frank.id)?.x, cardOf(frank.id)?.y], [480, 384]);
+	assert.equal(view.querySelector(".card-ghost"), null, "the dragged card is gone");
+	assert.deepEqual(tags(view, card.id), ["Paul"], "Frank is a line now");
+	assert.ok(view.querySelector(".connectors path, .connectors line"));
+	store.undo();
+	assert.equal(cardOf(frank.id), undefined, "one undo step");
+});
+
+test("a list reference stays in the list once its card is on the board, and can't be dragged again", async () => {
+	const { store, paul, dune, boardId, show, dragTag, tags, cardOf } = await draggable();
+	const card = store.addCard(boardId, dune.id, 0, 0);
+	const view = show();
+	dragTag(view, card.id, "Paul", { x: 600, y: 400 });
+	assert.ok(cardOf(paul.id));
+	assert.deepEqual(tags(view, card.id), ["Frank", "Paul"]);
+	const paulTag = [...cardNode(view, card.id).querySelectorAll<HTMLElement>(".ref-tag")].find((t) => t.textContent === "Paul")!;
+	assert.equal(paulTag.classList.contains("ref-drag"), false);
+	press(paulTag, 500, 300, 100, 100);
+	assert.equal(store.data.boards[0]!.cards.length, 2, "no second card for Paul");
+});
+
+test("the other side of a reference can be dragged too; a click, or letting go off the canvas, places nothing", async () => {
+	const { store, frank, dune, boardId, show, dragTag, cardOf } = await draggable();
+	const card = store.addCard(boardId, frank.id, 0, 0);
+	const view = show();
+	const tag = cardNode(view, card.id).querySelector<HTMLElement>(".ref-tag")!;
+	assert.equal(tag.textContent, "Dune", "Frank wrote Dune");
+	press(tag, 500, 300, 1, 1);
+	press(tag, 500, 300, 600, 0);
+	assert.equal(cardOf(dune.id), undefined);
+	assert.equal(view.querySelector(".card-ghost"), null);
+
+	dragTag(view, card.id, "Dune", { x: 600, y: 400 });
+	assert.ok(cardOf(dune.id));
+	assert.ok(view.querySelector(".connectors path, .connectors line"), "a line from Dune to Frank");
+});
+
+test("in the viewer, reference tags can't be dragged", async () => {
+	const { store, dune, boardId } = await draggable();
+	const card = store.addCard(boardId, dune.id, 0, 0);
+	freshDom();
+	const view = canvasView(store, { readOnly: true, layers: [] });
+	document.body.append(view);
+	assert.equal(cardNode(view, card.id).querySelectorAll(".ref-tag.ref-drag").length, 0);
+});
+
 test("Delete in the details deletes the entity after asking, with its cards on all boards, in one undo step", async () => {
 	const { store, person, author, dune, card } = await connectable();
 	const frank = store.addEntity(person.id, "Frank", "", {});
