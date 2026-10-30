@@ -175,23 +175,19 @@ main:has(.analysis-view) {
 
 /* An entity named in a result: reads as a link, opens it in the Entities page. */
 .entity-link {
-	display: inline-flex;
-	align-items: center;
-	padding: 0;
-	border: none;
-	background: none;
-	color: inherit;
-	font: inherit;
-	text-align: left;
 	text-decoration: underline;
 	text-decoration-color: var(--border-strong);
 	text-underline-offset: 0.2em;
 	cursor: pointer;
 }
 
-.entity-link:hover:not(:disabled) {
-	background: none;
+.entity-link:hover {
 	text-decoration-color: currentColor;
+}
+
+.entity-link:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 1px;
 }
 
 .entity-link.selected {
@@ -199,10 +195,6 @@ main:has(.analysis-view) {
 	outline: 1px solid var(--focus);
 	outline-offset: 1px;
 	border-radius: 2px;
-}
-
-.entity-link.selected:hover {
-	background: var(--highlight);
 }
 
 @media (max-width: 40rem) {

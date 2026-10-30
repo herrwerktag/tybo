@@ -74,7 +74,7 @@ test("Analyses: an analysis set up step by step lists the rows grouped, is saved
 	]);
 
 	// Hovering (or focusing) an entity shows its card; clicking it, its details beside, where Edit shows its form.
-	const delivery = byText<HTMLButtonElement>(root, ".analysis-result button", "Delivery");
+	const delivery = byText<HTMLElement>(root, ".analysis-result .entity-link", "Delivery");
 	delivery.dispatchEvent(new Event("focus"));
 	const preview = root.querySelector<HTMLElement>(".card-preview")!;
 	assert.equal(preview.hidden, false);
@@ -95,5 +95,5 @@ test("Analyses: an analysis set up step by step lists the rows grouped, is saved
 	await settle();
 	assert.equal(location.hash, "#analysis", "it stays in the analysis");
 	assert.equal(details.querySelector(".details-title")?.textContent, "Build it");
-	assert.ok(byText(root, ".analysis-result button", "Build it"), "the result names it anew");
+	assert.ok(byText(root, ".analysis-result .entity-link", "Build it"), "the result names it anew");
 });
