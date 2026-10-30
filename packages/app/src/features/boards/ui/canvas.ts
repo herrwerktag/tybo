@@ -125,7 +125,12 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 		"»",
 	);
 
-	const panel = entityPanel(store, { board: currentBoard, readOnly, onHide: () => setPanelCollapsed(true) });
+	const canvasMain = el("div", { className: "canvas-main" });
+	/** Read-only card shown while hovering or focusing a reference tag or an entity in the side panel; in screen
+	 * space, so zoom doesn't shrink it. */
+	const preview = createCardPreview(store, canvasMain);
+
+	const panel = entityPanel(store, { board: currentBoard, readOnly, preview, onHide: () => setPanelCollapsed(true) });
 	const renderPanel = panel.render;
 	const layer = el("div", { className: "canvas-board" });
 	const surface = el("div", { className: "canvas-surface" }, layer);
@@ -436,10 +441,6 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			animation = requestAnimationFrame(frame);
 		}, ZOOM_SETTLE_DELAY);
 	}
-
-	const canvasMain = el("div", { className: "canvas-main" });
-	/** Read-only card shown while hovering or focusing a reference tag; in screen space, so zoom doesn't shrink it. */
-	const preview = createCardPreview(store, canvasMain);
 
 	/** The entity shown in the details panel, and the card that was selected for it (if it's on this board). */
 	let selected: { entityId: string; cardId: string | null } | null = null;

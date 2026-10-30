@@ -23,8 +23,8 @@ export const DETAILS_WIDTH_KEY = "details-panel-width";
 
 export interface CardPreview {
 	element: HTMLElement;
-	/** Shows the entity's card while `tag` is hovered or focused. */
-	attach(tag: HTMLElement, entityId: string): void;
+	/** Shows the entity's card while `tag` is hovered or focused: below or above it, or with `beside` to its right. */
+	attach(tag: HTMLElement, entityId: string, options?: { beside?: boolean }): void;
 	hide(): void;
 }
 
@@ -37,7 +37,7 @@ export function createCardPreview(store: Store, container: HTMLElement): CardPre
 	preview.hidden = true;
 	let previewTimer: ReturnType<typeof setTimeout> | undefined;
 
-	function show(anchor: HTMLElement, entityId: string): void {
+	function show(anchor: HTMLElement, entityId: string, beside: boolean): void {
 		const entity = store.data.entities.find((e) => e.id === entityId);
 		if (!entity || !anchor.isConnected) return;
 		const type = store.data.types.find((t) => t.id === entity.typeId);
@@ -59,14 +59,17 @@ export function createCardPreview(store: Store, container: HTMLElement): CardPre
 		preview.classList.toggle("clipped", !!body && body.scrollHeight > body.clientHeight);
 
 		// Below the tag if it fits, else above; otherwise as low as fits inside the container (it may cover the tag,
-		// which is fine because the preview never catches the pointer).
+		// which is fine because the preview never catches the pointer). Beside it: to its right, level with its top
+		// as far as the container allows.
 		const tagTop = tag.top - area.top;
 		const tagBottom = tag.bottom - area.top;
+		const lowest = Math.max(margin, area.height - margin - height);
 		let top: number;
-		if (tagBottom + gap + height <= area.height - margin) top = tagBottom + gap;
+		if (beside) top = Math.min(Math.max(margin, tagTop), lowest);
+		else if (tagBottom + gap + height <= area.height - margin) top = tagBottom + gap;
 		else if (tagTop - gap - height >= margin) top = tagTop - gap - height;
-		else top = Math.max(margin, area.height - margin - height);
-		const left = Math.min(Math.max(margin, tag.left - area.left), area.width - width - margin);
+		else top = lowest;
+		const left = Math.min(Math.max(margin, beside ? tag.right - area.left + gap : tag.left - area.left), area.width - width - margin);
 		// A scrolling container moves its content, the preview with it.
 		Object.assign(preview.style, { left: `${left + container.scrollLeft}px`, top: `${top + container.scrollTop}px` });
 	}
@@ -78,16 +81,16 @@ export function createCardPreview(store: Store, container: HTMLElement): CardPre
 
 	return {
 		element: preview,
-		attach(tag, entityId) {
+		attach(tag, entityId, { beside = false } = {}) {
 			tag.tabIndex = 0;
 			tag.setAttribute("aria-describedby", preview.id);
 			tag.addEventListener("pointerenter", () => {
 				clearTimeout(previewTimer);
 				// A short delay, so moving across a card doesn't flash previews.
-				previewTimer = setTimeout(() => show(tag, entityId), 250);
+				previewTimer = setTimeout(() => show(tag, entityId, beside), 250);
 			});
 			tag.addEventListener("pointerleave", hide);
-			tag.addEventListener("focus", () => show(tag, entityId));
+			tag.addEventListener("focus", () => show(tag, entityId, beside));
 			tag.addEventListener("blur", hide);
 		},
 		hide,
