@@ -528,6 +528,31 @@ test("+ Entity creates an entity of any type with its card on the board, and sel
 	assert.equal(details(view).querySelector(".details-title")?.textContent, "Ada");
 });
 
+test("Lay out puts the cards of the references the card lists around it, in one undo step; then it's disabled", async () => {
+	const { store, person, author, dune, card } = await connectable();
+	const frank = store.addEntity(person.id, "Frank", "", {});
+	store.updateEntity(dune.id, "Dune", "", { [author.id]: frank.id });
+	freshDom();
+	const view = canvasView(store, { readOnly: false, layers: [] });
+	document.body.append(view);
+	cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	const button = () => detailsButton(view, text.layOutReferences)!;
+	assert.equal(button().previousElementSibling?.textContent, text.connect, "next to Connect");
+	assert.equal(button().title, text.layOutReferencesHint);
+
+	button().click();
+	const placed = store.data.boards[0]!.cards.find((c) => c.entityId === frank.id)!;
+	assert.deepEqual([placed.x, placed.y], [288, 0], "right of Dune's card, as Dune references Frank");
+	assert.ok(cardNode(view, placed.id).classList.contains("appear"));
+	assert.equal(cardNode(view, card.id).querySelector(".card-props"), null, "the reference is a line now, not listed");
+	assert.ok(view.querySelector(".connectors path, .connectors line"));
+	assert.ok(cardNode(view, card.id).classList.contains("selected"), "the selection stays");
+	assert.equal(button().disabled, true, "nothing left to lay out");
+
+	store.undo();
+	assert.equal(store.data.boards[0]!.cards.length, 1);
+});
+
 test("Delete in the details deletes the entity after asking, with its cards on all boards, in one undo step", async () => {
 	const { store, person, author, dune, card } = await connectable();
 	const frank = store.addEntity(person.id, "Frank", "", {});
@@ -541,7 +566,7 @@ test("Delete in the details deletes the entity after asking, with its cards on a
 	cardNode(view, frankCard.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	const button = detailsButton(view, text.deleteEntity)!;
 	assert.ok(button.classList.contains("entity-delete"), "set apart in red");
-	assert.equal(button.previousElementSibling?.textContent, text.connect, "after Edit and Connect");
+	assert.equal(button.previousElementSibling?.textContent, text.layOutReferences, "after Edit, Connect and Lay out");
 
 	const asked: string[] = [];
 	let answer = false;

@@ -717,9 +717,16 @@ main:has(.canvas-view) {
 	font-variant-numeric: tabular-nums;
 }
 
-/* Deleting the entity: set apart at the right end of the details' actions, in red. */
+/* Deleting the entity: set apart at the right end of the details' actions, in red; on a line of its own when they
+   don't fit on one. */
+.canvas-view .details-actions {
+	display: flex;
+	flex-wrap: wrap;
+	row-gap: 0.25rem;
+}
+
 .details-actions .entity-delete {
-	float: right;
+	margin-left: auto;
 	color: var(--error);
 	border-color: var(--error);
 }

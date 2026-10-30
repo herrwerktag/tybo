@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { snapToGrid } from "../../data/core/model.js";
-import { FRAME_ASPECT, frameInside, frameShape, placeBeside } from "./model.js";
+import { FRAME_ASPECT, frameInside, frameShape, placeAround, placeBeside } from "./model.js";
 
 test("placeBeside puts a card right of the source, moved down past the cards in the way", () => {
 	const source = { x: 0, y: 0, width: 240, height: 168 };
@@ -11,6 +11,20 @@ test("placeBeside puts a card right of the source, moved down past the cards in 
 	assert.deepEqual(placeBeside(source, [source, { x: 288, y: 0, width: 240, height: 168 }], size), { x: 288, y: 192 });
 	// Off the grid, the source still leads to a place on it.
 	assert.deepEqual(placeBeside({ x: 10, y: 13, width: 240, height: 80 }, [], size), { x: 288, y: 24 });
+});
+
+test("placeAround stacks cards in a column on each side of the source, clear of the others and each other", () => {
+	const source = { x: 0, y: 0, width: 240, height: 168 };
+	const card = { width: 240, height: 168 };
+	const narrow = { width: 168, height: 72 };
+	assert.deepEqual(placeAround(source, [source], { right: [card, card], left: [narrow] }), {
+		right: [
+			{ x: 288, y: 0 },
+			{ x: 288, y: 192 },
+		],
+		left: [{ x: -216, y: 0 }],
+	});
+	assert.deepEqual(placeAround(source, [source], { right: [], left: [] }), { right: [], left: [] });
 });
 
 test("snapToGrid rounds to the nearest grid line", () => {
