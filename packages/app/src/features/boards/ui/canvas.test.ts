@@ -169,6 +169,24 @@ test("× takes the card off the board; the entity stays", async () => {
 	assert.ok(store.data.entities.some((e) => e.id === dune.id));
 });
 
+test("Delete takes the selected card off the board, like ×; the entity stays", async () => {
+	const { store, view, card, dune } = await setup();
+	const press = (key: string, target: EventTarget = document.body) =>
+		target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+	press("Delete");
+	assert.ok(savedCard(store, card.id), "nothing selected, nothing removed");
+
+	cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	detailsButton(view, dataText.edit)!.click();
+	press("Backspace", details(view).querySelector("input")!);
+	assert.ok(savedCard(store, card.id), "typing in the form removes nothing");
+
+	press("Backspace");
+	assert.equal(savedCard(store, card.id), undefined);
+	assert.equal(details(view).hidden, false, "its entity's details stay");
+	assert.ok(store.data.entities.some((e) => e.id === dune.id));
+});
+
 test("the viewer only looks: no remove buttons, and dragging doesn't move cards", async () => {
 	const { store, view, card } = await setup({ readOnly: true });
 	assert.equal(view.querySelector(".canvas-board .card-remove"), null);
@@ -510,10 +528,47 @@ test("+ Entity creates an entity of any type with its card on the board, and sel
 	assert.equal(details(view).querySelector(".details-title")?.textContent, "Ada");
 });
 
+test("Delete in the details deletes the entity after asking, with its cards on all boards, in one undo step", async () => {
+	const { store, person, author, dune, card } = await connectable();
+	const frank = store.addEntity(person.id, "Frank", "", {});
+	store.updateEntity(dune.id, "Dune", "", { [author.id]: frank.id });
+	const frankCard = store.addCard(store.data.boards[0]!.id, frank.id, 400, 0);
+	const other = store.addBoard("Other");
+	store.addCard(other.id, frank.id, 0, 0);
+	freshDom();
+	const view = canvasView(store, { readOnly: false, layers: [] });
+	document.body.append(view);
+	cardNode(view, frankCard.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	const button = detailsButton(view, text.deleteEntity)!;
+	assert.ok(button.classList.contains("entity-delete"), "set apart in red");
+	assert.equal(button.previousElementSibling?.textContent, text.connect, "after Edit and Connect");
+
+	const asked: string[] = [];
+	let answer = false;
+	Object.assign(globalThis, { confirm: (message: string) => (asked.push(message), answer) });
+	button.click();
+	assert.deepEqual(asked, [dataText.confirmDeleteEntity("Frank", 1) + text.otherBoardsWithCards(1)]);
+	assert.ok(store.data.entities.some((e) => e.id === frank.id), "cancelled: nothing changes");
+	assert.equal(details(view).hidden, false);
+
+	answer = true;
+	button.click();
+	assert.ok(!store.data.entities.some((e) => e.id === frank.id));
+	assert.equal(store.data.entities.find((e) => e.id === dune.id)?.values[author.id], null, "the reference to it is gone");
+	assert.deepEqual(store.data.boards.map((b) => b.cards.map((c) => c.id)), [[card.id], []]);
+	assert.equal(details(view).hidden, true);
+	assert.equal(cardNode(view, frankCard.id), null);
+
+	store.undo();
+	assert.ok(store.data.entities.some((e) => e.id === frank.id));
+	assert.deepEqual(store.data.boards.map((b) => b.cards.length), [2, 1]);
+});
+
 test("the viewer's details have no Connect button", async () => {
 	const { view, card } = await setup({ readOnly: true });
 	cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	assert.equal(detailsButton(view, "Connect"), undefined);
+	assert.equal(detailsButton(view, text.deleteEntity), undefined);
 });
 
 /** Gives the canvas a size (happy-dom lays nothing out) and makes the pan/zoom move at once (reduced motion). */

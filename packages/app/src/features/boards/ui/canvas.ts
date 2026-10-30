@@ -657,15 +657,34 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			: [
 					el("button", { type: "button", onclick: edit }, dataText.edit),
 					...(selected?.cardId ? [connect.button(entity, selected.cardId)] : []),
+					el("button", { type: "button", className: "entity-delete", title: text.deleteEntityHint, onclick: () => deleteEntity(entity) }, text.deleteEntity),
 				];
 		details.replaceChildren(...entityDetails(store, entity, { actions, onClose: () => select(null), onSelectEntity: selectEntity }));
 	}
 
-	// Escape closes the details panel (the listener removes itself once this view is gone).
+	/** Deletes the entity (after asking), with its cards on every board; one undo step brings all of it back. */
+	function deleteEntity(entity: Entity): void {
+		const otherBoards = store.data.boards.filter((b) => b.id !== boardId && b.cards.some((c) => c.entityId === entity.id)).length;
+		if (!confirm(dataText.confirmDeleteEntity(entity.name, store.referencesTo(entity.id)) + text.otherBoardsWithCards(otherBoards))) return;
+		store.deleteEntity(entity.id);
+		select(null);
+		renderCards();
+		renderPanel();
+	}
+
+	// Escape closes the details panel; in the editor, Delete takes the selected card off the board, like ×, and never
+	// deletes its entity (the listener removes itself once this view is gone).
 	function onKeyDown(e: KeyboardEvent): void {
 		if (!view.isConnected) return document.removeEventListener("keydown", onKeyDown);
 		if ((e.target as Element).closest("input, select, textarea")) return;
 		if (e.key === "Escape" && (selected || group)) select(null);
+		const cardId = !group && selected?.cardId;
+		if ((e.key === "Delete" || e.key === "Backspace") && cardId && !readOnly && !(e.ctrlKey || e.metaKey || e.altKey)) {
+			e.preventDefault();
+			store.removeCard(cardId);
+			renderCards();
+			renderPanel();
+		}
 	}
 	document.addEventListener("keydown", onKeyDown);
 
