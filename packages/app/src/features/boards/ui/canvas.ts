@@ -80,7 +80,14 @@ function firstBoardView(store: Store, options: CanvasOptions): HTMLElement {
  * shows the frame as an outline to move and resize.
  */
 export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
-	if (store.data.boards.length === 0) return firstBoardView(store, options);
+	return canvas(store, options).view;
+}
+
+/** The board canvas (see `canvasView`), with the way to draw it anew in place: after someone else's changes were
+ * taken over, it shows them and keeps this tab's pan and zoom, and what's selected as far as it's still there.
+ * False when that can't be done (no board, or the one shown is gone): then the canvas has to be made anew. */
+export function canvas(store: Store, options: CanvasOptions): { view: HTMLElement; refresh(): boolean } {
+	if (store.data.boards.length === 0) return { view: firstBoardView(store, options), refresh: () => false };
 	const { readOnly, layers, exports = [] } = options;
 	let boardId = readPreference(ACTIVE_BOARD_KEY) ?? "";
 	const currentBoard = (): Board => store.data.boards.find((b) => b.id === boardId) ?? store.data.boards[0]!;
@@ -1251,5 +1258,18 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 	const detailsHandle = resizeHandle(details, { key: DETAILS_WIDTH_KEY, side: "right", min: 16, max: 40 });
 	detailsHandle.classList.add("details-resize");
 	view.append(...(readOnly ? [] : [panel.element, panelHandle]), canvasMain, detailsHandle, details);
-	return view;
+
+	function refresh(): boolean {
+		if (!view.isConnected || !store.data.boards.some((b) => b.id === boardId)) return false;
+		if (group?.cards) {
+			const onBoard = new Set(currentBoard().cards.map((c) => c.id));
+			group.cards = new Set([...group.cards].filter((id) => onBoard.has(id)));
+		}
+		renderBoardControls();
+		renderPanel();
+		renderCards(); // with the layers, and the details of what's selected (or none, once it's gone)
+		renderFrames();
+		return true;
+	}
+	return { view, refresh };
 }

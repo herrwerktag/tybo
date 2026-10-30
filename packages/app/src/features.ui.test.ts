@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { setLanguage, activeWorkspacePreference, sharedText } from "./shared/ui/index.js";
 import { text as dataText } from "./features/data/texts.js";
 import { text as boardText } from "./features/boards/texts.js";
-import { createWorkspaces } from "./features.core.js";
+import { createStore, createWorkspaces } from "./features.core.js";
 import { render } from "./features.ui.js";
 
 test("a type with a property, then an entity of it, can be created through the forms and are saved", async () => {
@@ -351,22 +351,79 @@ test("a save that collided warns of the conflict, not of a failing storage, and 
 /** What the page does when the tab takes the front again: it looks for a newer stand at once. */
 const lookNow = () => window.dispatchEvent(new Event("focus"));
 
-test("a stand saved elsewhere in between is noticed and offered with the reload button — nothing loads it on its own", async () => {
+/** Another tab on the workspace the app shows: a store of its own on the same storage. */
+const otherTab = () => createStore(storage.port, WS);
+
+test("what another tab saves shows up on its own — no hint, no reload, the data saved over nothing", async () => {
 	const root = await startApp(library);
 	await settle();
 	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
 	assert.equal(banner.hidden, true); // nobody else changed anything: no hint
 
-	storage.saveElsewhere(WS); // another tab saved this workspace in between
+	const other = await otherTab();
+	other.addEntity("book", "Emma", "", {});
+	await settle();
 	lookNow();
 	await settle();
+	assert.ok(byText(root, "td", "Emma"));
+	assert.ok(byText(root, "td", "Dune"));
+	assert.equal(banner.hidden, true);
+	assert.deepEqual((await readSaved()).entities.map((e) => e.name), ["Dune", "Emma"]);
+});
+
+test("while a form is open, what another tab saved waits; once it's closed, it shows up", async () => {
+	const root = await startApp(library);
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", dataText.edit).click();
+	const other = await otherTab();
+	other.addEntity("book", "Emma", "", {});
+	await settle();
+	lookNow();
+	await settle();
+	assert.equal([...root.querySelectorAll("td")].some((td) => td.textContent === "Emma"), false);
+	assert.ok(root.querySelector("#entity-form"));
+
+	byText(root.querySelector("#entity-form")!, "button", dataText.cancel).click();
+	(document.activeElement as HTMLElement | null)?.blur();
+	lookNow();
+	await settle();
+	assert.ok(byText(root, "td", "Emma"));
+});
+
+test("on the board, another tab's changes are drawn in place: the selected card and its details stay", async () => {
+	const data = structuredClone(library) as { boards: unknown[] };
+	data.boards = [{ id: "b", name: "Board 1", cards: [{ id: "c", entityId: "01J00000000000000000000000", x: 0, y: 0, width: 240, height: 160 }], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [] }];
+	const root = await startApp(data, "#boards");
+	await settle(); // the page drawn for the address first
+	root.querySelector<HTMLElement>('.canvas-card[data-card-id="c"]')!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	const details = root.querySelector<HTMLElement>(".details-panel")!;
+	assert.equal(details.hidden, false);
+
+	const other = await otherTab();
+	const dune = other.data.entities[0]!;
+	other.updateEntity(dune.id, "Dune Messiah", dune.content, dune.values);
+	await settle();
+	lookNow();
+	await settle();
+	const card = root.querySelector<HTMLElement>('.canvas-card[data-card-id="c"]')!;
+	assert.match(card.textContent ?? "", /Dune Messiah/);
+	assert.ok(card.classList.contains("selected"));
+	assert.equal(root.querySelector(".details-panel"), details); // the same panel, not a page drawn anew
+	assert.match(details.textContent ?? "", /Dune Messiah/);
+});
+
+test("a stand saved elsewhere that can't be taken over is offered with the reload button — nothing loads it on its own", async () => {
+	const root = await startApp(library);
+	await settle();
+	const newer = { ...library, version: 999 };
+	storage.saveElsewhere(WS, newer); // saved by a newer version of the app
+	lookNow();
+	await settle();
+	const banner = root.querySelector<HTMLElement>(".problem-banner")!;
 	assert.equal(banner.hidden, false);
 	assert.match(banner.textContent ?? "", new RegExp(sharedText.changedElsewhere.slice(0, 20)));
 	assert.ok(byText(banner, "button", sharedText.reload));
-
-	// The look didn't load anything: the page shows the stand it read, and the saved data wasn't run over.
 	assert.ok(byText(root, "td", "Dune"));
-	assert.deepEqual(storage.data(WS), library);
+	assert.deepEqual(storage.data(WS), newer);
 });
 
 test("the tab hidden asks nothing: no eyes on it, nothing on the wire; visible again, it looks", async () => {

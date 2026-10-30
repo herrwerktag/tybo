@@ -233,60 +233,150 @@ test("data from a newer version is shown as far as it's understood, but never sa
 	assert.equal(storage.saves.length, 0);
 });
 
-test("a newer stand is seen by looking only — nothing in memory changes, nothing is given up", async () => {
+/** Two tabs on the same workspace: each its own store on the one storage. */
+async function twoTabs() {
 	const storage = memoryStorage();
-	const store = await open(storage);
-	const book = store.addType("Book", [titleDraft], "");
-	store.addEntity(book.id, "Dune", "", {});
+	const here = await open(storage);
+	const book = here.addType("Book", [titleDraft], "");
+	const dune = here.addEntity(book.id, "Dune", "", {});
+	const there = await open(storage);
+	return { storage, here, there, book, dune };
+}
+
+const rename = (store: Awaited<ReturnType<typeof open>>, entity: Entity, name: string) =>
+	store.updateEntity(entity.id, name, entity.content, entity.values);
+const names = (store: Awaited<ReturnType<typeof open>>) => store.data.entities.map((e) => e.name);
+
+test("what another tab saved is taken over unit by unit, and the next save builds on it without a collision", async () => {
+	const { storage, here, there, book } = await twoTabs();
+	assert.equal(await here.takeNewer(), "current"); // nobody else saved anything
+
+	there.addEntity(book.id, "Emma", "", {});
 	await settle();
-	assert.equal(await store.checkForNewer(), false); // this stand is the one the save reached
+	assert.equal(await here.takeNewer(), "taken");
+	assert.deepEqual(names(here), ["Dune", "Emma"]);
+	assert.deepEqual(here.history, { canUndo: true, canRedo: false }); // nothing of the history given up
+	assert.equal(await here.takeNewer(), "current"); // taken: the stand here is the newest now
 
-	storage.saveElsewhere(WS); // someone else saved in between
-	const seen = JSON.stringify(store.data);
-	assert.equal(await store.checkForNewer(), true);
+	here.addBoard("Second");
+	await settle();
+	assert.deepEqual(here.problems, { load: null, saveFailed: false, saveConflict: false });
+	assert.deepEqual((storage.data(WS)!.entities as Entity[]).map((e) => e.name), ["Dune", "Emma"]);
+	assert.deepEqual(storedBoards(storage), ["Board 1", "Second"]);
+});
 
-	// The look only looked: the data, the history and the problems stand as they stood.
-	assert.equal(JSON.stringify(store.data), seen);
-	assert.deepEqual(store.history, { canUndo: true, canRedo: false });
-	assert.deepEqual(store.problems, { load: null, saveFailed: false, saveConflict: false });
+test("a unit changed here and not saved yet keeps this stand, and its save tells the collision", async () => {
+	const { storage, here, there, book, dune } = await twoTabs();
+	storage.failing.saves = true;
+	rename(here, dune, "Dune (here)");
+	await settle();
+	storage.failing.saves = false;
 
-	// Nothing was reloaded or discarded for it: the history still undoes, and the undo's save reaches the
-	// storage — its version is this store's own stand again, no look's doing.
-	assert.equal(store.undo(), true);
-	assert.equal(store.data.entities.some((e) => e.name === "Dune"), false);
-	assert.equal(await store.checkForNewer(), false);
+	rename(there, dune, "Dune (there)");
+	there.addEntity(book.id, "Emma", "", {});
+	await settle();
+	assert.equal(await here.takeNewer(), "taken");
+	assert.deepEqual(names(here), ["Dune (here)", "Emma"]);
 
-	// Reading anew is nobody's decision but the user's; once read, the newer stand is simply this one.
-	storage.saveElsewhere(WS);
-	await store.reload();
-	assert.equal(await store.checkForNewer(), false);
+	here.addBoard("Second"); // the save that carries the rename again
+	await settle();
+	assert.equal(here.problems.saveConflict, true);
+});
+
+test("undo after a take-over takes back only this tab's own step, never what was taken over", async () => {
+	const { here, there, dune } = await twoTabs();
+	here.addBoard("Mine");
+	await settle();
+	rename(there, there.data.entities[0]!, "Dune (there)");
+	await settle();
+	assert.equal(await here.takeNewer(), "taken");
+
+	assert.equal(here.undo(), true);
+	assert.deepEqual(here.data.boards.map((b) => b.name), ["Board 1"]);
+	assert.deepEqual(names(here), ["Dune (there)"]);
+	assert.equal(here.redo(), true);
+	assert.deepEqual(here.data.boards.map((b) => b.name), ["Board 1", "Mine"]);
+	assert.deepEqual(names(here), ["Dune (there)"]);
+
+	// Further back too: the entity this tab made comes back as the other tab named it.
+	while (here.undo());
+	assert.deepEqual(here.data.types, []);
+	assert.equal(here.redo(), true);
+	assert.equal(here.redo(), true);
+	assert.equal(here.data.entities.find((e) => e.id === dune.id)?.name, "Dune (there)");
+});
+
+test("this tab's pan and zoom stay its own when another tab's board comes in", async () => {
+	const { here, there } = await twoTabs();
+	const board = firstBoard(here);
+	here.setViewport(board.id, { x: 10, y: 20, zoom: 1.5 });
+	await settle();
+	there.renameBoard(board.id, "Renamed");
+	await settle();
+	assert.equal(await here.takeNewer(), "taken");
+	assert.equal(firstBoard(here).name, "Renamed");
+	assert.deepEqual(firstBoard(here).viewport, { x: 10, y: 20, zoom: 1.5 });
+});
+
+test("a first board only read into a new workspace makes way for the one another tab saved", async () => {
+	const storage = memoryStorage();
+	const here = await open(storage); // its first board is only made by reading, not saved
+	const there = await open(storage);
+	const book = there.addType("Book", [], "");
+	const dune = there.addEntity(book.id, "Dune", "", {});
+	there.addCard(firstBoard(there).id, dune.id, 0, 0);
+	await settle();
+
+	assert.equal(await here.takeNewer(), "taken");
+	assert.deepEqual(here.data.boards.map((b) => b.id), [firstBoard(there).id]);
+	assert.equal(firstBoard(here).cards.length, 1);
+});
+
+test("while it may not be taken, nothing changes here; the next look takes it over", async () => {
+	const { here, there, book } = await twoTabs();
+	there.addEntity(book.id, "Emma", "", {});
+	await settle();
+	assert.equal(await here.takeNewer(() => false), "current");
+	assert.deepEqual(names(here), ["Dune"]);
+	assert.equal(await here.takeNewer(), "taken");
+	assert.deepEqual(names(here), ["Dune", "Emma"]);
+});
+
+test("a newer stand that can't be read is reported, and nothing of it is taken over", async () => {
+	const { storage, here } = await twoTabs();
+	storage.saveElsewhere(WS, { version: DATA_VERSION + 1, types: [], entities: [], boards: [] });
+	const seen = JSON.stringify(here.data);
+	assert.equal(await here.takeNewer(), "unreadable");
+	assert.equal(JSON.stringify(here.data), seen);
+	assert.deepEqual(here.problems, { load: null, saveFailed: false, saveConflict: false });
 });
 
 test("after a save of its own, this stand is the newer one — no false alarm over its own work", async () => {
 	const storage = memoryStorage();
 	const store = await open(storage);
-	assert.equal(await store.checkForNewer(), false); // the stand this one read
+	assert.equal(await store.takeNewer(), "current"); // the stand this one read
 
 	store.addBoard("A");
-	// Even while the save is still on its way: the look waits behind the save, so it never reports this
-	// stand's own brand-new save as someone else's.
-	assert.equal(await store.checkForNewer(), false);
+	// Even while the save is still on its way: the look waits behind the save, so it never takes this
+	// stand's own brand-new save for someone else's.
+	assert.equal(await store.takeNewer(), "current");
 	await settle();
-	assert.equal(await store.checkForNewer(), false); // settled: the save's own stand, not a newer one
+	assert.equal(await store.takeNewer(), "current"); // settled: the save's own stand, not a newer one
 
 	store.addBoard("B");
 	await settle();
-	assert.equal(await store.checkForNewer(), false); // and the one after that too
+	assert.equal(await store.takeNewer(), "current"); // and the one after that too
+	assert.deepEqual(storedBoards(storage), ["Board 1", "A", "B"]);
 });
 
-test("a look the storage can't answer is no event: false, nothing changed, nothing reported", async () => {
+test("a look the storage can't answer is no event: nothing changed, nothing reported", async () => {
 	const storage = memoryStorage();
 	const store = await open(storage);
 	store.addBoard("A");
 	await settle();
 	storage.failing.looks = true;
 	const seen = JSON.stringify(store.data);
-	assert.equal(await store.checkForNewer(), false);
+	assert.equal(await store.takeNewer(), "current");
 	assert.equal(storage.looks(), 1);
 	assert.equal(JSON.stringify(store.data), seen);
 	assert.deepEqual(store.history, { canUndo: true, canRedo: false });
