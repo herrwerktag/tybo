@@ -1,4 +1,4 @@
-import type { Change } from "./changes.js";
+import { unitKey, type Change } from "./changes.js";
 import type { DataPort } from "./ports.js";
 
 /** What went wrong reading the saved data; the UI shows it as a warning. Either way saving is paused, so
@@ -33,9 +33,15 @@ export interface DataFormat<D> {
 	toSaved(data: D): unknown;
 	/** The units in which two states differ (see `changesOf`). */
 	changesBetween(before: D, after: D): Change[];
+	/** The state with the change set's units written into it, every other unit as it was (see `withChanges`). */
+	withChanges(data: D, changes: readonly Change[]): D;
 	/** What undo or redo bring back of `snapshot`, with what they leave as it is in `current` (e.g. pan and zoom). */
 	restore(snapshot: D, current: D): D;
 }
+
+/** What a look for someone else's saves found (see `takeNewer`): nothing newer, or nothing it could take
+ * over now; their units, now taken over here; or a newer stand it can't read, so it stays a hint. */
+export type NewerStand = "current" | "taken" | "unreadable";
 
 /** How many changes can be undone. */
 const HISTORY_LIMIT = 100;
@@ -50,12 +56,16 @@ export async function createStoreCore<D>(port: DataPort, workspaceId: string, fo
 	// its very first moment.
 	/** The version the workspace's data was last read or saved at, as the storage named it. */
 	let seenVersion: string | null = null;
-	/** The saves on their way, one after the other; a look for a newer stand waits behind them, so it can't
-	 * mistake a stand this store is just about to reach with its own save for someone else's newer one. */
+	/** The saves on their way, one after the other, with the looks for a newer stand among them: a look waits
+	 * behind the saves before it, so it can't mistake a stand this store is just about to reach with its own save
+	 * for someone else's newer one, and the saves after it wait for what it takes over. */
 	let savesSettled: Promise<void> = Promise.resolve();
 	/** The look for a newer stand that's on its way; a second ask joins it rather than running alongside. */
-	let newerLook: Promise<boolean> | null = null;
+	let newerLook: Promise<NewerStand> | null = null;
 	let { data, problem: loadProblem, stand: baseline } = await load();
+	/** The baseline as the app holds it (read: checked and completed), to tell what was changed here from what
+	 * reading it completed. */
+	let held = data;
 	let saveFailed = false;
 	let saveConflict = false;
 	const problemListeners: (() => void)[] = [];
@@ -113,6 +123,7 @@ export async function createStoreCore<D>(port: DataPort, workspaceId: string, fo
 		try {
 			const answer = await port.saveChanges(workspaceId, changes);
 			baseline = stand;
+			held = stand;
 			seenVersion = answer.version;
 			conflict = answer.collided.length > 0;
 		} catch {
@@ -124,6 +135,41 @@ export async function createStoreCore<D>(port: DataPort, workspaceId: string, fo
 		if (changed) {
 			for (const listener of problemListeners) listener();
 		}
+	}
+
+	/** Takes over the units someone else saved since `baseline` (see `takeNewer`); never rejects. */
+	async function takeOver(canTake: () => boolean): Promise<NewerStand> {
+		let loaded: { data: unknown; version: string } | null;
+		try {
+			if ((await port.version(workspaceId)) === seenVersion) return "current";
+			loaded = await port.load(workspaceId);
+		} catch {
+			return "current"; // the look failed: nothing was changed here, and the next one may be answered
+		}
+		const read = loaded ? format.read(loaded.data) : null;
+		if (!loaded || !read?.stand || read.problem) return "unreadable";
+		if (!canTake()) return "current";
+		const key = (unit: Change) => unitKey(unit.kind, unit.id);
+		const own = new Set(format.changesBetween(held, data).map(key));
+		// Theirs: what the storage holds now that this store didn't save, but for the units changed here too —
+		// those keep the stand they were read at, so their save tells the collision.
+		const theirs = format.changesBetween(baseline!, read.stand).filter((unit) => !own.has(key(unit)));
+		// What reading completed and nobody saved yet (a new workspace's first board, say) is read anew too: the
+		// newer stand may complete it otherwise, or not need it.
+		const completed = format.changesBetween(baseline!, held).filter((unit) => !own.has(key(unit)));
+		const changed = new Set([...theirs, ...completed].map(key));
+		// Their units as the app holds them (read).
+		const taking = format.changesBetween(held, read.data).filter((unit) => changed.has(key(unit)));
+		baseline = format.withChanges(baseline!, theirs);
+		held = format.withChanges(held, taking);
+		seenVersion = loaded.version;
+		if (taking.length === 0) return "current";
+		// Pan and zoom stay this tab's own (see `restore`).
+		data = format.restore(format.withChanges(data, taking), data);
+		savedJson = JSON.stringify(format.toSaved(data));
+		undoStack = undoStack.map((stand) => format.withChanges(stand, taking));
+		redoStack = redoStack.map((stand) => format.withChanges(stand, taking));
+		return "taken";
 	}
 
 	/** Makes `next` the data and saves it; the data before goes onto the undo history. Changes that change nothing are skipped. */
@@ -170,6 +216,7 @@ export async function createStoreCore<D>(port: DataPort, workspaceId: string, fo
 		async reload(): Promise<void> {
 			await savesSettled; // a save on its way lands first, so the read sees it
 			({ data, problem: loadProblem, stand: baseline } = await load());
+			held = data;
 			savedJson = JSON.stringify(format.toSaved(data));
 			saveConflict = false;
 			// The history is from before the other tab's changes; undoing it would undo those too.
@@ -188,19 +235,24 @@ export async function createStoreCore<D>(port: DataPort, workspaceId: string, fo
 			problemListeners.push(listener);
 		},
 
-		/** Looks whether the storage holds a newer stand of the saved data than this one was last read or saved at.
-		 * Only looks: nothing is reloaded, nothing in memory is touched — neither the data, nor the undo history, nor
-		 * the problems. A look the storage can't answer is no event: false, and the next one may be asked again. */
-		async checkForNewer(): Promise<boolean> {
-			if (seenVersion === null) return false; // nothing was read to be newer than
-			// One look at a time: a second ask joins the one on its way. The look waits behind the saves on their
-			// way, so it never takes this store's own save for someone else's.
+		/** Takes over what someone else saved since this stand was last read or saved (another tab, a model
+		 * through the MCP), unit by unit, without reloading: their units come in, the units changed here and not
+		 * saved yet keep this store's own stand, and the next save builds on theirs, so it collides only where both
+		 * changed the same unit. The undo history stays; its stands take over the same units, so undo and redo
+		 * never bring back what someone else changed. `canTake` is asked last, right before anything changes here:
+		 * while it says no, nothing is taken, and the next look tries again. A look the storage can't answer is
+		 * no event; a newer stand it can't read (see `LoadProblem`) is left as it is, and only reported. */
+		async takeNewer(canTake: () => boolean = () => true): Promise<NewerStand> {
+			// Nothing read to be newer than, nothing that may be saved over, or saving paused after a collision:
+			// the stand is left to the reload the user is offered.
+			if (seenVersion === null || baseline === null || saveConflict) return "current";
+			// One look at a time: a second ask joins the one on its way. The look takes its turn among the saves,
+			// so it never takes this store's own save for someone else's, and no save goes off while it compares.
 			newerLook ??= (async () => {
+				const look = savesSettled.then(() => takeOver(canTake));
+				savesSettled = look.then(() => undefined);
 				try {
-					await savesSettled;
-					return (await port.version(workspaceId)) !== seenVersion;
-				} catch {
-					return false; // the look failed: no hint, and with it nothing was changed here
+					return await look;
 				} finally {
 					newerLook = null; // free for the next look
 				}

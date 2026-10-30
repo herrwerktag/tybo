@@ -11,6 +11,7 @@ import {
 	toSaved,
 	storedParts,
 	unitStandsOf,
+	withChanges,
 	type ActiveWorkspacePreference,
 	type AppData,
 	type Change,
@@ -128,6 +129,7 @@ export const APP_FORMAT: DataFormat<AppData> = {
 	nothing: () => ({ types: [], entities: [], boards: [], ...storedFeatureData({}) }),
 	toSaved,
 	changesBetween,
+	withChanges: (data, changes) => withChanges(UNIT_KINDS, data, changes),
 	// Undo and redo restore everything but the boards' pan and zoom, which stay as they are now.
 	restore: keepViewports,
 };

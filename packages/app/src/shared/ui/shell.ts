@@ -20,6 +20,9 @@ export interface Page<S> {
 	render(store: S): HTMLElement;
 	/** Called once the page is on screen, e.g. to focus what it asked to. */
 	afterRender?(root: HTMLElement): void;
+	/** Draws anew, in place, what the page shows after someone else's changes were taken over, keeping what the
+	 * user has open (a selection, say); false when it can't, and the whole page is drawn again. */
+	refresh?(): boolean;
 }
 
 /** Makes a feature's page, once for the app's whole life: what it keeps between drawings lives with it. */
@@ -69,10 +72,11 @@ function historyIcon(mirrored: boolean): SVGSVGElement {
 	);
 }
 
-/** How often to look, in the background, for a stand of the open workspace that someone else saved in between:
- * generously — it's about not being blindsided before the next save, not about seconds (and the tab being looked
- * at again — getting focus, turning visible — looks right away, not only every interval). */
-const NEWER_STAND_EVERY_MS = 15_000;
+/** How often to look, in the background, for a stand of the open workspace that someone else saved in between, to
+ * take it over: often enough to watch a model write through the MCP, and cheap, since a look asks only for the
+ * workspace's version (and the tab being looked at again — getting focus, turning visible — looks right away, not
+ * only every interval). */
+const NEWER_STAND_EVERY_MS = 3_000;
 
 /** A thrown value as text for the user. */
 function errorMessage(error: unknown): string {
@@ -144,8 +148,8 @@ export async function renderShell<D, S extends StoreCore<D>>(root: HTMLElement, 
 		/** Drag handle in the workspace list (its `data-focus-key`) to focus after the next render, so keyboard
 		 * reordering keeps focus on the moved workspace. */
 		focusHandle: null as string | null,
-		/** Whether a background look saw a newer stand of the open workspace than this page holds (someone else
-		 * saved in between). A hint only: nothing is reloaded for it without the user's word. */
+		/** Whether a background look saw a newer stand of the open workspace that it couldn't take over (saved by a
+		 * newer version of the app, say). A hint only: nothing is reloaded for it without the user's word. */
 		newerStand: false,
 		/** The last error thrown outside rendering (e.g. in a click handler), shown until the page is reloaded. */
 		unexpectedError: null as string | null,
@@ -178,8 +182,8 @@ export async function renderShell<D, S extends StoreCore<D>>(root: HTMLElement, 
 		// Someone else saved the same units in between: say what happened, and offer the newer data.
 		if (saveConflict) messages.push(el("p", {}, text.saveConflict, " ", reloadButton()));
 		if (saveFailed) messages.push(el("p", {}, text.saveFailed));
-		// Someone else saved the workspace anew in between — a look saw it; nothing of it was loaded here. Say so and
-		// offer the newer stand: loading it is the user's word (the button), never this page's own doing.
+		// Someone else saved the workspace anew in between, in a stand this page can't take over — a look saw it;
+		// nothing of it was loaded here. Say so and offer it: loading it is the user's word (the button).
 		if (state.newerStand) messages.push(el("p", {}, text.changedElsewhere, " ", reloadButton()));
 		if (load?.code === "newerVersion") messages.push(el("p", {}, text.loadNewerVersion, " ", reloadButton()));
 		if (load?.code === "unavailable") messages.push(el("p", {}, text.loadUnavailable, " ", reloadButton()));
@@ -187,17 +191,38 @@ export async function renderShell<D, S extends StoreCore<D>>(root: HTMLElement, 
 		banner.hidden = messages.length === 0;
 	}
 
-	/** Looks in the background whether the storage holds a newer stand of the open workspace — someone else's
-	 * save, in another tab or on another device. Only looks: nothing is reloaded here, nothing the user is
-	 * working on is touched, nothing is discarded; the hint tells it and offers the reload, which the user
-	 * decides on. A look that fails is no event — the next one may work. */
+	/** Takes over, in the background, what someone else saved of the open workspace in between — in another tab,
+	 * on another device, a model through the MCP — and draws it (see `takeNewer`). Never while the user is in the
+	 * middle of something (see `busy`): the next look takes it over. A stand it can't take over stays a hint, with
+	 * the reload the user decides on. A look that fails is no event — the next one may work. */
 	async function lookForNewerStand(): Promise<void> {
+		if (busy()) return;
 		const lookedAt = store;
-		const newer = await lookedAt.checkForNewer(); // never rejects; a look that fails just isn't newer
+		// Asked again right before anything changes: the user may have started something while the look was out.
+		const found = await lookedAt.takeNewer(() => lookedAt === store && !busy()); // never rejects
 		if (lookedAt !== store) return; // the workspace was switched while the look was here
-		if (newer === state.newerStand) return; // nothing changed either way
-		state.newerStand = newer;
+		if (found === "taken" && !pageFromHash(location.hash).refresh?.()) rerender();
+		const hint = found === "unreadable";
+		if (hint === state.newerStand) return; // nothing changed either way
+		state.newerStand = hint;
 		renderBanner();
+	}
+
+	/** Whether a press is held (a drag on the canvas, a list being reordered). */
+	let pressing = false;
+	document.addEventListener("pointerdown", () => (pressing = true), true);
+	document.addEventListener("dragstart", () => (pressing = true), true);
+	for (const end of ["pointerup", "pointercancel", "dragend", "drop"]) document.addEventListener(end, () => (pressing = false), true);
+
+	/** Whether the user is in the middle of something that drawing anew would take from them or change under
+	 * their hands: a press held, a text field with the focus, an open dialog, or a form on the page (editing an
+	 * entity, say). Someone else's changes wait until it's done. */
+	function busy(): boolean {
+		if (pressing) return true;
+		if (document.activeElement?.closest("input, select, textarea, [contenteditable]")) return true;
+		const page = root.lastElementChild; // after the header, see renderPage
+		const shown = (node: Element) => node.closest("dialog:not([open])") === null;
+		return !!page && [...page.querySelectorAll("dialog[open], form")].some(shown);
 	}
 
 	/** Looks for a newer stand only while someone can see this tab: nobody looks at a hidden page, so nothing
@@ -523,7 +548,7 @@ export async function renderShell<D, S extends StoreCore<D>>(root: HTMLElement, 
 	// The watch on newer stands runs once, for the page's whole life — not on each of its many re-draws
 	// (rerender()), or every drawing would nest a further interval and the page would ask faster and faster.
 	// The interval looks now and then; focus and the tab turning visible look at once, which is when the user
-	// looks. It never reloads anything by itself: the hint does no more than it says.
+	// looks.
 	const watchNewerStand = window.setInterval(lookWhileVisible, NEWER_STAND_EVERY_MS);
 	// The browser's answer is a bare number with no such handle; Node answers with a timer that mustn't hold
 	// its process open (the UI tests), so it steps aside there — the interval itself lives on as before.
