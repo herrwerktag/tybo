@@ -21,6 +21,10 @@ const en = {
 	connect: "Connect",
 	connectHint: "Link this entity with another one, existing or new",
 	connectNamed: (name: string) => `Connect "${name}"`,
+	deleteEntity: "Delete",
+	deleteEntityHint: "Delete this entity, with its cards on all boards",
+	otherBoardsWithCards: (boards: number) =>
+		boards > 0 ? ` Its cards on ${boards === 1 ? "one other board" : `${boards} other boards`} are removed as well.` : "",
 	relation: "Relation",
 	relationForward: (property: string, type: string) => `${property} → ${type}`,
 	relationInverse: (label: string, type: string) => `${label} → ${type}`,
@@ -76,6 +80,10 @@ export const text = messages<typeof en>({
 		connect: "Verbinden",
 		connectHint: "Diese Entität mit einer anderen verknüpfen, vorhandenen oder neuen",
 		connectNamed: (name) => `„${name}“ verbinden`,
+		deleteEntity: "Löschen",
+		deleteEntityHint: "Diese Entität löschen, mit ihren Karten auf allen Boards",
+		otherBoardsWithCards: (boards) =>
+			boards > 0 ? ` Auch die Karten auf ${boards === 1 ? "einem anderen Board" : `${boards} anderen Boards`} werden entfernt.` : "",
 		relation: "Beziehung",
 		relationForward: (property, type) => `${property} → ${type}`,
 		relationInverse: (label, type) => `${label} → ${type}`,

@@ -716,3 +716,10 @@ main:has(.canvas-view) {
 	text-align: center;
 	font-variant-numeric: tabular-nums;
 }
+
+/* Deleting the entity: set apart at the right end of the details' actions, in red. */
+.details-actions .entity-delete {
+	float: right;
+	color: var(--error);
+	border-color: var(--error);
+}
