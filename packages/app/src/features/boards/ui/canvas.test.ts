@@ -208,6 +208,29 @@ test("the side panel's width can be changed with its handle and is remembered; a
 	assert.equal(panel.style.getPropertyValue("--panel-width"), "");
 });
 
+test("hovering or focusing an entity in the side panel shows its card; dragging it or leaving hides that again", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const { view } = await setup();
+	const item = [...view.querySelectorAll<HTMLElement>(".panel-item")].find((i) => i.textContent?.startsWith("Dune"))!;
+	const preview = view.querySelector<HTMLElement>(".card-preview")!;
+	assert.equal(item.tabIndex, 0, "it can be focused");
+	assert.equal(item.getAttribute("aria-describedby"), preview.id);
+
+	item.dispatchEvent(new PointerEvent("pointerenter"));
+	assert.equal(preview.hidden, true, "not at once");
+	t.mock.timers.tick(250);
+	assert.equal(preview.hidden, false);
+	assert.equal(preview.querySelector(".card-title")?.textContent, "Dune");
+	assert.equal(preview.querySelector(".card-content")?.textContent, "A desert planet.");
+	item.dispatchEvent(new Event("dragstart"));
+	assert.equal(preview.hidden, true);
+
+	item.dispatchEvent(new Event("focus"));
+	assert.equal(preview.hidden, false);
+	item.dispatchEvent(new PointerEvent("pointerleave"));
+	assert.equal(preview.hidden, true);
+});
+
 /** Opens the boards dropdown with the Change board button, which shows the current board's name. */
 function openBoards(view: HTMLElement): HTMLDialogElement {
 	view.querySelector<HTMLButtonElement>(".board-switch")!.click();

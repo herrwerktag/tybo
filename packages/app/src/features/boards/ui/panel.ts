@@ -2,6 +2,7 @@ import { el, tagFilter, typeDot } from "../../../shared/ui/index.js";
 import type { Store } from "../../../features.core.js";
 import { entityTags, filterEntities } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
+import type { CardPreview } from "../../data/ui/entity-card.js";
 import type { Board } from "../core.js";
 import { text } from "../texts.js";
 
@@ -13,10 +14,15 @@ const PANEL_TAG_KEY = "canvas-panel-tag";
 
 /**
  * The editor's side panel: the entities, by type, to drag onto the board (`board`, whose cards it counts), found by
- * name, type and tag. Its fold button calls `onHide`.
+ * name, type and tag. Hovering or focusing one shows its card beside it (`preview`). Its fold button calls `onHide`.
  */
-export function entityPanel(store: Store, { board, readOnly, onHide }: { board: () => Board; readOnly: boolean; onHide: () => void }) {
+export function entityPanel(
+	store: Store,
+	{ board, readOnly, preview, onHide }: { board: () => Board; readOnly: boolean; preview: CardPreview; onHide: () => void },
+) {
 	const element = el("aside", { className: "canvas-panel" });
+	// Scrolling the list would leave the preview beside an entity no longer there (scrolling to a focused one doesn't).
+	element.addEventListener("wheel", preview.hide, { passive: true });
 
 	// Search and type filter for the side panel, kept for this visit only; the tag filter is remembered (see build).
 	let query = "";
@@ -77,6 +83,7 @@ export function entityPanel(store: Store, { board, readOnly, onHide }: { board: 
 
 	function render(): void {
 		if (readOnly) return; // no side panel in the viewer
+		preview.hide(); // its entity's item is about to be replaced
 		const cardCounts = new Map<string, number>();
 		for (const card of board().cards) cardCounts.set(card.entityId, (cardCounts.get(card.entityId) ?? 0) + 1);
 		const matches = filterEntities(store.data.entities, { query, typeId, tag });
@@ -104,7 +111,9 @@ export function entityPanel(store: Store, { board, readOnly, onHide }: { board: 
 								// Always on its own line below the name.
 								...(count > 0 ? [el("span", { className: "panel-item-note muted" }, text.onCanvas(count))] : []),
 							);
+							preview.attach(item, entity.id, { beside: true });
 							item.addEventListener("dragstart", (e) => {
+								preview.hide();
 								if (!e.dataTransfer) return;
 								e.dataTransfer.setData(ENTITY_MIME, entity.id);
 								e.dataTransfer.effectAllowed = "copy";
