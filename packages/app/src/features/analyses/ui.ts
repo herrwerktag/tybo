@@ -394,14 +394,25 @@ export function analysisView(store: Store): HTMLElement {
 	}
 
 	/** An entity as a link (with its type's color) showing its card while hovered and its details when clicked, or a
-	 * text. */
+	 * text. A span acting as a button, since a <button> never wraps inline: a long name would take a line of its own
+	 * and push the comma after it onto the next. */
 	function valueView(value: AnalysisValue): HTMLElement {
 		const entity = value.entityId !== null ? store.data.entities.find((e) => e.id === value.entityId) : undefined;
 		if (!entity) return el("span", {}, value.label);
 		const color = store.data.types.find((t) => t.id === entity.typeId)?.color;
 		const link = el(
-			"button",
-			{ type: "button", className: "entity-link", onclick: () => showDetails(entity.id) },
+			"span",
+			{
+				className: "entity-link",
+				role: "button",
+				tabIndex: 0,
+				onclick: () => showDetails(entity.id),
+				onkeydown: (event) => {
+					if (event.key !== "Enter" && event.key !== " ") return;
+					event.preventDefault();
+					showDetails(entity.id);
+				},
+			},
 			...(color ? [typeDot(color)] : []),
 			entity.name,
 		);
