@@ -4,6 +4,7 @@ import type { DraftProperty } from "../../data/core.js";
 import { DATA_VERSION } from "../../../shared/core/index.js";
 import { memoryStorage, open, assertEmpty, firstBoard, noLists, valueOf } from "../../../test-store.js";
 import { REFERENCE_SCREEN } from "./normalize.js";
+import { referencesOffBoard } from "./ops.js";
 
 test("moveBoard reorders the boards, and the order is saved", async () => {
 	const storage = memoryStorage();
@@ -124,6 +125,52 @@ test("placeCards moves an entity's card that's there and adds the others on top,
 	store.undo();
 	assert.deepEqual(store.data, before);
 	assert.deepEqual(store.placeCards("no-board", [{ entityId: a!.id, x: 0, y: 0 }]), []);
+});
+
+test("layOutReferences puts the listed entities off the board around the card: referenced right, referencing left", async () => {
+	const store = await open(memoryStorage());
+	const person = store.addType("Person", [], "");
+	const ref = (name: string, typeId: string, cardDisplay: DraftProperty["cardDisplay"], multiple = false, inverseLabel = ""): DraftProperty => ({
+		name,
+		kind: "reference",
+		options: [],
+		reference: { typeIds: [typeId], multiple, required: false, arrow: "to", lineLabel: "", inverseLabel },
+		cardDisplay,
+	});
+	const book = store.addType("Book", [ref("author", person.id, "line"), ref("characters", person.id, "list", true), ref("editor", person.id, "hidden")], "");
+	// Only with a label is the other side listed on the card.
+	const review = store.addType("Review", [ref("about", book.id, "line", false, "reviewed in")], "");
+	const [author, characters, editor] = book.properties.map((p) => p.id);
+	const [frank, paul, leto, ed] = ["Frank", "Paul", "Leto", "Ed"].map((name) => store.addEntity(person.id, name, "", {}));
+	const dune = store.addEntity(book.id, "Dune", "", { [author!]: frank!.id, [characters!]: [paul!.id, leto!.id], [editor!]: ed!.id });
+	const praise = store.addEntity(review.id, "Praise", "", { [review.properties[0]!.id]: dune.id });
+	const boardId = firstBoard(store).id;
+	const card = store.addCard(boardId, dune.id, 0, 0);
+	store.addCard(boardId, paul!.id, 288, 0);
+
+	// Paul is listed but on the board already; Ed isn't listed at all.
+	assert.deepEqual(referencesOffBoard(store.data, card.id), { forward: [frank!.id, leto!.id], inverse: [praise.id] });
+	const before = store.data;
+	const sizes: Record<string, { width: number; height: number }> = {
+		[frank!.id]: { width: 240, height: 120 },
+		[leto!.id]: { width: 240, height: 168 },
+		[praise.id]: { width: 192, height: 96 },
+	};
+	const placed = store.layOutReferences(card.id, (id) => sizes[id]!);
+	assert.deepEqual(
+		placed.map(({ entityId, x, y, width, height }) => [entityId, x, y, width, height]),
+		[
+			[frank!.id, 288, 192, 240, 120], // below Paul's card
+			[leto!.id, 288, 336, 240, 168], // below Frank's
+			[praise.id, -240, 0, 192, 96], // two grid steps left of Dune's
+		],
+	);
+	assert.equal(firstBoard(store).cards.length, 5);
+	assert.deepEqual(referencesOffBoard(store.data, card.id), { forward: [], inverse: [] });
+	assert.deepEqual(store.layOutReferences(card.id, (id) => sizes[id]!), [], "nothing left to lay out");
+
+	store.undo();
+	assert.deepEqual(store.data, before, "one undo step");
 });
 
 test("fitCards saves measured sizes outside the undo history; removeCard removes one card and keeps the entity", async () => {

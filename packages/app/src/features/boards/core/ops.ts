@@ -1,6 +1,15 @@
 import { moveItem, ulid, type Point, type Rect, type StoreCore, type AppData } from "../../../shared/core/index.js";
-import { DEFAULT_CARD_SIZE, canTakeMore, parseTags, referencedIds, type Entity, type Relation } from "../../data/core/model.js";
-import { freeSpot, frameShape, placeBeside, type Board, type BoardList, type CanvasCard } from "./model.js";
+import {
+	DEFAULT_CARD_SIZE,
+	canTakeMore,
+	cardRows,
+	inverseCardRows,
+	parseTags,
+	referencedIds,
+	type Entity,
+	type Relation,
+} from "../../data/core/model.js";
+import { freeSpot, frameShape, placeAround, placeBeside, type Board, type BoardList, type CanvasCard } from "./model.js";
 import { newBoard } from "./normalize.js";
 import { clampZoom, type Viewport } from "./viewport.js";
 
@@ -35,6 +44,27 @@ function linkOnBoard(data: AppData, sourceCardId: string, link: Link, other: Ent
 			boards: existing ? data.boards : data.boards.map((b) => (b.id === board.id ? { ...b, cards: [...b.cards, card] } : b)),
 		},
 	};
+}
+
+/**
+ * The entities the card `cardId` lists by its references (see cardRows and inverseCardRows: what is shown as a
+ * line, or not at all, isn't listed) that have no card on its board: those it references, then those referencing it,
+ * each once. Empty for a card that isn't there.
+ */
+export function referencesOffBoard(data: AppData, cardId: string): { forward: string[]; inverse: string[] } {
+	const board = data.boards.find((b) => b.cards.some((c) => c.id === cardId));
+	const entity = data.entities.find((e) => e.id === board?.cards.find((c) => c.id === cardId)?.entityId);
+	if (!board || !entity) return { forward: [], inverse: [] };
+	const names = new Map(data.entities.map((e) => [e.id, e.name]));
+	const type = data.types.find((t) => t.id === entity.typeId);
+	const seen = new Set(board.cards.map((c) => c.entityId));
+	const offBoard = (rows: { entityIds: string[] }[]): string[] => {
+		const ids = rows.flatMap((row) => row.entityIds).filter((id) => !seen.has(id));
+		for (const id of ids) seen.add(id);
+		return [...new Set(ids)];
+	};
+	const forward = offBoard(type ? cardRows(type, entity, names) : []);
+	return { forward, inverse: offBoard(inverseCardRows(data, entity, names)) };
 }
 
 /** The changes to the boards and their cards, on the store of the app's data. `lists` are the features' lists on
@@ -155,6 +185,27 @@ export function boardOps(core: StoreCore<AppData>, lists: readonly BoardList[]) 
 				boards: core.data.boards.map((b) => (b.id === boardId ? { ...b, cards: [...b.cards, card] } : b)),
 			});
 			return { entity, card };
+		},
+
+		/**
+		 * Puts the cards of the entities the card `cardId` lists but its board doesn't show (see referencesOffBoard)
+		 * around it, in one change: those it references to its right, those referencing it to its left (see
+		 * placeAround), each as big as `sizeOf` says (as the editor measures it). Answers the new cards.
+		 */
+		layOutReferences(cardId: string, sizeOf: (entityId: string) => { width: number; height: number }): CanvasCard[] {
+			const board = core.data.boards.find((b) => b.cards.some((c) => c.id === cardId));
+			const source = board?.cards.find((c) => c.id === cardId);
+			if (!board || !source) return [];
+			const { forward, inverse } = referencesOffBoard(core.data, cardId);
+			const sized = (ids: string[]) => ids.map((entityId) => ({ entityId, ...sizeOf(entityId) }));
+			const [right, left] = [sized(forward), sized(inverse)];
+			const spots = placeAround(source, board.cards, { right, left });
+			const cards: CanvasCard[] = [
+				...right.map((card, i) => ({ id: ulid(), ...card, ...spots.right[i]! })),
+				...left.map((card, i) => ({ id: ulid(), ...card, ...spots.left[i]! })),
+			];
+			if (cards.length > 0) updateBoard(board.id, (b) => ({ ...b, cards: [...b.cards, ...cards] }));
+			return cards;
 		},
 
 		/** Moves a card to (x, y) and brings it to the front. */

@@ -96,3 +96,24 @@ export function freeSpot(start: Point, cards: readonly Rect[], size: { width: nu
 export function placeBeside(source: Rect, cards: readonly Rect[], size: { width: number; height: number }): Point {
 	return freeSpot({ x: source.x + source.width + 2 * GRID_SIZE, y: source.y }, cards, size);
 }
+
+/**
+ * Where cards of these sizes go around the card `source`: the `right` ones in a column to its right, the `left` ones
+ * in a column to its left, each two grid steps away, from its top down, at free spots clear of `cards` and each other.
+ */
+export function placeAround(
+	source: Rect,
+	cards: readonly Rect[],
+	{ right, left }: { right: readonly { width: number; height: number }[]; left: readonly { width: number; height: number }[] },
+): { right: Point[]; left: Point[] } {
+	const taken = [...cards];
+	const place = (size: { width: number; height: number }, x: number): Point => {
+		const spot = freeSpot({ x, y: source.y }, taken, size);
+		taken.push({ ...spot, ...size });
+		return spot;
+	};
+	return {
+		right: right.map((size) => place(size, source.x + source.width + 2 * GRID_SIZE)),
+		left: left.map((size) => place(size, source.x - 2 * GRID_SIZE - size.width)),
+	};
+}

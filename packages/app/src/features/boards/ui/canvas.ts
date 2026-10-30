@@ -9,6 +9,7 @@ import {
 	defaultViewport,
 	fitRect,
 	frameInside,
+	referencesOffBoard,
 	screenToWorld,
 	snapZoom,
 	stepZoom,
@@ -656,10 +657,53 @@ export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
 			? []
 			: [
 					el("button", { type: "button", onclick: edit }, dataText.edit),
-					...(selected?.cardId ? [connect.button(entity, selected.cardId)] : []),
+					...(selected?.cardId ? [connect.button(entity, selected.cardId), layOutButton(selected.cardId)] : []),
 					el("button", { type: "button", className: "entity-delete", title: text.deleteEntityHint, onclick: () => deleteEntity(entity) }, text.deleteEntity),
 				];
 		details.replaceChildren(...entityDetails(store, entity, { actions, onClose: () => select(null), onSelectEntity: selectEntity }));
+	}
+
+	/** Lays out the cards of the references the card lists but the board doesn't show around it (see
+	 * layOutReferences); disabled while there are none. */
+	function layOutButton(cardId: string): HTMLButtonElement {
+		const { forward, inverse } = referencesOffBoard(store.data, cardId);
+		return el(
+			"button",
+			{
+				type: "button",
+				title: text.layOutReferencesHint,
+				ariaLabel: text.layOutReferencesHint,
+				disabled: forward.length + inverse.length === 0,
+				onclick: () => layOutReferences(cardId),
+			},
+			text.layOutReferences,
+		);
+	}
+
+	/** Puts the cards beside the card `cardId`, each as big as it will show (see fitCard), and brings them into view. */
+	function layOutReferences(cardId: string): void {
+		const board = currentBoard();
+		const onBoard = new Set(board.cards.map((c) => c.entityId));
+		const names = new Map(store.data.entities.map((e) => [e.id, e.name]));
+		const measure = (entityId: string): { width: number; height: number } => {
+			const entity = store.data.entities.find((e) => e.id === entityId)!;
+			const type = store.data.types.find((t) => t.id === entity.typeId);
+			const node = cardElement({ id: "", entityId, x: 0, y: 0, ...DEFAULT_CARD_SIZE }, entity, type, names, (id) => onBoard.has(id));
+			node.style.visibility = "hidden";
+			layer.append(node);
+			const size = fitCard(node) ?? DEFAULT_CARD_SIZE;
+			node.remove();
+			return size;
+		};
+		const cards = store.layOutReferences(cardId, measure);
+		if (cards.length === 0) return;
+		appearing = new Set(cards.map((c) => c.id));
+		renderCards();
+		renderPanel();
+		const all = [cardRects.get(cardId), ...cards].filter((r) => !!r);
+		const x = Math.min(...all.map((r) => r.x));
+		const y = Math.min(...all.map((r) => r.y));
+		reveal({ x, y, width: Math.max(...all.map((r) => r.x + r.width)) - x, height: Math.max(...all.map((r) => r.y + r.height)) - y });
 	}
 
 	/** Deletes the entity (after asking), with its cards on every board; one undo step brings all of it back. */

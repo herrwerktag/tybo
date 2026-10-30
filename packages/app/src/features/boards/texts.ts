@@ -21,6 +21,8 @@ const en = {
 	connect: "Connect",
 	connectHint: "Link this entity with another one, existing or new",
 	connectNamed: (name: string) => `Connect "${name}"`,
+	layOutReferences: "Lay out",
+	layOutReferencesHint: "Lay out all references: the cards of the entities this card lists that aren't on the board yet, around it",
 	deleteEntity: "Delete",
 	deleteEntityHint: "Delete this entity, with its cards on all boards",
 	otherBoardsWithCards: (boards: number) =>
@@ -80,6 +82,8 @@ export const text = messages<typeof en>({
 		connect: "Verbinden",
 		connectHint: "Diese Entität mit einer anderen verknüpfen, vorhandenen oder neuen",
 		connectNamed: (name) => `„${name}“ verbinden`,
+		layOutReferences: "Auslegen",
+		layOutReferencesHint: "Alle Referenzen auslegen: die Karten der Entitäten, die diese Karte auflistet und die noch nicht auf dem Board liegen, um sie herum",
 		deleteEntity: "Löschen",
 		deleteEntityHint: "Diese Entität löschen, mit ihren Karten auf allen Boards",
 		otherBoardsWithCards: (boards) =>
