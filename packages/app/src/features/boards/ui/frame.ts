@@ -1,6 +1,5 @@
-import type { Rect } from "../../../shared/core/index.js";
+import { snapToGrid, type Rect } from "../../../shared/core/index.js";
 import { CLICK_TOLERANCE, el, trackPointer } from "../../../shared/ui/index.js";
-import { snapToGrid } from "../../data/core.js";
 import { FRAME_ASPECT, MIN_FRAME_SIZE, type Board, type BoardStore } from "../core.js";
 import { text } from "../texts.js";
 
