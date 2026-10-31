@@ -427,30 +427,47 @@ function unitTag(label: string, color: string | undefined): HTMLElement {
 
 /** A field changed: `old → new`. */
 function changeLine(change: FieldChange): Node[] {
-	return [el("del", {}, change.before || text.empty), el("span", { className: "history-arrow", ariaHidden: "true" }, " → "), el("ins", {}, change.after || text.empty)];
+	return [value(change.before, "old"), el("span", { className: "history-arrow", ariaHidden: "true" }, "→"), value(change.after, "new")];
 }
 
-/** The fields that changed: `old → new`; a long text by name only, its old text on request. */
+/** A field's value in a box of its own, set off from the field's name: as it was (struck through), as it became
+ * (stressed), or as it is; none, a dash. */
+function value(content: string, as: "old" | "new" | "plain"): HTMLElement {
+	if (content === "") return el("span", { className: "history-empty" }, text.empty);
+	return el(as === "old" ? "del" : as === "new" ? "ins" : "span", { className: `history-value ${as}` }, content);
+}
+
+/** The fields that changed, the field's name beside what became of it: `old → new`; a long text only as changed,
+ * its old text on request. */
 function changeList(changes: readonly FieldChange[]): HTMLElement {
 	return el(
 		"dl",
 		{ className: "history-changes" },
-		...changes.flatMap((change) =>
-			change.long
-				? [el("dt", {}, text.longChanged(change.label)), el("dd", {}, el("details", {}, el("summary", {}, text.oldText), el("p", { className: "history-text" }, change.before || text.empty)))]
-				: [el("dt", {}, change.label), el("dd", {}, ...changeLine(change))],
-		),
+		...changes.flatMap((change) => [
+			el("dt", {}, change.label),
+			el(
+				"dd",
+				{},
+				...(change.long
+					? [el("span", { className: "history-value changed" }, text.changed), el("details", {}, el("summary", {}, text.oldText), el("p", { className: "history-text" }, change.before || text.empty))]
+					: changeLine(change)),
+			),
+		]),
 	);
 }
 
-/** The fields of a stand, each with its text; long ones on request. */
+/** The fields of a stand, each name beside its value; long ones on request. */
 function fieldList(fields: readonly HistoryField[]): HTMLElement {
 	return el(
 		"dl",
 		{ className: "history-changes" },
 		...fields.flatMap((field) => [
 			el("dt", {}, field.label),
-			el("dd", {}, field.long ? el("details", {}, el("summary", {}, text.newText), el("p", { className: "history-text" }, field.text || text.empty)) : field.text || text.empty),
+			el(
+				"dd",
+				{},
+				field.long && field.text !== "" ? el("details", {}, el("summary", {}, text.newText), el("p", { className: "history-text" }, field.text)) : value(field.text, "plain"),
+			),
 		]),
 	);
 }

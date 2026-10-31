@@ -119,7 +119,7 @@ test("History: a change lists only the fields that changed; a long text by name,
 
 	const view = await openHistory();
 	const unit = view.querySelector(".history-unit")!;
-	assert.deepEqual(labels(unit), ["Status", text.longChanged(dataText.description)]);
+	assert.deepEqual(labels(unit), ["Status", dataText.description]);
 	assert.equal(unit.querySelector("del")!.textContent, "open");
 	assert.equal(unit.querySelector("ins")!.textContent, "pitched");
 	const old = byText(unit, "summary", text.oldText).closest("details")!;

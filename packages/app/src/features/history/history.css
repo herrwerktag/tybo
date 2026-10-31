@@ -220,37 +220,86 @@
 	font-size: 0.8125rem;
 }
 
-/* A unit's fields: label and what became of it, side by side. */
+/* A unit's fields: the field's name small and quiet on the left, its values in boxes on the right — old struck
+   through and grey, new stressed. */
 .history-changes {
 	display: grid;
-	grid-template-columns: minmax(5rem, max-content) minmax(0, 1fr);
-	gap: 0.125rem 0.75rem;
+	grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr);
+	gap: 0.3rem 0.75rem;
+	align-items: baseline;
 }
 
 .history-changes > dt {
+	font-size: 0.6875rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
 	color: var(--muted);
+	overflow-wrap: anywhere;
 }
 
 .history-changes > dd {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.25rem 0.4rem;
 	min-width: 0;
 }
 
-.history-changes del {
+.history-value {
+	padding: 0.05rem 0.4rem;
+	border-radius: 4px;
+	border: 1px solid var(--border);
+	background: var(--surface);
+	color: var(--text);
+	text-decoration: none;
+	overflow-wrap: anywhere;
+}
+
+.history-value.old {
+	background: transparent;
+	border-style: dashed;
+	color: var(--muted);
+	text-decoration: line-through;
+	text-decoration-color: var(--border-strong);
+}
+
+.history-value.new {
+	background: var(--highlight);
+	border-color: var(--focus);
+	font-weight: 600;
+}
+
+.history-value.changed {
+	background: var(--highlight);
+	border-color: var(--focus);
+	font-size: 0.8125rem;
+}
+
+.history-arrow {
 	color: var(--muted);
 }
 
-.history-changes ins {
-	text-decoration: none;
-	font-weight: 600;
+.history-empty {
+	color: var(--muted);
 }
 
 .history-change summary {
 	cursor: pointer;
 	color: var(--muted);
+	font-size: 0.8125rem;
 }
 
-.history-change details[open] > summary {
-	margin-bottom: 0.25rem;
+.history-changes details {
+	flex-basis: 100%;
+}
+
+.history-changes > dd > .history-value.changed + details {
+	flex-basis: auto;
+}
+
+.history-changes > dd > details[open] {
+	flex-basis: 100%;
 }
 
 .history-text {
