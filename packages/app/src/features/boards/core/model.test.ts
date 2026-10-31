@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { snapToGrid } from "../../data/core/model.js";
+import { snapToGrid } from "../../data/core.js";
 import { FRAME_ASPECT, frameInside, frameShape, placeAround, placeBeside } from "./model.js";
 
 test("placeBeside puts a card right of the source, moved down past the cards in the way", () => {

@@ -35,7 +35,8 @@ beisteuern, Eintraege im Arbeitsbereich-Menue, eine Option fuer neue Arbeitsbere
 auch `AppData`, an das jedes Feature seinen Teil haengt. Zusammengesetzt wird die App in `features.*.ts`: Store und
 Arbeitsbereiche in `features.core.ts`, die Arbeitsbereich-Werkzeuge in `features.mcp.ts`; daneben liegen die Tests der
 ganzen App und ihre Hilfen (`test-*.ts`, `memory-port.ts`). Importe zeigen nur nach unten: `shared/` kennt keine
-Features, ein Feature nur `shared/` und die Features, auf denen es aufbaut, und nichts von der zusammengesetzten
+Features, ein Feature nur `shared/` und die Features, auf denen es aufbaut (von denen nur ihre Einstiege `core.ts`,
+`ui.ts`, `api.ts`, `mcp.ts`, `texts.ts`), und nichts von der zusammengesetzten
 App, auch keine Typen: es arbeitet mit dem Store der Features darunter (`DataStore`, `BoardStore`); `imports.test.ts`
 prueft das.
 

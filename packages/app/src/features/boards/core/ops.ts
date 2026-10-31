@@ -7,9 +7,9 @@ import {
 	parseTags,
 	referencedIds,
 	type Entity,
+	type DataStore,
 	type Relation,
-} from "../../data/core/model.js";
-import type { DataStore } from "../../data/core.js";
+} from "../../data/core.js";
 import { freeSpot, frameShape, placeAround, placeBeside, type Board, type BoardList, type CanvasCard } from "./model.js";
 import { newBoard } from "./normalize.js";
 import { clampZoom, type Viewport } from "./viewport.js";
