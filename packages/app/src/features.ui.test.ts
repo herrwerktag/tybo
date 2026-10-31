@@ -32,7 +32,7 @@ test("a type with a property, then an entity of it, can be created through the f
 	nameInput!.value = " Dune ";
 	authorInput!.value = "Herbert";
 	tagsInput!.value = "Classic, sci-fi, classic,";
-	byText(entityForm, "button", dataText.create).click();
+	byText(entityForm, "button", sharedText.create).click();
 
 	assert.ok(byText(root, "td", "Dune"));
 	assert.ok(byText(root, "td", "Herbert"));
@@ -116,13 +116,13 @@ test("the forms for a new type and a new entity are hidden until asked for, and 
 	const root = await startApp(library, "#types");
 	assert.equal(root.querySelector("#type-form"), null);
 	byText(root, "button", dataText.createNewType).click();
-	byText(root.querySelector("#type-form")!, "button", dataText.cancel).click();
+	byText(root.querySelector("#type-form")!, "button", sharedText.cancel).click();
 	assert.equal(root.querySelector("#type-form"), null);
 
 	goTo("#entities");
 	assert.equal(root.querySelector("#entity-form"), null);
 	byText(root, "button", dataText.createNewEntity).click();
-	byText(root.querySelector("#entity-form")!, "button", dataText.cancel).click();
+	byText(root.querySelector("#entity-form")!, "button", sharedText.cancel).click();
 	assert.equal(root.querySelector("#entity-form"), null);
 
 	// Edit opens the form too.
@@ -160,7 +160,7 @@ test("a reference allowing several values shows them as tags: × removes one, th
 	assert.deepEqual(tags(), ["Bob"]);
 	assert.equal(nameInput.value, "Core team"); // only the field was drawn again
 
-	byText(form, "button", dataText.save).click();
+	byText(form, "button", sharedText.save).click();
 	const [core] = (await readSaved()).entities;
 	assert.equal(core?.name, "Core team");
 	assert.deepEqual(core?.values.members, ["01J00000000000000000000002"]);
@@ -185,7 +185,7 @@ test("deleting an entity asks first; cancelling keeps it", async () => {
 			return answer;
 		},
 	});
-	const deleteDune = () => byText(byText(root, "td", "Dune").closest("tr")!, "button", dataText.delete).click();
+	const deleteDune = () => byText(byText(root, "td", "Dune").closest("tr")!, "button", sharedText.delete).click();
 
 	deleteDune();
 	assert.deepEqual(questions, [dataText.confirmDeleteEntity("Dune", 0)]);
@@ -205,7 +205,7 @@ test("a type other types refer to can't be deleted", async () => {
 	stub({ alert: (message: string) => void alerts.push(message), confirm: () => assert.fail("shouldn't ask to confirm") });
 
 	const bookItem = root.querySelector(".type-item")!;
-	byText(bookItem, "button", dataText.delete).click();
+	byText(bookItem, "button", sharedText.delete).click();
 	assert.deepEqual(alerts, [dataText.cannotDeleteType("Book", "Review.of")]);
 	assert.equal((await readSaved()).types.length, 2);
 });
@@ -214,7 +214,7 @@ test("a new workspace from the menu starts empty and becomes active; switching b
 	const root = await startApp(library, "#types");
 	const newForm = root.querySelector<HTMLFormElement>(".workspace-new")!;
 	newForm.querySelector<HTMLInputElement>("input:not([type])")!.value = "Second";
-	byText(newForm, "button", dataText.create).click();
+	byText(newForm, "button", sharedText.create).click();
 	await settle();
 
 	assert.equal(root.querySelector(".workspace-name")?.textContent, "Second");
@@ -234,13 +234,13 @@ test("a new or renamed workspace may not have the name of another one; the new o
 	const name = newForm.querySelector<HTMLInputElement>("input:not([type])")!;
 	assert.equal(name.value, sharedText.defaultWorkspaceName(2));
 	name.value = sharedText.defaultWorkspaceName(1).toUpperCase();
-	byText(newForm, "button", dataText.create).click();
+	byText(newForm, "button", sharedText.create).click();
 	assert.equal(name.validationMessage, sharedText.workspaceNameTaken(name.value));
 	assert.equal((await storage.port.listWorkspaces()).length, 1);
 
 	name.value = "Second";
 	name.dispatchEvent(new Event("input"));
-	byText(newForm, "button", dataText.create).click();
+	byText(newForm, "button", sharedText.create).click();
 	await settle();
 	stub({ prompt: () => ` ${sharedText.defaultWorkspaceName(1)} `, alert: (message: string) => void alerts.push(message) });
 	byText(root, "button", sharedText.renameButton).click();
@@ -254,7 +254,7 @@ test("workspaces are reordered in the menu with their drag handles' arrow keys; 
 	const root = await startApp(library, "#types", behind);
 	const newForm = root.querySelector<HTMLFormElement>(".workspace-new")!;
 	newForm.querySelector<HTMLInputElement>("input:not([type])")!.value = "Second";
-	byText(newForm, "button", dataText.create).click();
+	byText(newForm, "button", sharedText.create).click();
 	await settle();
 
 	root.querySelectorAll<HTMLElement>(".workspace-list .drag-handle")[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
@@ -311,7 +311,7 @@ test("a deleted entity comes back with the Undo button, and goes again with Ctrl
 	assert.equal(undo.disabled, true);
 
 	stub({ confirm: () => true });
-	byText(byText(root, "td", "Dune").closest("tr")!, "button", dataText.delete).click();
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", sharedText.delete).click();
 	assert.equal(undo.disabled, false);
 
 	undo.click();
@@ -327,7 +327,7 @@ test("a deleted entity comes back with the Undo button, and goes again with Ctrl
 test("Ctrl+Z undoes outside text fields; inside one it's left to the browser's text undo", async () => {
 	const root = await startApp(library);
 	stub({ confirm: () => true });
-	byText(byText(root, "td", "Dune").closest("tr")!, "button", dataText.delete).click();
+	byText(byText(root, "td", "Dune").closest("tr")!, "button", sharedText.delete).click();
 
 	byText(root, "button", dataText.createNewEntity).click();
 	const nameInput = root.querySelector<HTMLInputElement>("#entity-form input")!;
@@ -415,7 +415,7 @@ test("while a form is open, what another tab saved waits; once it's closed, it s
 	assert.equal([...root.querySelectorAll("td")].some((td) => td.textContent === "Emma"), false);
 	assert.ok(root.querySelector("#entity-form"));
 
-	byText(root.querySelector("#entity-form")!, "button", dataText.cancel).click();
+	byText(root.querySelector("#entity-form")!, "button", sharedText.cancel).click();
 	(document.activeElement as HTMLElement | null)?.blur();
 	lookNow();
 	await settle();

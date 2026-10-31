@@ -1,7 +1,7 @@
 import type { EntityType, DataStore } from "../data/core.js";
 import { createCardPreview, detailsPanel } from "../data/ui.js";
 import { freeName, moveItem, nameTaken } from "../../shared/core/index.js";
-import { downloadFile, el, isRecord, listenWhileConnected, readPreference, refused, safeFileName, typeDot, writePreference, zipFiles, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
+import { downloadFile, el, isRecord, listenWhileConnected, readPreference, refused, safeFileName, typeDot, writePreference, zipFiles, sharedText, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
 import {
 	addAnalysis,
 	deleteAnalysis,
@@ -17,7 +17,6 @@ import {
 	type PathStep,
 } from "./core.js";
 import { analysisMarkdownFiles, pathLabel } from "./export.js";
-import { text as dataText } from "../data/texts.js";
 import { text } from "./texts.js";
 
 /** The analysis open in the Analyses tab. */
@@ -124,7 +123,7 @@ export function analysisView(store: DataStore): HTMLElement {
 		const update = (patch: Partial<Omit<Analysis, "id">>) => updateAnalysis(store, analysis.id, patch);
 		const name = el("input", {
 			value: analysis.name,
-			ariaLabel: dataText.name,
+			ariaLabel: sharedText.name,
 			onchange: () => {
 				const taken = nameTaken(store.data.analyses, name.value, analysis.id);
 				if (!refused(name, taken ? text.analysisNameTaken(name.value.trim()) : null)) update({ name: name.value });
@@ -158,7 +157,7 @@ export function analysisView(store: DataStore): HTMLElement {
 			el(
 				"div",
 				{ className: "analysis-meta" },
-				el("label", { className: "field" }, el("span", {}, dataText.name), name),
+				el("label", { className: "field" }, el("span", {}, sharedText.name), name),
 				el("label", { className: "field" }, el("span", {}, text.analysisRowType), rowType),
 				remove,
 			),

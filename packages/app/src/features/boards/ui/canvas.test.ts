@@ -2,7 +2,7 @@ import { freshDom } from "../../../shared/ui/test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { canvasView } from "./canvas.js";
-import { CLICK_TOLERANCE } from "../../../shared/ui/index.js";
+import { CLICK_TOLERANCE, sharedText } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
 import { text as dataText } from "../../data/texts.js";
 import { createStore } from "../../../features.core.js";
@@ -76,7 +76,7 @@ test("Edit in the details shows the entity's form there: saving updates the enti
 
 	// Cancel shows the details again, unchanged.
 	nameInput().value = "Arrakis";
-	[...form().querySelectorAll("button")].find((b) => b.textContent === dataText.cancel)!.click();
+	[...form().querySelectorAll("button")].find((b) => b.textContent === sharedText.cancel)!.click();
 	assert.equal(details(view).querySelector(".details-title")?.textContent, "Dune");
 	assert.equal(store.data.entities.find((e) => e.id === dune.id)?.name, "Dune");
 
