@@ -1,4 +1,4 @@
-import { freeName, snapToGrid, touches, type Point, type Rect } from "../../../shared/core/index.js";
+import { snapToGrid, type Point, type Rect } from "../../../shared/core/index.js";
 import { CLICK_TOLERANCE, el, listenWhileConnected, readPreference, resizeHandle, trackPointer, writePreference } from "../../../shared/ui/index.js";
 import { DEFAULT_CARD_SIZE, type Entity, type EntityType } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
@@ -7,10 +7,10 @@ import { frameInside, referencesOffBoard, screenToWorld, visibleRect, type Board
 import { text } from "../texts.js";
 import { connectDialog, newEntityDialog } from "./dialogs.js";
 import { frameEditor } from "./frame.js";
+import { boardControls } from "./board-controls.js";
 import { boardLinks, chainOf, connectorLines, type Link } from "./lines.js";
-import { marquee } from "./marquee.js";
-import { ENTITY_MIME, entityPanel } from "./panel.js";
-import { pickerDropdown, pickerLabel, renderPicker } from "./pickers.js";
+import { canvasInput } from "./input.js";
+import { entityPanel } from "./panel.js";
 import type { BoardExport, BoardItems, CanvasLayer } from "./layer.js";
 import { viewportControl } from "./viewport.js";
 
@@ -18,8 +18,6 @@ const PANEL_COLLAPSED_KEY = "canvas-panel-collapsed";
 /** The widths of the side panel and the details panel, if changed by dragging. */
 export const PANEL_WIDTH_KEY = "canvas-panel-width";
 const ACTIVE_BOARD_KEY = "canvas-active-board";
-/** Whether the editor is editing the frames: only then are they shown, with their controls. */
-const EDIT_FRAMES_KEY = "canvas-edit-frames";
 export interface CanvasOptions {
 	readOnly: boolean;
 	/** The features' layers on the board (see `CanvasLayer`), the first drawn lowest. */
@@ -168,111 +166,22 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 		renderFrames();
 	}
 
-	const boardControls = el("div", { className: "board-controls" });
+	/** Editor, while editing the frame: the board's frame as an outline on the canvas (see frameEditor). */
+	const frame = frameEditor(store, { board: currentBoard, zoom: () => viewport.current.zoom, goTo: viewport.goTo });
 
-	/** The boards: switch to another (and in the editor, create, rename or delete). */
-	const { dialog: boardDialog, button: boardButton } = pickerDropdown("board-dialog", text.tabBoards, "board-switch", text.changeBoard, () =>
-		renderBoardDialog(),
-	);
-
-	function renderBoardDialog(renamingId: string | null = null): void {
-		const boards = store.data.boards;
-		renderPicker({
-			dialog: boardDialog,
-			title: text.tabBoards,
-			items: boards,
-			currentId: boardId,
-			renamingId,
-			pick: switchBoard,
-			rerender: renderBoardDialog,
-			...(!readOnly && {
-				editing: {
-					renameTitle: text.renameBoard,
-					deleteTitle: text.deleteBoard,
-					rename: (id, name) => {
-						store.renameBoard(id, name);
-						renderBoardControls();
-					},
-					remove: deleteBoard,
-					newTitle: text.newBoard,
-					newName: freeName(boards, text.defaultBoardName),
-					nameTaken: text.boardNameTaken,
-					add: (name) => switchBoard(store.addBoard(name).id),
-					move: (id, to) => store.moveBoard(id, to),
-					moveTitle: text.moveBoard,
-				},
-			}),
-		});
-	}
-
-	/** The frame of what is seen now: the largest one in a frame's shape inside the canvas. */
-	const seenFrame = (): Rect => frameInside(visibleRect(viewport.current, surface.clientWidth, surface.clientHeight));
-
-	/** Editor: sets the board's frame to what is seen now. */
-	const frameFromViewButton = el(
-		"button",
-		{ type: "button", className: "frame-from-view", title: text.frameFromViewHint, onclick: () => frame.save(seenFrame()) },
-		text.frameFromView,
-	);
-
-	/** Editor: the frame is only shown and changed while editing it, so it doesn't clutter the board. */
-	let editingFrames = readPreference(EDIT_FRAMES_KEY) === "true";
-	const editFramesButton = el("button", {
-		type: "button",
-		className: "frames-toggle",
-		title: text.editFramesHint,
-		onclick: () => {
-			editingFrames = !editingFrames;
-			writePreference(EDIT_FRAMES_KEY, String(editingFrames));
-			renderBoardControls();
-			renderFrames();
-		},
+	const controls = boardControls(store, {
+		readOnly,
+		exports,
+		board: currentBoard,
+		switchBoard,
+		beforeDelete: viewport.flush,
+		onNoBoards: () => view.replaceWith(canvasView(store, options)),
+		newEntity: () => newEntity.open(),
+		// The largest frame in a frame's shape inside the canvas.
+		seenFrame: () => frameInside(visibleRect(viewport.current, surface.clientWidth, surface.clientHeight)),
+		frame,
 	});
-
-	/** Editor: the current board's exports (see `BoardExport`), in a dropdown like the boards'. */
-	const { dialog: exportDialog, button: exportButton } = pickerDropdown("export-dialog", text.exportButton, "export-switch", text.exportBoard, () => {
-		const option = (label: string, title: string, run: (id: string) => void) =>
-			el(
-				"li",
-				{},
-				el("button", { type: "button", className: "picker-option", title, onclick: () => (exportDialog.close(), run(boardId)) }, label),
-			);
-		exportDialog.replaceChildren(
-			el("h2", {}, text.exportButton),
-			el("ul", { className: "picker-list" }, ...exports.map((way) => option(way.label(), way.title(), (id) => way.run(store, id)))),
-		);
-	});
-	exportButton.replaceChildren(text.exportButton, el("span", { ariaHidden: "true" }, "▾"));
-
-	function renderBoardControls(): void {
-		boardButton.replaceChildren(...pickerLabel(currentBoard().name));
-		// The viewer only switches boards.
-		if (readOnly) return boardControls.replaceChildren(boardButton);
-		editFramesButton.ariaPressed = String(editingFrames);
-		editFramesButton.replaceChildren(el("span", { ariaHidden: "true" }, "▭"), editingFrames ? text.doneEditingFrames : text.editFrames);
-		boardControls.replaceChildren(
-			boardButton,
-			editFramesButton,
-			...(editingFrames ? [frameFromViewButton] : []),
-			el("button", { type: "button", title: text.newEntityHint, onclick: newEntity.open }, text.newEntityButton),
-			...(exports.length > 0 ? [exportButton] : []),
-		);
-	}
-
-	/** Deletes a board (after asking); without any left, the canvas makes way for the button creating the first. */
-	function deleteBoard(id: string): void {
-		const board = store.data.boards.find((b) => b.id === id);
-		if (!board || !confirm(text.confirmDeleteBoard(board.name, board.cards.length))) return;
-		viewport.flush();
-		store.deleteBoard(id);
-		if (store.data.boards.length === 0) {
-			boardDialog.close();
-			view.replaceWith(canvasView(store, options));
-			return;
-		}
-		if (id === boardId) switchBoard(store.data.boards[0]!.id);
-		renderBoardDialog();
-	}
+	const renderBoardControls = controls.render;
 
 	/** The entity shown in the details panel, and the card that was selected for it (if it's on this board). */
 	let selected: { entityId: string; cardId: string | null } | null = null;
@@ -756,133 +665,27 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 		);
 	}
 
-	/** Whether Space is held: dragging then pans, wherever it starts. */
-	let spaceHeld = false;
-	function onSpace(e: KeyboardEvent): void {
-		if (e.key !== " " || (e.target as Element).closest?.("input, select, textarea, [contenteditable]")) return;
-		e.preventDefault(); // no scrolling, nor pressing a focused button
-		spaceHeld = e.type === "keydown";
-		surface.classList.toggle("space-pan", spaceHeld);
-	}
-	listenWhileConnected(view, "keydown", onSpace);
-	listenWhileConnected(view, "keyup", onSpace);
-
-	// The middle button, or Space + drag, pans from anywhere on the canvas: in the capture phase, registered first,
-	// so it wins over cards, the layers and their tools.
-	surface.addEventListener(
-		"pointerdown",
-		(e) => {
-			if (e.button !== 1 && !(e.button === 0 && spaceHeld)) return;
-			e.preventDefault();
-			e.stopPropagation();
-			pan(e);
-		},
-		{ capture: true },
-	);
-
-	// With a layer's tool active, pressing anywhere on the canvas except on a card (or the frame's name or corner)
-	// uses it, e.g. starts a new drawing (in the capture phase, so it wins over panning and selecting).
-	if (!readOnly) {
-		surface.addEventListener(
-			"pointerdown",
-			(e) => {
-				if (!(e.target as Element).closest(".canvas-card, .view-frame")) [...views.values()].some((view) => view.press(e));
-			},
-			{ capture: true },
-		);
-	}
-
-	// Any drag, pan or zoom on the canvas closes the preview.
-	surface.addEventListener("pointerdown", preview.hide, { capture: true });
-	surface.addEventListener("wheel", preview.hide, { capture: true, passive: true });
-
-	/** Pans the board along with the pointer from this press; a click without moving clears the selection. */
-	function pan(e: PointerEvent): void {
-		viewport.pan(e, () => {
-			if (e.button !== 0) return;
+	canvasInput(store, {
+		readOnly,
+		view,
+		surface,
+		layer,
+		viewport,
+		views,
+		preview,
+		board: currentBoard,
+		cardRects: () => cardRects,
+		selection,
+		setSelection,
+		clearSelection: () => {
 			select(null);
 			deselectLayers();
-		});
-	}
-
-	/** The frame dragged around cards and layer items to select them. */
-	const frameDrag = marquee(surface);
-
-	/**
-	 * Drags a frame from this press: the cards and layer items it touches get selected (with
-	 * Shift, added to the selection). A click without moving clears the selection.
-	 */
-	function frameSelect(e: PointerEvent): void {
-		const adding = e.shiftKey;
-		frameDrag.drag(e, (f) => {
-			if (!f) {
-				if (!adding) setSelection({});
-				return;
-			}
-			const from = screenToWorld(viewport.current, f.x, f.y);
-			const to = screenToWorld(viewport.current, f.x + f.width, f.y + f.height);
-			const world = { x: from.x, y: from.y, width: to.x - from.x, height: to.y - from.y };
-			const items = adding ? selection() : {};
-			const add = (key: string, id: string) => (items[key] ??= new Set()).add(id);
-			for (const c of currentBoard().cards) if (touches(world, cardRects.get(c.id) ?? c)) add("cards", c.id);
-			for (const [key, view] of views) for (const id of view.touching(world)) add(key, id);
-			setSelection(items);
-		});
-	}
-
-	// Dragging the empty background frames cards and layer items to select them. Touch, and the viewer (which has
-	// nothing to select), pan instead.
-	surface.addEventListener("pointerdown", (e) => {
-		if (e.button !== 0 || (e.target !== surface && e.target !== layer)) return;
-		if (readOnly || e.pointerType === "touch") pan(e);
-		else frameSelect(e);
+		},
+		onCardAdded: redrawBoard,
 	});
 
-	/** Gives files to the layers, centered on a point (screen coordinates): true if one took any. */
-	function dropFiles(files: FileList | undefined, clientX: number, clientY: number): boolean {
-		const center = viewport.toWorld(clientX, clientY);
-		const all = [...(files ?? [])];
-		return all.length > 0 && [...views.values()].some((view) => view.drop(all, center));
-	}
-
-	// Drop entities from the side panel, or files for the layers, e.g. images (editor only).
-	if (!readOnly) {
-		surface.addEventListener("dragover", (e) => {
-			if (!e.dataTransfer || ![ENTITY_MIME, "Files"].some((type) => e.dataTransfer!.types.includes(type))) return;
-			e.preventDefault();
-			e.dataTransfer.dropEffect = "copy";
-		});
-		surface.addEventListener("drop", (e) => {
-			if (dropFiles(e.dataTransfer?.files, e.clientX, e.clientY)) {
-				e.preventDefault();
-				return;
-			}
-			const world = viewport.toWorld(e.clientX, e.clientY);
-			const entityId = e.dataTransfer?.getData(ENTITY_MIME);
-			if (!entityId) return;
-			e.preventDefault();
-			// Drop so the pointer ends up on the card's header, on the grid.
-			const x = snapToGrid(world.x - DEFAULT_CARD_SIZE.width / 2);
-			store.addCard(boardId, entityId, x, snapToGrid(world.y - 16));
-			redrawBoard();
-		});
-	}
-
-	// Ctrl/⌘ + V with files on the clipboard, e.g. an image, gives them to the layers, in the middle of the view.
-	// Pasting into a text field stays the text field's.
-	if (!readOnly) {
-		listenWhileConnected(view, "paste", (e) => {
-			if ((e.target as Element).closest?.("input, select, textarea, [contenteditable]")) return;
-			const rect = surface.getBoundingClientRect();
-			if (dropFiles(e.clipboardData?.files, rect.left + rect.width / 2, rect.top + rect.height / 2)) e.preventDefault();
-		});
-	}
-
-	/** Editor, while editing the frame: the board's frame as an outline on the canvas (see frameEditor). */
-	const frame = frameEditor(store, { board: currentBoard, zoom: () => viewport.current.zoom, goTo: viewport.goTo });
-
 	function renderFrames(): void {
-		if (!readOnly) frame.render(editingFrames);
+		if (!readOnly) frame.render(controls.editingFrames());
 	}
 
 	// Narrow screens only (see CSS): shows the controls kept out of the way there, so the canvas has room.
@@ -902,7 +705,7 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 	);
 	// Each control group has its own place: boards top right, the layers' controls (e.g. the drawing tools on the
 	// left edge with their style bar at the bottom left, see CSS), zoom bottom right.
-	const toolbar = el("div", { className: "canvas-toolbar" }, el("div", { className: "toolbar-group" }, boardControls, moreButton));
+	const toolbar = el("div", { className: "canvas-toolbar" }, el("div", { className: "toolbar-group" }, controls.element, moreButton));
 	const zoomBar = el(
 		"div",
 		{ className: "toolbar-group canvas-zoom" },
@@ -924,8 +727,8 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 		toolbar,
 		zoomBar,
 		preview.element,
-		boardDialog,
-		exportDialog,
+		controls.boardDialog,
+		controls.exportDialog,
 		connect.dialog,
 		newEntity.dialog,
 	);
