@@ -3,8 +3,8 @@ import { CLICK_TOLERANCE, el, listenWhileConnected, readPreference, resizeHandle
 import type { Store } from "../../../features.core.js";
 import { DEFAULT_CARD_SIZE, GRID_SIZE, effectiveCardDisplay, referencedIds, snapToGrid, type Entity, type EntityType } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
-import { DETAILS_WIDTH_KEY, cardParts, cardSize, createCardPreview, entityDetails } from "../../data/ui/entity-card.js";
-import { showEntityEditor } from "../../data/ui/entity-form.js";
+import { detailsPanel } from "../../data/ui/details-panel.js";
+import { cardParts, cardSize, createCardPreview } from "../../data/ui/entity-card.js";
 import {
 	defaultViewport,
 	fitRect,
@@ -455,20 +455,31 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 
 	/** The entity shown in the details panel, and the card that was selected for it (if it's on this board). */
 	let selected: { entityId: string; cardId: string | null } | null = null;
-	/** Editor: the details panel shows the selected entity's form instead of its details. */
-	let editing = false;
-	const details = el("aside", { className: "details-panel", ariaLabel: dataText.details });
-	details.hidden = true;
+	/** Easy-to-read details of the selected entity: description, all properties, content and ID. In the editor, Edit
+	 * shows its form there; for a card on the board, Connect links it with another entity, existing or new. */
+	const details = detailsPanel(store, {
+		readOnly,
+		actions: (entity) => [
+			...(selected?.cardId ? [connect.button(entity, selected.cardId), layOutButton(selected.cardId)] : []),
+			el("button", { type: "button", className: "entity-delete", title: text.deleteEntityHint, onclick: () => deleteEntity(entity) }, text.deleteEntity),
+		],
+		onClose: () => select(null),
+		onSelectEntity: selectEntity,
+		// What the cards show (name, properties, lines) may have changed; renderCards shows the details again.
+		onSaved: () => {
+			renderCards();
+			renderPanel();
+		},
+	});
 
 	function select(entityId: string | null, cardId: string | null = null): void {
 		const hadGroup = group !== null;
 		group = null;
 		selected = entityId ? { entityId, cardId } : null;
-		editing = false;
 		if (entityId) deselectLayers();
 		markSelectedCards();
 		if (hadGroup) renderLayers(); // without the group's outlines
-		renderDetails();
+		if (!details.open(selected?.entityId ?? null)) selected = null;
 	}
 
 	const isCardSelected = (cardId: string): boolean => (group ? !!group.cards?.has(cardId) : selected?.cardId === cardId);
@@ -634,43 +645,9 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 		},
 	});
 
-	/** Easy-to-read details of the selected entity: description, all properties, content and ID. */
+	/** Shows the selected entity's details anew, keeping its open form (redrawing the board, moving a card, …). */
 	function renderDetails(): void {
-		const entity = selected && store.data.entities.find((e) => e.id === selected!.entityId);
-		details.hidden = !entity;
-		if (!entity) {
-			selected = null;
-			details.replaceChildren();
-			return;
-		}
-		const type = store.data.types.find((t) => t.id === entity.typeId);
-		if (editing && type) {
-			// Redrawing the board (moving a card, …) keeps the open form and what was typed.
-			return showEntityEditor(details, store, entity, type, {
-				onClose: () => select(null),
-				onDone: (saved) => {
-					editing = false;
-					if (!saved) return renderDetails();
-					// What the cards show (name, properties, lines) may have changed; renderCards shows the details again.
-					renderCards();
-					renderPanel();
-				},
-			});
-		}
-		// In the editor: Edit shows the entity's form here; for a card on the board, Connect links it with another
-		// entity, existing or new (see openConnect).
-		const edit = () => {
-			editing = true;
-			renderDetails();
-		};
-		const actions = readOnly
-			? []
-			: [
-					el("button", { type: "button", onclick: edit }, dataText.edit),
-					...(selected?.cardId ? [connect.button(entity, selected.cardId), layOutButton(selected.cardId)] : []),
-					el("button", { type: "button", className: "entity-delete", title: text.deleteEntityHint, onclick: () => deleteEntity(entity) }, text.deleteEntity),
-				];
-		details.replaceChildren(...entityDetails(store, entity, { actions, onClose: () => select(null), onSelectEntity: selectEntity }));
+		if (!details.show(selected?.entityId ?? null)) selected = null;
 	}
 
 	/** Lays out the cards of the references the card lists but the board doesn't show around it (see
@@ -1249,9 +1226,7 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 	);
 	// Drag handles for the widths of the side panel and the details (hidden along with them, see CSS).
 	const panelHandle = resizeHandle(panel.element, { key: PANEL_WIDTH_KEY, side: "left", min: 12, max: 32 });
-	const detailsHandle = resizeHandle(details, { key: DETAILS_WIDTH_KEY, side: "right", min: 16, max: 40 });
-	detailsHandle.classList.add("details-resize");
-	view.append(...(readOnly ? [] : [panel.element, panelHandle]), canvasMain, detailsHandle, details);
+	view.append(...(readOnly ? [] : [panel.element, panelHandle]), canvasMain, details.handle, details.element);
 
 	function refresh(): boolean {
 		if (!view.isConnected || !store.data.boards.some((b) => b.id === boardId)) return false;

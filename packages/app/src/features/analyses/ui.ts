@@ -1,9 +1,9 @@
 import type { EntityType } from "../data/core.js";
 import type { Store } from "../../features.core.js";
-import { DETAILS_WIDTH_KEY, createCardPreview, entityDetails } from "../data/ui/entity-card.js";
-import { showEntityEditor } from "../data/ui/entity-form.js";
+import { detailsPanel } from "../data/ui/details-panel.js";
+import { createCardPreview } from "../data/ui/entity-card.js";
 import { freeName, moveItem, nameTaken } from "../../shared/core/index.js";
-import { downloadFile, el, isRecord, listenWhileConnected, readPreference, refused, resizeHandle, safeFileName, typeDot, writePreference, zipFiles, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
+import { downloadFile, el, isRecord, listenWhileConnected, readPreference, refused, safeFileName, typeDot, writePreference, zipFiles, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
 import {
 	addAnalysis,
 	deleteAnalysis,
@@ -45,14 +45,10 @@ export function analysisView(store: Store): HTMLElement {
 	const preview = createCardPreview(store, main);
 	main.append(preview.element);
 	main.addEventListener("scroll", preview.hide, { passive: true });
-	/** The entity whose details are shown beside the result. */
-	let shownEntityId: string | null = null;
-	/** Whether the details panel shows the entity's form instead of its details. */
-	let editing = false;
-	const details = el("aside", { className: "details-panel", ariaLabel: dataText.details });
-	const detailsHandle = resizeHandle(details, { key: DETAILS_WIDTH_KEY, side: "right", min: 16, max: 40 });
-	detailsHandle.classList.add("details-resize");
-	const view = el("div", { className: "analysis-view" }, main, detailsHandle, details);
+	/** The details of the entity clicked in the result; saving draws the result again (see onHistoryChange),
+	 * keeping the form until it's done. */
+	const details = detailsPanel(store, { onClose: () => showDetails(null), onSelectEntity: (id) => showDetails(id) });
+	const view = el("div", { className: "analysis-view" }, main, details.handle, details.element);
 
 	// Every change (here, or undone and redone) shows anew, keeping focus on the control it came from; the first
 	// change after this view is gone stops listening (each visit of the page makes a new one).
@@ -60,7 +56,7 @@ export function analysisView(store: Store): HTMLElement {
 
 	// Escape closes the details.
 	listenWhileConnected(view, "keydown", (e) => {
-		if (e.key === "Escape" && shownEntityId !== null && !(e.target as Element).closest("input, select, textarea")) showDetails(null);
+		if (e.key === "Escape" && details.shown() !== null && !(e.target as Element).closest("input, select, textarea")) showDetails(null);
 	});
 
 	function render(): void {
@@ -70,42 +66,14 @@ export function analysisView(store: Store): HTMLElement {
 		content.replaceChildren(listSection(current), ...(current ? [setupSection(current), resultSection(current)] : []));
 		if (!current) content.append(el("section", {}, el("p", { className: "muted" }, text.analysisEmpty)));
 		if (focusKey) content.querySelector<HTMLElement>(`[data-focus-key="${focusKey}"]`)?.focus();
-		showDetails(shownEntityId); // the entity may have changed or been removed
+		showDetails(details.shown()); // the entity may have changed or been removed
 	}
 
 	/** Shows the entity's details beside the result (none: closes them), and marks its links there. */
 	function showDetails(entityId: string | null): void {
-		const entity = entityId === null ? undefined : store.data.entities.find((e) => e.id === entityId);
-		if (entity?.id !== shownEntityId) editing = false;
-		shownEntityId = entity?.id ?? null;
-		details.hidden = !entity;
-		const type = entity && store.data.types.find((t) => t.id === entity.typeId);
-		if (entity && type && editing) {
-			// Saving draws the result again (see onHistoryChange), keeping the form until it's done.
-			showEntityEditor(details, store, entity, type, {
-				onClose: () => showDetails(null),
-				onDone: () => {
-					editing = false;
-					showDetails(entity.id);
-				},
-			});
-		} else {
-			const edit = () => {
-				editing = true;
-				showDetails(shownEntityId);
-			};
-			details.replaceChildren(
-				...(entity
-					? entityDetails(store, entity, {
-							actions: [el("button", { type: "button", onclick: edit }, dataText.edit)],
-							onClose: () => showDetails(null),
-							onSelectEntity: showDetails,
-						})
-					: []),
-			);
-		}
+		details.show(entityId);
 		for (const link of content.querySelectorAll<HTMLElement>(".entity-link")) {
-			link.classList.toggle("selected", link.dataset.entityId === shownEntityId);
+			link.classList.toggle("selected", link.dataset.entityId === details.shown());
 		}
 	}
 
