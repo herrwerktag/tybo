@@ -1,5 +1,5 @@
 import { moveItem } from "../../../shared/core/index.js";
-import { dragHandle, el, reorderable, typeDot } from "../../../shared/ui/index.js";
+import { dragHandle, el, reorderable, typeDot, sharedText } from "../../../shared/ui/index.js";
 import {
 	CARD_DISPLAYS,
 	LINE_ARROWS,
@@ -417,7 +417,7 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 					},
 					text.addProperty,
 				),
-				el("button", { type: "submit", className: "primary" }, editingType ? text.save : text.createType),
+				el("button", { type: "submit", className: "primary" }, editingType ? sharedText.save : text.createType),
 				el(
 					"button",
 					{
@@ -427,7 +427,7 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 							rerender();
 						},
 					},
-					text.cancel,
+					sharedText.cancel,
 				),
 			),
 			...state.typeErrors.map((error) => el("p", { className: "error" }, text.validation(error))),
@@ -493,7 +493,7 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 									}
 								},
 							},
-							text.delete,
+							sharedText.delete,
 						),
 					),
 				);

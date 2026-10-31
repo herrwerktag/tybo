@@ -10,7 +10,7 @@ import {
 	type PropertyValue,
 	type DataStore,
 } from "../core.js";
-import { el, type EntityLink } from "../../../shared/ui/index.js";
+import { el, sharedText, type EntityLink } from "../../../shared/ui/index.js";
 import { detailsBar } from "./entity-card.js";
 import { text } from "../texts.js";
 
@@ -62,7 +62,7 @@ export function entityForm(
 					...(links.length > 0 ? [el("p", { className: "entity-links" }, ...links.map((link) => el("a", { href: link.href(editing.id) }, link.label())))] : []),
 				]
 			: []),
-		el("label", { className: "field" }, el("span", {}, text.name), nameInput),
+		el("label", { className: "field" }, el("span", {}, sharedText.name), nameInput),
 		...fields.map((f) => f.element),
 		...(editing ? inverseFields(store, editing) : []),
 		el("label", { className: "field" }, el("span", {}, text.tags), tagsInput),
@@ -71,14 +71,14 @@ export function entityForm(
 		el(
 			"div",
 			{ className: "row" },
-			el("button", { type: "submit", className: "primary" }, editing ? text.save : text.create),
+			el("button", { type: "submit", className: "primary" }, editing ? sharedText.save : sharedText.create),
 			el(
 				"button",
 				{
 					type: "button",
 					onclick: () => onDone(false),
 				},
-				text.cancel,
+				sharedText.cancel,
 			),
 		),
 	);

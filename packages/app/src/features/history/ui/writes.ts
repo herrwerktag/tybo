@@ -1,5 +1,5 @@
 import type { HistoryEntry } from "../../../shared/core/index.js";
-import { isRecord, type HistoryArea, type HistoryField, type ReadUnit, type UnitDescriber } from "../../../shared/ui/index.js";
+import { isRecord, sharedText, type HistoryArea, type HistoryField, type ReadUnit, type UnitDescriber } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
 
 /** One write, as the history page shows it: the entries of one save (they share its revision), or one write of
@@ -104,7 +104,7 @@ function readSafely<S>(describer: UnitDescriber<S> | undefined, value: unknown, 
 /** The fields in which two read stands differ, the name first. */
 function fieldChanges(before: ReadUnit, after: ReadUnit): FieldChange[] {
 	const changes: FieldChange[] = [];
-	if (before.name !== after.name) changes.push({ label: text.name, before: before.name, after: after.name, long: false });
+	if (before.name !== after.name) changes.push({ label: sharedText.name, before: before.name, after: after.name, long: false });
 	const labels = [...new Set([...before.fields, ...after.fields].map((field) => field.label))];
 	for (const label of labels) {
 		const was = before.fields.find((field) => field.label === label);
@@ -156,7 +156,7 @@ export function workspaceStory(entry: HistoryEntry): { sentence: string; changes
 			return { sentence: text.workspaceCreated, changes: [] };
 		case "rename": {
 			const name = (raw: unknown) => (isRecord(raw) && typeof raw.name === "string" ? raw.name : "");
-			return { sentence: text.workspaceRenamed, changes: [{ label: text.name, before: name(entry.before), after: name(entry.after), long: false }] };
+			return { sentence: text.workspaceRenamed, changes: [{ label: sharedText.name, before: name(entry.before), after: name(entry.after), long: false }] };
 		}
 		case "move":
 			return { sentence: text.workspaceMoved, changes: [] };

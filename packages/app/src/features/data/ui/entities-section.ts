@@ -1,4 +1,4 @@
-import { dragHandle, el, reorderable, tagFilter, type EntityLink } from "../../../shared/ui/index.js";
+import { dragHandle, el, reorderable, tagFilter, sharedText, type EntityLink } from "../../../shared/ui/index.js";
 import {
 	entityTags,
 	filterEntities,
@@ -130,7 +130,7 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 					{},
 					el("th", {}),
 					el("th", {}, text.id),
-					el("th", {}, text.name),
+					el("th", {}, sharedText.name),
 					...type.properties.map((p) => el("th", {}, p.name)),
 					...inverseColumns.map((c) =>
 						el("th", { className: "inverse", title: text.setOn(sourceTypeName(c.sourceTypeId), c.prop.name) }, c.label),
@@ -184,7 +184,7 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 											}
 										},
 									},
-									text.delete,
+									sharedText.delete,
 								),
 							),
 						),

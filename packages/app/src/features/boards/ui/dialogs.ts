@@ -1,5 +1,5 @@
 import type { Point } from "../../../shared/core/index.js";
-import { el } from "../../../shared/ui/index.js";
+import { el, sharedText } from "../../../shared/ui/index.js";
 import { filterEntities, linkCandidates, relationsOf, type Entity, type Relation } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import type { CanvasCard, BoardStore } from "../core.js";
@@ -107,7 +107,7 @@ export function connectDialog(store: BoardStore, onLinked: (card: CanvasCard) =>
 			ariaLabel: text.searchEntities,
 			oninput: () => renderList(search.value),
 		});
-		const name = el("input", { required: true, pattern: ".*\\S.*", placeholder: dataText.name, ariaLabel: dataText.name });
+		const name = el("input", { required: true, pattern: ".*\\S.*", placeholder: sharedText.name, ariaLabel: sharedText.name });
 		dialog.replaceChildren(
 			dialogHeader(dialog, text.connectNamed(entity.name)),
 			el("label", { className: "field" }, el("span", {}, text.relation), choice),
@@ -121,7 +121,7 @@ export function connectDialog(store: BoardStore, onLinked: (card: CanvasCard) =>
 					},
 				},
 				el("h3", {}, dataText.newEntity(typeName)),
-				el("div", { className: "row" }, name, el("button", { type: "submit", className: "primary" }, dataText.create)),
+				el("div", { className: "row" }, name, el("button", { type: "submit", className: "primary" }, sharedText.create)),
 			),
 			el("div", { className: "connect-existing" }, el("h3", {}, text.existingEntity(typeName)), search, list),
 		);
@@ -146,7 +146,7 @@ export function newEntityDialog(
 	function openNewEntity(): void {
 		const types = store.data.types;
 		const typeSelect = el("select", { ariaLabel: dataText.entityType }, ...types.map((t) => el("option", { value: t.id }, t.name)));
-		const name = el("input", { required: true, pattern: ".*\\S.*", placeholder: dataText.name, ariaLabel: dataText.name });
+		const name = el("input", { required: true, pattern: ".*\\S.*", placeholder: sharedText.name, ariaLabel: sharedText.name });
 		dialog.replaceChildren(
 			dialogHeader(dialog, text.newEntityTitle),
 			types.length === 0
@@ -163,7 +163,7 @@ export function newEntityDialog(
 							},
 						},
 						el("label", { className: "field" }, el("span", {}, dataText.entityType), typeSelect),
-						el("div", { className: "row" }, name, el("button", { type: "submit", className: "primary" }, dataText.create)),
+						el("div", { className: "row" }, name, el("button", { type: "submit", className: "primary" }, sharedText.create)),
 					),
 		);
 		dialog.showModal();

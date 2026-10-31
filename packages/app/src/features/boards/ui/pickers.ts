@@ -1,6 +1,5 @@
 import { nameTaken } from "../../../shared/core/index.js";
-import { dragHandle, el, refused, reorderable, svgEl } from "../../../shared/ui/index.js";
-import { text as dataText } from "../../data/texts.js";
+import { dragHandle, el, refused, reorderable, svgEl, sharedText } from "../../../shared/ui/index.js";
 
 const PICKER_MIME = "application/x-picker-index";
 /** The pickers' row actions, drawn: a pencil (rename) and a bin (delete). */
@@ -75,8 +74,8 @@ export function renderPicker({ dialog, title, items, currentId, renamingId, pick
 						},
 					},
 					input,
-					el("button", { type: "submit", className: "primary" }, dataText.save),
-					el("button", { type: "button", onclick: () => rerender() }, dataText.cancel),
+					el("button", { type: "submit", className: "primary" }, sharedText.save),
+					el("button", { type: "button", onclick: () => rerender() }, sharedText.cancel),
 				),
 			);
 		}
@@ -121,7 +120,7 @@ export function renderPicker({ dialog, title, items, currentId, renamingId, pick
 		return row;
 	});
 
-	const nameInput = el("input", { ariaLabel: dataText.name, value: editing?.newName ?? "", required: true });
+	const nameInput = el("input", { ariaLabel: sharedText.name, value: editing?.newName ?? "", required: true });
 	const newForm = el(
 		"form",
 		{
@@ -135,7 +134,7 @@ export function renderPicker({ dialog, title, items, currentId, renamingId, pick
 		},
 		el("h3", {}, editing?.newTitle ?? ""),
 		nameInput,
-		el("button", { type: "submit", className: "primary" }, dataText.create),
+		el("button", { type: "submit", className: "primary" }, sharedText.create),
 	);
 	dialog.replaceChildren(el("h2", {}, title), el("ul", { className: "picker-list" }, ...rows), ...(editing ? [newForm] : []));
 }

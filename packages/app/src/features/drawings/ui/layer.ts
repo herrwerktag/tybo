@@ -1,5 +1,5 @@
 import { GRID_SIZE, touches, type Point, type Rect } from "../../../shared/core/index.js";
-import { CLICK_TOLERANCE, el, listenWhileConnected, readPreference, svgEl, trackPointer, writePreference } from "../../../shared/ui/index.js";
+import { CLICK_TOLERANCE, el, listenWhileConnected, readPreference, svgEl, trackPointer, writePreference, sharedText } from "../../../shared/ui/index.js";
 import { text as dataText } from "../../data/texts.js";
 import type { CanvasLayer, LayerHost, LayerView } from "../../boards/ui.js";
 import {
@@ -461,7 +461,7 @@ function createDrawingLayer(host: LayerHost): LayerView {
 					)
 				: []),
 			...(selected
-				? [el("button", { type: "button", title: text.deleteDrawing, onclick: () => removeSelected() }, dataText.delete)]
+				? [el("button", { type: "button", title: text.deleteDrawing, onclick: () => removeSelected() }, sharedText.delete)]
 				: []),
 		);
 	}
