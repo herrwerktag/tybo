@@ -26,9 +26,8 @@ Before implementing:
 
 After implementing:
 1. Run relevant tests.
-2. Run full test suite if practical.
-3. Run lint/type checks.
-4. Review your own diff for unnecessary complexity.
+2. Run `pnpm check` (type checks of every runtime, all tests, build); there is no linter.
+3. Review your own diff for unnecessary complexity.
 
 # Definition of done
 
