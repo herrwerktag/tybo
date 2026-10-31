@@ -561,79 +561,12 @@ th {
 	.resize-handle {
 		display: none;
 	}
-
-	.details-panel {
-		flex-basis: 45dvh;
-		border-left: none;
-		border-top: 1px solid var(--border);
-	}
 }
 
 /* Read-only reverse references in the data view: set on the other entities. */
 th.inverse,
 td.inverse {
 	color: var(--muted);
-}
-
-.field-hint {
-	font-size: 0.8125rem;
-}
-
-/* Details of the selected card: description first, then every property, content and the ID. */
-.details-panel {
-	flex: 0 0 var(--panel-width, 22rem);
-	display: flex;
-	flex-direction: column;
-	min-height: 0;
-	background: var(--surface);
-	border-left: 1px solid var(--border);
-}
-
-.details-panel[hidden] {
-	display: none;
-}
-
-.details-header {
-	border-bottom: 1px solid var(--border);
-}
-
-.details-title {
-	padding: 0.6rem 1rem 0.25rem;
-	font-size: 1.15rem;
-	font-weight: 600;
-	line-height: 1.3;
-	overflow-wrap: anywhere;
-}
-
-.details-actions {
-	padding: 0.25rem 1rem 0.75rem;
-}
-
-.details-body {
-	overflow-y: auto;
-	display: grid;
-	align-content: start;
-	gap: 1.25rem;
-	padding: 1rem;
-}
-
-.details-section {
-	display: grid;
-	gap: 0.4rem;
-}
-
-.details-section h3 {
-	font-size: 0.75rem;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-	color: var(--muted);
-}
-
-.details-text {
-	white-space: pre-wrap;
-	overflow-wrap: anywhere;
-	line-height: 1.55;
 }
 
 /* A description written in Markdown (see markdown.ts); headings start at h4. */
@@ -705,33 +638,9 @@ td.inverse {
 	color: var(--focus);
 }
 
-/* Label above value: easy to scan in a narrow column. */
-.details-props {
-	display: grid;
-	gap: 0.75rem;
-}
-
-.details-props dt {
-	font-size: 0.8125rem;
-	color: var(--muted);
-}
-
-.details-props dd {
-	overflow-wrap: anywhere;
-}
-
-.details-props .prop-chips {
-	margin-top: 0.15rem;
-}
-
 button.ref-tag {
 	border: none;
 	cursor: pointer;
-}
-
-.details-id {
-	font-size: 0.8125rem;
-	color: var(--muted);
 }
 
 /* A card with nothing below the name: the header is the whole card (the resize handle may still follow it). */
@@ -794,40 +703,6 @@ button.ref-tag {
 	touch-action: none;
 }
 
-.card-bar {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 0.5rem;
-	height: 23px;
-	padding: 0 0.35rem 0 0.75rem;
-	background: var(--surface-inset);
-	/* Inside the card's 1px border and 6px corners. */
-	border-radius: 5px 5px 0 0;
-}
-
-.card-type {
-	font-weight: 600;
-	color: rgb(0 0 0 / 0.65);
-	font-size: 0.75em;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.card-title {
-	padding: 12px 0.75rem 11px;
-	line-height: 24px;
-	overflow-wrap: anywhere;
-	display: -webkit-box;
-	-webkit-box-orient: vertical;
-	-webkit-line-clamp: 3;
-	line-clamp: 3;
-	overflow: hidden;
-}
-
 .card-remove {
 	border: none;
 	background: transparent;
@@ -841,46 +716,6 @@ button.ref-tag {
 
 .card-body {
 	overflow: auto;
-}
-
-/* Label column, value column: labels on one line, only as wide as they need (at most 10rem, then cut off with …);
-   values next to them, wrapping into more lines when the card is at its widest. */
-.card-props {
-	display: grid;
-	grid-template-columns: fit-content(10rem) minmax(0, 1fr);
-	gap: 4px 1rem;
-	align-items: start;
-	padding: 12px 0.75rem;
-	font-size: 0.875rem;
-	/* One grid step for a label, a line of tags and a text value of one line, so every row starts alike. */
-	line-height: 24px;
-}
-
-.card-props dt {
-	color: var(--muted);
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-/* A text value wrapping into more lines keeps them closer than the rows, so it reads as one property; on one line
-   it's as tall as its label (20 + 2 above and below). */
-.prop-text {
-	padding-block: 2px;
-	line-height: 20px;
-	overflow-wrap: anywhere;
-}
-
-.prop-chips {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.25rem;
-}
-
-/* On cards, each tag keeps to one line of the grid (20px with 2px above and below), cut off with … if longer than
-   the card is wide; a reference's full name is in its preview. */
-.card-props .prop-chips {
-	row-gap: 0;
 }
 
 .card-props :is(.chip, .ref-tag) {
@@ -917,32 +752,8 @@ button.ref-tag {
 	background: var(--ref-tag);
 }
 
-/* Required references still empty: one grid step, above the property list. */
-.card-missing {
-	padding: 0 0.75rem;
-	font-size: 0.875rem;
-	line-height: 24px;
-	color: var(--error);
-	background: var(--error-tint);
-	overflow-wrap: anywhere;
-}
-
 .missing {
 	color: var(--error);
-}
-
-/* Separates the property list from the content below it. */
-.card-props + .card-content {
-	border-top: 1px solid var(--border);
-}
-
-/* Same text size as the property list, so the card body reads as one block under the title. */
-.card-content {
-	padding: 0.6rem 0.75rem;
-	font-size: 0.875rem;
-	line-height: 1.5;
-	white-space: pre-wrap;
-	overflow-wrap: anywhere;
 }
 
 .type-dot {
@@ -952,12 +763,6 @@ button.ref-tag {
 	margin-right: 0.4em;
 	border-radius: 50%;
 	border: 1px solid rgb(0 0 0 / 0.15);
-}
-
-.swatches {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.35rem;
 }
 
 .swatch {
