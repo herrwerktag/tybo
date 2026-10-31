@@ -11,7 +11,7 @@ import { DRAWING_STORAGE } from "./features/drawings/api.js";
  */
 
 /** How each kind of unit is kept, parents before the children naming them — the order they are read, put
- * together and written in. */
+ * together and written in. The same kinds in the same order as `UNIT_KINDS` (see `features.api.test.ts`). */
 export const UNIT_STORAGES: readonly UnitStorage<any, any, AppData>[] = [TYPE_STORAGE, ENTITY_STORAGE, ANALYSIS_STORAGE, BOARD_STORAGE, CARD_STORAGE, DRAWING_STORAGE];
 
 /** The app's kinds of unit as the storage keeps them (see `StoredUnits`). */
