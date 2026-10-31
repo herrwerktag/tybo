@@ -3,10 +3,10 @@ import { el, language, type EntityLink, type HistoryArea, type HistoryField, typ
 import { text } from "./texts.js";
 import { groupWrites, sessionsOf, storyGroups, unitStory, workspaceStory, writeSentence, writeToken, type FieldChange, type Session, type UnitAction, type UnitStory, type Write, type WriteToken } from "./ui/writes.js";
 
-/** How many entries one read asks for. */
-const PAGE_SIZE = 100;
-/** How many pages one “Load older” reads at most while none of them has anything the filter shows. */
-const PAGES_PER_LOOK = 10;
+/** How many entries one read asks for (the API answers at most 1000). */
+const PAGE_SIZE = 500;
+/** How many weeks one look further back reads at most while none of them has anything the filters show. */
+const WEEKS_PER_LOOK = 8;
 
 /** Who wrote, as the filter offers it: the browser app, a model through the MCP, nobody said. */
 type SourceFilter = "all" | "web" | "mcp" | "unknown";
@@ -38,7 +38,8 @@ function matchesSource(source: string | null, filter: SourceFilter): boolean {
 }
 
 /**
- * The History tab: the workspace's history, read page by page, newest first — a table per day, folded to what the
+ * The History tab: the workspace's history, newest first, a week at a time — the last seven days, then the week
+ * before as the list's end comes into view (or on request), only ever whole days — a table per day, folded to what the
  * day changed, a block of rows per write, a row per unit. It only reads: nothing here writes. Each feature tells of
  * its own units (`describers`). Filters keep to who wrote, to the data or its views (the data at first), and to one
  * entity type; `#history/entity/<id>` shows only the writes of one entity. Someone else's writes come in as they
@@ -51,6 +52,10 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 		let entries: HistoryEntry[] = [];
 		/** Whether the oldest entry is loaded. */
 		let complete = false;
+		/** The start of the oldest day shown: what is loaded before it waits for the next week. Null: none yet. */
+		let shownFrom: number | null = null;
+		/** Watches the list's end, to read the week before once it comes into view. */
+		let watch: IntersectionObserver | null = null;
 		let loading = false;
 		let failed = false;
 		let source: SourceFilter = "all";
@@ -73,6 +78,7 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 		function shown(): HistoryEntry[] {
 			const entityId = entityOfRoute(location.hash);
 			return entries.filter((entry) => {
+				if (!inWeeksShown(entry)) return false;
 				if (!matchesSource(entry.source, source)) return false;
 				if (entry.operation !== "change") return area !== "view" && typeId === null && entityId === null;
 				if (entityId !== null && (entry.kind !== "entity" || entry.unitId !== entityId)) return false;
@@ -92,21 +98,42 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 			return [...types].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, language));
 		}
 
-		/** Reads older entries: one page, or — while none of them passes the filters — a few more. */
+		function inWeeksShown(entry: HistoryEntry): boolean {
+			return shownFrom !== null && Date.parse(entry.at) >= shownFrom;
+		}
+
+		/** Whether there is more before what is shown: loaded already, or still in the storage. */
+		function hasOlder(): boolean {
+			return !complete || entries.some((entry) => !inWeeksShown(entry));
+		}
+
+		/** Reads until every day from `from` on is loaded whole: until an entry from before it, or the oldest. */
+		async function readBack(store: S, from: number, mine: number): Promise<boolean> {
+			while (!complete && (entries.length === 0 || Date.parse(entries.at(-1)!.at) >= from)) {
+				const older = await store.readHistory({ limit: PAGE_SIZE, ...(entries.length > 0 ? { before: entries.at(-1)!.id } : {}) });
+				if (mine !== generation) return false;
+				entries = [...entries, ...older];
+				complete = older.length < PAGE_SIZE;
+			}
+			return true;
+		}
+
+		/** Shows the week before what is shown (at first: the last seven days), reading as much as it takes; while the
+		 * filters let nothing of it through, a few weeks more. */
 		async function loadOlder(store: S): Promise<void> {
-			if (loading || complete) return;
+			if (loading || !(shownFrom === null || hasOlder())) return;
 			const mine = generation;
 			loading = true;
 			failed = false;
 			draw(store);
 			try {
 				const before = shown().length;
-				for (let page = 0; page < PAGES_PER_LOOK && !complete; page++) {
-					const older = await store.readHistory({ limit: PAGE_SIZE, ...(entries.length > 0 ? { before: entries.at(-1)!.id } : {}) });
-					if (mine !== generation) return;
-					entries = [...entries, ...older];
-					complete = older.length < PAGE_SIZE;
-					if (shown().length > before) break;
+				let from = shownFrom === null ? daysBefore(startOfDay(new Date()), 6) : daysBefore(shownFrom, 7);
+				for (let week = 0; week < WEEKS_PER_LOOK; week++) {
+					if (!(await readBack(store, from, mine))) return;
+					shownFrom = from;
+					if (shown().length > before || !hasOlder()) break;
+					from = daysBefore(from, 7);
 				}
 			} catch {
 				if (mine === generation) failed = true;
@@ -121,7 +148,10 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 		/** Reads what was written since the newest entry held; with a gap wider than a page, starts anew. */
 		async function loadNewer(store: S): Promise<void> {
 			if (entries.length === 0) {
-				if (!loading) complete = false; // an empty history may have its first entry by now
+				if (loading) return;
+				// An empty history may have its first entry by now: read it from the start.
+				complete = false;
+				shownFrom = null;
 				return loadOlder(store);
 			}
 			const mine = generation;
@@ -132,9 +162,13 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 				const fresh = newest.filter((entry) => Number(entry.id) > known);
 				if (fresh.length === 0) return;
 				if (fresh.length === newest.length) {
-					entries = newest;
-					complete = newest.length < PAGE_SIZE;
-				} else entries = [...fresh, ...entries];
+					// More came in than a read holds: start again from the last seven days.
+					entries = [];
+					complete = false;
+					shownFrom = null;
+					return loadOlder(store);
+				}
+				entries = [...fresh, ...entries];
 				draw(store);
 			} catch {
 				// The next look may be answered; what is shown stays.
@@ -143,6 +177,7 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 
 		function draw(store: S): void {
 			if (!view) return;
+			watch?.disconnect();
 			const entityId = entityOfRoute(location.hash);
 			const writes = groupWrites(shown());
 			const filter = <V extends string>(label: string, value: V, options: readonly (readonly [V, string])[], set: (value: V) => void) => {
@@ -198,9 +233,24 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 					el("div", { className: "section-header" }, el("h2", {}, text.history), filters),
 					...days(writes, store),
 					...status,
-					...(!complete && !loading && !failed ? [el("div", { className: "row" }, el("button", { type: "button", onclick: () => void loadOlder(store) }, text.loadOlder))] : []),
+					...(hasOlder() && !loading && !failed ? [weekBefore(store)] : []),
 				),
 			);
+		}
+
+		/** The end of the list: since when it shows, and the week before — read once it comes into view, or on request. */
+		function weekBefore(store: S): HTMLElement {
+			const button = el("button", { type: "button", onclick: () => void loadOlder(store) }, text.loadOlder);
+			const since = shownFrom === null ? [] : [el("span", { className: "muted" }, text.shownSince(dayName(new Date(shownFrom))))];
+			if (typeof IntersectionObserver !== "undefined") {
+				watch = new IntersectionObserver((seen) => {
+					if (!seen.some((entry) => entry.isIntersecting)) return;
+					watch?.disconnect();
+					void loadOlder(store);
+				});
+				watch.observe(button);
+			}
+			return el("div", { className: "row history-older" }, ...since, button);
 		}
 
 		/** The name of the entity filtered for, as its newest entry read tells it. */
@@ -387,6 +437,7 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 					generation++;
 					entries = [];
 					complete = false;
+					shownFrom = null;
 					loading = false;
 					failed = false;
 					open.clear();
@@ -414,6 +465,12 @@ function dayName(day: Date): string {
 }
 
 const startOfDay = (day: Date) => new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
+
+/** The start of the day `days` before the day starting at `dayStart` (by the calendar, whatever the clock changes). */
+function daysBefore(dayStart: number, days: number): number {
+	const day = new Date(dayStart);
+	return new Date(day.getFullYear(), day.getMonth(), day.getDate() - days).getTime();
+}
 
 /** How long a pause may be within a stretch of work (see `sessionsOf`). */
 const SESSION_GAP_MS = 15 * 60_000;

@@ -236,20 +236,35 @@ test("History: a stand the app can't read says only that something changed, the 
 	assert.equal(storage.saves.length, saves);
 });
 
-test("History: older entries come on request", async () => {
+test("History: a week at a time, only whole days — however many reads they take — the week before on request", async () => {
 	await startApp(ideas());
-	for (let i = 0; i < 150; i++) keep({ after: { value: { name: `Entity ${i}`, typeId: "idea" }, position: i } });
+	const daysAgo = (days: number) => {
+		const day = new Date();
+		day.setDate(day.getDate() - days);
+		day.setHours(12, 0, 0, 0);
+		return day.toISOString();
+	};
+	const entity = (name: string) => ({ value: { name, typeId: "idea" }, position: 0 });
+	keep({ at: daysAgo(40), after: entity("Forty days ago") });
+	keep({ at: daysAgo(9), after: entity("Nine days ago") });
+	for (let i = 0; i < 520; i++) keep({ at: daysAgo(2), after: entity(`Two days ago ${i}`) }); // more than one read holds
+	keep({ at: daysAgo(0), after: entity("Today") });
+	const reads = () => [...document.querySelectorAll<HTMLElement>(".history-write")].map((write) => write.dataset.sentence);
+	const created = (name: string) => text.unitSentence(dataText.historyEntities(1), name, text.created);
 
-	const view = await openHistory();
-	assert.equal(view.querySelectorAll(".history-write").length, 100);
-	assert.equal(writeLines(view)[0]![1], text.unitSentence(dataText.historyEntities(1), "Entity 149", text.created));
-	byText(view, "button", text.loadOlder).click();
+	await openHistory();
+	assert.equal(reads().length, 521); // the last seven days, the day with 520 writes whole
+	assert.equal(reads().at(-1), created("Two days ago 0"));
+	byText(document.querySelector(".history-view")!, "button", text.loadOlder).click();
 	await settle();
 	await settle();
-	const now = document.querySelector<HTMLElement>(".history-view")!;
-	assert.equal(now.querySelectorAll(".history-write").length, 150);
-	assert.equal(writeLines(now).at(-1)![1], text.unitSentence(dataText.historyEntities(1), "Entity 0", text.created));
-	assert.equal([...now.querySelectorAll("button")].some((b) => b.textContent === text.loadOlder), false);
+	assert.equal(reads().at(-1), created("Nine days ago"));
+
+	byText(document.querySelector(".history-view")!, "button", text.loadOlder).click(); // weeks with nothing are passed by
+	await settle();
+	await settle();
+	assert.equal(reads().at(-1), created("Forty days ago"));
+	assert.equal([...document.querySelectorAll(".history-view button")].some((b) => b.textContent === text.loadOlder), false); // that was the first
 });
 
 test("History: someone else's write comes in on its own, and what is open stays open", async () => {
