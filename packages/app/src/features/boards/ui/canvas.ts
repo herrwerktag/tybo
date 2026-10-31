@@ -1,5 +1,5 @@
-import { freeName, type Point, type Rect } from "../../../shared/core/index.js";
-import { CLICK_TOLERANCE, el, readPreference, resizeHandle, trackPointer, wheelGesture, writePreference } from "../../../shared/ui/index.js";
+import { freeName, touches, type Point, type Rect } from "../../../shared/core/index.js";
+import { CLICK_TOLERANCE, el, listenWhileConnected, readPreference, resizeHandle, trackPointer, wheelGesture, writePreference } from "../../../shared/ui/index.js";
 import type { Store } from "../../../features.core.js";
 import { DEFAULT_CARD_SIZE, GRID_SIZE, effectiveCardDisplay, referencedIds, snapToGrid, type Entity, type EntityType } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
@@ -40,6 +40,8 @@ const ZOOM_SETTLE_DELAY = 150;
 const ZOOM_SETTLE_ANIMATION = 120;
 /** Room (screen px) around a frame the editor goes to. */
 const FIT_MARGIN = 48;
+
+const prefersReducedMotion = (): boolean => !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 export interface CanvasOptions {
 	readOnly: boolean;
@@ -266,7 +268,7 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 	function animateViewport(target: Viewport): void {
 		stopAnimation();
 		const from = viewport;
-		if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+		if (prefersReducedMotion()) {
 			viewport = target;
 			return applyViewport();
 		}
@@ -434,7 +436,7 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 			const from = viewport.zoom;
 			const target = snapZoom(from);
 			if (target === from) return;
-			if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+			if (prefersReducedMotion()) {
 				return setViewport(zoomAt(viewport, target, sx, sy));
 			}
 			const start = performance.now();
@@ -725,9 +727,8 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 	}
 
 	// Escape closes the details panel; in the editor, Delete takes the selected card off the board, like ×, and never
-	// deletes its entity (the listener removes itself once this view is gone).
-	function onKeyDown(e: KeyboardEvent): void {
-		if (!view.isConnected) return document.removeEventListener("keydown", onKeyDown);
+	// deletes its entity.
+	listenWhileConnected(view, "keydown", (e) => {
 		if ((e.target as Element).closest("input, select, textarea")) return;
 		if (e.key === "Escape" && (selected || group)) select(null);
 		const cardId = !group && selected?.cardId;
@@ -737,8 +738,7 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 			renderCards();
 			renderPanel();
 		}
-	}
-	document.addEventListener("keydown", onKeyDown);
+	});
 
 	/** Lines from `line` reference properties, under the cards, with their labels. */
 	const lines = connectorLines();
@@ -994,18 +994,13 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 	/** Whether Space is held: dragging then pans, wherever it starts. */
 	let spaceHeld = false;
 	function onSpace(e: KeyboardEvent): void {
-		if (!view.isConnected) {
-			document.removeEventListener("keydown", onSpace);
-			document.removeEventListener("keyup", onSpace);
-			return;
-		}
 		if (e.key !== " " || (e.target as Element).closest?.("input, select, textarea, [contenteditable]")) return;
 		e.preventDefault(); // no scrolling, nor pressing a focused button
 		spaceHeld = e.type === "keydown";
 		surface.classList.toggle("space-pan", spaceHeld);
 	}
-	document.addEventListener("keydown", onSpace);
-	document.addEventListener("keyup", onSpace);
+	listenWhileConnected(view, "keydown", onSpace);
+	listenWhileConnected(view, "keyup", onSpace);
 
 	// The middle button, or Space + drag, pans from anywhere on the canvas: in the capture phase, registered first,
 	// so it wins over cards, the layers and their tools.
@@ -1063,8 +1058,6 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 	/** The frame being dragged around cards and layer items to select them, in screen coordinates. */
 	const marquee = el("div", { className: "marquee", hidden: true });
 	surface.append(marquee);
-	const touches = (a: Rect, b: Rect): boolean =>
-		a.x <= b.x + b.width && b.x <= a.x + a.width && a.y <= b.y + b.height && b.y <= a.y + a.height;
 
 	/**
 	 * Drags a frame from this press: the cards and layer items it touches get selected (with
@@ -1170,15 +1163,15 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 		});
 	}
 
-	// Ctrl/⌘ + V with files on the clipboard, e.g. an image, gives them to the layers, in the middle of the view (the
-	// listener removes itself once this view is gone). Pasting into a text field stays the text field's.
-	function onPaste(e: ClipboardEvent): void {
-		if (!view.isConnected) return document.removeEventListener("paste", onPaste);
-		if ((e.target as Element).closest?.("input, select, textarea, [contenteditable]")) return;
-		const rect = surface.getBoundingClientRect();
-		if (dropFiles(e.clipboardData?.files, rect.left + rect.width / 2, rect.top + rect.height / 2)) e.preventDefault();
+	// Ctrl/⌘ + V with files on the clipboard, e.g. an image, gives them to the layers, in the middle of the view.
+	// Pasting into a text field stays the text field's.
+	if (!readOnly) {
+		listenWhileConnected(view, "paste", (e) => {
+			if ((e.target as Element).closest?.("input, select, textarea, [contenteditable]")) return;
+			const rect = surface.getBoundingClientRect();
+			if (dropFiles(e.clipboardData?.files, rect.left + rect.width / 2, rect.top + rect.height / 2)) e.preventDefault();
+		});
 	}
-	if (!readOnly) document.addEventListener("paste", onPaste);
 
 	/** Editor, while editing the frame: the board's frame as an outline on the canvas (see frameEditor). */
 	const frame = frameEditor(store, { board: currentBoard, zoom: () => viewport.zoom, goTo: goToFrame });

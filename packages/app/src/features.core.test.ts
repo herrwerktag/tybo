@@ -193,6 +193,19 @@ test("history is limited, cleared on reload, and changes to it are reported", as
 	assert.deepEqual(store.history, { canUndo: false, canRedo: false });
 });
 
+test("a history listener stops being called once it stops listening, the others go on", async () => {
+	const store = await open(memoryStorage());
+	const calls: string[] = [];
+	const stop = store.onHistoryChange(() => {
+		calls.push("first");
+		stop(); // while the listeners are being called
+	});
+	store.onHistoryChange(() => calls.push("second"));
+	store.addBoard("One");
+	store.addBoard("Two");
+	assert.deepEqual(calls, ["first", "second", "second"]);
+});
+
 test("data saved before versions existed loads without a problem, and saving goes on from it", async () => {
 	const storage = memoryStorage({ types: [{ id: "b", name: "Book", properties: [] }], entities: [] });
 	const store = await open(storage);

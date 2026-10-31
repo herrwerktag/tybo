@@ -73,7 +73,7 @@ export async function createStoreCore<D>(port: DataPort, workspaceId: string, fo
 	/** Earlier versions of the data for undo (newest last), and undone ones for redo. */
 	let undoStack: D[] = [];
 	let redoStack: D[] = [];
-	const historyListeners: (() => void)[] = [];
+	let historyListeners: readonly (() => void)[] = [];
 	/** The data as last saved, to tell changes that change nothing. */
 	let savedJson = JSON.stringify(format.toSaved(data));
 
@@ -292,9 +292,12 @@ export async function createStoreCore<D>(port: DataPort, workspaceId: string, fo
 			return true;
 		},
 
-		/** Calls `listener` whenever `history` may have changed. */
-		onHistoryChange(listener: () => void): void {
-			historyListeners.push(listener);
+		/** Calls `listener` whenever `history` may have changed, until the returned function is called. */
+		onHistoryChange(listener: () => void): () => void {
+			historyListeners = [...historyListeners, listener];
+			return () => {
+				historyListeners = historyListeners.filter((l) => l !== listener);
+			};
 		},
 	};
 }
