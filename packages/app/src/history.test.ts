@@ -47,10 +47,10 @@ async function openHistory(hash = "#history"): Promise<HTMLElement> {
 	return document.querySelector<HTMLElement>(".history-view")!;
 }
 
-/** The lines of the writes shown, newest first: source and what they did, as a sentence (the line shows it in marks
- * and tags, and says it as its title). */
+/** The writes shown, newest first: who wrote, and what they did as a sentence (the table shows it in rows of marks
+ * and tags). */
 const writeLines = (view: HTMLElement) =>
-	[...view.querySelectorAll(".history-write > summary")].map((s) => [s.querySelector(".history-source")!.textContent, s.querySelector(".history-sentence")!.getAttribute("title")]);
+	[...view.querySelectorAll<HTMLElement>(".history-write")].map((write) => [write.querySelector(".history-source")!.textContent, write.dataset.sentence]);
 
 /** The fields a unit's line lists, label by label. */
 const labels = (node: ParentNode) => [...node.querySelectorAll(".history-changes > dt")].map((dt) => dt.textContent);
@@ -91,16 +91,17 @@ test("History: every write, newest first, one line each with who wrote it; a wri
 		[text.sourceWeb, text.unitSentence(dataText.historyEntities(1), "Dune", text.changed)],
 		[text.sourceMcp, `Idea: ${text.countSentence(3, dataText.historyEntities(3), text.created)}`],
 	]);
-	const created = view.querySelectorAll<HTMLDetailsElement>(".history-write")[1]!;
+	const created = view.querySelectorAll<HTMLElement>(".history-write")[1]!;
 	assert.ok(created.classList.contains("source-mcp")); // the agent's stripe
-	const tag = created.querySelector<HTMLElement>("summary .history-tag")!;
-	assert.equal(tag.textContent, "Idea"); // three of one type: the type, in its color
-	assert.equal(tag.style.background, "#c4dafa");
+	assert.equal(created.querySelectorAll(".history-source").length, 1); // when and who once, beside all its rows
+	const tag = created.querySelector<HTMLElement>(".history-tag")!;
+	assert.equal(tag.textContent, "One");
+	assert.equal(tag.style.background, "#c4dafa"); // in its type's color
 	assert.deepEqual(
 		[...created.querySelectorAll(".history-unit")].map((p) => p.getAttribute("title")),
 		["One", "Two", "Three"].map((name) => text.unitSentence(dataText.historyEntities(1), name, text.created)),
 	);
-	assert.deepEqual(labels(created.querySelector("li")!), ["Status"]); // what it was made with, the empty fields left out
+	assert.deepEqual(labels(created.querySelector(".history-unit")!), ["Status"]); // what it was made with, the empty fields left out
 });
 
 test("History: a change lists only the fields that changed; a long text by name, its old text on request", async () => {
@@ -110,7 +111,7 @@ test("History: a change lists only the fields that changed; a long text by name,
 	await web.saved();
 
 	const view = await openHistory();
-	const unit = view.querySelector(".history-units > li")!;
+	const unit = view.querySelector(".history-unit")!;
 	assert.deepEqual(labels(unit), ["Status", text.longChanged(dataText.description)]);
 	assert.equal(unit.querySelector("del")!.textContent, "open");
 	assert.equal(unit.querySelector("ins")!.textContent, "pitched");
@@ -185,14 +186,14 @@ test("History: cards moved together are one line, named with their board, folded
 	await settle();
 
 	const view = await openHistory();
-	const [moved] = view.querySelectorAll<HTMLDetailsElement>(".history-write");
+	const [moved] = view.querySelectorAll<HTMLElement>(".history-write");
 	assert.ok(moved!.classList.contains("minor")); // only layout: faint
-	assert.equal(
-		moved!.querySelector(".history-sentence")!.getAttribute("title"),
-		`${boardText.historyOnBoard("Plans")}: ${text.countSentence(2, boardText.historyCards(2), boardText.historyMoved)}`,
-	);
-	assert.equal(moved!.open, false);
-	assert.deepEqual(labels(moved!.querySelector("li")!), [boardText.historyPosition]);
+	assert.equal(moved!.dataset.sentence, `${boardText.historyOnBoard("Plans")}: ${text.countSentence(2, boardText.historyCards(2), boardText.historyMoved)}`);
+	assert.equal(moved!.querySelectorAll("tr").length, 1); // one row for both
+	assert.equal(moved!.querySelector(".history-where")!.textContent, boardText.historyOnBoard("Plans"));
+	const each = byText(moved!, "summary", text.eachOne).closest("details")!;
+	assert.equal(each.open, false);
+	assert.deepEqual(labels(each), ["Dune", "Emma"]);
 });
 
 test("History: a stand the app can't read says only that something changed, the rest reads as usual; a collision is marked; nothing writes", async () => {
@@ -246,16 +247,16 @@ test("History: someone else's write comes in on its own, and what is open stays 
 	await startApp(ideas());
 	assert.ok(byText(await openHistory(), "p", text.historyEmpty));
 	const agent = await writer("mcp");
-	agent.addEntity("idea", "First", "", {});
+	agent.deleteEntity(EMMA);
 	await agent.saved();
 	window.dispatchEvent(new Event("focus")); // the first write comes into an empty history too
 	await settle();
 	await settle();
 	await settle();
 	const view = document.querySelector<HTMLElement>(".history-view")!;
-	const first = view.querySelector<HTMLDetailsElement>(".history-write")!;
-	first.open = true;
-	first.dispatchEvent(new Event("toggle"));
+	const last = byText(view, "summary", text.lastStand).closest("details")!;
+	last.open = true;
+	last.dispatchEvent(new Event("toggle"));
 
 	agent.addEntity("idea", "Second", "", {});
 	await agent.saved();
@@ -266,9 +267,21 @@ test("History: someone else's write comes in on its own, and what is open stays 
 	const now = document.querySelector<HTMLElement>(".history-view")!;
 	assert.deepEqual(
 		writeLines(now).map(([, sentence]) => sentence),
-		["Second", "First"].map((name) => text.unitSentence(dataText.historyEntities(1), name, text.created)),
+		[text.unitSentence(dataText.historyEntities(1), "Second", text.created), text.unitSentence(dataText.historyEntities(1), "Emma", text.deleted)],
 	);
-	const [second, firstAgain] = now.querySelectorAll<HTMLDetailsElement>(".history-write");
-	assert.equal(second!.open, false);
-	assert.equal(firstAgain!.open, true);
+	assert.equal(byText(now, "summary", text.lastStand).closest("details")!.open, true);
+});
+
+test("History: a long write shows its first units, the rest on request", async () => {
+	await startApp(ideas());
+	const agent = await writer("mcp");
+	agent.addEntities(Array.from({ length: 7 }, (_, i) => ({ typeId: "idea", name: `Idea ${i + 1}`, content: "", values: {} })));
+	await agent.saved();
+
+	const view = await openHistory();
+	assert.equal(view.querySelectorAll(".history-unit").length, 5);
+	byText(view, "button", text.moreUnits(2)).click();
+	const now = document.querySelector<HTMLElement>(".history-view")!;
+	assert.equal(now.querySelectorAll(".history-unit").length, 7);
+	assert.equal(storage.saves.length, 1); // showing more writes nothing
 });

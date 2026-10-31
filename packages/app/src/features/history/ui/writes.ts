@@ -150,9 +150,9 @@ export interface WriteToken {
 	collided: boolean;
 }
 
-/** A write's line in parts: its units put together by kind, what happened to them and where they belong (their
- * type, their board), in the order written. */
-export function writeTokens(stories: readonly UnitStory[]): WriteToken[] {
+/** The units of a write put together by kind, what happened to them and where they belong (their type, their
+ * board), in the order written. */
+export function storyGroups(stories: readonly UnitStory[]): UnitStory[][] {
 	const groups: UnitStory[][] = [];
 	for (const story of stories) {
 		const group = groups.find(
@@ -161,22 +161,24 @@ export function writeTokens(stories: readonly UnitStory[]): WriteToken[] {
 		if (group) group.push(story);
 		else groups.push([story]);
 	}
-	return groups.map((group) => {
-		const [first] = group as [UnitStory, ...UnitStory[]];
-		const shared = <K extends "context" | "color">(key: K) => (group.every((story) => story[key] === first[key]) ? first[key] : undefined);
-		const one = group.length === 1;
-		const label = one ? first.name : shared("context");
-		const color = shared("color");
-		return {
-			action: first.action,
-			count: group.length,
-			noun: first.noun(group.length),
-			...(label !== undefined ? { label } : {}),
-			...(color !== undefined ? { color } : {}),
-			minor: group.every((story) => story.minor),
-			collided: group.some((story) => story.collided),
-		};
-	});
+	return groups;
+}
+
+/** What a group of units (see `storyGroups`) shows as one. */
+export function writeToken(group: readonly UnitStory[]): WriteToken {
+	const [first] = group as [UnitStory, ...UnitStory[]];
+	const shared = <K extends "context" | "color">(key: K) => (group.every((story) => story[key] === first[key]) ? first[key] : undefined);
+	const label = group.length === 1 ? first.name : shared("context");
+	const color = shared("color");
+	return {
+		action: first.action,
+		count: group.length,
+		noun: first.noun(group.length),
+		...(label !== undefined ? { label } : {}),
+		...(color !== undefined ? { color } : {}),
+		minor: group.every((story) => story.minor),
+		collided: group.some((story) => story.collided),
+	};
 }
 
 /** The sentence of a write: of its one unit by name; of several, how many of a kind went how, each kind once —
@@ -186,17 +188,11 @@ export function writeSentence(stories: readonly UnitStory[]): string {
 		const [story] = stories as [UnitStory];
 		return text.unitSentence(story.noun(1), story.name, story.verb);
 	}
-	const groups: { stories: UnitStory[]; noun: (count: number) => string; verb: string }[] = [];
-	for (const story of stories) {
-		const group = groups.find((g) => g.noun(1) === story.noun(1) && g.verb === story.verb);
-		if (group) group.stories.push(story);
-		else groups.push({ stories: [story], noun: story.noun, verb: story.verb });
-	}
-	return groups
-		.map(({ stories: of, noun, verb }) => {
-			const sentence = of.length === 1 ? text.unitSentence(noun(1), of[0]!.name, verb) : text.countSentence(of.length, noun(of.length), verb);
-			const context = of[0]!.context;
-			return context !== undefined && of.every((story) => story.context === context) ? `${context}: ${sentence}` : sentence;
+	return storyGroups(stories)
+		.map((group) => {
+			const [first] = group as [UnitStory, ...UnitStory[]];
+			const sentence = group.length === 1 ? text.unitSentence(first.noun(1), first.name, first.verb) : text.countSentence(group.length, first.noun(group.length), first.verb);
+			return first.context !== undefined ? `${first.context}: ${sentence}` : sentence;
 		})
 		.join(", ");
 }

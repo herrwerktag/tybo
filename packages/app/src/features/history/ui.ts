@@ -1,7 +1,7 @@
 import type { HistoryEntry, StoreCore } from "../../shared/core/index.js";
 import { el, language, type EntityLink, type HistoryField, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
 import { text } from "./texts.js";
-import { groupWrites, unitStory, workspaceStory, writeSentence, writeTokens, type FieldChange, type UnitAction, type UnitStory, type Write, type WriteToken } from "./ui/writes.js";
+import { groupWrites, storyGroups, unitStory, workspaceStory, writeSentence, writeToken, type FieldChange, type UnitAction, type UnitStory, type Write, type WriteToken } from "./ui/writes.js";
 
 /** How many entries one read asks for. */
 const PAGE_SIZE = 100;
@@ -167,7 +167,7 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 			return entityId;
 		}
 
-		/** The writes under the day they were made on: today, yesterday, or its date. */
+		/** The writes under the day they were made on — today, yesterday, or its date — each day a table. */
 		function days(writes: readonly Write[], store: S): HTMLElement[] {
 			const byDay: { day: string; writes: Write[] }[] = [];
 			for (const write of writes) {
@@ -177,38 +177,105 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 				else byDay.push({ day, writes: [write] });
 			}
 			return byDay.map(({ day, writes: ofDay }) =>
-				el("div", { className: "history-day" }, el("h3", {}, day), el("ol", { className: "history-writes" }, ...ofDay.map((write) => writeItem(write, store)))),
+				el(
+					"div",
+					{ className: "history-day" },
+					el("h3", {}, day),
+					el(
+						"table",
+						{ className: "history-table" },
+						el(
+							"thead",
+							{},
+							el("tr", {}, ...[text.columnTime, text.columnSource, "", text.columnWhat, text.columnWhere, text.columnChange].map((label) => el("th", { scope: "col" }, label))),
+						),
+						...ofDay.map((write) => writeBody(write, store)),
+					),
+				),
 			);
 		}
 
-		/** A write as one line — when, who, and what in marks: the units by what happened to them, in their colors —
-		 * opened to each unit. A write that only moved things is faint. */
-		function writeItem(write: Write, store: S): HTMLElement {
+		/** A `<details>` whose being open is kept across drawings, under `key`. */
+		function kept(key: string, className: string, summary: string, ...content: Node[]): HTMLDetailsElement {
+			const details = el("details", { className, open: open.has(key) }, el("summary", {}, summary), ...content);
+			details.addEventListener("toggle", () => (details.open ? open.add(key) : open.delete(key)));
+			return details;
+		}
+
+		/** A write as a block of rows, one per unit — what moved only in one faint row per kind — with when and who
+		 * once, beside them all, and a stripe in the color of who wrote. A long write shows its first units, the rest
+		 * on request. */
+		function writeBody(write: Write, store: S): HTMLElement {
 			const at = new Date(write.at);
-			const time = at.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" });
 			const stories = write.entries.filter((entry) => entry.operation === "change").map((entry) => unitStory(entry, describers, store));
 			const own = write.entries.find((entry) => entry.operation !== "change");
 			const told = own ? workspaceStory(own) : null;
-			const sentence = told ? told.sentence : writeSentence(stories);
-			const tokens = told ? [actionMark(workspaceAction(own!.operation)), el("span", {}, told.sentence)] : writeTokens(stories).map(tokenElement);
-			const minor = !told && stories.every((story) => story.minor);
 			const source = write.source === "web" || write.source === "mcp" ? write.source : "unknown";
-			const summary = el(
-				"summary",
-				{ ariaLabel: `${time}, ${sourceLabel(write.source)}: ${sentence}` },
-				el("time", { className: "history-time", dateTime: write.at, title: at.toLocaleString(language) }, time),
-				el("span", { className: "history-source" }, sourceLabel(write.source)),
-				el("span", { className: "history-sentence", title: sentence }, ...tokens),
-				...(stories.some((story) => story.collided) ? [collisionMark()] : []),
+			const rows: HTMLTableRowElement[] = [];
+			if (told) {
+				rows.push(row(workspaceAction(own!.operation), [el("span", {}, told.sentence)], [], told.changes.length > 0 ? [changeList(told.changes)] : []));
+			} else {
+				const major = stories.filter((story) => !story.minor);
+				const shownMajor = open.has(`${write.key}:all`) ? major : major.slice(0, UNITS_SHOWN);
+				rows.push(...shownMajor.map((story) => storyRow(story, write.key)));
+				if (shownMajor.length < major.length) {
+					const more = el(
+						"button",
+						{
+							type: "button",
+							className: "history-more",
+							onclick: () => {
+								open.add(`${write.key}:all`);
+								draw(store);
+							},
+						},
+						text.moreUnits(major.length - shownMajor.length),
+					);
+					rows.push(el("tr", {}, el("td", {}), el("td", { colSpan: 3 }, more)));
+				}
+				storyGroups(stories.filter((story) => story.minor)).forEach((group, i) => {
+					rows.push(group.length === 1 ? storyRow(group[0]!, write.key) : minorRow(writeToken(group), group, `${write.key}:minor:${i}`));
+				});
+			}
+			const first = rows[0];
+			first?.prepend(
+				el("td", { className: "history-time", rowSpan: rows.length, title: at.toLocaleString(language) }, at.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" })),
+				el("td", { className: "history-source-cell", rowSpan: rows.length }, el("span", { className: "history-source" }, sourceLabel(write.source))),
 			);
-			const details = el(
-				"details",
-				{ className: `history-write source-${source}${minor ? " minor" : ""}`, open: open.has(write.key) },
-				summary,
-				told ? changeList(told.changes) : el("ul", { className: "history-units" }, ...stories.map(storyItem)),
+			const minorOnly = !told && stories.every((story) => story.minor);
+			const body = el("tbody", { className: `history-write source-${source}${minorOnly ? " minor" : ""}` }, ...rows);
+			body.dataset.sentence = told ? told.sentence : writeSentence(stories);
+			return body;
+		}
+
+		/** One unit's row: what happened, its kind and tag, where it belongs, and what changed. */
+		function storyRow(story: UnitStory, writeKey: string): HTMLTableRowElement {
+			const what = [el("span", { className: "history-noun" }, story.noun(1)), unitTag(story.name, story.color), ...(story.collided ? [collisionMark()] : [])];
+			const where = story.context && story.context !== story.name ? [el("span", {}, story.context)] : [];
+			const change: Node[] = [];
+			if (story.unreadable) change.push(el("span", { className: "muted" }, text.unreadable));
+			else if (story.action === "deleted") change.push(kept(`${writeKey}:last:${story.name}`, "history-last", text.lastStand, fieldList(story.fields)));
+			else if (story.action === "created") change.push(fieldList(story.fields.filter((field) => !field.long)));
+			else if (story.changes.length > 0) change.push(changeList(story.changes));
+			else change.push(el("span", { className: "muted" }, story.action === "moved" ? story.verb : text.nothingVisible));
+			const tr = row(story.action, what, where, change);
+			tr.title = text.unitSentence(story.noun(1), story.name, story.verb);
+			tr.classList.add("history-unit");
+			if (story.minor) tr.classList.add("minor");
+			return tr;
+		}
+
+		/** Several units that only moved, as one faint row: their count and where; each of them on request. */
+		function minorRow(token: WriteToken, stories: readonly UnitStory[], key: string): HTMLTableRowElement {
+			const where = token.label !== undefined ? [el("span", {}, token.label)] : [];
+			const each = el(
+				"dl",
+				{ className: "history-changes" },
+				...stories.flatMap((story) => [el("dt", {}, story.name), el("dd", {}, ...story.changes.map((change) => el("div", {}, ...changeLine(change))))]),
 			);
-			details.addEventListener("toggle", () => (details.open ? open.add(write.key) : open.delete(write.key)));
-			return el("li", {}, details);
+			const tr = row(token.action, [el("span", { className: "history-noun" }, `${token.count} ${token.noun}`)], where, [kept(key, "history-each", text.eachOne, each)]);
+			tr.classList.add("minor");
+			return tr;
 		}
 
 		return {
@@ -238,10 +305,6 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 	};
 }
 
-function collisionMark(): HTMLElement {
-	return el("span", { className: "history-collision", title: text.collidedHint }, "⚠ ", text.collided);
-}
-
 /** The day as the history heads its writes: today, yesterday, or its date. */
 function dayName(day: Date): string {
 	const daysAgo = Math.round((startOfDay(new Date()) - startOfDay(day)) / 86_400_000);
@@ -252,6 +315,9 @@ function dayName(day: Date): string {
 
 const startOfDay = (day: Date) => new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
 
+/** How many units of a write show before “more”. */
+const UNITS_SHOWN = 5;
+
 /** What a write of the workspace itself did, marked like a unit's. */
 function workspaceAction(operation: string): UnitAction {
 	return operation === "create" || operation === "baseline" ? "created" : operation === "delete" ? "deleted" : operation === "move" ? "moved" : "changed";
@@ -259,9 +325,16 @@ function workspaceAction(operation: string): UnitAction {
 
 const ACTION_MARKS: Record<UnitAction, string> = { created: "+", changed: "✎", deleted: "−", moved: "↔" };
 
-/** The mark of what happened: + made, ✎ changed, − deleted, ↔ moved. */
-function actionMark(action: UnitAction): HTMLElement {
-	return el("span", { className: `history-action action-${action}`, ariaHidden: "true" }, ACTION_MARKS[action]);
+/** A row of a write: its mark, what, where, and what changed (when and who come first, on the write's first row). */
+function row(action: UnitAction, what: Node[], where: Node[], change: Node[]): HTMLTableRowElement {
+	return el(
+		"tr",
+		{},
+		el("td", { className: "history-mark" }, el("span", { className: `history-action action-${action}`, title: text[action === "moved" ? "reordered" : action] }, ACTION_MARKS[action])),
+		el("td", { className: "history-what" }, ...what),
+		el("td", { className: "history-where" }, ...where),
+		el("td", { className: "history-change" }, ...change),
+	);
 }
 
 /** A unit's name, or the type several share, as a tag in its color — the way a reference shows on a card. */
@@ -271,37 +344,9 @@ function unitTag(label: string, color: string | undefined): HTMLElement {
 	return tag;
 }
 
-/** One part of a write's line: the mark, then one unit by name, or several by count and what they share. */
-function tokenElement(token: WriteToken): HTMLElement {
-	return el(
-		"span",
-		{ className: `history-token${token.minor ? " minor" : ""}` },
-		actionMark(token.action),
-		el("span", { className: "history-noun" }, token.count === 1 ? token.noun : `${token.count} ${token.noun}`),
-		...(token.label !== undefined ? [token.count === 1 || token.color ? unitTag(token.label, token.color) : el("span", { className: "muted" }, token.label)] : []),
-	);
-}
-
-/** One unit of a write: its mark and tag, and what it changed — or, made, its fields; gone, its last stand. */
-function storyItem(story: UnitStory): HTMLElement {
-	const line = el(
-		"p",
-		{ className: "history-unit", title: text.unitSentence(story.noun(1), story.name, story.verb) },
-		actionMark(story.action),
-		el("span", { className: "history-noun" }, story.noun(1)),
-		unitTag(story.name, story.color),
-		el("span", { className: "history-verb" }, story.verb),
-		...(story.context && story.context !== story.name ? [el("span", { className: "muted" }, `· ${story.context}`)] : []),
-		...(story.collided ? [collisionMark()] : []),
-	);
-	const more: HTMLElement[] = [];
-	if (story.changes.length > 0) more.push(changeList(story.changes));
-	else if (story.action === "changed" && !story.unreadable) line.append(el("span", { className: "muted" }, `· ${text.nothingVisible}`));
-	if (story.fields.length > 0) {
-		const fields = fieldList(story.fields);
-		more.push(story.action === "deleted" ? el("details", { className: "history-last" }, el("summary", {}, text.lastStand), fields) : fields);
-	}
-	return el("li", { className: story.minor ? "minor" : "" }, line, ...more);
+/** A field changed: `old → new`. */
+function changeLine(change: FieldChange): Node[] {
+	return [el("del", {}, change.before || text.empty), el("span", { className: "history-arrow", ariaHidden: "true" }, " → "), el("ins", {}, change.after || text.empty)];
 }
 
 /** The fields that changed: `old → new`; a long text by name only, its old text on request. */
@@ -311,20 +356,8 @@ function changeList(changes: readonly FieldChange[]): HTMLElement {
 		{ className: "history-changes" },
 		...changes.flatMap((change) =>
 			change.long
-				? [
-						el("dt", {}, text.longChanged(change.label)),
-						el("dd", {}, el("details", {}, el("summary", {}, text.oldText), el("p", { className: "history-text" }, change.before || text.empty))),
-					]
-				: [
-						el("dt", {}, change.label),
-						el(
-							"dd",
-							{},
-							el("del", {}, change.before || text.empty),
-							el("span", { className: "history-arrow", ariaHidden: "true" }, " → "),
-							el("ins", {}, change.after || text.empty),
-						),
-					],
+				? [el("dt", {}, text.longChanged(change.label)), el("dd", {}, el("details", {}, el("summary", {}, text.oldText), el("p", { className: "history-text" }, change.before || text.empty)))]
+				: [el("dt", {}, change.label), el("dd", {}, ...changeLine(change))],
 		),
 	);
 }
@@ -339,4 +372,8 @@ function fieldList(fields: readonly HistoryField[]): HTMLElement {
 			el("dd", {}, field.long ? el("details", {}, el("summary", {}, text.newText), el("p", { className: "history-text" }, field.text || text.empty)) : field.text || text.empty),
 		]),
 	);
+}
+
+function collisionMark(): HTMLElement {
+	return el("span", { className: "history-collision", title: text.collidedHint }, "⚠ ", text.collided);
 }
