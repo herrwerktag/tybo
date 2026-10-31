@@ -1,5 +1,5 @@
 import type { HistoryEntry, StoreCore } from "../../shared/core/index.js";
-import { el, language, type EntityLink, type HistoryField, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
+import { el, language, type EntityLink, type HistoryArea, type HistoryField, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
 import { text } from "./texts.js";
 import { groupWrites, storyGroups, unitStory, workspaceStory, writeSentence, writeToken, type FieldChange, type UnitAction, type UnitStory, type Write, type WriteToken } from "./ui/writes.js";
 
@@ -10,6 +10,9 @@ const PAGES_PER_LOOK = 10;
 
 /** Who wrote, as the filter offers it: the browser app, a model through the MCP, nobody said. */
 type SourceFilter = "all" | "web" | "mcp" | "unknown";
+
+/** Which writes the filter shows: to the data, to its views, or all. */
+type AreaFilter = HistoryArea | "all";
 
 /** The address of the history of one entity. */
 const entityRoute = (entityId: string) => `#history/entity/${encodeURIComponent(entityId)}`;
@@ -35,10 +38,11 @@ function matchesSource(source: string | null, filter: SourceFilter): boolean {
 }
 
 /**
- * The History tab: the workspace's history, read page by page, newest first — one line per write, opened to show
- * what it did unit by unit. It only reads: nothing here writes. Each feature tells of its own units (`describers`);
- * `#history/entity/<id>` shows only the writes of one entity. Someone else's writes come in as they happen
- * (see `Page.refresh`), and what is open stays open.
+ * The History tab: the workspace's history, read page by page, newest first — a table per day, folded to what the
+ * day changed, a block of rows per write, a row per unit. It only reads: nothing here writes. Each feature tells of
+ * its own units (`describers`). Filters keep to who wrote, to the data or its views (the data at first), and to one
+ * entity type; `#history/entity/<id>` shows only the writes of one entity. Someone else's writes come in as they
+ * happen (see `Page.refresh`), and what is open stays open.
  */
 export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({ describers }: { describers: readonly UnitDescriber<S>[] }): PageMaker<S> {
 	return () => {
@@ -50,17 +54,40 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 		let loading = false;
 		let failed = false;
 		let source: SourceFilter = "all";
-		/** The writes opened (their keys), kept while new ones come in. */
+		let area: AreaFilter = "data";
+		/** The entity type filtered for; null: all. */
+		let typeId: string | null = null;
+		/** What is opened (by key), kept while new writes come in. */
 		const open = new Set<string>();
+		/** The days opened or folded by hand; the others: the newest open, the rest folded. */
+		const dayOpen = new Map<number, boolean>();
 		/** The page drawn last, filled anew in place. */
 		let view: HTMLElement | null = null;
 		/** Counts the stores shown, so an answer for one shown before is dropped. */
 		let generation = 0;
 
-		/** The entries the filters let through. */
+		/** The entries the filters let through: a unit's by what it is part of and its type; a write of the workspace
+		 * itself counts as data, of no type. */
 		function shown(): HistoryEntry[] {
 			const entityId = entityOfRoute(location.hash);
-			return entries.filter((entry) => matchesSource(entry.source, source) && (entityId === null || (entry.kind === "entity" && entry.unitId === entityId)));
+			return entries.filter((entry) => {
+				if (!matchesSource(entry.source, source)) return false;
+				if (entry.operation !== "change") return area !== "view" && typeId === null && entityId === null;
+				if (entityId !== null && (entry.kind !== "entity" || entry.unitId !== entityId)) return false;
+				const story = unitStory(entry, describers, shownStore!);
+				return (area === "all" || story.area === area) && (typeId === null || story.type?.id === typeId);
+			});
+		}
+
+		/** The entity types the loaded entries belong to, by name — what the type filter offers. */
+		function typesLoaded(): { id: string; name: string }[] {
+			const types = new Map<string, string>();
+			for (const entry of entries) {
+				if (entry.operation !== "change") continue;
+				const type = unitStory(entry, describers, shownStore!).type;
+				if (type && !types.has(type.id)) types.set(type.id, type.name);
+			}
+			return [...types].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, language));
 		}
 
 		/** Reads older entries: one page, or — while none of them passes the filters — a few more. */
@@ -116,28 +143,46 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 			if (!view) return;
 			const entityId = entityOfRoute(location.hash);
 			const writes = groupWrites(shown());
-			const select = el(
-				"select",
-				{
-					ariaLabel: text.sourceFilter,
-					onchange: () => {
-						source = select.value as SourceFilter;
-						draw(store);
+			const filter = <V extends string>(label: string, value: V, options: readonly (readonly [V, string])[], set: (value: V) => void) => {
+				const select = el(
+					"select",
+					{
+						onchange: () => {
+							set(select.value as V);
+							draw(store);
+						},
 					},
-				},
-				...(
+					...options.map(([v, name]) => el("option", { value: v, selected: v === value }, name)),
+				);
+				return el("label", { className: "history-filter" }, el("span", {}, label), select);
+			};
+			const types = typesLoaded();
+			if (typeId !== null && !types.some((t) => t.id === typeId)) typeId = null; // nothing loaded is of it any more
+			const filters = el(
+				"div",
+				{ className: "section-filters" },
+				filter<AreaFilter>(
+					text.areaFilter,
+					area,
+					[
+						["data", text.areaData],
+						["view", text.areaView],
+						["all", text.areaAll],
+					],
+					(v) => (area = v),
+				),
+				filter(text.typeFilter, typeId ?? "", [["", text.typeAll], ...types.map((t) => [t.id, t.name] as const)], (v) => (typeId = v === "" ? null : v)),
+				filter<SourceFilter>(
+					text.sourceFilter,
+					source,
 					[
 						["all", text.sourceAll],
 						["web", text.sourceWeb],
 						["mcp", text.sourceMcp],
 						["unknown", text.sourceUnknown],
-					] as const
-				).map(([value, label]) => el("option", { value, selected: value === source }, label)),
-			);
-			const filters = el(
-				"div",
-				{ className: "section-filters" },
-				el("label", { className: "history-filter" }, el("span", {}, text.sourceFilter), select),
+					],
+					(v) => (source = v),
+				),
 				...(entityId !== null ? [el("a", { className: "ref-tag history-entity-filter", href: "#history", title: text.showAll }, text.onlyEntity(entityName(entityId)), " ×")] : []),
 			);
 			const status: Node[] = [];
@@ -149,7 +194,6 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 					"section",
 					{},
 					el("div", { className: "section-header" }, el("h2", {}, text.history), filters),
-					el("p", { className: "muted" }, text.historyIntro),
 					...days(writes, store),
 					...status,
 					...(!complete && !loading && !failed ? [el("div", { className: "row" }, el("button", { type: "button", onclick: () => void loadOlder(store) }, text.loadOlder))] : []),
@@ -167,20 +211,21 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 			return entityId;
 		}
 
-		/** The writes under the day they were made on — today, yesterday, or its date — each day a table. */
+		/** The writes under the day they were made on — today, yesterday, or its date — each day a table, folded to
+		 * what it changed: the newest day open, the others folded, unless opened or folded by hand. */
 		function days(writes: readonly Write[], store: S): HTMLElement[] {
-			const byDay: { day: string; writes: Write[] }[] = [];
+			const byDay: { day: number; writes: Write[] }[] = [];
 			for (const write of writes) {
-				const day = dayName(new Date(write.at));
+				const day = startOfDay(new Date(write.at));
 				const last = byDay.at(-1);
 				if (last?.day === day) last.writes.push(write);
 				else byDay.push({ day, writes: [write] });
 			}
-			return byDay.map(({ day, writes: ofDay }) =>
-				el(
-					"div",
-					{ className: "history-day" },
-					el("h3", {}, day),
+			return byDay.map(({ day, writes: ofDay }, i) => {
+				const details = el(
+					"details",
+					{ className: "history-day", open: dayOpen.get(day) ?? i === 0 },
+					el("summary", {}, el("h3", {}, dayName(new Date(day))), daySummary(ofDay, store)),
 					el(
 						"table",
 						{ className: "history-table" },
@@ -191,6 +236,37 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 						),
 						...ofDay.map((write) => writeBody(write, store)),
 					),
+				);
+				details.addEventListener("toggle", () => dayOpen.set(day, details.open));
+				return details;
+			});
+		}
+
+		/** What a day changed, in short: how many of a kind went how, and how many writes each source made, most first. */
+		function daySummary(writes: readonly Write[], store: S): HTMLElement {
+			const stories = writes.flatMap((write) => write.entries.filter((entry) => entry.operation === "change").map((entry) => unitStory(entry, describers, store)));
+			const counts = new Map<string, { action: UnitAction; count: number; noun: (count: number) => string }>();
+			for (const story of stories) {
+				const key = `${story.action}:${story.noun(1)}`;
+				const counted = counts.get(key);
+				if (counted) counted.count++;
+				else counts.set(key, { action: story.action, count: 1, noun: story.noun });
+			}
+			const order: UnitAction[] = ["created", "changed", "deleted", "moved"];
+			const units = [...counts.values()].sort((a, b) => order.indexOf(a.action) - order.indexOf(b.action));
+			const sources = new Map<string, number>();
+			for (const write of writes) sources.set(sourceLabel(write.source), (sources.get(sourceLabel(write.source)) ?? 0) + 1);
+			return el(
+				"span",
+				{ className: "history-day-summary" },
+				...units.map(({ action, count, noun }) => el("span", { className: `history-count${action === "moved" ? " minor" : ""}` }, actionMark(action), `${count} ${noun(count)}`)),
+				el(
+					"span",
+					{ className: "history-day-sources" },
+					[...sources]
+						.sort((a, b) => b[1] - a[1])
+						.map(([label, count]) => `${label} ${count}`)
+						.join(" · "),
 				),
 			);
 		}
@@ -325,12 +401,17 @@ function workspaceAction(operation: string): UnitAction {
 
 const ACTION_MARKS: Record<UnitAction, string> = { created: "+", changed: "✎", deleted: "−", moved: "↔" };
 
+/** The mark of what happened: + made, ✎ changed, − deleted, ↔ moved. */
+function actionMark(action: UnitAction): HTMLElement {
+	return el("span", { className: `history-action action-${action}`, title: text[action === "moved" ? "reordered" : action] }, ACTION_MARKS[action]);
+}
+
 /** A row of a write: its mark, what, where, and what changed (when and who come first, on the write's first row). */
 function row(action: UnitAction, what: Node[], where: Node[], change: Node[]): HTMLTableRowElement {
 	return el(
 		"tr",
 		{},
-		el("td", { className: "history-mark" }, el("span", { className: `history-action action-${action}`, title: text[action === "moved" ? "reordered" : action] }, ACTION_MARKS[action])),
+		el("td", { className: "history-mark" }, actionMark(action)),
 		el("td", { className: "history-what" }, ...what),
 		el("td", { className: "history-where" }, ...where),
 		el("td", { className: "history-change" }, ...change),

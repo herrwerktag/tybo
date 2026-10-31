@@ -15,6 +15,7 @@ function colorName(color: string): string {
 /** How the history tells of an entity type: its color, its properties (name and kind), its template. */
 export const TYPE_HISTORY: UnitDescriber<Store> = {
 	kind: "type",
+	area: "data",
 	noun: text.historyTypes,
 	read(value) {
 		if (!isRecord(value) || typeof value.name !== "string" || !Array.isArray(value.properties)) return null;
@@ -22,6 +23,7 @@ export const TYPE_HISTORY: UnitDescriber<Store> = {
 		return {
 			name: value.name,
 			...(typeof value.color === "string" ? { color: value.color } : {}),
+			...(typeof value.id === "string" ? { type: { id: value.id, name: value.name } } : {}),
 			fields: [
 				{ label: text.color, text: typeof value.color === "string" ? colorName(value.color) : "" },
 				{ label: text.properties, text: properties.join(", ") },
@@ -36,6 +38,7 @@ export const TYPE_HISTORY: UnitDescriber<Store> = {
  * the type as it is now; a value of a property gone since isn't shown. */
 export const ENTITY_HISTORY: UnitDescriber<Store> = {
 	kind: "entity",
+	area: "data",
 	noun: text.historyEntities,
 	read(value, store) {
 		if (!isRecord(value) || typeof value.name !== "string" || typeof value.typeId !== "string") return null;
@@ -52,6 +55,6 @@ export const ENTITY_HISTORY: UnitDescriber<Store> = {
 			{ label: text.content, text: typeof value.content === "string" ? value.content : "", long: true },
 			{ label: text.description, text: typeof value.description === "string" ? value.description : "", long: true },
 		];
-		return { name: value.name, context: type?.name ?? "?", ...(type ? { color: type.color } : {}), fields };
+		return { name: value.name, context: type?.name ?? "?", ...(type ? { color: type.color, type: { id: type.id, name: type.name } } : {}), fields };
 	},
 };

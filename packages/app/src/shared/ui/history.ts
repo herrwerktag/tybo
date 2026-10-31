@@ -18,12 +18,18 @@ export interface ReadUnit {
 	name: string;
 	context?: string;
 	color?: string;
+	/** The entity type it belongs to (an entity's, a card's entity's, a type itself), to filter the history by. */
+	type?: { id: string; name: string };
 	fields: HistoryField[];
 }
+
+/** What a unit is part of: the data itself (types, entities), or a view of it (boards, cards, analyses). */
+export type HistoryArea = "data" | "view";
 
 /** How the history tells of the units of one kind (see features.ui.ts). */
 export interface UnitDescriber<S> {
 	kind: string;
+	area: HistoryArea;
 	/** The kind's name for `count` units, e.g. "entity" or "entities". */
 	noun(count: number): string;
 	/** The unit's stand (the `value` of its `UnitStand`) as read, with `store` naming what it refers to; null when

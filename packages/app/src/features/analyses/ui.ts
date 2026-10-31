@@ -440,6 +440,7 @@ export const ANALYSES_PAGE: PageMaker<Store> = () => ({ routes: ["analysis"], la
  * read with the types as they are now. */
 export const ANALYSIS_HISTORY: UnitDescriber<Store> = {
 	kind: "analysis",
+	area: "view",
 	noun: text.historyAnalyses,
 	read(value, store) {
 		if (!isRecord(value) || typeof value.name !== "string" || !Array.isArray(value.groups) || !Array.isArray(value.columns)) return null;

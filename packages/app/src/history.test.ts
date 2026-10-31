@@ -52,6 +52,13 @@ async function openHistory(hash = "#history"): Promise<HTMLElement> {
 const writeLines = (view: HTMLElement) =>
 	[...view.querySelectorAll<HTMLElement>(".history-write")].map((write) => [write.querySelector(".history-source")!.textContent, write.dataset.sentence]);
 
+/** Sets the filter labeled `label` to `value`, the way picking it does. */
+function choose(view: HTMLElement, label: string, value: string): void {
+	const select = byText(view, ".history-filter > span", label).parentElement!.querySelector("select")!;
+	select.value = value;
+	select.dispatchEvent(new Event("change"));
+}
+
 /** The fields a unit's line lists, label by label. */
 const labels = (node: ParentNode) => [...node.querySelectorAll(".history-changes > dt")].map((dt) => dt.textContent);
 
@@ -149,9 +156,7 @@ test("History: the filter shows only the agent's writes; a write naming nobody i
 	const view = await openHistory();
 	assert.deepEqual(writeLines(view).map(([source]) => source), [text.sourceUnknown, text.sourceWeb, text.sourceMcp]);
 
-	const select = view.querySelector<HTMLSelectElement>("select")!;
-	select.value = "mcp";
-	select.dispatchEvent(new Event("change"));
+	choose(view, text.sourceFilter, "mcp");
 	assert.deepEqual(writeLines(view), [[text.sourceMcp, text.unitSentence(dataText.historyEntities(1), "By the agent", text.created)]]);
 });
 
@@ -186,6 +191,8 @@ test("History: cards moved together are one line, named with their board, folded
 	await settle();
 
 	const view = await openHistory();
+	assert.deepEqual(writeLines(view), []); // the data at first: what moved on a board is a visualization's
+	choose(view, text.areaFilter, "view");
 	const [moved] = view.querySelectorAll<HTMLElement>(".history-write");
 	assert.ok(moved!.classList.contains("minor")); // only layout: faint
 	assert.equal(moved!.dataset.sentence, `${boardText.historyOnBoard("Plans")}: ${text.countSentence(2, boardText.historyCards(2), boardText.historyMoved)}`);
@@ -284,4 +291,43 @@ test("History: a long write shows its first units, the rest on request", async (
 	const now = document.querySelector<HTMLElement>(".history-view")!;
 	assert.equal(now.querySelectorAll(".history-unit").length, 7);
 	assert.equal(storage.saves.length, 1); // showing more writes nothing
+});
+
+test("History: the type filter keeps to one entity type — its entities, their cards, the type itself", async () => {
+	const saved = ideas();
+	saved.types.push({ id: "book", name: "Book", color: "#c8ebbf", contentTemplate: "", properties: [] });
+	await startApp(saved);
+	const web = await writer("web");
+	web.addEntity("book", "Dune", "", {});
+	web.addEntity("idea", "Emma 2", "", {});
+	await web.saved();
+	window.dispatchEvent(new Event("focus")); // the page takes over what the writes made, to name it
+	await settle();
+
+	const view = await openHistory();
+	const options = [...byText(view, ".history-filter > span", text.typeFilter).parentElement!.querySelectorAll("option")].map((o) => o.textContent);
+	assert.deepEqual(options, [text.typeAll, "Book", "Idea"]);
+	choose(view, text.typeFilter, "book");
+	assert.deepEqual(writeLines(view).map(([, sentence]) => sentence), [text.unitSentence(dataText.historyEntities(1), "Dune", text.created)]);
+});
+
+test("History: days fold — the newest open, older ones folded to what they changed", async () => {
+	await startApp(ideas());
+	const yesterday = new Date(Date.now() - 86_400_000).toISOString();
+	keep({ at: yesterday, source: "mcp", after: { value: { name: "Old one", typeId: "idea" }, position: 0 } });
+	keep({ at: yesterday, source: "mcp", after: { value: { name: "Old two", typeId: "idea" }, position: 1 } });
+	keep({ at: yesterday, source: "web", before: { value: { name: "Old one", typeId: "idea" }, position: 0 }, after: null });
+	keep({ after: { value: { name: "New", typeId: "idea" }, position: 2 } });
+
+	const view = await openHistory();
+	const [today, before] = view.querySelectorAll<HTMLDetailsElement>(".history-day");
+	assert.equal(today!.open, true);
+	assert.equal(today!.querySelector("h3")!.textContent, text.today);
+	assert.equal(before!.open, false);
+	assert.equal(before!.querySelector("h3")!.textContent, text.yesterday);
+	assert.deepEqual(
+		[...before!.querySelectorAll(".history-count")].map((count) => count.textContent),
+		[`+2 ${dataText.historyEntities(2)}`, `−1 ${dataText.historyEntities(1)}`],
+	);
+	assert.equal(before!.querySelector(".history-day-sources")!.textContent, `${text.sourceMcp} 2 · ${text.sourceWeb} 1`);
 });

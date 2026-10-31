@@ -1,5 +1,5 @@
 import type { HistoryEntry } from "../../../shared/core/index.js";
-import { isRecord, type HistoryField, type ReadUnit, type UnitDescriber } from "../../../shared/ui/index.js";
+import { isRecord, type HistoryArea, type HistoryField, type ReadUnit, type UnitDescriber } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
 
 /** One write, as the history page shows it: the entries of one save (they share its revision), or one write of
@@ -44,6 +44,10 @@ export interface UnitStory {
 	context?: string;
 	/** The color it is known by (an entity's type's). */
 	color?: string;
+	/** The data, or a view of it (see `HistoryArea`); an entry of an unknown kind counts as data. */
+	area: HistoryArea;
+	/** The entity type it belongs to, if any. */
+	type?: { id: string; name: string };
 	action: UnitAction;
 	verb: string;
 	/** Whether it changed nothing anyone reads (a card moved, a list reordered): shown faint. */
@@ -101,6 +105,8 @@ export function unitStory<S>(entry: HistoryEntry, describers: readonly UnitDescr
 		name: shown?.name || text.unnamed,
 		...(shown?.context ? { context: shown.context } : {}),
 		...(shown?.color ? { color: shown.color } : {}),
+		...(shown?.type ? { type: shown.type } : {}),
+		area: describer?.area ?? "data",
 		collided: entry.collided,
 	};
 	const unreadable = (before !== undefined && !readBefore) || (after !== undefined && !readAfter) || (!before && !after);

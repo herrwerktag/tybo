@@ -8,6 +8,7 @@ import { text } from "../texts.js";
 /** How the history tells of a drawing: by its kind, on its board, with its text, color, place and size. */
 export const DRAWING_HISTORY: UnitDescriber<Store> = {
 	kind: "drawing",
+	area: "view",
 	noun: text.historyDrawings,
 	read(value, store, boardId) {
 		if (!isRecord(value) || typeof value.kind !== "string") return null;
