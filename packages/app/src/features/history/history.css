@@ -1,0 +1,401 @@
+/* The History tab: a table per day, a block of rows per write, a row per unit. */
+.history-view {
+	width: 100%;
+	max-width: 72rem;
+	margin-inline: auto;
+	padding: 1.5rem 1rem;
+}
+
+.history-filter {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.history-entity-filter {
+	align-self: center;
+	text-decoration: none;
+	color: inherit;
+}
+
+/* A day: its name and what it changed in short, folding its table away. */
+.history-day {
+	border-top: 1px solid var(--border);
+}
+
+.history-day > summary {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.35rem 1rem;
+	padding: 0.6rem 0;
+	cursor: pointer;
+	list-style: none;
+}
+
+.history-day > summary::-webkit-details-marker {
+	display: none;
+}
+
+.history-day > summary::before {
+	content: "▸";
+	color: var(--muted);
+}
+
+.history-day[open] > summary::before {
+	content: "▾";
+}
+
+.history-day > summary > h3 {
+	min-width: 6rem;
+	font-size: 1rem;
+}
+
+.history-day-summary {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.35rem 1rem;
+	font-size: 0.875rem;
+}
+
+.history-count {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+}
+
+.history-count.minor {
+	opacity: 0.5;
+}
+
+.history-day-sources {
+	color: var(--muted);
+}
+
+.history-day > .history-table {
+	margin-bottom: 1rem;
+}
+
+.history-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.9rem;
+}
+
+.history-table th {
+	padding: 0.25rem 0.5rem;
+	text-align: left;
+	font-size: 0.75rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--muted);
+	border-bottom: 1px solid var(--border-strong);
+}
+
+.history-table td {
+	padding: 0.35rem 0.5rem;
+	vertical-align: top;
+	border-bottom: none; /* the rows of a write belong together: lines only between writes */
+}
+
+/* A write: a line above it, and a stripe at its left in the color of who wrote it, so the agent's writes stand out
+   from the interface's at a glance. Light tints with dark text, like the chips, in either theme. */
+.history-write,
+.history-session {
+	--source: var(--border-strong);
+	--source-tint: var(--chip);
+	border-top: 1px solid var(--border);
+}
+
+.source-mcp {
+	--source: #8a6fd8;
+	--source-tint: #e6ddfb;
+}
+
+.source-web {
+	--source: #6f8fb8;
+	--source-tint: #dbe6f3;
+}
+
+.history-time {
+	width: 1%;
+	white-space: nowrap;
+	border-left: 4px solid var(--source);
+	font-variant-numeric: tabular-nums;
+	color: var(--muted);
+}
+
+.history-source {
+	display: inline-block;
+	padding: 0 0.5rem;
+	border-radius: 4px;
+	background: var(--source-tint);
+	color: #1a1a1a;
+	font-size: 0.8125rem;
+	font-weight: 600;
+	line-height: 1.375rem;
+}
+
+.source-unknown .history-source {
+	font-weight: 400;
+}
+
+/* A stretch of work: who, from when to when, how many writes and what they did, on a line across the table that
+   folds its writes away. The writes below keep its stripe. */
+.history-session > tr > td {
+	padding: 0;
+	border-left: 4px solid var(--source);
+	background: var(--surface-inset);
+}
+
+.history-session-toggle {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.35rem 1rem;
+	width: 100%;
+	padding: 0.45rem 0.5rem;
+	border: none;
+	border-radius: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.history-session-toggle:hover {
+	background: var(--highlight);
+}
+
+.history-fold {
+	color: var(--muted);
+}
+
+.history-session-time {
+	font-variant-numeric: tabular-nums;
+	font-weight: 600;
+}
+
+.history-session-writes {
+	color: var(--muted);
+	font-size: 0.875rem;
+}
+
+/* What only moved (cards on a board, entities in their list), and changes with nothing to see: there, but faint. */
+.history-write > tr.minor > td:not(.history-time),
+.history-write.minor > tr > td {
+	opacity: 0.5;
+}
+
+.history-mark {
+	width: 1%;
+}
+
+/* What happened: + made, ✎ changed, − deleted, ↔ moved, each in a small square of its own color. */
+.history-action {
+	display: inline-grid;
+	place-items: center;
+	width: 1.375rem;
+	height: 1.375rem;
+	border-radius: 4px;
+	font-size: 0.8125rem;
+	font-weight: 700;
+	line-height: 1;
+	background: var(--chip);
+	color: #1a1a1a;
+}
+
+.history-action.action-created {
+	background: #cdebc4;
+	color: #1d4d14;
+}
+
+.history-action.action-deleted {
+	background: #f6c9c9;
+	color: #7a1515;
+}
+
+.history-action.action-moved {
+	background: transparent;
+	color: var(--muted);
+}
+
+.history-what {
+	min-width: 12rem;
+}
+
+/* What kind of unit, small above the unit itself. */
+.history-noun {
+	display: block;
+	color: var(--muted);
+	font-size: 0.75rem;
+}
+
+.history-tag {
+	font-weight: 600;
+}
+
+.history-where {
+	color: var(--muted);
+	white-space: nowrap;
+}
+
+.history-change {
+	width: 45%;
+	overflow-wrap: anywhere;
+}
+
+.history-collision {
+	margin-left: 0.4rem;
+	color: var(--error);
+	font-size: 0.8125rem;
+}
+
+.history-more {
+	font-size: 0.8125rem;
+}
+
+/* A unit's fields: the field's name small and quiet on the left, its values in boxes on the right — old struck
+   through and grey, new stressed. */
+.history-changes {
+	display: grid;
+	grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr);
+	gap: 0.3rem 0.75rem;
+	align-items: baseline;
+}
+
+.history-changes > dt {
+	font-size: 0.6875rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--muted);
+	overflow-wrap: anywhere;
+}
+
+.history-changes > dd {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.25rem 0.4rem;
+	min-width: 0;
+}
+
+.history-value {
+	padding: 0.05rem 0.4rem;
+	border-radius: 4px;
+	border: 1px solid var(--border);
+	background: var(--surface);
+	color: var(--text);
+	text-decoration: none;
+	overflow-wrap: anywhere;
+}
+
+.history-value.old {
+	background: transparent;
+	border-style: dashed;
+	color: var(--muted);
+	text-decoration: line-through;
+	text-decoration-color: var(--border-strong);
+}
+
+.history-value.new {
+	background: var(--highlight);
+	border-color: var(--focus);
+	font-weight: 600;
+}
+
+.history-value.changed {
+	background: var(--highlight);
+	border-color: var(--focus);
+	font-size: 0.8125rem;
+}
+
+.history-arrow {
+	color: var(--muted);
+}
+
+.history-empty {
+	color: var(--muted);
+}
+
+.history-change summary {
+	cursor: pointer;
+	color: var(--muted);
+	font-size: 0.8125rem;
+}
+
+.history-changes details {
+	flex-basis: 100%;
+}
+
+.history-changes > dd > .history-value.changed + details {
+	flex-basis: auto;
+}
+
+.history-changes > dd > details[open] {
+	flex-basis: 100%;
+}
+
+.history-text {
+	white-space: pre-wrap;
+	margin-top: 0.25rem;
+	padding: 0.25rem 0.5rem;
+	border-left: 3px solid var(--border);
+}
+
+/* Narrow: no head; each write's when and who above its units, each unit's change below it. */
+@media (max-width: 40rem) {
+	.history-table thead {
+		display: none;
+	}
+
+	.history-table,
+	.history-write,
+	.history-session {
+		display: block;
+	}
+
+	.history-write[hidden] {
+		display: none;
+	}
+
+	.history-session > tr,
+	.history-session > tr > td {
+		display: block;
+	}
+
+	.history-write {
+		padding: 0.25rem 0 0.25rem 0.25rem;
+		border-left: 4px solid var(--source);
+	}
+
+	/* The same columns in every row of a write: the mark, what, where; the time above, the change below. */
+	.history-write > tr {
+		display: grid;
+		grid-template-columns: 2rem minmax(0, 1fr) auto;
+	}
+
+	.history-table .history-write > tr > td {
+		display: block;
+		width: auto;
+		padding: 0.2rem 0.25rem;
+	}
+
+	.history-time {
+		grid-column: 1 / -1;
+		border-left: none;
+	}
+
+	.history-table .history-write > tr > .history-change {
+		grid-column: 1 / -1;
+		padding-left: 2.25rem;
+	}
+
+	.history-what {
+		min-width: 0;
+	}
+}

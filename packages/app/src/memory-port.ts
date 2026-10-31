@@ -1,4 +1,16 @@
-import { moveItem, untouched, withChanges, type Change, type AppData, type DataPort, type SavedChanges, type WorkspaceInfo } from "./shared/core/index.js";
+import {
+	DATA_VERSION,
+	moveItem,
+	unitKey,
+	untouched,
+	withChanges,
+	type AppData,
+	type Change,
+	type DataPort,
+	type HistoryEntry,
+	type SavedChanges,
+	type WorkspaceInfo,
+} from "./shared/core/index.js";
 import { BOARD_LISTS, UNIT_KINDS, storedFeatureData, unitStands } from "./features.core.js";
 import { storedLists, type Board } from "./features/boards/core.js";
 
@@ -14,8 +26,11 @@ interface Held {
  * Change sets are applied unit by unit the way the API's tables apply them, and a unit whose `before` isn't
  * the stand held is reported as collided — written anyway, the last save wins.
  *
+ * Every save leaves its entries in the history, one per unit, the way the API's does (but for the quiet ones it
+ * leaves out: pan and zoom are kept here too), named with the `source` set.
+ *
  * Besides the port, it lets a test look in and step in: what was saved (`saves`), how often a version was
- * asked for (`looks`), someone else saving (`saveElsewhere`), and calls that fail (`failing`). */
+ * asked for (`looks`), someone else saving (`saveElsewhere`), who writes (`source`), and calls that fail (`failing`). */
 export function memoryDataPort(initial: Record<string, unknown> = {}) {
 	let held = new Map<string, Held>(
 		Object.entries(initial).map(([id, data]) => [id, { name: id, data: data as Record<string, unknown>, version: 1 }]),
@@ -23,6 +38,8 @@ export function memoryDataPort(initial: Record<string, unknown> = {}) {
 	const failing = { loads: false, saves: false, looks: false, workspaces: false };
 	const saves: Change[][] = [];
 	let looks = 0;
+	const history: HistoryEntry[] = [];
+	const writer = { source: null as string | null };
 
 	const fail = (what: keyof typeof failing) => {
 		if (failing[what]) throw new Error("the storage doesn't answer");
@@ -74,7 +91,29 @@ export function memoryDataPort(initial: Record<string, unknown> = {}) {
 			const collided = changes.filter((unit) => !untouched(stands, unit)).map((unit) => unit.id);
 			workspace.data = { ...workspace.data, ...withChanges(UNIT_KINDS, current, changes) };
 			workspace.version++;
+			for (const unit of changes) {
+				history.push({
+					id: String(history.length + 1),
+					workspaceId: id,
+					revision: String(workspace.version),
+					at: new Date().toISOString(),
+					source: writer.source,
+					operation: "change",
+					dataVersion: DATA_VERSION,
+					kind: unit.kind,
+					unitId: unit.id,
+					boardId: unit.boardId ?? null,
+					before: JSON.parse(JSON.stringify(stands.get(unitKey(unit.kind, unit.id))?.stand ?? null)),
+					after: JSON.parse(JSON.stringify(unit.after)),
+					collided: collided.includes(unit.id),
+				});
+			}
 			return { version: String(workspace.version), collided };
+		},
+		async readHistory(id, { before, limit }) {
+			fail("loads");
+			const older = history.filter((entry) => entry.workspaceId === id && (before === undefined || Number(entry.id) < Number(before)));
+			return JSON.parse(JSON.stringify(older.reverse().slice(0, limit)));
 		},
 	};
 
@@ -82,6 +121,10 @@ export function memoryDataPort(initial: Record<string, unknown> = {}) {
 		port,
 		/** Every change set saved, in order. */
 		saves,
+		/** The history's entries, oldest first — a test may add its own. */
+		history,
+		/** Who the writes from now on name themselves as (the API's `X-Tybo-Source`); null: nobody. */
+		writer,
 		/** How often the version was asked for. */
 		looks: () => looks,
 		/** Which kinds of call fail from now on. */

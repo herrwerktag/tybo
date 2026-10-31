@@ -3,6 +3,7 @@ export * from "./list.js";
 export * from "./ulid.js";
 export * from "./changes.js";
 export * from "./data.js";
+export * from "./history.js";
 export * from "./migrations.js";
 export * from "./names.js";
 export * from "./ports.js";

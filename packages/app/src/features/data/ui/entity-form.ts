@@ -10,19 +10,19 @@ import {
 	type PropertyDef,
 	type PropertyValue,
 } from "../core.js";
-import { el } from "../../../shared/ui/index.js";
+import { el, type EntityLink } from "../../../shared/ui/index.js";
 import { detailsBar } from "./entity-card.js";
 import { text } from "../texts.js";
 
 /**
- * The form for a new entity (tagged like the filter shows, `filterTag`) or for editing one. Save or Cancel calls
- * `onDone`, with whether something was saved.
+ * The form for a new entity (tagged like the filter shows, `filterTag`) or for editing one, with `links` from it to
+ * the features' pages. Save or Cancel calls `onDone`, with whether something was saved.
  */
 export function entityForm(
 	store: Store,
 	type: EntityType,
 	editing: Entity | undefined,
-	{ filterTag, onDone }: { filterTag: string | null; onDone: (saved: boolean) => void },
+	{ filterTag, links = [], onDone }: { filterTag: string | null; links?: readonly EntityLink[]; onDone: (saved: boolean) => void },
 ): HTMLFormElement {
 	const nameInput = el("input", { required: true, pattern: ".*\\S.*", value: editing?.name ?? "" });
 	const tagsInput = el("input", {
@@ -57,7 +57,10 @@ export function entityForm(
 		},
 		el("h3", {}, editing ? text.editNamed(type.name) : text.newEntity(type.name)),
 		...(editing
-			? [el("p", { className: "field" }, el("span", {}, text.id), el("span", { className: "mono" }, editing.id))]
+			? [
+					el("p", { className: "field" }, el("span", {}, text.id), el("span", { className: "mono" }, editing.id)),
+					...(links.length > 0 ? [el("p", { className: "entity-links" }, ...links.map((link) => el("a", { href: link.href(editing.id) }, link.label())))] : []),
+				]
 			: []),
 		el("label", { className: "field" }, el("span", {}, text.name), nameInput),
 		...fields.map((f) => f.element),

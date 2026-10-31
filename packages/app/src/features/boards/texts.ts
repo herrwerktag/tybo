@@ -59,6 +59,13 @@ const en = {
 	editFramesHint: "Show the board's frame, the part the View tab shows, to move, resize and set it",
 	frameFromView: "Use this view",
 	frameFromViewHint: "Set the board's frame to what you see now",
+	historyBoards: (count: number): string => (count === 1 ? "board" : "boards"),
+	historyCards: (count: number): string => (count === 1 ? "card" : "cards"),
+	historyOnBoard: (name: string) => `Board “${name}”`,
+	historyPosition: "Position",
+	historySize: "Size",
+	historyMoved: "moved",
+	historyResized: "resized",
 };
 
 export const text = messages<typeof en>({
@@ -120,5 +127,12 @@ export const text = messages<typeof en>({
 		editFramesHint: "Den Ausschnitt des Boards zeigen, den die Ansicht zeigt, um ihn zu verschieben, in der Größe zu ändern und zu setzen",
 		frameFromView: "Ansicht übernehmen",
 		frameFromViewHint: "Den Ausschnitt des Boards auf den sichtbaren Bereich setzen",
+		historyBoards: (count) => (count === 1 ? "Board" : "Boards"),
+		historyCards: (count) => (count === 1 ? "Karte" : "Karten"),
+		historyOnBoard: (name) => `Board „${name}“`,
+		historyPosition: "Position",
+		historySize: "Größe",
+		historyMoved: "verschoben",
+		historyResized: "in der Größe geändert",
 	},
 });

@@ -1,4 +1,5 @@
 import type { Change } from "./changes.js";
+import type { HistoryEntry, HistoryPage } from "./history.js";
 
 /** A workspace: its own entity types, entities and boards. */
 export interface WorkspaceInfo {
@@ -36,6 +37,8 @@ export interface DataPort {
 	 * between doesn't reject: the answer lists it under `collided`, it was written anyway (last one wins), and
 	 * the user can reload to see the other's stand. */
 	saveChanges(id: string, changes: Change[]): Promise<SavedChanges>;
+	/** The workspace's history, newest first, one page of it (see `HistoryPage`). Reading it writes nothing. */
+	readHistory(id: string, page: HistoryPage): Promise<HistoryEntry[]>;
 }
 
 /** What a save of a change set answers: the stand's new version, and which units collided. */
