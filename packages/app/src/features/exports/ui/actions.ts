@@ -1,4 +1,4 @@
-import type { Store } from "../../../features.core.js";
+import type { BoardStore } from "../../boards/core.js";
 import { downloadFile, language, safeFileName, zipFiles, type WorkspaceAction } from "../../../shared/ui/index.js";
 import type { BoardExport } from "../../boards/ui.js";
 import { boardDrawioFiles } from "./drawio-export.js";
@@ -6,7 +6,7 @@ import { text } from "../texts.js";
 import { standaloneViewHtml } from "./standalone.js";
 import { workspaceText } from "./text-export.js";
 
-const boardName = (store: Store, boardId: string) => store.data.boards.find((b) => b.id === boardId)?.name ?? "";
+const boardName = (store: BoardStore, boardId: string) => store.data.boards.find((b) => b.id === boardId)?.name ?? "";
 
 /** The board as an HTML file that shows it without the server, with `script`, the built standalone viewer (see
  * apps/web). */
@@ -36,7 +36,7 @@ export function boardExports(viewScript?: string): BoardExport[] {
 }
 
 /** In the workspace menu: the workspace as a text file, its types and entities written out. */
-export const TEXT_EXPORT: WorkspaceAction<Store> = {
+export const TEXT_EXPORT: WorkspaceAction<BoardStore> = {
 	label: () => text.exportTextButton,
 	title: () => text.exportText,
 	run(store, name) {

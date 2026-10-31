@@ -1,4 +1,3 @@
-import type { Store } from "../../../features.core.js";
 import {
 	entityTypeMap,
 	inverseReferences,
@@ -9,6 +8,7 @@ import {
 	type EntityType,
 	type PropertyDef,
 	type PropertyValue,
+	type DataStore,
 } from "../core.js";
 import { el, type EntityLink } from "../../../shared/ui/index.js";
 import { detailsBar } from "./entity-card.js";
@@ -19,7 +19,7 @@ import { text } from "../texts.js";
  * the features' pages. Save or Cancel calls `onDone`, with whether something was saved.
  */
 export function entityForm(
-	store: Store,
+	store: DataStore,
 	type: EntityType,
 	editing: Entity | undefined,
 	{ filterTag, links = [], onDone }: { filterTag: string | null; links?: readonly EntityLink[]; onDone: (saved: boolean) => void },
@@ -90,7 +90,7 @@ export function entityForm(
  */
 export function showEntityEditor(
 	panel: HTMLElement,
-	store: Store,
+	store: DataStore,
 	entity: Entity,
 	type: EntityType,
 	{ onClose, onDone }: { onClose: () => void; onDone: (saved: boolean) => void },
@@ -106,7 +106,7 @@ export function showEntityEditor(
 }
 
 /** Read-only fields for the reverse side of references (e.g. "responsible for"); edited on the other entities. */
-function inverseFields(store: Store, entity: Entity): HTMLElement[] {
+function inverseFields(store: DataStore, entity: Entity): HTMLElement[] {
 	const names = new Map(store.data.entities.map((e) => [e.id, e.name]));
 	const found = inverseReferences(store.data, entity);
 	return inverseRelations(store.data.types, entity.typeId).map((relation) => {
@@ -126,7 +126,7 @@ function inverseFields(store: Store, entity: Entity): HTMLElement[] {
 
 /** An input for one property in the entity form, plus a function reading its raw value. */
 function propertyField(
-	store: Store,
+	store: DataStore,
 	prop: PropertyDef,
 	current: PropertyValue,
 ): { prop: PropertyDef; element: HTMLElement; read: () => string | string[] } {

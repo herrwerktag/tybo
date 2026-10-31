@@ -1,6 +1,5 @@
-import type { Store } from "../../../features.core.js";
 import { isRecord, type HistoryField, type UnitDescriber } from "../../../shared/ui/index.js";
-import { TYPE_COLORS, type EntityType, type PropertyDef } from "../core.js";
+import { TYPE_COLORS, type EntityType, type PropertyDef, type DataStore } from "../core.js";
 import { text } from "../texts.js";
 
 /** A list of texts in a stand, or null when it isn't one. */
@@ -13,7 +12,7 @@ function colorName(color: string): string {
 }
 
 /** How the history tells of an entity type: its color, its properties (name and kind), its template. */
-export const TYPE_HISTORY: UnitDescriber<Store> = {
+export const TYPE_HISTORY: UnitDescriber<DataStore> = {
 	kind: "type",
 	area: "data",
 	noun: text.historyTypes,
@@ -36,7 +35,7 @@ export const TYPE_HISTORY: UnitDescriber<Store> = {
 /** How the history tells of an entity: its type, its tags and property values — references by the names of the
  * entities they point to, as far as they're still there — its content and description. Its values are read with
  * the type as it is now; a value of a property gone since isn't shown. */
-export const ENTITY_HISTORY: UnitDescriber<Store> = {
+export const ENTITY_HISTORY: UnitDescriber<DataStore> = {
 	kind: "entity",
 	area: "data",
 	noun: text.historyEntities,

@@ -10,8 +10,9 @@ import { fileURLToPath } from "node:url";
  *
  * - `shared/core` imports nothing but itself; `shared/ui`, `shared/api` and `shared/mcp` import themselves and
  *   `shared/core`.
- * - A feature imports `shared/`, itself, and the features it builds on (FEATURES_BELOW). Of the app put together in
- *   `features.*.ts` above it, only types (e.g. `Store`).
+ * - A feature imports `shared/`, itself, and the features it builds on (FEATURES_BELOW) — nothing of the app put
+ *   together in `features.*.ts` above it, not even types: it works with the store of the features below it
+ *   (e.g. `DataStore`, `BoardStore`).
  * - Tests and their helpers (`*.test.ts`, `test-*.ts`) may also use the app as a whole: `features.*.ts` and the
  *   helpers at the root.
  * - The root (`features.*.ts`, the package's entries, the app's own tests) puts everything together.
@@ -34,15 +35,11 @@ function sourceFiles(dir: string): string[] {
 	});
 }
 
-/** The relative imports and re-exports of a file: the file each one names, and whether it brings types only. */
-function importsOf(file: string): { target: string; typeOnly: boolean }[] {
+/** The files a file's relative imports and re-exports name. */
+function importsOf(file: string): string[] {
 	const source = readFileSync(join(SRC, file), "utf8");
-	const statements = source.matchAll(/^(?:import|export)\s+(type\s+)?([^;]*?)\s*from\s+"(\.[^"]+)";|^import\s+"(\.[^"]+)";/gms);
-	return [...statements].map(([, typeKeyword, clause = "", path, sideEffect]) => {
-		const names = /^\{([^}]*)\}$/.exec(clause.trim())?.[1]?.split(",").map((name) => name.trim()).filter(Boolean);
-		const typeOnly = !!typeKeyword || (!!names && names.length > 0 && names.every((name) => name.startsWith("type ")));
-		return { target: relative(SRC, join(SRC, dirname(file), (path ?? sideEffect)!)).replace(/\.js$/, ".ts"), typeOnly };
-	});
+	const statements = source.matchAll(/^(?:import|export)\s[^;]*?\sfrom\s+"(\.[^"]+)";|^import\s+"(\.[^"]+)";/gms);
+	return [...statements].map(([, path, sideEffect]) => relative(SRC, join(SRC, dirname(file), (path ?? sideEffect)!)).replace(/\.js$/, ".ts"));
 }
 
 /** Where a file belongs: `shared/core`, a feature (`features/boards`), or the root. */
@@ -54,7 +51,7 @@ function area(file: string): string {
 const isTest = (file: string) => /(^|\/)(test-[^/]*|[^/]*\.test)\.ts$/.test(file);
 
 /** Why the import of `target` from `file` goes the wrong way, or null when it may. */
-function violation(file: string, target: string, typeOnly: boolean): string | null {
+function violation(file: string, target: string): string | null {
 	const from = area(file);
 	const to = area(target);
 	if (from === to || from === "root") return null;
@@ -68,8 +65,8 @@ function violation(file: string, target: string, typeOnly: boolean): string | nu
 			? null
 			: `${feature} doesn't build on ${other} (FEATURES_BELOW): import from below, or decide that it does — see CLAUDE.md`;
 	}
-	if (isTest(file) || typeOnly) return null;
-	return `${feature} imports the app put together above it (only types may come from there)`;
+	if (isTest(file)) return null;
+	return `${feature} imports the app put together above it: use what the features below it give (e.g. their store type)`;
 }
 
 test("every feature is listed with the features it builds on", () => {
@@ -88,8 +85,8 @@ test("every feature is listed with the features it builds on", () => {
 
 test("imports point down only: shared below the features, a feature below the ones building on it", () => {
 	const wrong = sourceFiles(SRC).flatMap((file) =>
-		importsOf(file).flatMap(({ target, typeOnly }) => {
-			const why = violation(file, target, typeOnly);
+		importsOf(file).flatMap((target) => {
+			const why = violation(file, target);
 			return why ? [`${file} → ${target}: ${why}`] : [];
 		}),
 	);

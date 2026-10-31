@@ -1,4 +1,4 @@
-import { moveItem, refuseTakenName, ulid, type StoreCore } from "../../../shared/core/index.js";
+import { moveItem, refuseTakenName, ulid, type AppData, type StoreCore } from "../../../shared/core/index.js";
 import { reconcileValues } from "./normalize.js";
 import {
 	effectiveCardDisplay,
@@ -189,3 +189,7 @@ export function dataOps<D extends EntityData>(core: StoreCore<D>, settle: (data:
 		},
 	};
 }
+
+/** A store of the app's data with the changes to its types and entities: what this feature and those building
+ * on it work with, without knowing the app put together above them. */
+export type DataStore = StoreCore<AppData> & ReturnType<typeof dataOps<AppData>>;

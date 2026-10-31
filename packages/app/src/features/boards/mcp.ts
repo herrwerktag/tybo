@@ -1,12 +1,11 @@
 import { sameName, type AppData } from "../../shared/core/index.js";
-import type { Store } from "../../features.core.js";
 import { ENTITY, TYPE_HINT, entityOf, typeOf } from "../data/mcp.js";
 import { GRID_SIZE, snapToGrid, type Entity } from "../data/core.js";
 import { ToolError, WORKSPACE, object, record, text, texts, type Tool, type ToolContext } from "../../shared/mcp/index.js";
-import { layeredLayout, type Board } from "./core.js";
+import { layeredLayout, type Board, type BoardStore } from "./core.js";
 
 /** The tools on a workspace's boards: put entities on one. */
-export function boardTools({ open, answerSaved }: ToolContext<Store>): Tool[] {
+export function boardTools({ open, answerSaved }: ToolContext<BoardStore>): Tool[] {
 	return [
 	{
 		name: "place_on_board",
@@ -85,7 +84,7 @@ export function describeBoards(data: AppData): object {
 }
 
 /** The board `ref` names by id or name, or a new one of that name when there is none. */
-function boardOf(store: Store, ref: string): { board: Board; created: boolean } {
+function boardOf(store: BoardStore, ref: string): { board: Board; created: boolean } {
 	const byId = store.data.boards.find((b) => b.id === ref);
 	if (byId) return { board: byId, created: false };
 	const named = store.data.boards.filter((b) => sameName(b.name, ref));

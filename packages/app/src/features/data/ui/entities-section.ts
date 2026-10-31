@@ -1,4 +1,3 @@
-import type { Store } from "../../../features.core.js";
 import { dragHandle, el, reorderable, tagFilter, type EntityLink } from "../../../shared/ui/index.js";
 import {
 	entityTags,
@@ -9,6 +8,7 @@ import {
 	type EntityType,
 	type PropertyDef,
 	type PropertyValue,
+	type DataStore,
 } from "../core.js";
 import { text } from "../texts.js";
 import { entityForm } from "./entity-form.js";
@@ -25,7 +25,7 @@ const ENTITIES_TAG_KEY = "entities-tag";
 export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink[]) {
 	const rerender = page.rerender;
 	/** The store the section shows; set on each drawing. */
-	let store!: Store;
+	let store!: DataStore;
 	const state = {
 		selectedTypeId: null as string | null,
 		editingEntityId: null as string | null,
@@ -215,7 +215,7 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 
 	return {
 		/** Another workspace (or the first): its first type, nothing being edited. */
-		reset(current: Store): void {
+		reset(current: DataStore): void {
 			store = current;
 			state.selectedTypeId = store.data.types[0]?.id ?? null;
 			state.editingEntityId = null;
@@ -226,7 +226,7 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 			state.selectedTypeId = typeId;
 			state.editingEntityId = null;
 		},
-		render(current: Store): HTMLElement {
+		render(current: DataStore): HTMLElement {
 			store = current;
 			if (!store.data.types.some((t) => t.id === state.selectedTypeId)) {
 				state.selectedTypeId = store.data.types[0]?.id ?? null;

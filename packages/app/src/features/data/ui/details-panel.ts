@@ -1,6 +1,5 @@
 import { el, resizeHandle } from "../../../shared/ui/index.js";
-import type { Store } from "../../../features.core.js";
-import type { Entity } from "../core.js";
+import type { Entity, DataStore } from "../core.js";
 import { text } from "../texts.js";
 import { DETAILS_WIDTH_KEY, entityDetails } from "./entity-card.js";
 import { showEntityEditor } from "./entity-form.js";
@@ -25,7 +24,7 @@ export interface DetailsPanel {
  * there is `onSaved`, that draws the view anew instead (and shows them from there).
  */
 export function detailsPanel(
-	store: Store,
+	store: DataStore,
 	options: {
 		readOnly?: boolean;
 		actions?: (entity: Entity) => HTMLElement[];

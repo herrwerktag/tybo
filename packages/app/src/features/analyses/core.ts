@@ -1,6 +1,5 @@
 import { freeName, refuseTakenName, ulid, type DataPart, type UnitKind, type AppData } from "../../shared/core/index.js";
-import { referencedIds, type Entity, type EntityType, type PropertyDef } from "../data/core.js";
-import type { Store } from "../../features.core.js";
+import { referencedIds, type Entity, type EntityType, type PropertyDef, type DataStore } from "../data/core.js";
 
 /**
  * Analyses: grouped listings of one type's entities, saved with the workspace. Their part of the app's data is
@@ -269,7 +268,7 @@ export const ANALYSIS_UNIT: UnitKind<AppData, Analysis> = {
 
 /** Adds an analysis without a type yet. Without a name, it is "Analysis n" of the first number free; a name another
  * analysis has is refused with a `NameTaken`. */
-export function addAnalysis(store: Store, name: string): Analysis {
+export function addAnalysis(store: DataStore, name: string): Analysis {
 	const { data } = store;
 	refuseTakenName("analysis", data.analyses, name);
 	const item: Analysis = { id: ulid(), name: name.trim() || freeName(data.analyses, (n) => `Analysis ${n}`), typeId: null, groups: [], columns: [] };
@@ -279,7 +278,7 @@ export function addAnalysis(store: Store, name: string): Analysis {
 
 /** Renames the analysis or sets its type, groups or columns; an empty name is ignored, one another analysis has is
  * refused with a `NameTaken`. */
-export function updateAnalysis(store: Store, analysisId: string, patch: Partial<Omit<Analysis, "id">>): void {
+export function updateAnalysis(store: DataStore, analysisId: string, patch: Partial<Omit<Analysis, "id">>): void {
 	const { data } = store;
 	const name = patch.name?.trim();
 	if (name) refuseTakenName("analysis", data.analyses, name, analysisId);
@@ -289,7 +288,7 @@ export function updateAnalysis(store: Store, analysisId: string, patch: Partial<
 	});
 }
 
-export function deleteAnalysis(store: Store, analysisId: string): void {
+export function deleteAnalysis(store: DataStore, analysisId: string): void {
 	const { data } = store;
 	store.change({ ...data, analyses: data.analyses.filter((item) => item.id !== analysisId) });
 }

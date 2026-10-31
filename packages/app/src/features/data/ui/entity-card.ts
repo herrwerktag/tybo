@@ -1,4 +1,3 @@
-import type { Store } from "../../../features.core.js";
 import {
 	cardRows,
 	detailRows,
@@ -12,6 +11,7 @@ import {
 	type EntityType,
 	CARD_WIDTH,
 	GRID_SIZE,
+	type DataStore,
 } from "../core.js";
 import { el } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
@@ -32,7 +32,7 @@ export interface CardPreview {
  * A card preview inside `container` (positioned, e.g. the canvas): in its coordinates, so zoom doesn't shrink it,
  * and as tall as its visible part allows. The preview's element still has to be put into the container.
  */
-export function createCardPreview(store: Store, container: HTMLElement): CardPreview {
+export function createCardPreview(store: DataStore, container: HTMLElement): CardPreview {
 	const preview = el("article", { className: "canvas-card card-preview", role: "tooltip", id: "card-preview" });
 	preview.hidden = true;
 	let previewTimer: ReturnType<typeof setTimeout> | undefined;
@@ -141,7 +141,7 @@ export function cardSize(node: HTMLElement): { width: number; height: number } |
  * Label/value rows: text as plain text, options as a grey chip, references as tags in their entity's type color.
  * With a `preview`, hovering or focusing a reference tag shows that entity's card.
  */
-function propertyList(store: Store, rows: CardRow[], preview: CardPreview | null): HTMLElement {
+function propertyList(store: DataStore, rows: CardRow[], preview: CardPreview | null): HTMLElement {
 	return el(
 		"dl",
 		{ className: "card-props" },
@@ -172,7 +172,7 @@ function propertyList(store: Store, rows: CardRow[], preview: CardPreview | null
 
 /** Header (colored bar, name) and scrolling body (properties, content) shared by cards and previews. */
 export function cardParts(
-	store: Store,
+	store: DataStore,
 	entity: Entity,
 	type: EntityType | undefined,
 	entityNames: ReadonlyMap<string, string>,
@@ -227,7 +227,7 @@ export function detailsBar(type: EntityType | undefined, onClose: () => void): H
  * calls `onSelectEntity`.
  */
 export function entityDetails(
-	store: Store,
+	store: DataStore,
 	entity: Entity,
 	{ actions, onClose, onSelectEntity }: { actions: HTMLElement[]; onClose: () => void; onSelectEntity: (entityId: string) => void },
 ): HTMLElement[] {

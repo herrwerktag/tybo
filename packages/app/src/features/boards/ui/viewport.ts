@@ -1,8 +1,7 @@
 import type { Point, Rect } from "../../../shared/core/index.js";
 import { CLICK_TOLERANCE, trackPointer, wheelGesture } from "../../../shared/ui/index.js";
-import type { Store } from "../../../features.core.js";
 import { GRID_SIZE } from "../../data/core.js";
-import { defaultViewport, fitRect, screenToWorld, snapZoom, stepZoom, zoomAt, type Board, type Viewport } from "../core.js";
+import { defaultViewport, fitRect, screenToWorld, snapZoom, stepZoom, zoomAt, type Board, type Viewport, type BoardStore } from "../core.js";
 
 /** How long the pan/zoom takes to move somewhere else, in ms. */
 const PAN_ANIMATION = 450;
@@ -45,7 +44,7 @@ export interface ViewportControl {
  * fits the board's frame into the screen, again whenever the screen changes size until panned or zoomed, and never saves.
  */
 export function viewportControl(
-	store: Store,
+	store: BoardStore,
 	{
 		readOnly,
 		surface,

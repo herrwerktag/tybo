@@ -1,8 +1,7 @@
 import type { Rect } from "../../../shared/core/index.js";
 import { CLICK_TOLERANCE, el, trackPointer } from "../../../shared/ui/index.js";
-import type { Store } from "../../../features.core.js";
 import { snapToGrid } from "../../data/core.js";
-import { FRAME_ASPECT, MIN_FRAME_SIZE, type Board } from "../core.js";
+import { FRAME_ASPECT, MIN_FRAME_SIZE, type Board, type BoardStore } from "../core.js";
 import { text } from "../texts.js";
 
 /**
@@ -10,7 +9,7 @@ import { text } from "../texts.js";
  * by its name (a click there goes to it, see `view.goTo`) and resized at its corner, snapped to the grid; only those
  * react to the pointer.
  */
-export function frameEditor(store: Store, view: { board: () => Board; zoom: () => number; goTo: (frame: Rect) => void }) {
+export function frameEditor(store: BoardStore, view: { board: () => Board; zoom: () => number; goTo: (frame: Rect) => void }) {
 	const { board } = view;
 	const element = el("div", { className: "view-frames" });
 	/** Whether the frame is shown (see render). */
