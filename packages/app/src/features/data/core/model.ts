@@ -477,14 +477,6 @@ export const DEFAULT_CARD_SIZE = { width: 240, height: 168 } as const;
  * characters a line, easy to read). */
 export const CARD_WIDTH = { min: 168, max: 384 } as const;
 
-/** Spacing of the board's grid, in world units: cards are placed and sized on it. */
-export const GRID_SIZE = 24;
-
-/** The nearest grid line to `value`. */
-export function snapToGrid(value: number): number {
-	return Math.round(value / GRID_SIZE) * GRID_SIZE;
-}
-
 /** Entity names, made unique within each type: the second "Dune" is "Dune (2)", and so on. */
 export function uniqueNames(entities: readonly Entity[]): Map<string, string> {
 	const seen = new Map<string, number>();

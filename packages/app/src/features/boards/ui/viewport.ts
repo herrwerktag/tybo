@@ -1,6 +1,5 @@
-import type { Point, Rect } from "../../../shared/core/index.js";
+import { GRID_SIZE, type Point, type Rect } from "../../../shared/core/index.js";
 import { CLICK_TOLERANCE, trackPointer, wheelGesture } from "../../../shared/ui/index.js";
-import { GRID_SIZE } from "../../data/core.js";
 import { defaultViewport, fitRect, screenToWorld, snapZoom, stepZoom, zoomAt, type Board, type Viewport, type BoardStore } from "../core.js";
 
 /** How long the pan/zoom takes to move somewhere else, in ms. */

@@ -1,6 +1,5 @@
-import { touches, type Point, type Rect } from "../../../shared/core/index.js";
+import { GRID_SIZE, touches, type Point, type Rect } from "../../../shared/core/index.js";
 import { CLICK_TOLERANCE, el, listenWhileConnected, readPreference, svgEl, trackPointer, writePreference } from "../../../shared/ui/index.js";
-import { GRID_SIZE } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import type { CanvasLayer, LayerHost, LayerView } from "../../boards/ui.js";
 import {

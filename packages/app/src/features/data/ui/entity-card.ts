@@ -10,9 +10,9 @@ import {
 	type Entity,
 	type EntityType,
 	CARD_WIDTH,
-	GRID_SIZE,
 	type DataStore,
 } from "../core.js";
+import { GRID_SIZE } from "../../../shared/core/index.js";
 import { el } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
 import { renderMarkdown } from "../../../shared/ui/index.js";

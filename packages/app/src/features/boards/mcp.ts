@@ -1,6 +1,6 @@
-import { sameName, type AppData } from "../../shared/core/index.js";
+import { GRID_SIZE, sameName, snapToGrid, type AppData } from "../../shared/core/index.js";
 import { ENTITY, TYPE_HINT, entityOf, typeOf } from "../data/mcp.js";
-import { GRID_SIZE, snapToGrid, type Entity } from "../data/core.js";
+import type { Entity } from "../data/core.js";
 import { ToolError, WORKSPACE, object, record, text, texts, type Tool, type ToolContext } from "../../shared/mcp/index.js";
 import { layeredLayout, type Board, type BoardStore } from "./core.js";
 
