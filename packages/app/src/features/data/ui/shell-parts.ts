@@ -1,11 +1,11 @@
 import type { AppData } from "../../../shared/core/index.js";
-import type { Store } from "../../../features.core.js";
+import type { DataStore } from "../core.js";
 import { el, type NewWorkspaceOption, type SettingMaker } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
 import { setWrapReferences, wrapReferences } from "./wrap-references.js";
 
 /** In the form for a new workspace: start with copies of the current one's entity types (no entities or boards). */
-export const COPY_TYPES: NewWorkspaceOption<AppData, Store> = {
+export const COPY_TYPES: NewWorkspaceOption<AppData, DataStore> = {
 	label: (currentName) => text.copyTypesFrom(currentName),
 	available: (store) => store.data.types.length > 0,
 	start: (store) => (nothing) => ({ ...nothing, types: [...store.data.types] }),
@@ -26,7 +26,7 @@ export const WRAP_REFERENCES: SettingMaker = (shell) => {
 };
 
 /** The question before deleting a workspace, saying how much it holds. */
-export function deleteQuestion(name: string, store: Store): string {
+export function deleteQuestion(name: string, store: DataStore): string {
 	const { types, entities, boards } = store.data;
 	return text.confirmDeleteWorkspace(name, types.length, entities.length, boards.length);
 }

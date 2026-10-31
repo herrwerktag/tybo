@@ -1,5 +1,5 @@
 import { sameName, type AppData } from "../../shared/core/index.js";
-import type { Store } from "../../features.core.js";
+import type { DataStore } from "../data/core.js";
 import { typeName, typeOf } from "../data/mcp.js";
 import { ToolError, WORKSPACE, json, object, text, texts, type Tool, type ToolContext } from "../../shared/mcp/index.js";
 import {
@@ -17,7 +17,7 @@ import {
 } from "./core.js";
 
 /** The tools on a workspace's analyses: run one, make one, change one, delete one. */
-export function analysisTools({ open, answerSaved }: ToolContext<Store>): Tool[] {
+export function analysisTools({ open, answerSaved }: ToolContext<DataStore>): Tool[] {
 	return [
 		{
 			name: "run_analysis",

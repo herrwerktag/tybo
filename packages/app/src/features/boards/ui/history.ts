@@ -1,4 +1,4 @@
-import type { Store } from "../../../features.core.js";
+import type { BoardStore } from "../core.js";
 import { isRecord, type UnitDescriber } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
 
@@ -7,13 +7,13 @@ const point = (x: unknown, y: unknown) => `${Math.round(Number(x))}, ${Math.roun
 const size = (width: unknown, height: unknown) => `${Math.round(Number(width))} × ${Math.round(Number(height))}`;
 
 /** The board of `boardId` as the history names it, if it's still there. */
-export function boardContext(store: Store, boardId: string | null): string | undefined {
+export function boardContext(store: BoardStore, boardId: string | null): string | undefined {
 	const board = store.data.boards.find((b) => b.id === boardId);
 	return board ? text.historyOnBoard(board.name) : undefined;
 }
 
 /** How the history tells of a board: by its name (its pan and zoom aren't kept, its cards are units of their own). */
-export const BOARD_HISTORY: UnitDescriber<Store> = {
+export const BOARD_HISTORY: UnitDescriber<BoardStore> = {
 	kind: "board",
 	area: "view",
 	noun: text.historyBoards,
@@ -22,7 +22,7 @@ export const BOARD_HISTORY: UnitDescriber<Store> = {
 
 /** How the history tells of a card: by the entity it shows (in its type's color), on its board, with its place and
  * size — a change of which is only layout, shown faint. */
-export const CARD_HISTORY: UnitDescriber<Store> = {
+export const CARD_HISTORY: UnitDescriber<BoardStore> = {
 	kind: "card",
 	area: "view",
 	noun: text.historyCards,

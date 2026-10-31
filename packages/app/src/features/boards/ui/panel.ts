@@ -1,9 +1,8 @@
 import { el, tagFilter, typeDot } from "../../../shared/ui/index.js";
-import type { Store } from "../../../features.core.js";
 import { entityTags, filterEntities } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import type { CardPreview } from "../../data/ui/entity-card.js";
-import type { Board } from "../core.js";
+import type { Board, BoardStore } from "../core.js";
 import { text } from "../texts.js";
 
 /** What an entity dragged from the side panel carries: its id. */
@@ -17,7 +16,7 @@ const PANEL_TAG_KEY = "canvas-panel-tag";
  * name, type and tag. Hovering or focusing one shows its card beside it (`preview`). Its fold button calls `onHide`.
  */
 export function entityPanel(
-	store: Store,
+	store: BoardStore,
 	{ board, readOnly, preview, onHide }: { board: () => Board; readOnly: boolean; preview: CardPreview; onHide: () => void },
 ) {
 	const element = el("aside", { className: "canvas-panel" });

@@ -1,9 +1,8 @@
 import type { Point } from "../../../shared/core/index.js";
 import { el } from "../../../shared/ui/index.js";
-import type { Store } from "../../../features.core.js";
 import { filterEntities, linkCandidates, relationsOf, type Entity, type Relation } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
-import type { CanvasCard } from "../core.js";
+import type { CanvasCard, BoardStore } from "../core.js";
 import { text } from "../texts.js";
 
 /** An overlay over the canvas (shown with showModal), closed by its × (see dialogHeader), Escape, or a click beside it. */
@@ -32,7 +31,7 @@ function dialogHeader(dialog: HTMLDialogElement, title: string): HTMLElement {
  * Links a card's entity with another one, existing or new, through any relation (see relationsOf): the dialog, and
  * the button opening it. Either way the other entity's card is shown beside the card (`onLinked`).
  */
-export function connectDialog(store: Store, onLinked: (card: CanvasCard) => void) {
+export function connectDialog(store: BoardStore, onLinked: (card: CanvasCard) => void) {
 	const dialog = canvasDialog("connect-dialog", text.connect);
 
 	function connectButton(entity: Entity, cardId: string): HTMLButtonElement {
@@ -134,7 +133,7 @@ export function connectDialog(store: Store, onLinked: (card: CanvasCard) => void
 /** Creates an entity of any type, with its card on the board `boardId` at the first free spot from `at`, tagged with
  * `tags`: the dialog, and how to open it. */
 export function newEntityDialog(
-	store: Store,
+	store: BoardStore,
 	place: {
 		boardId(): string;
 		at(): Point;

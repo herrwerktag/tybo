@@ -22,12 +22,12 @@ import {
 	type PropertyValue,
 	type NewEntity,
 	type ValidationError,
+	type DataStore,
 } from "./core.js";
-import type { Store } from "../../features.core.js";
 import { ToolError, WORKSPACE, json, object, record, text, texts, type Tool, type ToolContext } from "../../shared/mcp/index.js";
 
 /** The tools on a workspace's types and entities: find and read them, make and change them. */
-export function dataTools({ open, answerSaved }: ToolContext<Store>): Tool[] {
+export function dataTools({ open, answerSaved }: ToolContext<DataStore>): Tool[] {
 	return [
 		{
 			name: "find_entities",

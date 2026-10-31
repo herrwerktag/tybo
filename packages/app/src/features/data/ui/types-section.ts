@@ -1,4 +1,3 @@
-import type { Store } from "../../../features.core.js";
 import { moveItem } from "../../../shared/core/index.js";
 import { dragHandle, el, reorderable, typeDot } from "../../../shared/ui/index.js";
 import {
@@ -21,6 +20,7 @@ import {
 	type PropertyKind,
 	type ReferenceDef,
 	type ValidationError,
+	type DataStore,
 } from "../core.js";
 import { text } from "../texts.js";
 import type { DataPage } from "./page.js";
@@ -69,7 +69,7 @@ function newDraftProperty(): DraftProperty {
 export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: string) => void }) {
 	const rerender = page.rerender;
 	/** The store the section shows; set on each drawing. */
-	let store!: Store;
+	let store!: DataStore;
 	const state = {
 		editingTypeId: null as string | null,
 		draftName: "",
@@ -538,11 +538,11 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 
 	return {
 		/** Another workspace (or the first): nothing of the one before is being edited. */
-		reset(current: Store): void {
+		reset(current: DataStore): void {
 			store = current;
 			resetTypeForm();
 		},
-		render(current: Store): HTMLElement {
+		render(current: DataStore): HTMLElement {
 			store = current;
 			return section();
 		},

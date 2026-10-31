@@ -1,4 +1,4 @@
-import type { Store } from "../../../features.core.js";
+import type { BoardStore } from "../../boards/core.js";
 import { isRecord, type UnitDescriber } from "../../../shared/ui/index.js";
 import { boardContext } from "../../boards/ui.js";
 import { text as boardText } from "../../boards/texts.js";
@@ -6,7 +6,7 @@ import { text as dataText } from "../../data/texts.js";
 import { text } from "../texts.js";
 
 /** How the history tells of a drawing: by its kind, on its board, with its text, color, place and size. */
-export const DRAWING_HISTORY: UnitDescriber<Store> = {
+export const DRAWING_HISTORY: UnitDescriber<BoardStore> = {
 	kind: "drawing",
 	area: "view",
 	noun: text.historyDrawings,

@@ -1,11 +1,10 @@
 import { freeName, touches, type Point, type Rect } from "../../../shared/core/index.js";
 import { CLICK_TOLERANCE, el, listenWhileConnected, readPreference, resizeHandle, trackPointer, writePreference } from "../../../shared/ui/index.js";
-import type { Store } from "../../../features.core.js";
 import { DEFAULT_CARD_SIZE, snapToGrid, type Entity, type EntityType } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import { detailsPanel } from "../../data/ui/details-panel.js";
 import { cardParts, cardSize, createCardPreview } from "../../data/ui/entity-card.js";
-import { frameInside, referencesOffBoard, screenToWorld, visibleRect, type Board, type CanvasCard } from "../core.js";
+import { frameInside, referencesOffBoard, screenToWorld, visibleRect, type Board, type CanvasCard, type BoardStore } from "../core.js";
 import { text } from "../texts.js";
 import { connectDialog, newEntityDialog } from "./dialogs.js";
 import { frameEditor } from "./frame.js";
@@ -31,7 +30,7 @@ export interface CanvasOptions {
 }
 
 /** Instead of the canvas while there's no board: a button that creates the first one and opens it. */
-function firstBoardView(store: Store, options: CanvasOptions): HTMLElement {
+function firstBoardView(store: BoardStore, options: CanvasOptions): HTMLElement {
 	const view: HTMLElement = el(
 		"section",
 		{ className: "first-board" },
@@ -60,14 +59,14 @@ function firstBoardView(store: Store, options: CanvasOptions): HTMLElement {
  * The viewer shows the board in its frame, fitted into the screen. The editor keeps one pan/zoom per board, and
  * shows the frame as an outline to move and resize.
  */
-export function canvasView(store: Store, options: CanvasOptions): HTMLElement {
+export function canvasView(store: BoardStore, options: CanvasOptions): HTMLElement {
 	return canvas(store, options).view;
 }
 
 /** The board canvas (see `canvasView`), with the way to draw it anew in place: after someone else's changes were
  * taken over, it shows them and keeps this tab's pan and zoom, and what's selected as far as it's still there.
  * False when that can't be done (no board, or the one shown is gone): then the canvas has to be made anew. */
-export function canvas(store: Store, options: CanvasOptions): { view: HTMLElement; refresh(): boolean } {
+export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLElement; refresh(): boolean } {
 	if (store.data.boards.length === 0) return { view: firstBoardView(store, options), refresh: () => false };
 	const { readOnly, layers, exports = [] } = options;
 	let boardId = readPreference(ACTIVE_BOARD_KEY) ?? "";

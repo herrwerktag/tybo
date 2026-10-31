@@ -1,5 +1,5 @@
 import type { Point, Rect } from "../../../shared/core/index.js";
-import type { Store } from "../../../features.core.js";
+import type { BoardStore } from "../core.js";
 
 /**
  * The things on a board to select or move together, by list: `cards`, and each layer's `key` (the key of the board
@@ -9,7 +9,7 @@ export type BoardItems = Record<string, ReadonlySet<string>>;
 
 /** What the canvas offers a layer (see `CanvasLayer`). */
 export interface LayerHost {
-	store: Store;
+	store: BoardStore;
 	readOnly: boolean;
 	boardId(): string;
 	zoom(): number;
@@ -71,5 +71,5 @@ export interface CanvasLayer {
 export interface BoardExport {
 	label(): string;
 	title(): string;
-	run(store: Store, boardId: string): void;
+	run(store: BoardStore, boardId: string): void;
 }

@@ -1,4 +1,4 @@
-import type { Store } from "../../../features.core.js";
+import type { DataStore } from "../core.js";
 import { el, type EntityLink, type Page, type PageMaker, type Shell } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
 import { entitiesSection } from "./entities-section.js";
@@ -22,13 +22,13 @@ export interface DataPage {
  * each with its form — where the features' `entityLinks` lead from an entity to their pages. What is being edited
  * stays while the page is drawn anew; another workspace starts afresh.
  */
-export function dataPage({ entityLinks = [] }: { entityLinks?: readonly EntityLink[] } = {}): PageMaker<Store> {
+export function dataPage({ entityLinks = [] }: { entityLinks?: readonly EntityLink[] } = {}): PageMaker<DataStore> {
 	return (shell) => dataPageIn(shell, entityLinks);
 }
 
-function dataPageIn(shell: Shell, entityLinks: readonly EntityLink[]): Page<Store> {
+function dataPageIn(shell: Shell, entityLinks: readonly EntityLink[]): Page<DataStore> {
 	/** The store the page last started afresh for. */
-	let shownStore: Store | null = null;
+	let shownStore: DataStore | null = null;
 	let focusForm: "type" | "entity" | null = null;
 	let focusHandle: string | null = null;
 	const page: DataPage = {
@@ -54,7 +54,7 @@ function dataPageIn(shell: Shell, entityLinks: readonly EntityLink[]): Page<Stor
 	return {
 		routes: ["entities", "types"],
 		label: () => text.tabEntities,
-		render(current: Store): HTMLElement {
+		render(current: DataStore): HTMLElement {
 			if (current !== shownStore) {
 				// Another workspace (or the first): nothing of the one before is being edited here.
 				shownStore = current;

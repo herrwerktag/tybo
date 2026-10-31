@@ -1,5 +1,4 @@
-import type { EntityType } from "../data/core.js";
-import type { Store } from "../../features.core.js";
+import type { EntityType, DataStore } from "../data/core.js";
 import { detailsPanel } from "../data/ui/details-panel.js";
 import { createCardPreview } from "../data/ui/entity-card.js";
 import { freeName, moveItem, nameTaken } from "../../shared/core/index.js";
@@ -33,7 +32,7 @@ const sameStep = (a: PathStep, b: PathStep) => a.propertyId === b.propertyId && 
  * Hovering an entity named in the result shows its card; clicking it shows its details beside, like on a board, where
  * Edit shows its form instead.
  */
-export function analysisView(store: Store): HTMLElement {
+export function analysisView(store: DataStore): HTMLElement {
 	const selected = (): Analysis | undefined => {
 		const id = readPreference(SELECTED_KEY);
 		return store.data.analyses.find((item) => item.id === id) ?? store.data.analyses[0];
@@ -399,11 +398,11 @@ function join(nodes: HTMLElement[]): (HTMLElement | string)[] {
 }
 
 /** The Analyses tab, after the boards. */
-export const ANALYSES_PAGE: PageMaker<Store> = () => ({ routes: ["analysis"], label: () => text.tabAnalysis, render: analysisView });
+export const ANALYSES_PAGE: PageMaker<DataStore> = () => ({ routes: ["analysis"], label: () => text.tabAnalysis, render: analysisView });
 
 /** How the history tells of an analysis: the type of its rows, the paths it groups by and those of its columns,
  * read with the types as they are now. */
-export const ANALYSIS_HISTORY: UnitDescriber<Store> = {
+export const ANALYSIS_HISTORY: UnitDescriber<DataStore> = {
 	kind: "analysis",
 	area: "view",
 	noun: text.historyAnalyses,
