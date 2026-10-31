@@ -1,7 +1,7 @@
 import type { HistoryEntry, StoreCore } from "../../shared/core/index.js";
 import { el, language, type EntityLink, type HistoryField, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
 import { text } from "./texts.js";
-import { groupWrites, unitStory, workspaceStory, writeSentence, type FieldChange, type UnitStory, type Write } from "./ui/writes.js";
+import { groupWrites, unitStory, workspaceStory, writeSentence, writeTokens, type FieldChange, type UnitAction, type UnitStory, type Write, type WriteToken } from "./ui/writes.js";
 
 /** How many entries one read asks for. */
 const PAGE_SIZE = 100;
@@ -167,11 +167,11 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 			return entityId;
 		}
 
-		/** The writes under the day they were made on. */
+		/** The writes under the day they were made on: today, yesterday, or its date. */
 		function days(writes: readonly Write[], store: S): HTMLElement[] {
 			const byDay: { day: string; writes: Write[] }[] = [];
 			for (const write of writes) {
-				const day = new Date(write.at).toLocaleDateString(language, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+				const day = dayName(new Date(write.at));
 				const last = byDay.at(-1);
 				if (last?.day === day) last.writes.push(write);
 				else byDay.push({ day, writes: [write] });
@@ -181,25 +181,30 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 			);
 		}
 
+		/** A write as one line — when, who, and what in marks: the units by what happened to them, in their colors —
+		 * opened to each unit. A write that only moved things is faint. */
 		function writeItem(write: Write, store: S): HTMLElement {
-			const time = new Date(write.at).toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" });
-			const units = write.entries.filter((entry) => entry.operation === "change");
-			const stories = units.map((entry) => unitStory(entry, describers, store));
+			const at = new Date(write.at);
+			const time = at.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" });
+			const stories = write.entries.filter((entry) => entry.operation === "change").map((entry) => unitStory(entry, describers, store));
 			const own = write.entries.find((entry) => entry.operation !== "change");
 			const told = own ? workspaceStory(own) : null;
 			const sentence = told ? told.sentence : writeSentence(stories);
-			const collided = stories.some((story) => story.collided);
+			const tokens = told ? [actionMark(workspaceAction(own!.operation)), el("span", {}, told.sentence)] : writeTokens(stories).map(tokenElement);
+			const minor = !told && stories.every((story) => story.minor);
+			const source = write.source === "web" || write.source === "mcp" ? write.source : "unknown";
+			const summary = el(
+				"summary",
+				{ ariaLabel: `${time}, ${sourceLabel(write.source)}: ${sentence}` },
+				el("time", { className: "history-time", dateTime: write.at, title: at.toLocaleString(language) }, time),
+				el("span", { className: "history-source" }, sourceLabel(write.source)),
+				el("span", { className: "history-sentence", title: sentence }, ...tokens),
+				...(stories.some((story) => story.collided) ? [collisionMark()] : []),
+			);
 			const details = el(
 				"details",
-				{ className: "history-write", open: open.has(write.key) },
-				el(
-					"summary",
-					{},
-					el("time", { className: "history-time", dateTime: write.at, title: new Date(write.at).toLocaleString(language) }, time),
-					el("span", { className: `history-source source-${write.source === "web" || write.source === "mcp" ? write.source : "unknown"}` }, sourceLabel(write.source)),
-					el("span", { className: "history-sentence" }, sentence),
-					...(collided ? [collisionMark()] : []),
-				),
+				{ className: `history-write source-${source}${minor ? " minor" : ""}`, open: open.has(write.key) },
+				summary,
 				told ? changeList(told.changes) : el("ul", { className: "history-units" }, ...stories.map(storyItem)),
 			);
 			details.addEventListener("toggle", () => (details.open ? open.add(write.key) : open.delete(write.key)));
@@ -237,23 +242,66 @@ function collisionMark(): HTMLElement {
 	return el("span", { className: "history-collision", title: text.collidedHint }, "⚠ ", text.collided);
 }
 
-/** One unit of a write: its sentence, and what it changed — or, made, its fields; gone, its last stand. */
+/** The day as the history heads its writes: today, yesterday, or its date. */
+function dayName(day: Date): string {
+	const daysAgo = Math.round((startOfDay(new Date()) - startOfDay(day)) / 86_400_000);
+	if (daysAgo === 0) return text.today;
+	if (daysAgo === 1) return text.yesterday;
+	return day.toLocaleDateString(language, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+
+const startOfDay = (day: Date) => new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
+
+/** What a write of the workspace itself did, marked like a unit's. */
+function workspaceAction(operation: string): UnitAction {
+	return operation === "create" || operation === "baseline" ? "created" : operation === "delete" ? "deleted" : operation === "move" ? "moved" : "changed";
+}
+
+const ACTION_MARKS: Record<UnitAction, string> = { created: "+", changed: "✎", deleted: "−", moved: "↔" };
+
+/** The mark of what happened: + made, ✎ changed, − deleted, ↔ moved. */
+function actionMark(action: UnitAction): HTMLElement {
+	return el("span", { className: `history-action action-${action}`, ariaHidden: "true" }, ACTION_MARKS[action]);
+}
+
+/** A unit's name, or the type several share, as a tag in its color — the way a reference shows on a card. */
+function unitTag(label: string, color: string | undefined): HTMLElement {
+	const tag = el("span", { className: "ref-tag history-tag" }, label);
+	if (color) tag.style.background = color;
+	return tag;
+}
+
+/** One part of a write's line: the mark, then one unit by name, or several by count and what they share. */
+function tokenElement(token: WriteToken): HTMLElement {
+	return el(
+		"span",
+		{ className: `history-token${token.minor ? " minor" : ""}` },
+		actionMark(token.action),
+		el("span", { className: "history-noun" }, token.count === 1 ? token.noun : `${token.count} ${token.noun}`),
+		...(token.label !== undefined ? [token.count === 1 || token.color ? unitTag(token.label, token.color) : el("span", { className: "muted" }, token.label)] : []),
+	);
+}
+
+/** One unit of a write: its mark and tag, and what it changed — or, made, its fields; gone, its last stand. */
 function storyItem(story: UnitStory): HTMLElement {
-	const sentence = el(
+	const line = el(
 		"p",
-		{ className: "history-unit" },
-		text.unitSentence(story.noun(1), story.name, story.verb),
-		...(story.context ? [el("span", { className: "muted" }, ` · ${story.context}`)] : []),
-		...(story.collided ? [" ", collisionMark()] : []),
+		{ className: "history-unit", title: text.unitSentence(story.noun(1), story.name, story.verb) },
+		actionMark(story.action),
+		el("span", { className: "history-noun" }, story.noun(1)),
+		unitTag(story.name, story.color),
+		el("span", { className: "history-verb" }, story.verb),
+		...(story.context && story.context !== story.name ? [el("span", { className: "muted" }, `· ${story.context}`)] : []),
+		...(story.collided ? [collisionMark()] : []),
 	);
 	const more: HTMLElement[] = [];
 	if (story.changes.length > 0) more.push(changeList(story.changes));
-	else if (story.verb === text.changed && !story.unreadable) sentence.append(el("span", { className: "muted" }, ` · ${text.nothingVisible}`));
+	else if (story.action === "changed" && !story.unreadable) line.append(el("span", { className: "muted" }, `· ${text.nothingVisible}`));
 	if (story.fields.length > 0) {
 		const fields = fieldList(story.fields);
-		more.push(story.verb === text.deleted ? el("details", { className: "history-last" }, el("summary", {}, text.lastStand), fields) : fields);
+		more.push(story.action === "deleted" ? el("details", { className: "history-last" }, el("summary", {}, text.lastStand), fields) : fields);
 	}
-	return el("li", {}, sentence, ...more);
+	return el("li", { className: story.minor ? "minor" : "" }, line, ...more);
 }
 
 /** The fields that changed: `old → new`; a long text by name only, its old text on request. */

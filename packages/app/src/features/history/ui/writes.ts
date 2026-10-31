@@ -33,13 +33,21 @@ export interface FieldChange {
 	long: boolean;
 }
 
+/** What happened to a unit, as the page marks it: made, changed, gone — or only moved (on a board, in its list). */
+export type UnitAction = "created" | "changed" | "deleted" | "moved";
+
 /** What one entry tells, as someone reads it. */
 export interface UnitStory {
 	/** The kind's name for one unit, and for `n`. */
 	noun: (count: number) => string;
 	name: string;
 	context?: string;
+	/** The color it is known by (an entity's type's). */
+	color?: string;
+	action: UnitAction;
 	verb: string;
+	/** Whether it changed nothing anyone reads (a card moved, a list reordered): shown faint. */
+	minor: boolean;
 	/** For a change: the fields that changed, the name first. */
 	changes: FieldChange[];
 	/** For a unit made: its fields; for one gone: its last stand. */
@@ -92,16 +100,23 @@ export function unitStory<S>(entry: HistoryEntry, describers: readonly UnitDescr
 		noun,
 		name: shown?.name || text.unnamed,
 		...(shown?.context ? { context: shown.context } : {}),
+		...(shown?.color ? { color: shown.color } : {}),
 		collided: entry.collided,
 	};
 	const unreadable = (before !== undefined && !readBefore) || (after !== undefined && !readAfter) || (!before && !after);
-	if (unreadable) return { ...base, name: shown?.name || text.unreadable, verb: !before ? text.created : !after ? text.deleted : text.changed, changes: [], fields: [], unreadable: true };
-	if (!readBefore) return { ...base, verb: text.created, changes: [], fields: readAfter!.fields.filter((field) => field.text !== ""), unreadable: false };
-	if (!readAfter) return { ...base, verb: text.deleted, changes: [], fields: readBefore.fields, unreadable: false };
+	if (unreadable) {
+		const action = !before ? "created" : !after ? "deleted" : "changed";
+		return { ...base, name: shown?.name || text.unreadable, action, verb: text[action], minor: false, changes: [], fields: [], unreadable: true };
+	}
+	if (!readBefore) return { ...base, action: "created", verb: text.created, minor: false, changes: [], fields: readAfter!.fields.filter((field) => field.text !== ""), unreadable: false };
+	if (!readAfter) return { ...base, action: "deleted", verb: text.deleted, minor: false, changes: [], fields: readBefore.fields, unreadable: false };
 	const changes = fieldChanges(readBefore, readAfter);
-	const moved = changes.length === 0 && before!.position !== after!.position;
-	const verb = moved ? text.reordered : (describer?.changeVerb?.(before!.value, after!.value) ?? text.changed);
-	return { ...base, verb, changes, fields: [], unreadable: false };
+	if (changes.length === 0 && before!.position !== after!.position) {
+		return { ...base, action: "moved", verb: text.reordered, minor: true, changes, fields: [], unreadable: false };
+	}
+	const minor = changes.length === 0 || Boolean(describer?.minor?.(before!.value, after!.value));
+	const verb = describer?.changeVerb?.(before!.value, after!.value) ?? text.changed;
+	return { ...base, action: minor && changes.length > 0 ? "moved" : "changed", verb, minor, changes, fields: [], unreadable: false };
 }
 
 /** What a write of the workspace itself (made, renamed, moved, deleted, its starting point) tells. */
@@ -120,6 +135,48 @@ export function workspaceStory(entry: HistoryEntry): { sentence: string; changes
 		default:
 			return { sentence: text.workspaceBaseline, changes: [] };
 	}
+}
+
+/** A part of a write's line: units of one kind that went one way — one by its name, several by their count —
+ * with the color and the place they share, if they share one. */
+export interface WriteToken {
+	action: UnitAction;
+	count: number;
+	noun: string;
+	/** The unit's name (one), or what they all belong to (several: their type, their board). */
+	label?: string;
+	color?: string;
+	minor: boolean;
+	collided: boolean;
+}
+
+/** A write's line in parts: its units put together by kind, what happened to them and where they belong (their
+ * type, their board), in the order written. */
+export function writeTokens(stories: readonly UnitStory[]): WriteToken[] {
+	const groups: UnitStory[][] = [];
+	for (const story of stories) {
+		const group = groups.find(
+			([first]) => first!.noun(1) === story.noun(1) && first!.action === story.action && first!.verb === story.verb && first!.context === story.context,
+		);
+		if (group) group.push(story);
+		else groups.push([story]);
+	}
+	return groups.map((group) => {
+		const [first] = group as [UnitStory, ...UnitStory[]];
+		const shared = <K extends "context" | "color">(key: K) => (group.every((story) => story[key] === first[key]) ? first[key] : undefined);
+		const one = group.length === 1;
+		const label = one ? first.name : shared("context");
+		const color = shared("color");
+		return {
+			action: first.action,
+			count: group.length,
+			noun: first.noun(group.length),
+			...(label !== undefined ? { label } : {}),
+			...(color !== undefined ? { color } : {}),
+			minor: group.every((story) => story.minor),
+			collided: group.some((story) => story.collided),
+		};
+	});
 }
 
 /** The sentence of a write: of its one unit by name; of several, how many of a kind went how, each kind once —

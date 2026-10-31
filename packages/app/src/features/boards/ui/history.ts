@@ -19,16 +19,20 @@ export const BOARD_HISTORY: UnitDescriber<Store> = {
 	read: (value) => (isRecord(value) && typeof value.name === "string" ? { name: value.name, fields: [] } : null),
 };
 
-/** How the history tells of a card: by the entity it shows, on its board, with its place and size. */
+/** How the history tells of a card: by the entity it shows (in its type's color), on its board, with its place and
+ * size — a change of which is only layout, shown faint. */
 export const CARD_HISTORY: UnitDescriber<Store> = {
 	kind: "card",
 	noun: text.historyCards,
 	read(value, store, boardId) {
 		if (!isRecord(value) || typeof value.entityId !== "string") return null;
 		const context = boardContext(store, boardId);
+		const entity = store.data.entities.find((e) => e.id === value.entityId);
+		const color = store.data.types.find((t) => t.id === entity?.typeId)?.color;
 		return {
-			name: store.data.entities.find((e) => e.id === value.entityId)?.name ?? "?",
+			name: entity?.name ?? "?",
 			...(context ? { context } : {}),
+			...(color ? { color } : {}),
 			fields: [
 				{ label: text.historyPosition, text: point(value.x, value.y) },
 				{ label: text.historySize, text: size(value.width, value.height) },
@@ -37,4 +41,5 @@ export const CARD_HISTORY: UnitDescriber<Store> = {
 	},
 	changeVerb: (before, after) =>
 		isRecord(before) && isRecord(after) && (before.x !== after.x || before.y !== after.y) ? text.historyMoved : text.historyResized,
+	minor: () => true,
 };

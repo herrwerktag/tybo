@@ -47,9 +47,10 @@ async function openHistory(hash = "#history"): Promise<HTMLElement> {
 	return document.querySelector<HTMLElement>(".history-view")!;
 }
 
-/** The lines of the writes shown, newest first: source and sentence. */
+/** The lines of the writes shown, newest first: source and what they did, as a sentence (the line shows it in marks
+ * and tags, and says it as its title). */
 const writeLines = (view: HTMLElement) =>
-	[...view.querySelectorAll(".history-write > summary")].map((s) => [s.querySelector(".history-source")!.textContent, s.querySelector(".history-sentence")!.textContent]);
+	[...view.querySelectorAll(".history-write > summary")].map((s) => [s.querySelector(".history-source")!.textContent, s.querySelector(".history-sentence")!.getAttribute("title")]);
 
 /** The fields a unit's line lists, label by label. */
 const labels = (node: ParentNode) => [...node.querySelectorAll(".history-changes > dt")].map((dt) => dt.textContent);
@@ -91,8 +92,12 @@ test("History: every write, newest first, one line each with who wrote it; a wri
 		[text.sourceMcp, `Idea: ${text.countSentence(3, dataText.historyEntities(3), text.created)}`],
 	]);
 	const created = view.querySelectorAll<HTMLDetailsElement>(".history-write")[1]!;
+	assert.ok(created.classList.contains("source-mcp")); // the agent's stripe
+	const tag = created.querySelector<HTMLElement>("summary .history-tag")!;
+	assert.equal(tag.textContent, "Idea"); // three of one type: the type, in its color
+	assert.equal(tag.style.background, "#c4dafa");
 	assert.deepEqual(
-		[...created.querySelectorAll(".history-unit")].map((p) => p.firstChild!.textContent),
+		[...created.querySelectorAll(".history-unit")].map((p) => p.getAttribute("title")),
 		["One", "Two", "Three"].map((name) => text.unitSentence(dataText.historyEntities(1), name, text.created)),
 	);
 	assert.deepEqual(labels(created.querySelector("li")!), ["Status"]); // what it was made with, the empty fields left out
@@ -181,8 +186,9 @@ test("History: cards moved together are one line, named with their board, folded
 
 	const view = await openHistory();
 	const [moved] = view.querySelectorAll<HTMLDetailsElement>(".history-write");
+	assert.ok(moved!.classList.contains("minor")); // only layout: faint
 	assert.equal(
-		moved!.querySelector(".history-sentence")!.textContent,
+		moved!.querySelector(".history-sentence")!.getAttribute("title"),
 		`${boardText.historyOnBoard("Plans")}: ${text.countSentence(2, boardText.historyCards(2), boardText.historyMoved)}`,
 	);
 	assert.equal(moved!.open, false);

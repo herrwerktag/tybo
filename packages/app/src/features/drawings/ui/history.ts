@@ -26,4 +26,6 @@ export const DRAWING_HISTORY: UnitDescriber<Store> = {
 	},
 	changeVerb: (before, after) =>
 		isRecord(before) && isRecord(after) && (before.x !== after.x || before.y !== after.y) && before.text === after.text ? boardText.historyMoved : undefined,
+	/** Moved or resized, its text and color as they were: only layout. */
+	minor: (before, after) => isRecord(before) && isRecord(after) && before.text === after.text && before.color === after.color,
 };

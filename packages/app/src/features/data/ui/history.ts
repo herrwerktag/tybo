@@ -21,6 +21,7 @@ export const TYPE_HISTORY: UnitDescriber<Store> = {
 		const properties = (value.properties as unknown[]).filter(isRecord).map((p) => `${String(p.name)} (${text.kinds[p.kind as PropertyDef["kind"]] ?? String(p.kind)})`);
 		return {
 			name: value.name,
+			...(typeof value.color === "string" ? { color: value.color } : {}),
 			fields: [
 				{ label: text.color, text: typeof value.color === "string" ? colorName(value.color) : "" },
 				{ label: text.properties, text: properties.join(", ") },
@@ -51,6 +52,6 @@ export const ENTITY_HISTORY: UnitDescriber<Store> = {
 			{ label: text.content, text: typeof value.content === "string" ? value.content : "", long: true },
 			{ label: text.description, text: typeof value.description === "string" ? value.description : "", long: true },
 		];
-		return { name: value.name, context: type?.name ?? "?", fields };
+		return { name: value.name, context: type?.name ?? "?", ...(type ? { color: type.color } : {}), fields };
 	},
 };

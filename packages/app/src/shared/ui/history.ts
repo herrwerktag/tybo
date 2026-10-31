@@ -12,11 +12,12 @@ export interface HistoryField {
 	long?: boolean;
 }
 
-/** A unit's stand as someone reads it: its name, where it belongs (an entity's type, a card's board), and its
- * fields. The name isn't a field: the page shows its change on its own. */
+/** A unit's stand as someone reads it: its name, where it belongs (an entity's type, a card's board), the color it
+ * is known by (its type's), and its fields. The name isn't a field: the page shows its change on its own. */
 export interface ReadUnit {
 	name: string;
 	context?: string;
+	color?: string;
 	fields: HistoryField[];
 }
 
@@ -30,6 +31,8 @@ export interface UnitDescriber<S> {
 	read(value: unknown, store: S, boardId: string | null): ReadUnit | null;
 	/** What a change of a unit is called when it is more than "changed" (a card that went elsewhere: moved). */
 	changeVerb?(before: unknown, after: unknown): string | undefined;
+	/** Whether a change is one nobody reads the unit for (a card moved or resized): the page shows it faint. */
+	minor?(before: unknown, after: unknown): boolean;
 }
 
 /** A link of a feature from an entity to a page of its own (e.g. the entity's history). */

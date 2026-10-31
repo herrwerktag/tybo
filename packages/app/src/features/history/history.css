@@ -34,21 +34,47 @@
 	gap: 0.25rem;
 }
 
+/* Each write: a stripe at its left in the color of who wrote it, so the agent's writes stand out from the
+   interface's at a glance. Light tints with dark text, like the chips, in either theme. */
 .history-write {
+	--source: var(--border-strong);
+	--source-tint: var(--chip);
 	border: 1px solid var(--border);
+	border-left: 4px solid var(--source);
 	border-radius: 6px;
 	background: var(--surface);
+}
+
+.history-write.source-mcp {
+	--source: #8a6fd8;
+	--source-tint: #e6ddfb;
+}
+
+.history-write.source-web {
+	--source: #6f8fb8;
+	--source-tint: #dbe6f3;
 }
 
 .history-write[open] {
 	background: var(--surface-inset);
 }
 
+/* A write that only moved things (cards on a board, entities in their list): there, but faint. */
+.history-write.minor:not([open]),
+.history-units > li.minor,
+.history-write:not(.minor) .history-token.minor {
+	opacity: 0.5;
+}
+
+.history-write.minor:not([open]):hover {
+	opacity: 0.8;
+}
+
 .history-write > summary {
 	display: flex;
-	align-items: baseline;
+	align-items: center;
 	gap: 0.75rem;
-	padding: 0.5rem 0.75rem;
+	padding: 0.45rem 0.75rem;
 	cursor: pointer;
 }
 
@@ -71,16 +97,79 @@
 
 .history-source {
 	flex: none;
-	padding: 0 0.4rem;
+	min-width: 6.5rem;
+	padding: 0 0.5rem;
 	border-radius: 4px;
-	background: var(--chip);
+	background: var(--source-tint);
 	color: #1a1a1a;
-	font-size: 0.85rem;
+	font-size: 0.8125rem;
+	font-weight: 600;
+	line-height: 1.375rem;
+	text-align: center;
 }
 
+.history-write.source-unknown .history-source {
+	font-weight: 400;
+}
+
+/* What the write did: its parts side by side, each a mark, a count or kind, and a tag in its type's color. */
 .history-sentence {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.35rem 1rem;
 	min-width: 0;
-	overflow-wrap: anywhere;
+}
+
+.history-token,
+.history-unit {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.4rem;
+	min-width: 0;
+}
+
+.history-noun,
+.history-verb,
+.history-sentence .muted,
+.history-unit .muted {
+	color: var(--muted);
+	font-size: 0.875rem;
+}
+
+.history-tag {
+	font-weight: 600;
+}
+
+/* What happened: + made, ✎ changed, − deleted, ↔ moved, each in a small square of its own color. */
+.history-action {
+	flex: none;
+	display: inline-grid;
+	place-items: center;
+	width: 1.25rem;
+	height: 1.25rem;
+	border-radius: 4px;
+	font-size: 0.8125rem;
+	font-weight: 700;
+	line-height: 1;
+	background: var(--chip);
+	color: #1a1a1a;
+}
+
+.history-action.action-created {
+	background: #cdebc4;
+	color: #1d4d14;
+}
+
+.history-action.action-deleted {
+	background: #f6c9c9;
+	color: #7a1515;
+}
+
+.history-action.action-moved {
+	background: transparent;
+	color: var(--muted);
 }
 
 .history-collision {
@@ -105,9 +194,6 @@
 	gap: 0.25rem;
 }
 
-.history-unit {
-	overflow-wrap: anywhere;
-}
 
 /* A unit's fields: label and what became of it, side by side. */
 .history-changes {
@@ -139,6 +225,7 @@
 .history-last > summary {
 	cursor: pointer;
 	color: var(--muted);
+	font-size: 0.875rem;
 }
 
 .history-text {
@@ -146,4 +233,30 @@
 	margin-top: 0.25rem;
 	padding: 0.5rem;
 	border-left: 3px solid var(--border);
+}
+
+/* Narrow: what the write did goes below when and who. */
+@media (max-width: 40rem) {
+	.history-write > summary {
+		flex-wrap: wrap;
+		gap: 0.35rem 0.75rem;
+	}
+
+	.history-source {
+		min-width: 0;
+	}
+
+	.history-sentence {
+		flex-basis: 100%;
+		padding-left: 1.25rem;
+	}
+
+	.history-units,
+	.history-write > .history-changes {
+		padding-left: 1.25rem;
+	}
+
+	.history-changes {
+		grid-template-columns: minmax(0, 1fr);
+	}
 }
