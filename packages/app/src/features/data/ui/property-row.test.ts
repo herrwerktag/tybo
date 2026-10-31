@@ -1,0 +1,155 @@
+import "../../../shared/ui/test-dom.js";
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { newReference, type DraftProperty, type EntityType } from "../core.js";
+import { text } from "../texts.js";
+import { propertyRow } from "./property-row.js";
+
+const book: EntityType = { id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", properties: [] };
+const person: EntityType = { id: "person", name: "Person", color: "#c8ebbf", contentTemplate: "", properties: [] };
+
+function draft(fields: Partial<DraftProperty> = {}): DraftProperty {
+	return { name: "author", kind: "text", options: [], reference: null, cardDisplay: "list", ...fields };
+}
+
+/** The properties' cards as the type form draws them, drawn anew whenever a setting asks for it. */
+function form(props: DraftProperty[], types: EntityType[] = [book, person]) {
+	const view = document.createElement("div");
+	let current = props;
+	const draw = () => view.replaceChildren(...current.map((prop, i) => propertyRow(prop, i, rows)));
+	const rows = {
+		types: () => types,
+		props: () => current,
+		setProps: (next: DraftProperty[]) => {
+			current = next;
+		},
+		rerender: draw,
+		focusHandle: () => {},
+	};
+	draw();
+	return { view, props: () => current };
+}
+
+function choose(select: HTMLSelectElement, value: string): void {
+	select.value = value;
+	select.dispatchEvent(new Event("change"));
+}
+
+function selects(view: HTMLElement): HTMLSelectElement[] {
+	return [...view.querySelectorAll("select")];
+}
+
+/** The element of that tag with that accessible name, if drawn. */
+function labeled<K extends keyof HTMLElementTagNameMap>(view: HTMLElement, tag: K, label: string): HTMLElementTagNameMap[K] | undefined {
+	return [...view.querySelectorAll(tag)].find((e) => e.ariaLabel === label);
+}
+
+function checkbox(view: HTMLElement, label: string): HTMLInputElement {
+	const found = [...view.querySelectorAll("label.checkbox-setting")].find((l) => l.textContent?.trim() === label);
+	return found!.querySelector("input")!;
+}
+
+test("a text property offers no line on cards; turned into a reference it gets a reference with its settings", () => {
+	const prop = draft();
+	const { view } = form([prop]);
+	const [kind, display] = selects(view);
+	assert.deepEqual([...display!.options].map((o) => o.value), ["list", "hidden"]);
+	assert.equal(view.querySelector("label.checkbox-setting"), null);
+
+	choose(kind!, "reference");
+	assert.deepEqual(prop.reference, newReference([]));
+	assert.deepEqual([...selects(view)[1]!.options].map((o) => o.value), ["list", "line", "hidden"]);
+	assert.ok(checkbox(view, text.allowMultiple));
+	assert.ok(checkbox(view, text.requiredReference));
+});
+
+test("a reference shown as a line falls back to the list when it becomes text again", () => {
+	const prop = draft({ kind: "reference", reference: newReference(["book"]), cardDisplay: "line" });
+	const { view } = form([prop]);
+	choose(selects(view)[0]!, "text");
+	assert.equal(prop.cardDisplay, "list");
+	assert.equal(selects(view)[1]!.value, "list");
+});
+
+test("the options of an options property are typed one per line", () => {
+	const prop = draft({ kind: "options", options: ["a", "b"] });
+	const { view } = form([prop]);
+	const options = view.querySelector("textarea")!;
+	assert.equal(options.value, "a\nb");
+	options.value = "a\nb\nc";
+	options.dispatchEvent(new Event("input"));
+	assert.deepEqual(prop.options, ["a", "b", "c"]);
+});
+
+test("a reference's target types are tags in their colors; the select adds the others, × removes one", () => {
+	const prop = draft({ kind: "reference", reference: newReference(["book"]) });
+	const { view } = form([prop]);
+	const tags = () => [...view.querySelectorAll<HTMLElement>(".reference-type")];
+	assert.deepEqual(tags().map((t) => [t.firstChild?.textContent, t.style.background]), [["Book", book.color]]);
+	const add = labeled(view, "select", text.addReferenceType)!;
+	assert.deepEqual([...add.options].slice(1).map((o) => o.value), ["person"]);
+
+	choose(add, "person");
+	assert.deepEqual(prop.reference?.typeIds, ["book", "person"]);
+	assert.deepEqual(tags().map((t) => t.firstChild?.textContent), ["Book", "Person"]);
+	assert.equal(labeled(view, "select", text.addReferenceType), undefined, "no type left to add");
+
+	labeled(view, "button", text.removeReferenceType("Book"))!.click();
+	assert.deepEqual(prop.reference?.typeIds, ["person"]);
+	assert.deepEqual(tags().map((t) => t.firstChild?.textContent), ["Person"]);
+});
+
+test("without any types a reference says so instead of offering a select", () => {
+	const { view } = form([draft({ kind: "reference", reference: newReference([]) })], []);
+	assert.equal(view.querySelector(".muted")?.textContent, text.noTypesOption);
+	assert.equal(labeled(view, "select", text.addReferenceType), undefined);
+});
+
+test("multiple, required and the label on the target are set on the reference", () => {
+	const prop = draft({ kind: "reference", reference: newReference(["book"]) });
+	const { view } = form([prop]);
+	for (const label of [text.allowMultiple, text.requiredReference]) {
+		const box = checkbox(view, label);
+		box.checked = true;
+		box.dispatchEvent(new Event("change"));
+	}
+	const inverse = view.querySelector<HTMLInputElement>(`input[placeholder="${text.shownOnTargetAsPlaceholder}"]`)!;
+	inverse.value = "written by";
+	inverse.dispatchEvent(new Event("input"));
+	assert.deepEqual(
+		[prop.reference?.multiple, prop.reference?.required, prop.reference?.inverseLabel],
+		[true, true, "written by"],
+	);
+});
+
+test("arrow and line label are offered only while the reference is shown as a line", () => {
+	const prop = draft({ kind: "reference", reference: newReference(["book"]) });
+	const { view } = form([prop]);
+	const lineLabel = () => view.querySelector<HTMLInputElement>(`input[placeholder="author"]`);
+	assert.equal(lineLabel(), null);
+
+	choose(selects(view)[1]!, "line");
+	assert.equal(prop.cardDisplay, "line");
+	const arrow = selects(view).find((s) => [...s.options].some((o) => o.value === "from"))!;
+	choose(arrow, "none");
+	const label = lineLabel()!;
+	label.value = "wrote";
+	label.dispatchEvent(new Event("input"));
+	assert.deepEqual([prop.reference?.arrow, prop.reference?.lineLabel], ["none", "wrote"]);
+
+	choose(selects(view)[1]!, "hidden");
+	assert.equal(lineLabel(), null);
+});
+
+test("a property is renamed in place and removed by its button", () => {
+	const first = draft({ name: "title" });
+	const { view, props } = form([first, draft()]);
+	const name = view.querySelector<HTMLInputElement>(`input[placeholder="${text.propertyName}"]`)!;
+	name.value = "name";
+	name.dispatchEvent(new Event("input"));
+	assert.equal(first.name, "name");
+
+	labeled(view, "button", text.removePropertyNamed("author"))!.click();
+	assert.deepEqual(props().map((p) => p.name), ["name"]);
+	assert.equal(view.querySelectorAll(".property").length, 1);
+});
