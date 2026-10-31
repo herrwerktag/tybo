@@ -1,31 +1,20 @@
 import { freeName, touches, type Point, type Rect } from "../../../shared/core/index.js";
-import { CLICK_TOLERANCE, el, listenWhileConnected, readPreference, resizeHandle, trackPointer, wheelGesture, writePreference } from "../../../shared/ui/index.js";
+import { CLICK_TOLERANCE, el, listenWhileConnected, readPreference, resizeHandle, trackPointer, writePreference } from "../../../shared/ui/index.js";
 import type { Store } from "../../../features.core.js";
-import { DEFAULT_CARD_SIZE, GRID_SIZE, effectiveCardDisplay, referencedIds, snapToGrid, type Entity, type EntityType } from "../../data/core.js";
+import { DEFAULT_CARD_SIZE, snapToGrid, type Entity, type EntityType } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import { detailsPanel } from "../../data/ui/details-panel.js";
 import { cardParts, cardSize, createCardPreview } from "../../data/ui/entity-card.js";
-import {
-	defaultViewport,
-	fitRect,
-	frameInside,
-	referencesOffBoard,
-	screenToWorld,
-	snapZoom,
-	stepZoom,
-	visibleRect,
-	zoomAt,
-	type Board,
-	type CanvasCard,
-	type Viewport,
-} from "../core.js";
+import { frameInside, referencesOffBoard, screenToWorld, visibleRect, type Board, type CanvasCard } from "../core.js";
 import { text } from "../texts.js";
 import { connectDialog, newEntityDialog } from "./dialogs.js";
 import { frameEditor } from "./frame.js";
-import { connectorLines, type Link } from "./lines.js";
+import { boardLinks, chainOf, connectorLines, type Link } from "./lines.js";
+import { marquee } from "./marquee.js";
 import { ENTITY_MIME, entityPanel } from "./panel.js";
 import { pickerDropdown, pickerLabel, renderPicker } from "./pickers.js";
 import type { BoardExport, BoardItems, CanvasLayer } from "./layer.js";
+import { viewportControl } from "./viewport.js";
 
 const PANEL_COLLAPSED_KEY = "canvas-panel-collapsed";
 /** The widths of the side panel and the details panel, if changed by dragging. */
@@ -33,16 +22,6 @@ export const PANEL_WIDTH_KEY = "canvas-panel-width";
 const ACTIVE_BOARD_KEY = "canvas-active-board";
 /** Whether the editor is editing the frames: only then are they shown, with their controls. */
 const EDIT_FRAMES_KEY = "canvas-edit-frames";
-/** How long the pan/zoom takes to move somewhere else, in ms. */
-const PAN_ANIMATION = 450;
-/** How long scroll/pinch zooming must pause before the zoom settles on the nearest 10% step, and how long that takes, in ms. */
-const ZOOM_SETTLE_DELAY = 150;
-const ZOOM_SETTLE_ANIMATION = 120;
-/** Room (screen px) around a frame the editor goes to. */
-const FIT_MARGIN = 48;
-
-const prefersReducedMotion = (): boolean => !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-
 export interface CanvasOptions {
 	readOnly: boolean;
 	/** The features' layers on the board (see `CanvasLayer`), the first drawn lowest. */
@@ -95,15 +74,6 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 	const currentBoard = (): Board => store.data.boards.find((b) => b.id === boardId) ?? store.data.boards[0]!;
 	boardId = currentBoard().id;
 
-	/** The viewer fits what's shown once the canvas is laid out (see homeViewport); the editor has the board's. */
-	let viewport: Viewport = readOnly ? defaultViewport() : { ...currentBoard().viewport };
-	/** Viewer only: whether it shows what's shown as fitted (see homeViewport), not panned or zoomed since — then it
-	 * fits it again when the screen changes size. */
-	let fitted = readOnly;
-	let saveTimer: ReturnType<typeof setTimeout> | undefined;
-	/** Settles scroll/pinch zooming on a step once it pauses (see zoomSmoothly). */
-	let zoomSettleTimer: ReturnType<typeof setTimeout> | undefined;
-	let pendingSave: (() => void) | null = null;
 	// Until opened or closed here, the panel starts collapsed on narrow screens, where it would leave the canvas
 	// little room.
 	const panelPreference = readPreference(PANEL_COLLAPSED_KEY);
@@ -146,14 +116,7 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 	const surface = el("div", { className: "canvas-surface" }, layer);
 	const zoomLabel = el("span", { className: "zoom-label" });
 
-	/** Where the board is seen from: in the viewer, its frame fitted into the screen (as it is while the canvas
-	 * isn't laid out); in the editor, the board's pan/zoom. */
-	function homeViewport(): Viewport {
-		if (!readOnly) return { ...currentBoard().viewport };
-		const { clientWidth: width, clientHeight: height } = surface;
-		if (width === 0 || height === 0) return viewport;
-		return fitRect(currentBoard().viewFrame, width, height);
-	}
+	const viewport = viewportControl(store, { readOnly, surface, layer, zoomLabel, board: currentBoard, onZoom: () => renderLayers() });
 
 	/** Two or more cards and layer items selected together, to move at once (Shift+click, or a frame dragged
 	 * around them); meanwhile neither the details nor an item's handles are shown. */
@@ -166,11 +129,8 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 				store,
 				readOnly,
 				boardId: () => boardId,
-				zoom: () => viewport.zoom,
-				toWorld: (clientX, clientY) => {
-					const rect = surface.getBoundingClientRect();
-					return screenToWorld(viewport, clientX - rect.left, clientY - rect.top);
-				},
+				zoom: () => viewport.current.zoom,
+				toWorld: viewport.toWorld,
 				captureTarget: () => surface,
 				cardRects: () => cardRects,
 				group: () => group?.[layer.key] ?? new Set(),
@@ -192,120 +152,22 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 	);
 	const deselectLayers = () => views.forEach((view) => view.deselect());
 	const renderLayers = () => views.forEach((view) => view.render());
-	/** The zoom the layers' selection handles were last drawn for (they keep their screen size). */
-	let drawnZoom = viewport.zoom;
-
-	function applyViewport(): void {
-		layer.style.transform = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`;
-		const grid = GRID_SIZE * viewport.zoom;
-		surface.style.backgroundSize = `${grid}px ${grid}px`;
-		// Each dot is drawn in the middle of its tile: shift by half a tile, so the dots are where cards snap to.
-		surface.style.backgroundPosition = `${viewport.x - grid / 2}px ${viewport.y - grid / 2}px`;
-		zoomLabel.textContent = `${Math.round(viewport.zoom * 100)}%`;
-		if (viewport.zoom !== drawnZoom) {
-			drawnZoom = viewport.zoom;
-			renderLayers();
-		}
-	}
-
-	/** Panning and zooming fire many events; save once they settle. */
-	function saveViewportSoon(next: Viewport = viewport): void {
-		if (readOnly) return; // the viewer never saves pan or zoom
-		clearTimeout(saveTimer);
-		const id = boardId;
-		pendingSave = () => {
-			pendingSave = null;
-			store.setViewport(id, next);
-		};
-		saveTimer = setTimeout(() => pendingSave?.(), 250);
-	}
-
-	/** Saves a scheduled viewport change right away, e.g. before switching boards. */
-	function flushViewport(): void {
-		clearTimeout(zoomSettleTimer); // not to settle the zoom of what's shown next
-		clearTimeout(saveTimer);
-		pendingSave?.();
-	}
-
 	function switchBoard(id: string): void {
-		flushViewport();
+		viewport.flush();
 		boardId = id;
 		writePreference(ACTIVE_BOARD_KEY, id);
 		show();
 	}
 
-	/** Shows the board now chosen, with its pan/zoom (see homeViewport). */
+	/** Shows the board now chosen, from where it's seen from (see viewportControl). */
 	function show(): void {
-		stopAnimation();
-		fitted = readOnly;
-		viewport = homeViewport();
+		viewport.show();
 		group = null;
 		deselectLayers();
-		applyViewport();
 		renderBoardControls();
 		renderPanel();
 		renderCards();
 		renderFrames();
-	}
-
-	/** Editor: moves the pan/zoom to show the whole frame, with some room around it, and keeps it for the board. */
-	function goToFrame(frame: Rect): void {
-		const { clientWidth: width, clientHeight: height } = surface;
-		if (width === 0 || height === 0) return; // not laid out (yet)
-		const target = fitRect(frame, width, height, FIT_MARGIN);
-		animateViewport(target);
-		saveViewportSoon(target);
-	}
-
-	let animation = 0;
-
-	function stopAnimation(): void {
-		cancelAnimationFrame(animation);
-	}
-
-	/** Moves the pan/zoom smoothly to `target` (at once if the user prefers less motion), keeping the canvas
-	 * center on a straight path. Nothing is saved here. */
-	function animateViewport(target: Viewport): void {
-		stopAnimation();
-		const from = viewport;
-		if (prefersReducedMotion()) {
-			viewport = target;
-			return applyViewport();
-		}
-		const cx = surface.clientWidth / 2;
-		const cy = surface.clientHeight / 2;
-		const center = (v: Viewport) => ({ x: (cx - v.x) / v.zoom, y: (cy - v.y) / v.zoom });
-		const a = center(from);
-		const b = center(target);
-		const start = performance.now();
-		const frame = (now: number) => {
-			const t = Math.min(1, (now - start) / PAN_ANIMATION);
-			const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2; // ease in and out
-			const zoom = from.zoom + (target.zoom - from.zoom) * e;
-			const x = a.x + (b.x - a.x) * e;
-			const y = a.y + (b.y - a.y) * e;
-			viewport = t < 1 ? { x: cx - x * zoom, y: cy - y * zoom, zoom } : target;
-			applyViewport();
-			if (t < 1) animation = requestAnimationFrame(frame);
-		};
-		animation = requestAnimationFrame(frame);
-	}
-
-	/** Pans just enough to bring a rectangle (world coordinates) into view, with a little room around it. */
-	function reveal(rect: Rect): void {
-		const width = surface.clientWidth;
-		const height = surface.clientHeight;
-		if (width === 0 || height === 0) return; // not laid out (yet)
-		const margin = GRID_SIZE;
-		const shift = (start: number, size: number, room: number) =>
-			start < margin ? margin - start : start + size > room - margin ? Math.max(margin - start, room - margin - start - size) : 0;
-		const { zoom } = viewport;
-		const dx = shift(rect.x * zoom + viewport.x, rect.width * zoom, width);
-		const dy = shift(rect.y * zoom + viewport.y, rect.height * zoom, height);
-		if (dx === 0 && dy === 0) return;
-		const target = { ...viewport, x: viewport.x + dx, y: viewport.y + dy };
-		animateViewport(target);
-		saveViewportSoon(target);
 	}
 
 	const boardControls = el("div", { className: "board-controls" });
@@ -346,7 +208,7 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 	}
 
 	/** The frame of what is seen now: the largest one in a frame's shape inside the canvas. */
-	const seenFrame = (): Rect => frameInside(visibleRect(viewport, surface.clientWidth, surface.clientHeight));
+	const seenFrame = (): Rect => frameInside(visibleRect(viewport.current, surface.clientWidth, surface.clientHeight));
 
 	/** Editor: sets the board's frame to what is seen now. */
 	const frameFromViewButton = el(
@@ -403,7 +265,7 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 	function deleteBoard(id: string): void {
 		const board = store.data.boards.find((b) => b.id === id);
 		if (!board || !confirm(text.confirmDeleteBoard(board.name, board.cards.length))) return;
-		flushViewport();
+		viewport.flush();
 		store.deleteBoard(id);
 		if (store.data.boards.length === 0) {
 			boardDialog.close();
@@ -412,45 +274,6 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 		}
 		if (id === boardId) switchBoard(store.data.boards[0]!.id);
 		renderBoardDialog();
-	}
-
-	function setViewport(next: Viewport): void {
-		stopAnimation();
-		fitted = false;
-		viewport = next;
-		applyViewport();
-		saveViewportSoon();
-	}
-
-	/** One 10% step in (1) or out (-1), around the canvas center. */
-	function zoomStep(direction: 1 | -1): void {
-		setViewport(zoomAt(viewport, stepZoom(viewport.zoom, direction), surface.clientWidth / 2, surface.clientHeight / 2));
-	}
-
-	/** Scroll/pinch zooming follows the gesture smoothly; once it pauses, the zoom eases to the nearest step around
-	 * the same point (at once if the user prefers less motion). */
-	function zoomSmoothly(factor: number, sx: number, sy: number): void {
-		setViewport(zoomAt(viewport, viewport.zoom * factor, sx, sy));
-		clearTimeout(zoomSettleTimer);
-		zoomSettleTimer = setTimeout(() => {
-			const from = viewport.zoom;
-			const target = snapZoom(from);
-			if (target === from) return;
-			if (prefersReducedMotion()) {
-				return setViewport(zoomAt(viewport, target, sx, sy));
-			}
-			const start = performance.now();
-			const frame = (now: number) => {
-				const t = Math.min(1, (now - start) / ZOOM_SETTLE_ANIMATION);
-				const e = 1 - (1 - t) ** 2; // ease out
-				viewport = zoomAt(viewport, t < 1 ? from + (target - from) * e : target, sx, sy);
-				applyViewport();
-				if (t < 1) animation = requestAnimationFrame(frame);
-				else saveViewportSoon();
-			};
-			stopAnimation();
-			animation = requestAnimationFrame(frame);
-		}, ZOOM_SETTLE_DELAY);
 	}
 
 	/** The entity shown in the details panel, and the card that was selected for it (if it's on this board). */
@@ -467,8 +290,7 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 		onSelectEntity: selectEntity,
 		// What the cards show (name, properties, lines) may have changed; renderCards shows the details again.
 		onSaved: () => {
-			renderCards();
-			renderPanel();
+			redrawBoard();
 		},
 	});
 
@@ -491,25 +313,13 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 		markChain();
 	}
 
-	/** The cards linked by lines to this one, either way and through others, with it. */
-	function chainOf(cardId: string): Set<string> {
-		const chain = new Set([cardId]);
-		for (const id of chain) {
-			for (const [from, to] of edges) {
-				if (from === id) chain.add(to);
-				if (to === id) chain.add(from);
-			}
-		}
-		return chain;
-	}
-
 	/**
 	 * With one card selected, everything on the board fades but its chain: the cards linked to it and their lines,
 	 * and what the layers keep in focus with it. Its own lines (and their labels) stand out further, as `direct`.
 	 */
 	function markChain(): void {
 		const cardId = !group ? selected?.cardId : null;
-		const chain = cardId ? chainOf(cardId) : null;
+		const chain = cardId ? chainOf(cardId, edges) : null;
 		layer.classList.toggle("focusing", chain !== null);
 		views.forEach((view) => view.focus(cardId ?? null));
 		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card[data-card-id]")) {
@@ -571,7 +381,7 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 	function dragGroup(e: PointerEvent, pressed: { cardNode: HTMLElement } | { key: string; id: string }, items: BoardItems | null = group): void {
 		if (!items) return;
 		const cardIds = items.cards ?? new Set<string>();
-		const { zoom } = viewport;
+		const { zoom } = viewport.current;
 		const board = currentBoard();
 		const cards = board.cards.filter((c) => cardIds.has(c.id));
 		const offset = (dx: number, dy: number) => ({ x: snapToGrid(dx / zoom), y: snapToGrid(dy / zoom) });
@@ -616,18 +426,17 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 	/** Links the selected card's entity with another one, existing or new; the other one's card shows beside it. */
 	const connect = connectDialog(store, (card) => {
 		appearing = new Set([card.id]);
-		renderCards();
-		renderPanel();
-		reveal(cardRects.get(card.id) ?? card);
+		redrawBoard();
+		viewport.reveal(cardRects.get(card.id) ?? card);
 	});
 
 	/** Creates an entity of any type, with its card in the middle of the view (tagged like the side panel's filter). */
 	const newEntity = newEntityDialog(store, {
 		boardId: () => boardId,
 		at: () => {
-			const { zoom } = viewport;
+			const { zoom } = viewport.current;
 			return screenToWorld(
-				viewport,
+				viewport.current,
 				surface.clientWidth / 2 - (DEFAULT_CARD_SIZE.width * zoom) / 2,
 				surface.clientHeight / 2 - (DEFAULT_CARD_SIZE.height * zoom) / 2,
 			);
@@ -638,10 +447,9 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 		},
 		onMade: ({ entity, card }) => {
 			appearing = new Set([card.id]);
-			renderCards();
-			renderPanel();
+			redrawBoard();
 			select(entity.id, card.id);
-			reveal(cardRects.get(card.id) ?? card);
+			viewport.reveal(cardRects.get(card.id) ?? card);
 		},
 	});
 
@@ -685,12 +493,11 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 		const cards = store.layOutReferences(cardId, measure);
 		if (cards.length === 0) return;
 		appearing = new Set(cards.map((c) => c.id));
-		renderCards();
-		renderPanel();
+		redrawBoard();
 		const all = [cardRects.get(cardId), ...cards].filter((r) => !!r);
 		const x = Math.min(...all.map((r) => r.x));
 		const y = Math.min(...all.map((r) => r.y));
-		reveal({ x, y, width: Math.max(...all.map((r) => r.x + r.width)) - x, height: Math.max(...all.map((r) => r.y + r.height)) - y });
+		viewport.reveal({ x, y, width: Math.max(...all.map((r) => r.x + r.width)) - x, height: Math.max(...all.map((r) => r.y + r.height)) - y });
 	}
 
 	/** Deletes the entity (after asking), with its cards on every board; one undo step brings all of it back. */
@@ -699,8 +506,7 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 		if (!confirm(dataText.confirmDeleteEntity(entity.name, store.referencesTo(entity.id)) + text.otherBoardsWithCards(otherBoards))) return;
 		store.deleteEntity(entity.id);
 		select(null);
-		renderCards();
-		renderPanel();
+		redrawBoard();
 	}
 
 	// Escape closes the details panel; in the editor, Delete takes the selected card off the board, like ×, and never
@@ -712,8 +518,7 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 		if ((e.key === "Delete" || e.key === "Backspace") && cardId && !readOnly && !(e.ctrlKey || e.metaKey || e.altKey)) {
 			e.preventDefault();
 			store.removeCard(cardId);
-			renderCards();
-			renderPanel();
+			redrawBoard();
 		}
 	});
 
@@ -728,6 +533,12 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 	/** The lines drawn, as the cards they link (see drawConnectors). */
 	let edges: [string, string][] = [];
 
+	/** After the board's cards changed: draws them anew, and the side panel that tells which are on the board. */
+	function redrawBoard(): void {
+		renderCards();
+		renderPanel();
+	}
+
 	function renderCards(): void {
 		preview.hide(); // its tag is about to be replaced
 		const board = currentBoard();
@@ -738,31 +549,13 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 		for (const card of board.cards) cardsByEntity.set(card.entityId, [...(cardsByEntity.get(card.entityId) ?? []), card]);
 
 		cardRects = new Map(board.cards.map((c) => [c.id, { x: c.x, y: c.y, width: c.width, height: c.height }]));
-		links = [];
+		links = boardLinks(store.data, board);
 		const cardNodes = board.cards.flatMap((card) => {
 			const entity = entities.get(card.entityId);
 			if (!entity) return [];
-			const type = types.get(entity.typeId);
-			// Other cards on this board showing the given entity.
-			const targetCards = (entityId: string) => (cardsByEntity.get(entityId) ?? []).filter((c) => c.id !== card.id);
-			for (const prop of type?.properties ?? []) {
-				if (effectiveCardDisplay(prop) !== "line") continue;
-				for (const id of referencedIds(prop, entity.values[prop.id])) {
-					const targets = targetCards(id);
-					const color = types.get(entities.get(id)?.typeId ?? "")?.color ?? "";
-					if (targets.length > 0) {
-						links.push({
-							fromCardId: card.id,
-							targetCardIds: targets.map((c) => c.id),
-							label: prop.reference?.lineLabel || prop.name,
-							fromColor: type?.color ?? "",
-							color,
-							arrow: prop.reference?.arrow ?? "to",
-						});
-					}
-				}
-			}
-			return [cardElement(card, entity, type, entityNames, (id) => targetCards(id).length > 0)];
+			// Whether another card on this board shows the given entity.
+			const isLinked = (entityId: string) => (cardsByEntity.get(entityId) ?? []).some((c) => c.id !== card.id);
+			return [cardElement(card, entity, types.get(entity.typeId), entityNames, isLinked)];
 		});
 		appearing = new Set();
 		// The frame's outline stays on top of the cards. It isn't redrawn with them: only the nodes before it are replaced.
@@ -841,8 +634,7 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 						title: text.removeFromCanvas,
 						onclick: () => {
 							store.removeCard(card.id);
-							renderCards();
-							renderPanel();
+							redrawBoard();
 						},
 					},
 					"×",
@@ -889,7 +681,7 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 			if (e.button !== 0 || e.shiftKey || (e.target as Element).closest("button")) return; // Shift: a click (see above)
 			e.preventDefault();
 			if (group?.cards?.has(card.id)) return dragGroup(e, { cardNode: node });
-			const { zoom } = viewport;
+			const { zoom } = viewport.current;
 			let dragging = false;
 			trackPointer(
 				e,
@@ -932,9 +724,8 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 		const pointerAt = (dx: number, dy: number) => ({ x: e.clientX + dx, y: e.clientY + dy });
 		// So the pointer ends up on the card's header, as when dropped from the side panel.
 		const spot = (dx: number, dy: number): Point => {
-			const area = surface.getBoundingClientRect();
 			const pointer = pointerAt(dx, dy);
-			const world = screenToWorld(viewport, pointer.x - area.left, pointer.y - area.top);
+			const world = viewport.toWorld(pointer.x, pointer.y);
 			return { x: snapToGrid(world.x - (ghost?.offsetWidth || DEFAULT_CARD_SIZE.width) / 2), y: snapToGrid(world.y - 16) };
 		};
 		trackPointer(
@@ -962,8 +753,7 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 				const pointer = pointerAt(dx, dy);
 				if (pointer.x < area.left || pointer.x > area.right || pointer.y < area.top || pointer.y > area.bottom) return;
 				store.addCard(boardId, entityId, x, y);
-				renderCards();
-				renderPanel();
+				redrawBoard();
 			},
 		);
 	}
@@ -1010,74 +800,36 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 
 	/** Pans the board along with the pointer from this press; a click without moving clears the selection. */
 	function pan(e: PointerEvent): void {
-		stopAnimation();
-		const start = viewport;
-		surface.classList.add("panning");
-		trackPointer(
-			e,
-			(dx, dy) => {
-				fitted = false;
-				viewport = { ...start, x: start.x + dx, y: start.y + dy };
-				applyViewport();
-			},
-			(dx, dy) => {
-				surface.classList.remove("panning");
-				saveViewportSoon();
-				if (Math.hypot(dx, dy) < CLICK_TOLERANCE && e.button === 0) {
-					select(null);
-					deselectLayers();
-				}
-			},
-			surface,
-		);
+		viewport.pan(e, () => {
+			if (e.button !== 0) return;
+			select(null);
+			deselectLayers();
+		});
 	}
 
-	/** The frame being dragged around cards and layer items to select them, in screen coordinates. */
-	const marquee = el("div", { className: "marquee", hidden: true });
-	surface.append(marquee);
+	/** The frame dragged around cards and layer items to select them. */
+	const frameDrag = marquee(surface);
 
 	/**
 	 * Drags a frame from this press: the cards and layer items it touches get selected (with
 	 * Shift, added to the selection). A click without moving clears the selection.
 	 */
 	function frameSelect(e: PointerEvent): void {
-		const area = surface.getBoundingClientRect();
-		const start = { x: e.clientX - area.left, y: e.clientY - area.top };
 		const adding = e.shiftKey;
-		const frame = (dx: number, dy: number): Rect => ({
-			x: Math.min(start.x, start.x + dx),
-			y: Math.min(start.y, start.y + dy),
-			width: Math.abs(dx),
-			height: Math.abs(dy),
+		frameDrag.drag(e, (f) => {
+			if (!f) {
+				if (!adding) setSelection({});
+				return;
+			}
+			const from = screenToWorld(viewport.current, f.x, f.y);
+			const to = screenToWorld(viewport.current, f.x + f.width, f.y + f.height);
+			const world = { x: from.x, y: from.y, width: to.x - from.x, height: to.y - from.y };
+			const items = adding ? selection() : {};
+			const add = (key: string, id: string) => (items[key] ??= new Set()).add(id);
+			for (const c of currentBoard().cards) if (touches(world, cardRects.get(c.id) ?? c)) add("cards", c.id);
+			for (const [key, view] of views) for (const id of view.touching(world)) add(key, id);
+			setSelection(items);
 		});
-		trackPointer(
-			e,
-			(dx, dy) => {
-				if (marquee.hidden && Math.hypot(dx, dy) < CLICK_TOLERANCE) return;
-				const f = frame(dx, dy);
-				marquee.hidden = false;
-				Object.assign(marquee.style, { left: `${f.x}px`, top: `${f.y}px`, width: `${f.width}px`, height: `${f.height}px` });
-			},
-			(dx, dy) => {
-				const framed = !marquee.hidden;
-				marquee.hidden = true;
-				if (!framed) {
-					if (!adding) setSelection({});
-					return;
-				}
-				const f = frame(dx, dy);
-				const from = screenToWorld(viewport, f.x, f.y);
-				const to = screenToWorld(viewport, f.x + f.width, f.y + f.height);
-				const world = { x: from.x, y: from.y, width: to.x - from.x, height: to.y - from.y };
-				const board = currentBoard();
-				const items = adding ? selection() : {};
-				const add = (key: string, id: string) => (items[key] ??= new Set()).add(id);
-				for (const c of board.cards) if (touches(world, cardRects.get(c.id) ?? c)) add("cards", c.id);
-				for (const [key, view] of views) for (const id of view.touching(world)) add(key, id);
-				setSelection(items);
-			},
-			surface,
-		);
 	}
 
 	// Dragging the empty background frames cards and layer items to select them. Touch, and the viewer (which has
@@ -1088,29 +840,9 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 		else frameSelect(e);
 	});
 
-	// A mouse wheel zooms around the pointer, as does a trackpad pinch; two-finger scrolling pans (see wheelGesture).
-	surface.addEventListener(
-		"wheel",
-		(e) => {
-			const gesture = wheelGesture(e);
-			if ("zoom" in gesture) {
-				e.preventDefault();
-				const rect = surface.getBoundingClientRect();
-				zoomSmoothly(gesture.zoom, e.clientX - rect.left, e.clientY - rect.top);
-				return;
-			}
-			const body = (e.target as Element).closest(".card-body");
-			if (body && body.scrollHeight > body.clientHeight) return; // let long card bodies scroll
-			e.preventDefault();
-			setViewport({ ...viewport, x: viewport.x - gesture.pan.dx, y: viewport.y - gesture.pan.dy });
-		},
-		{ passive: false },
-	);
-
 	/** Gives files to the layers, centered on a point (screen coordinates): true if one took any. */
 	function dropFiles(files: FileList | undefined, clientX: number, clientY: number): boolean {
-		const rect = surface.getBoundingClientRect();
-		const center = screenToWorld(viewport, clientX - rect.left, clientY - rect.top);
+		const center = viewport.toWorld(clientX, clientY);
 		const all = [...(files ?? [])];
 		return all.length > 0 && [...views.values()].some((view) => view.drop(all, center));
 	}
@@ -1127,16 +859,14 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 				e.preventDefault();
 				return;
 			}
-			const rect = surface.getBoundingClientRect();
-			const world = screenToWorld(viewport, e.clientX - rect.left, e.clientY - rect.top);
+			const world = viewport.toWorld(e.clientX, e.clientY);
 			const entityId = e.dataTransfer?.getData(ENTITY_MIME);
 			if (!entityId) return;
 			e.preventDefault();
 			// Drop so the pointer ends up on the card's header, on the grid.
 			const x = snapToGrid(world.x - DEFAULT_CARD_SIZE.width / 2);
 			store.addCard(boardId, entityId, x, snapToGrid(world.y - 16));
-			renderCards();
-			renderPanel();
+			redrawBoard();
 		});
 	}
 
@@ -1151,7 +881,7 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 	}
 
 	/** Editor, while editing the frame: the board's frame as an outline on the canvas (see frameEditor). */
-	const frame = frameEditor(store, { board: currentBoard, zoom: () => viewport.zoom, goTo: goToFrame });
+	const frame = frameEditor(store, { board: currentBoard, zoom: () => viewport.current.zoom, goTo: viewport.goTo });
 
 	function renderFrames(): void {
 		if (!readOnly) frame.render(editingFrames);
@@ -1178,41 +908,18 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 	const zoomBar = el(
 		"div",
 		{ className: "toolbar-group canvas-zoom" },
-		el("button", { type: "button", ariaLabel: text.zoomOut, title: text.zoomOut, onclick: () => zoomStep(-1) }, "−"),
+		el("button", { type: "button", ariaLabel: text.zoomOut, title: text.zoomOut, onclick: () => viewport.zoomStep(-1) }, "−"),
 		zoomLabel,
-		el("button", { type: "button", ariaLabel: text.zoomIn, title: text.zoomIn, onclick: () => zoomStep(1) }, "+"),
+		el("button", { type: "button", ariaLabel: text.zoomIn, title: text.zoomIn, onclick: () => viewport.zoomStep(1) }, "+"),
 		// The viewer fits what's shown again; the editor resets to the default.
-		el(
-			"button",
-			{
-				type: "button",
-				onclick: () => {
-					if (!readOnly) return setViewport(defaultViewport());
-					stopAnimation();
-					fitted = true;
-					viewport = homeViewport();
-					applyViewport();
-				},
-			},
-			text.resetView,
-		),
+		el("button", { type: "button", onclick: () => viewport.reset() }, text.resetView),
 	);
 
-	applyViewport();
 	renderBoardControls();
 	if (!readOnly) panel.build();
 	renderPanel();
 	renderCards();
 	renderFrames();
-	// The viewer fits what's shown once the canvas has a size, and again whenever it changes, until panned or zoomed.
-	if (readOnly && typeof ResizeObserver !== "undefined") {
-		new ResizeObserver(() => {
-			if (!fitted) return;
-			stopAnimation();
-			viewport = homeViewport();
-			applyViewport();
-		}).observe(surface);
-	}
 	canvasMain.append(
 		surface,
 		...(readOnly ? [] : [openPanelButton, ...[...views.values()].flatMap((view) => view.controls)]),

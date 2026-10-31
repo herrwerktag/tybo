@@ -1,7 +1,7 @@
-import type { Rect } from "../../../shared/core/index.js";
+import type { AppData, Rect } from "../../../shared/core/index.js";
 import { el, svgEl } from "../../../shared/ui/index.js";
-import type { LineArrow } from "../../data/core.js";
-import { connector, nearest } from "../core.js";
+import { effectiveCardDisplay, referencedIds, type LineArrow } from "../../data/core.js";
+import { connector, nearest, type Board } from "../core.js";
 
 /** The connector lines' color (as in the stylesheet), for a gradient's end at a card whose type has no color. */
 const LINE_COLOR = "#8a8a8a";
@@ -17,6 +17,47 @@ export interface Link {
 	fromColor: string;
 	color: string;
 	arrow: LineArrow;
+}
+
+/** The lines the board shows: one per reference shown as a line (see `effectiveCardDisplay`) from a card to an
+ * entity with another card on the board. */
+export function boardLinks(data: Pick<AppData, "entities" | "types">, board: Board): Link[] {
+	const entities = new Map(data.entities.map((e) => [e.id, e]));
+	const types = new Map(data.types.map((t) => [t.id, t]));
+	return board.cards.flatMap((card) => {
+		const entity = entities.get(card.entityId);
+		const type = entity && types.get(entity.typeId);
+		if (!entity || !type) return [];
+		return type.properties.flatMap((prop) => {
+			if (effectiveCardDisplay(prop) !== "line") return [];
+			return referencedIds(prop, entity.values[prop.id]).flatMap((id) => {
+				const targetCardIds = board.cards.filter((c) => c.entityId === id && c.id !== card.id).map((c) => c.id);
+				if (targetCardIds.length === 0) return [];
+				return [
+					{
+						fromCardId: card.id,
+						targetCardIds,
+						label: prop.reference?.lineLabel || prop.name,
+						fromColor: type.color,
+						color: types.get(entities.get(id)?.typeId ?? "")?.color ?? "",
+						arrow: prop.reference?.arrow ?? "to",
+					},
+				];
+			});
+		});
+	});
+}
+
+/** The cards linked by `edges` (see connectorLines' draw) to this one, either way and through others, with it. */
+export function chainOf(cardId: string, edges: readonly (readonly [string, string])[]): Set<string> {
+	const chain = new Set([cardId]);
+	for (const id of chain) {
+		for (const [from, to] of edges) {
+			if (from === id) chain.add(to);
+			if (to === id) chain.add(from);
+		}
+	}
+	return chain;
 }
 
 /** The lines between the cards on a canvas: an SVG under the cards, and their labels (property names) at the lines'
