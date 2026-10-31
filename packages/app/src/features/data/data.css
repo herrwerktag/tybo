@@ -271,3 +271,15 @@ td.handle-cell {
 		box-shadow: 0 3px 0 var(--focus);
 	}
 }
+
+/* The features' links from an entity's form to their pages (its history, say). */
+.entity-links {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1rem;
+}
+
+.entity-links a {
+	text-decoration: underline;
+	text-underline-offset: 0.2em;
+}

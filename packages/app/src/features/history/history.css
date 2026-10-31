@@ -1,0 +1,149 @@
+/* The History tab: the writes day by day, one line each, opened to what each unit did. */
+.history-view {
+	width: 100%;
+	max-width: 60rem;
+	margin-inline: auto;
+	padding: 1.5rem 1rem;
+}
+
+.history-filter {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.history-entity-filter {
+	align-self: center;
+	text-decoration: none;
+	color: inherit;
+}
+
+.history-day {
+	display: grid;
+	gap: 0.5rem;
+}
+
+.history-day > h3 {
+	font-size: 0.95rem;
+	color: var(--muted);
+}
+
+.history-writes {
+	list-style: none;
+	display: grid;
+	gap: 0.25rem;
+}
+
+.history-write {
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--surface);
+}
+
+.history-write[open] {
+	background: var(--surface-inset);
+}
+
+.history-write > summary {
+	display: flex;
+	align-items: baseline;
+	gap: 0.75rem;
+	padding: 0.5rem 0.75rem;
+	cursor: pointer;
+}
+
+/* The line folds open: a triangle says so, since the summary's own marker goes with its flex layout. */
+.history-write > summary::before {
+	content: "▸";
+	flex: none;
+	color: var(--muted);
+}
+
+.history-write[open] > summary::before {
+	content: "▾";
+}
+
+.history-time {
+	flex: none;
+	font-variant-numeric: tabular-nums;
+	color: var(--muted);
+}
+
+.history-source {
+	flex: none;
+	padding: 0 0.4rem;
+	border-radius: 4px;
+	background: var(--chip);
+	color: #1a1a1a;
+	font-size: 0.85rem;
+}
+
+.history-sentence {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.history-collision {
+	flex: none;
+	color: var(--error);
+	font-size: 0.85rem;
+}
+
+.history-units {
+	list-style: none;
+	display: grid;
+	gap: 0.75rem;
+	padding: 0.25rem 0.75rem 0.75rem 2rem;
+}
+
+.history-write > .history-changes {
+	padding: 0.25rem 0.75rem 0.75rem 2rem;
+}
+
+.history-units > li {
+	display: grid;
+	gap: 0.25rem;
+}
+
+.history-unit {
+	overflow-wrap: anywhere;
+}
+
+/* A unit's fields: label and what became of it, side by side. */
+.history-changes {
+	display: grid;
+	grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr);
+	gap: 0.25rem 1rem;
+	font-size: 0.9rem;
+}
+
+.history-changes > dt {
+	color: var(--muted);
+}
+
+.history-changes > dd {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.history-changes del {
+	color: var(--muted);
+}
+
+.history-changes ins {
+	text-decoration: none;
+	font-weight: 600;
+}
+
+.history-changes summary,
+.history-last > summary {
+	cursor: pointer;
+	color: var(--muted);
+}
+
+.history-text {
+	white-space: pre-wrap;
+	margin-top: 0.25rem;
+	padding: 0.5rem;
+	border-left: 3px solid var(--border);
+}

@@ -1,5 +1,7 @@
-import { DATA_VERSION, type Change, type UnitStands } from "../core/index.js";
+import { DATA_VERSION, type Change, type HistoryEntry, type HistoryOperation, type HistoryPage, type UnitStands } from "../core/index.js";
 import type { Queries, StoredUnits } from "./storage.js";
+
+export type { HistoryEntry, HistoryOperation, HistoryPage };
 
 /**
  * The history: every write, kept. A save leaves one entry per unit it wrote — with the stand the tables held
@@ -21,41 +23,9 @@ import type { Queries, StoredUnits } from "./storage.js";
  * the history with its baseline — so any later stand is that start plus the entries after it.
  */
 
-/** What was written: a unit of the data (`change`), or the workspace itself. `baseline` is no write: it is where
- * the history of a workspace made before there was one starts — everything it held then (see `recordBaselines`). */
-export type HistoryOperation = "change" | "create" | "rename" | "move" | "delete" | "baseline";
-
-/** One entry as the history answers it. `id` orders the entries (newest is highest) and pages through them;
- * `revision` is the workspace's after the write — the same for every unit of one save. */
-export interface HistoryEntry {
-	id: string;
-	workspaceId: string;
-	revision: string | null;
-	at: string;
-	/** Who wrote, as the request named itself (`X-Tybo-Source`); null when it didn't. */
-	source: string | null;
-	operation: HistoryOperation;
-	/** The format `before` and `after` are in — the app's DATA_VERSION when the entry was written. */
-	dataVersion: number;
-	/** For `change`: which unit — its kind, its id, and the board a card or drawing stands on. */
-	kind: Change["kind"] | null;
-	unitId: string | null;
-	boardId: string | null;
-	before: unknown;
-	after: unknown;
-	/** For `change`: someone else had changed the unit since the saver read it (written anyway). */
-	collided: boolean;
-}
-
 /** One entry to add — what the writer knows; id and time the storage gives it. */
 export type NewEntry = Pick<HistoryEntry, "operation" | "before" | "after"> &
 	Partial<Pick<HistoryEntry, "revision" | "kind" | "unitId" | "boardId" | "collided">>;
-
-/** How a read pages: entries older than `before` (an entry's id), at most `limit` of them. */
-export interface HistoryPage {
-	before?: string;
-	limit: number;
-}
 
 /** The entries of a save: each unit with the stand the tables held before (`stands`, read in the save's own
  * transaction) and the one written, and whether it collided. A change its kind calls quiet (a board that only

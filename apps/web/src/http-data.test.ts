@@ -76,9 +76,10 @@ test("a port told who writes names it on every write, and on no read", async () 
 		await port.moveWorkspace("ws", 0);
 		await port.saveChanges("ws", []);
 		await port.deleteWorkspace("ws");
+		await port.readHistory("ws", { limit: 1 });
 		assert.deepEqual(
 			api.sent.map((sent) => [sent.method, sent.headers["x-tybo-source"] ?? null]),
-			[["GET", null], ["GET", null], ["HEAD", null], ["POST", "mcp"], ["PATCH", "mcp"], ["PATCH", "mcp"], ["PUT", "mcp"], ["DELETE", "mcp"]],
+			[["GET", null], ["GET", null], ["HEAD", null], ["POST", "mcp"], ["PATCH", "mcp"], ["PATCH", "mcp"], ["PUT", "mcp"], ["DELETE", "mcp"], ["GET", null]],
 		);
 	} finally {
 		api.restore();
@@ -129,6 +130,25 @@ test("saveChanges PUTs the change set, in the app's data format, to the workspac
 	try {
 		assert.deepEqual(await port.saveChanges("ws-1", changes), { version: "9", collided: ["ent-1"] });
 		assert.deepEqual(api.sent, [{ method: "PUT", url: "http://api.local/workspaces/ws-1/changes", body: JSON.stringify(changes), headers: { ...JSON_BODY, "x-tybo-data-version": String(DATA_VERSION) } }]);
+	} finally {
+		api.restore();
+	}
+});
+
+test("readHistory GETs one page of the workspace's history, older than `before` when it says so, settling with the entries", async () => {
+	const entries = [{ id: "12", operation: "change" }];
+	const api = fakeFetch(() => jsonAnswer(entries));
+	const port = httpData("http://api.local/");
+	try {
+		assert.deepEqual(await port.readHistory("ws 1", { limit: 50 }), entries);
+		await port.readHistory("ws 1", { limit: 50, before: "12" });
+		assert.deepEqual(
+			api.sent.map((sent) => [sent.method, sent.url]),
+			[
+				["GET", "http://api.local/workspaces/ws%201/history?limit=50"],
+				["GET", "http://api.local/workspaces/ws%201/history?limit=50&before=12"],
+			],
+		);
 	} finally {
 		api.restore();
 	}

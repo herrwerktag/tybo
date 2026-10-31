@@ -1,4 +1,4 @@
-import { DATA_VERSION, type Change, type DataPort, type SavedChanges, type WorkspaceInfo } from "@tybo/app/core";
+import { DATA_VERSION, type Change, type DataPort, type HistoryEntry, type SavedChanges, type WorkspaceInfo } from "@tybo/app/core";
 
 /**
  * The browser app's port into the storage API (apps/api), which keeps the workspaces and their data in
@@ -91,6 +91,14 @@ export function httpData(apiUrl: string, source?: string): DataPort {
 		 * version and the units that collided (written anyway, the last save wins). */
 		saveChanges(id, changes: Change[]) {
 			return inOrder(async () => (await takeOrReject(await fetch(at("workspaces", id, "changes"), inFormat(json("PUT", changes))))).json() as Promise<SavedChanges>);
+		},
+
+		/** GETs one page of the workspace's history, newest first: at most `limit` entries, older than `before`. */
+		readHistory(id, { before, limit }) {
+			const url = at("workspaces", id, "history");
+			url.searchParams.set("limit", String(limit));
+			if (before !== undefined) url.searchParams.set("before", before);
+			return inOrder(async () => (await takeOrReject(await fetch(url))).json() as Promise<HistoryEntry[]>);
 		},
 	};
 }

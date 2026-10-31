@@ -36,6 +36,7 @@ const en = {
 	exportAnalysisMarkdownHint: "Download the result as a Markdown file, with the descriptions of its entities; with groups, as a ZIP with one more file per outermost group",
 	analysisExportTitle: (name: string, date: string) => `${name} (as of ${date})`,
 	analysisExportMentioned: "Named in the columns",
+	historyAnalyses: (count: number): string => (count === 1 ? "analysis" : "analyses"),
 };
 
 export const text = messages<typeof en>({
@@ -75,5 +76,6 @@ export const text = messages<typeof en>({
 		exportAnalysisMarkdownHint: "Das Ergebnis als Markdown-Datei herunterladen, mit den Beschreibungen seiner Entitäten; mit Gruppen als ZIP mit je einer weiteren Datei pro äußerster Gruppe",
 		analysisExportTitle: (name, date) => `${name} (Stand ${date})`,
 		analysisExportMentioned: "In den Spalten genannt",
+		historyAnalyses: (count) => (count === 1 ? "Auswertung" : "Auswertungen"),
 	},
 });

@@ -16,6 +16,9 @@ const en = {
 	textSize: "Text size",
 	textSizes: { s: "small", m: "medium", l: "large" } satisfies Record<TextSize, string>,
 	deleteDrawing: "Delete drawing",
+	historyDrawings: (count: number): string => (count === 1 ? "drawing" : "drawings"),
+	historyImage: "Image",
+	historyText: "Text",
 };
 
 export const text = messages<typeof en>({
@@ -33,5 +36,8 @@ export const text = messages<typeof en>({
 		textSize: "Textgröße",
 		textSizes: { s: "klein", m: "mittel", l: "groß" },
 		deleteDrawing: "Zeichnung löschen",
+		historyDrawings: (count) => (count === 1 ? "Zeichnung" : "Zeichnungen"),
+		historyImage: "Bild",
+		historyText: "Text",
 	},
 });

@@ -22,6 +22,7 @@ const FEATURES_BELOW: Record<string, readonly string[]> = {
 	boards: ["data"],
 	drawings: ["data", "boards"],
 	exports: ["data", "boards", "drawings"],
+	history: [],
 };
 
 const SRC = dirname(fileURLToPath(import.meta.url));

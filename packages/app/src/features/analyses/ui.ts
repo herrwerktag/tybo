@@ -3,7 +3,7 @@ import type { Store } from "../../features.core.js";
 import { DETAILS_WIDTH_KEY, createCardPreview, entityDetails } from "../data/ui/entity-card.js";
 import { showEntityEditor } from "../data/ui/entity-form.js";
 import { freeName, moveItem, nameTaken } from "../../shared/core/index.js";
-import { downloadFile, el, readPreference, refused, resizeHandle, safeFileName, typeDot, writePreference, zipFiles, type PageMaker } from "../../shared/ui/index.js";
+import { downloadFile, el, isRecord, readPreference, refused, resizeHandle, safeFileName, typeDot, writePreference, zipFiles, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
 import {
 	addAnalysis,
 	deleteAnalysis,
@@ -435,3 +435,24 @@ function join(nodes: HTMLElement[]): (HTMLElement | string)[] {
 
 /** The Analyses tab, after the boards. */
 export const ANALYSES_PAGE: PageMaker<Store> = () => ({ routes: ["analysis"], label: () => text.tabAnalysis, render: analysisView });
+
+/** How the history tells of an analysis: the type of its rows, the paths it groups by and those of its columns,
+ * read with the types as they are now. */
+export const ANALYSIS_HISTORY: UnitDescriber<Store> = {
+	kind: "analysis",
+	noun: text.historyAnalyses,
+	read(value, store) {
+		if (!isRecord(value) || typeof value.name !== "string" || !Array.isArray(value.groups) || !Array.isArray(value.columns)) return null;
+		const typeId = typeof value.typeId === "string" ? value.typeId : null;
+		const types = store.data.types;
+		const paths = (list: PathStep[][]) => (typeId === null ? "" : list.map((path) => pathLabel(types, typeId, path)).join(" / "));
+		return {
+			name: value.name,
+			fields: [
+				{ label: text.analysisRowType, text: typeId === null ? "" : (types.find((t) => t.id === typeId)?.name ?? "?") },
+				{ label: text.analysisGroups, text: paths(value.groups as PathStep[][]) },
+				{ label: text.analysisColumns, text: paths(value.columns as PathStep[][]) },
+			],
+		};
+	},
+};

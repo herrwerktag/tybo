@@ -1,4 +1,5 @@
 import { unitKey, type Change } from "./changes.js";
+import type { HistoryEntry, HistoryPage } from "./history.js";
 import type { DataPort } from "./ports.js";
 
 /** What went wrong reading the saved data; the UI shows it as a warning. Either way saving is paused, so
@@ -223,6 +224,13 @@ export async function createStoreCore<D>(port: DataPort, workspaceId: string, fo
 			undoStack = [];
 			redoStack = [];
 			for (const listener of historyListeners) listener();
+		},
+
+		/** One page of the workspace's history, newest first, once the saves on their way have landed — so this
+		 * store's own last write is in it. Rejects when the storage can't answer. */
+		async readHistory(page: HistoryPage): Promise<HistoryEntry[]> {
+			await savesSettled;
+			return port.readHistory(workspaceId, page);
 		},
 
 		/** Settles once the saves on their way have landed, well or badly — `problems` says which. */

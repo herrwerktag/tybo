@@ -26,7 +26,7 @@ import {
 	type PropertyValue,
 	type ValidationError,
 } from "../core.js";
-import { dragHandle, el, reorderable, tagFilter, typeDot, type PageMaker } from "../../../shared/ui/index.js";
+import { dragHandle, el, reorderable, tagFilter, typeDot, type EntityLink, type Page, type PageMaker, type Shell } from "../../../shared/ui/index.js";
 import { entityForm } from "./entity-form.js";
 import { text } from "../texts.js";
 
@@ -93,9 +93,14 @@ function newDraftProperty(): DraftProperty {
 
 /**
  * The Data tab: the entity types with their properties (#types), and the entities of a type in a table (#entities),
- * each with its form. What is being edited stays while the page is drawn anew; another workspace starts afresh.
+ * each with its form — where the features' `entityLinks` lead from an entity to their pages. What is being edited
+ * stays while the page is drawn anew; another workspace starts afresh.
  */
-export const DATA_PAGE: PageMaker<Store> = (shell) => {
+export function dataPage({ entityLinks = [] }: { entityLinks?: readonly EntityLink[] } = {}): PageMaker<Store> {
+	return (shell) => dataPageIn(shell, entityLinks);
+}
+
+function dataPageIn(shell: Shell, entityLinks: readonly EntityLink[]): Page<Store> {
 	const rerender = shell.rerender;
 	/** The store the page shows; set on each drawing. */
 	let store!: Store;
@@ -638,6 +643,7 @@ export const DATA_PAGE: PageMaker<Store> = (shell) => {
 				? [
 						entityForm(store, type, editing, {
 							filterTag: byTag.tag,
+							links: entityLinks,
 							onDone: () => {
 								state.editingEntityId = null;
 								state.creatingEntity = false;
@@ -795,4 +801,4 @@ export const DATA_PAGE: PageMaker<Store> = (shell) => {
 			}
 		},
 	};
-};
+}

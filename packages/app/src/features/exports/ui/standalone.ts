@@ -63,6 +63,7 @@ function readOnlyPort(data: unknown): DataPort {
 		load: async (id) => (id === VIEW_WORKSPACE ? { data, version: "1" } : null),
 		version: async (id) => (id === VIEW_WORKSPACE ? "1" : null),
 		saveChanges: refuse,
+		readHistory: async () => [], // an exported view keeps no history
 	};
 }
 
