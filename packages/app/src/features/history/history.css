@@ -102,18 +102,19 @@
 
 /* A write: a line above it, and a stripe at its left in the color of who wrote it, so the agent's writes stand out
    from the interface's at a glance. Light tints with dark text, like the chips, in either theme. */
-.history-write {
+.history-write,
+.history-session {
 	--source: var(--border-strong);
 	--source-tint: var(--chip);
 	border-top: 1px solid var(--border);
 }
 
-.history-write.source-mcp {
+.source-mcp {
 	--source: #8a6fd8;
 	--source-tint: #e6ddfb;
 }
 
-.history-write.source-web {
+.source-web {
 	--source: #6f8fb8;
 	--source-tint: #dbe6f3;
 }
@@ -124,11 +125,6 @@
 	border-left: 4px solid var(--source);
 	font-variant-numeric: tabular-nums;
 	color: var(--muted);
-}
-
-.history-source-cell {
-	width: 1%;
-	white-space: nowrap;
 }
 
 .history-source {
@@ -142,12 +138,54 @@
 	line-height: 1.375rem;
 }
 
-.history-write.source-unknown .history-source {
+.source-unknown .history-source {
 	font-weight: 400;
 }
 
+/* A stretch of work: who, from when to when, how many writes and what they did, on a line across the table that
+   folds its writes away. The writes below keep its stripe. */
+.history-session > tr > td {
+	padding: 0;
+	border-left: 4px solid var(--source);
+	background: var(--surface-inset);
+}
+
+.history-session-toggle {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.35rem 1rem;
+	width: 100%;
+	padding: 0.45rem 0.5rem;
+	border: none;
+	border-radius: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.history-session-toggle:hover {
+	background: var(--highlight);
+}
+
+.history-fold {
+	color: var(--muted);
+}
+
+.history-session-time {
+	font-variant-numeric: tabular-nums;
+	font-weight: 600;
+}
+
+.history-session-writes {
+	color: var(--muted);
+	font-size: 0.875rem;
+}
+
 /* What only moved (cards on a board, entities in their list), and changes with nothing to see: there, but faint. */
-.history-write > tr.minor > td:not(.history-time, .history-source-cell),
+.history-write > tr.minor > td:not(.history-time),
 .history-write.minor > tr > td {
 	opacity: 0.5;
 }
@@ -316,7 +354,17 @@
 	}
 
 	.history-table,
-	.history-write {
+	.history-write,
+	.history-session {
+		display: block;
+	}
+
+	.history-write[hidden] {
+		display: none;
+	}
+
+	.history-session > tr,
+	.history-session > tr > td {
 		display: block;
 	}
 
@@ -325,10 +373,10 @@
 		border-left: 4px solid var(--source);
 	}
 
-	/* The same columns in every row of a write: the first takes the time, or the mark. */
+	/* The same columns in every row of a write: the mark, what, where; the time above, the change below. */
 	.history-write > tr {
 		display: grid;
-		grid-template-columns: 3rem minmax(0, 1fr) auto;
+		grid-template-columns: 2rem minmax(0, 1fr) auto;
 	}
 
 	.history-table .history-write > tr > td {
@@ -338,16 +386,13 @@
 	}
 
 	.history-time {
+		grid-column: 1 / -1;
 		border-left: none;
-	}
-
-	.history-source-cell {
-		grid-column: 2 / -1;
 	}
 
 	.history-table .history-write > tr > .history-change {
 		grid-column: 1 / -1;
-		padding-left: 1.875rem;
+		padding-left: 2.25rem;
 	}
 
 	.history-what {

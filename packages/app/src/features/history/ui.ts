@@ -1,7 +1,7 @@
 import type { HistoryEntry, StoreCore } from "../../shared/core/index.js";
 import { el, language, type EntityLink, type HistoryArea, type HistoryField, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
 import { text } from "./texts.js";
-import { groupWrites, storyGroups, unitStory, workspaceStory, writeSentence, writeToken, type FieldChange, type UnitAction, type UnitStory, type Write, type WriteToken } from "./ui/writes.js";
+import { groupWrites, sessionsOf, storyGroups, unitStory, workspaceStory, writeSentence, writeToken, type FieldChange, type Session, type UnitAction, type UnitStory, type Write, type WriteToken } from "./ui/writes.js";
 
 /** How many entries one read asks for. */
 const PAGE_SIZE = 100;
@@ -61,6 +61,8 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 		const open = new Set<string>();
 		/** The days opened or folded by hand; the others: the newest open, the rest folded. */
 		const dayOpen = new Map<number, boolean>();
+		/** The stretches of work opened or folded by hand (by key); the others: a day's newest open, the rest folded. */
+		const sessionOpen = new Map<string, boolean>();
 		/** The page drawn last, filled anew in place. */
 		let view: HTMLElement | null = null;
 		/** Counts the stores shown, so an answer for one shown before is dropped. */
@@ -212,7 +214,8 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 		}
 
 		/** The writes under the day they were made on — today, yesterday, or its date — each day a table, folded to
-		 * what it changed: the newest day open, the others folded, unless opened or folded by hand. */
+		 * what it changed: the newest day open, the others folded, unless opened or folded by hand. Within a day, the
+		 * writes in stretches of work (see `sessionsOf`), each under a line of its own. */
 		function days(writes: readonly Write[], store: S): HTMLElement[] {
 			const byDay: { day: number; writes: Write[] }[] = [];
 			for (const write of writes) {
@@ -225,16 +228,21 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 				const details = el(
 					"details",
 					{ className: "history-day", open: dayOpen.get(day) ?? i === 0 },
-					el("summary", {}, el("h3", {}, dayName(new Date(day))), daySummary(ofDay, store)),
+					el(
+						"summary",
+						{},
+						el("h3", {}, dayName(new Date(day))),
+						el("span", { className: "history-day-summary" }, ...unitCounts(ofDay, store), el("span", { className: "history-day-sources" }, sourceCounts(ofDay))),
+					),
 					el(
 						"table",
 						{ className: "history-table" },
 						el(
 							"thead",
 							{},
-							el("tr", {}, ...[text.columnTime, text.columnSource, "", text.columnWhat, text.columnWhere, text.columnChange].map((label) => el("th", { scope: "col" }, label))),
+							el("tr", {}, ...[text.columnTime, "", text.columnWhat, text.columnWhere, text.columnChange].map((label) => el("th", { scope: "col" }, label))),
 						),
-						...ofDay.map((write) => writeBody(write, store)),
+						...sessionsOf(ofDay, SESSION_GAP_MS).flatMap((session, j) => sessionBodies(session, sessionOpen.get(session.key) ?? j === 0, store)),
 					),
 				);
 				details.addEventListener("toggle", () => dayOpen.set(day, details.open));
@@ -242,8 +250,37 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 			});
 		}
 
-		/** What a day changed, in short: how many of a kind went how, and how many writes each source made, most first. */
-		function daySummary(writes: readonly Write[], store: S): HTMLElement {
+		/** A stretch of work: a line saying who, when, how many writes and what they did, which folds its writes
+		 * away; then the writes. */
+		function sessionBodies(session: Session, opened: boolean, store: S): HTMLElement[] {
+			const time = (write: Write) => new Date(write.at).toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" });
+			const [from, to] = [time(session.writes.at(-1)!), time(session.writes[0]!)];
+			const source = session.source === "web" || session.source === "mcp" ? session.source : "unknown";
+			const toggle = el(
+				"button",
+				{
+					type: "button",
+					className: "history-session-toggle",
+					ariaExpanded: String(opened),
+					onclick: () => {
+						sessionOpen.set(session.key, !opened);
+						draw(store);
+					},
+				},
+				el("span", { className: "history-fold", ariaHidden: "true" }, opened ? "▾" : "▸"),
+				el("span", { className: "history-session-time" }, from === to ? from : `${from}–${to}`),
+				el("span", { className: "history-source" }, sourceLabel(session.source)),
+				el("span", { className: "history-session-writes" }, text.writeCount(session.writes.length)),
+				el("span", { className: "history-day-summary" }, ...unitCounts(session.writes, store)),
+			);
+			const head = el("tbody", { className: `history-session source-${source}` }, el("tr", {}, el("td", { colSpan: 5 }, toggle)));
+			const bodies = session.writes.map((write) => writeBody(write, store));
+			for (const body of bodies) body.hidden = !opened;
+			return [head, ...bodies];
+		}
+
+		/** How many units of a kind went how, made first, moved last — what a day or a stretch of work changed. */
+		function unitCounts(writes: readonly Write[], store: S): HTMLElement[] {
 			const stories = writes.flatMap((write) => write.entries.filter((entry) => entry.operation === "change").map((entry) => unitStory(entry, describers, store)));
 			const counts = new Map<string, { action: UnitAction; count: number; noun: (count: number) => string }>();
 			for (const story of stories) {
@@ -253,22 +290,9 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 				else counts.set(key, { action: story.action, count: 1, noun: story.noun });
 			}
 			const order: UnitAction[] = ["created", "changed", "deleted", "moved"];
-			const units = [...counts.values()].sort((a, b) => order.indexOf(a.action) - order.indexOf(b.action));
-			const sources = new Map<string, number>();
-			for (const write of writes) sources.set(sourceLabel(write.source), (sources.get(sourceLabel(write.source)) ?? 0) + 1);
-			return el(
-				"span",
-				{ className: "history-day-summary" },
-				...units.map(({ action, count, noun }) => el("span", { className: `history-count${action === "moved" ? " minor" : ""}` }, actionMark(action), `${count} ${noun(count)}`)),
-				el(
-					"span",
-					{ className: "history-day-sources" },
-					[...sources]
-						.sort((a, b) => b[1] - a[1])
-						.map(([label, count]) => `${label} ${count}`)
-						.join(" · "),
-				),
-			);
+			return [...counts.values()]
+				.sort((a, b) => order.indexOf(a.action) - order.indexOf(b.action))
+				.map(({ action, count, noun }) => el("span", { className: `history-count${action === "moved" ? " minor" : ""}` }, actionMark(action), `${count} ${noun(count)}`));
 		}
 
 		/** A `<details>` whose being open is kept across drawings, under `key`. */
@@ -314,9 +338,9 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 				});
 			}
 			const first = rows[0];
+			// Who wrote stands on the stretch of work's line, and in the stripe beside each write.
 			first?.prepend(
-				el("td", { className: "history-time", rowSpan: rows.length, title: at.toLocaleString(language) }, at.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" })),
-				el("td", { className: "history-source-cell", rowSpan: rows.length }, el("span", { className: "history-source" }, sourceLabel(write.source))),
+				el("td", { className: "history-time", rowSpan: rows.length, title: `${at.toLocaleString(language)} · ${sourceLabel(write.source)}` }, at.toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" })),
 			);
 			const minorOnly = !told && stories.every((story) => story.minor);
 			const body = el("tbody", { className: `history-write source-${source}${minorOnly ? " minor" : ""}` }, ...rows);
@@ -390,6 +414,19 @@ function dayName(day: Date): string {
 }
 
 const startOfDay = (day: Date) => new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
+
+/** How long a pause may be within a stretch of work (see `sessionsOf`). */
+const SESSION_GAP_MS = 15 * 60_000;
+
+/** How many writes each source made, most first. */
+function sourceCounts(writes: readonly Write[]): string {
+	const sources = new Map<string, number>();
+	for (const write of writes) sources.set(sourceLabel(write.source), (sources.get(sourceLabel(write.source)) ?? 0) + 1);
+	return [...sources]
+		.sort((a, b) => b[1] - a[1])
+		.map(([label, count]) => `${label} ${count}`)
+		.join(" · ");
+}
 
 /** How many units of a write show before “more”. */
 const UNITS_SHOWN = 5;

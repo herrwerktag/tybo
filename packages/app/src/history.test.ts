@@ -47,10 +47,12 @@ async function openHistory(hash = "#history"): Promise<HTMLElement> {
 	return document.querySelector<HTMLElement>(".history-view")!;
 }
 
+/** Who wrote a write, as its stripe says. */
+const sourceOf = (write: HTMLElement) => (write.classList.contains("source-mcp") ? text.sourceMcp : write.classList.contains("source-web") ? text.sourceWeb : text.sourceUnknown);
+
 /** The writes shown, newest first: who wrote, and what they did as a sentence (the table shows it in rows of marks
  * and tags). */
-const writeLines = (view: HTMLElement) =>
-	[...view.querySelectorAll<HTMLElement>(".history-write")].map((write) => [write.querySelector(".history-source")!.textContent, write.dataset.sentence]);
+const writeLines = (view: HTMLElement) => [...view.querySelectorAll<HTMLElement>(".history-write")].map((write) => [sourceOf(write), write.dataset.sentence]);
 
 /** Sets the filter labeled `label` to `value`, the way picking it does. */
 function choose(view: HTMLElement, label: string, value: string): void {
@@ -100,7 +102,7 @@ test("History: every write, newest first, one line each with who wrote it; a wri
 	]);
 	const created = view.querySelectorAll<HTMLElement>(".history-write")[1]!;
 	assert.ok(created.classList.contains("source-mcp")); // the agent's stripe
-	assert.equal(created.querySelectorAll(".history-source").length, 1); // when and who once, beside all its rows
+	assert.equal(created.querySelectorAll(".history-time").length, 1); // when once, beside all its rows
 	const tag = created.querySelector<HTMLElement>(".history-tag")!;
 	assert.equal(tag.textContent, "One");
 	assert.equal(tag.style.background, "#c4dafa"); // in its type's color
@@ -229,7 +231,7 @@ test("History: a stand the app can't read says only that something changed, the 
 	assert.equal(rename.querySelector("ins")!.textContent, "New");
 
 	for (const details of view.querySelectorAll("details")) details.open = true;
-	assert.equal(view.querySelectorAll("button").length, 0); // all is loaded, and nothing here writes
+	assert.equal(view.querySelectorAll("button:not(.history-session-toggle)").length, 0); // all is loaded, and nothing here writes
 	await settle();
 	assert.equal(storage.saves.length, saves);
 });
@@ -326,8 +328,35 @@ test("History: days fold — the newest open, older ones folded to what they cha
 	assert.equal(before!.open, false);
 	assert.equal(before!.querySelector("h3")!.textContent, text.yesterday);
 	assert.deepEqual(
-		[...before!.querySelectorAll(".history-count")].map((count) => count.textContent),
+		[...before!.querySelector(":scope > summary")!.querySelectorAll(".history-count")].map((count) => count.textContent),
 		[`+2 ${dataText.historyEntities(2)}`, `−1 ${dataText.historyEntities(1)}`],
 	);
 	assert.equal(before!.querySelector(".history-day-sources")!.textContent, `${text.sourceMcp} 2 · ${text.sourceWeb} 1`);
+});
+
+test("History: a day's writes in stretches of work — by one source, without a long pause — the newest open", async () => {
+	await startApp(ideas());
+	const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
+	keep({ at: at(120), source: "mcp", after: { value: { name: "A", typeId: "idea" }, position: 0 } });
+	keep({ at: at(110), source: "mcp", after: { value: { name: "B", typeId: "idea" }, position: 1 } });
+	keep({ at: at(60), source: "mcp", after: { value: { name: "C", typeId: "idea" }, position: 2 } }); // after a long pause
+	keep({ at: at(5), source: "web", before: { value: { name: "C", typeId: "idea" }, position: 2 }, after: null });
+	if (new Date(at(120)).getDate() !== new Date().getDate()) return; // just after midnight the stretches span two days
+
+	const view = await openHistory();
+	const sessions = [...view.querySelectorAll<HTMLElement>(".history-session")];
+	assert.deepEqual(
+		sessions.map((session) => [sourceOf(session), session.querySelector(".history-session-writes")!.textContent]),
+		[
+			[text.sourceWeb, text.writeCount(1)],
+			[text.sourceMcp, text.writeCount(1)],
+			[text.sourceMcp, text.writeCount(2)],
+		],
+	);
+	const shown = () => [...document.querySelectorAll<HTMLElement>(".history-write")].map((write) => write.hidden);
+	assert.deepEqual(shown(), [false, true, true, true]); // the newest stretch open
+	assert.ok(sessions[2]!.textContent!.includes(`2 ${dataText.historyEntities(2)}`));
+
+	sessions[2]!.querySelector("button")!.click();
+	assert.deepEqual(shown(), [false, true, false, false]);
 });

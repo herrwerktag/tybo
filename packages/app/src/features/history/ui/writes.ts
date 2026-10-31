@@ -25,6 +25,30 @@ export function groupWrites(entries: readonly HistoryEntry[]): Write[] {
 	return writes;
 }
 
+/** A stretch of work: writes one after the other by the same source, none further than `gapMs` from the next. */
+export interface Session {
+	/** Names it across reads: its oldest write's key, which stays as newer writes join it. */
+	key: string;
+	source: string | null;
+	/** Newest first, like the writes. */
+	writes: Write[];
+}
+
+/** The writes (newest first) in stretches of work, newest first: a write by another source, or after a longer
+ * pause than `gapMs`, starts a new one. */
+export function sessionsOf(writes: readonly Write[], gapMs: number): Session[] {
+	const sessions: Session[] = [];
+	for (const write of writes) {
+		const last = sessions.at(-1);
+		const older = last?.writes.at(-1);
+		if (last && older && last.source === write.source && Date.parse(older.at) - Date.parse(write.at) <= gapMs) {
+			last.writes.push(write);
+			last.key = write.key;
+		} else sessions.push({ key: write.key, source: write.source, writes: [write] });
+	}
+	return sessions;
+}
+
 /** A field whose text differs between the two stands; `before` or `after` empty where the field wasn't there. */
 export interface FieldChange {
 	label: string;
