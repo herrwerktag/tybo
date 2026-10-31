@@ -23,7 +23,7 @@ import {
 } from "./shared/core/index.js";
 import { ENTITY_UNIT, TYPE_UNIT, dataOps, keepWellFormed, normalizeEntityData, reconcileValues } from "./features/data/core.js";
 import { ANALYSES_PART, ANALYSIS_UNIT } from "./features/analyses/core.js";
-import { BOARD_UNIT, CARD_UNIT, boardOps, keepViewports, newBoard, normalizeBoards, pruneCards, storedBoards, type BoardList } from "./features/boards/core.js";
+import { BOARD_UNIT, CARD_UNIT, boardOps, keepViewports, normalizeBoards, pruneCards, storedBoards, type BoardList } from "./features/boards/core.js";
 import { DRAWING_LIST, DRAWING_UNIT } from "./features/drawings/core.js";
 
 export * from "./features/data/core.js";
@@ -73,7 +73,7 @@ export type Store = Awaited<ReturnType<typeof createStore>>;
 
 
 function emptyData(): AppData {
-	return { types: [], entities: [], boards: [newBoard("Board 1", BOARD_LISTS)], ...storedFeatureData({}) };
+	return { types: [], entities: [], boards: normalizeBoards({ boards: [], entities: [] }, BOARD_LISTS), ...storedFeatureData({}) };
 }
 
 /** Re-validates every entity's values against its type's current properties, e.g. dropping references to deleted entities,
