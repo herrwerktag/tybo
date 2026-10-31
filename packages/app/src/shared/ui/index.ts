@@ -3,6 +3,7 @@ export * from "./history.js";
 export * from "./i18n.js";
 export * from "./markdown.js";
 export * from "./shell.js";
+export * from "./workspace-menu.js";
 export * from "./theme.js";
 export * from "./preferences.js";
 export * from "./zip.js";
