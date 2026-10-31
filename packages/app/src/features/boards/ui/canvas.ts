@@ -1,4 +1,4 @@
-import type { Point, Rect } from "../../../shared/core/index.js";
+import { freeName, type Point, type Rect } from "../../../shared/core/index.js";
 import { CLICK_TOLERANCE, el, readPreference, resizeHandle, trackPointer, wheelGesture, writePreference } from "../../../shared/ui/index.js";
 import type { Store } from "../../../features.core.js";
 import { DEFAULT_CARD_SIZE, GRID_SIZE, effectiveCardDisplay, referencedIds, snapToGrid, type Entity, type EntityType } from "../../data/core.js";
@@ -333,7 +333,8 @@ export function canvas(store: Store, options: CanvasOptions): { view: HTMLElemen
 					},
 					remove: deleteBoard,
 					newTitle: text.newBoard,
-					newName: text.defaultBoardName(boards.length + 1),
+					newName: freeName(boards, text.defaultBoardName),
+					nameTaken: text.boardNameTaken,
 					add: (name) => switchBoard(store.addBoard(name).id),
 					move: (id, to) => store.moveBoard(id, to),
 					moveTitle: text.moveBoard,

@@ -4,6 +4,7 @@ export * from "./ulid.js";
 export * from "./changes.js";
 export * from "./data.js";
 export * from "./migrations.js";
+export * from "./names.js";
 export * from "./ports.js";
 export * from "./store.js";
 export * from "./workspaces.js";

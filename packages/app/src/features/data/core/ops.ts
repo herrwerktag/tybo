@@ -1,4 +1,4 @@
-import { moveItem, ulid, type StoreCore } from "../../../shared/core/index.js";
+import { moveItem, refuseTakenName, ulid, type StoreCore } from "../../../shared/core/index.js";
 import { reconcileValues } from "./normalize.js";
 import {
 	effectiveCardDisplay,
@@ -45,13 +45,15 @@ export function dataOps<D extends EntityData>(core: StoreCore<D>, settle: (data:
 	const reconciled = (data: D): D => settle(reconcileValues(data));
 
 	return {
-		/** Without a color, the type gets the first palette color no other type uses. */
+		/** Without a color, the type gets the first palette color no other type uses. A name another type has is
+		 * refused with a `NameTaken`. */
 		addType(
 			name: string,
 			properties: DraftProperty[],
 			contentTemplate: string,
 			color = nextTypeColor(core.data.types.map((t) => t.color)),
 		): EntityType {
+			refuseTakenName("type", core.data.types, name);
 			const type: EntityType = {
 				id: ulid(),
 				name: name.trim(),
@@ -63,8 +65,10 @@ export function dataOps<D extends EntityData>(core: StoreCore<D>, settle: (data:
 			return type;
 		},
 
-		/** Existing entities keep their content when the template changes. Without a color, the type keeps its own. */
+		/** Existing entities keep their content when the template changes. Without a color, the type keeps its own. A
+		 * name another type has is refused with a `NameTaken`. */
 		updateType(typeId: string, name: string, properties: DraftProperty[], contentTemplate: string, color?: string): void {
+			refuseTakenName("type", core.data.types, name, typeId);
 			const current = core.data.types.find((t) => t.id === typeId);
 			const updated: EntityType = {
 				id: typeId,

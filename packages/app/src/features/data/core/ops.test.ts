@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isUlid } from "../../../shared/core/index.js";
+import { DATA_VERSION, NameTaken, isUlid } from "../../../shared/core/index.js";
 import { TYPE_COLORS } from "../core.js";
 import { settle, WS, memoryStorage, open, titleDraft, referenceSetup } from "../../../test-store.js";
 
@@ -250,6 +250,22 @@ test("types get distinct palette colors; a chosen color is kept and can be chang
 	assert.equal(store.data.types[0]?.color, palette[0]);
 	store.updateType(a.id, "A", [], "", palette[5]);
 	assert.equal(store.data.types[0]?.color, palette[5]);
+});
+
+test("a type may not have the name of another one, ignoring case and spaces; types with the same name from before stay", async () => {
+	const store = await open(memoryStorage());
+	const book = store.addType("Book", [], "");
+	const person = store.addType("Person", [], "");
+	assert.throws(() => store.addType(" book ", [], ""), NameTaken);
+	assert.throws(() => store.updateType(person.id, "BOOK", [], ""), NameTaken);
+	store.updateType(book.id, "book", [], "");
+	assert.deepEqual(store.data.types.map((t) => t.name), ["book", "Person"]);
+
+	const twice = { id: "a", name: "Plan", properties: [] };
+	const before = await open(memoryStorage({ version: DATA_VERSION, types: [twice, { ...twice, id: "b" }], entities: [], boards: [] }));
+	assert.deepEqual(before.data.types.map((t) => t.name), ["Plan", "Plan"]);
+	before.updateType("b", "Plan B", [], "");
+	assert.deepEqual(before.data.types.map((t) => t.name), ["Plan", "Plan B"]);
 });
 
 test("types saved without a color get the next free ones in order", async () => {

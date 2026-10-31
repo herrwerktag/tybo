@@ -65,6 +65,14 @@ test("a workspace is made empty, renamed, listed, and deleted with every row of 
 
 		assert.equal(await storage.renameWorkspace(id, "Umbenannt"), true);
 		assert.equal(await storage.renameWorkspace(freshId(), "Niemand"), false);
+
+		// A name another workspace has is refused, ignoring case and surrounding spaces; the workspace's own isn't.
+		const other = freshId();
+		assert.equal(await storage.createWorkspace({ id: other, name: ` ${id.toUpperCase()} ` }, 1), true);
+		assert.equal(await storage.createWorkspace({ id: freshId(), name: id }, 1), false);
+		assert.equal(await storage.renameWorkspace(id, id), "nameTaken");
+		assert.equal(await storage.renameWorkspace(other, id), true);
+		await storage.deleteWorkspace(other);
 		const listed = (await storage.listWorkspaces()).find((w) => w.id === id);
 		assert.deepEqual(listed, { id, name: "Umbenannt" });
 

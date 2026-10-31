@@ -1,5 +1,5 @@
-import type { AppData, DataPort } from "./shared/core/index.js";
-import { ToolError, WORKSPACE, json, object, sameName, text, type Tool, type ToolContext } from "./shared/mcp/index.js";
+import { NameTaken, sameName, type AppData, type DataPort } from "./shared/core/index.js";
+import { ToolError, WORKSPACE, json, object, text, type Tool, type ToolContext } from "./shared/mcp/index.js";
 import { createStore, type Store } from "./features.core.js";
 import { dataTools, describeData } from "./features/data/mcp.js";
 import { analysisTools, describeAnalyses } from "./features/analyses/mcp.js";
@@ -27,7 +27,19 @@ const DESCRIBES = [describeData, describeAnalyses, describeBoards];
 export function tyboTools(port: DataPort): Tool[] {
 	const context = toolContext(port);
 	const describe = (data: AppData) => Object.assign({}, ...DESCRIBES.map((part) => part(data)));
-	return [...workspaceTools(port, context, describe), ...TOOLS.flatMap((tools) => tools(context))];
+	return [...workspaceTools(port, context, describe), ...TOOLS.flatMap((tools) => tools(context))].map(refusingTakenNames);
+}
+
+/** The tool, answering a name the core refused as taken (see `NameTaken`) the way it answers what the model asked
+ * wrongly. */
+function refusingTakenNames(tool: Tool): Tool {
+	return {
+		...tool,
+		run: (args) =>
+			tool.run(args).catch((error: unknown) => {
+				throw error instanceof NameTaken ? new ToolError(error.message) : error;
+			}),
+	};
 }
 
 /** Opening the workspace a call names, through `port`, and answering once a change is saved. */
@@ -79,7 +91,8 @@ function workspaceTools(port: DataPort, { open }: ToolContext<Store>, describe: 
 		{
 			name: "describe_workspace",
 			description:
-				"The schema of a workspace: its entity types with their properties (kind, options, which types a reference points to), " +
+				"The schema of a workspace: its entity types with their color and properties (kind, options, which types a reference points to, " +
+				"how cards show it, the arrow and label of its line), " +
 				"how many entities each type has, the tags in use, the saved analyses and the boards with how many cards each has. " +
 				"Read this before creating or changing anything.",
 			inputSchema: object({ workspace: WORKSPACE }, ["workspace"]),

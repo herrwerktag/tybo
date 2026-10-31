@@ -1,7 +1,7 @@
-import type { AppData } from "../../shared/core/index.js";
+import { sameName, type AppData } from "../../shared/core/index.js";
 import type { Store } from "../../features.core.js";
 import { typeName, typeOf } from "../data/mcp.js";
-import { ToolError, WORKSPACE, json, object, sameName, text, texts, type Tool, type ToolContext } from "../../shared/mcp/index.js";
+import { ToolError, WORKSPACE, json, object, text, texts, type Tool, type ToolContext } from "../../shared/mcp/index.js";
 import {
 	addAnalysis,
 	deleteAnalysis,
@@ -82,7 +82,7 @@ export function analysisTools({ open, answerSaved }: ToolContext<Store>): Tool[]
 			]),
 			async run(args) {
 				const store = await open(args.workspace);
-				const name = analysisName(store.data, args.name, null);
+				const name = analysisName(args.name);
 				const type = typeOf(store.data, args.type);
 				const groups = args.groups === undefined ? [] : paths(store.data, type.id, args.groups, "groups");
 				const columns = args.columns === undefined ? [] : paths(store.data, type.id, args.columns, "columns");
@@ -105,7 +105,7 @@ export function analysisTools({ open, answerSaved }: ToolContext<Store>): Tool[]
 				const store = await open(args.workspace);
 				const analysis = analysisOf(store.data, args.analysis);
 				const patch: Partial<Omit<Analysis, "id">> = {};
-				if (args.name !== undefined) patch.name = analysisName(store.data, args.name, analysis.id);
+				if (args.name !== undefined) patch.name = analysisName(args.name);
 				if (args.type !== undefined) {
 					const type = typeOf(store.data, args.type);
 					if (type.id !== analysis.typeId) Object.assign(patch, { typeId: type.id, groups: [], columns: [] });
@@ -194,11 +194,10 @@ function analysisOf(data: AppData, ref: unknown): Analysis {
 	return analysis;
 }
 
-/** `raw` as the name of an analysis, refused when empty or another one (than `selfId`) has it. */
-function analysisName(data: AppData, raw: unknown, selfId: string | null): string {
+/** `raw` as the name of an analysis, refused when empty; one another analysis has the core refuses. */
+function analysisName(raw: unknown): string {
 	const name = text(raw, "name");
 	if (name.trim() === "") throw new ToolError("An analysis needs a name.");
-	if (data.analyses.some((a) => a.id !== selfId && sameName(a.name, name))) throw new ToolError(`There is an analysis "${name}" already.`);
 	return name;
 }
 

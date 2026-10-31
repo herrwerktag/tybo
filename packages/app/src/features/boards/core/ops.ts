@@ -1,4 +1,4 @@
-import { moveItem, ulid, type Point, type Rect, type StoreCore, type AppData } from "../../../shared/core/index.js";
+import { freeName, moveItem, refuseTakenName, ulid, type Point, type Rect, type StoreCore, type AppData } from "../../../shared/core/index.js";
 import {
 	DEFAULT_CARD_SIZE,
 	canTakeMore,
@@ -88,14 +88,19 @@ export function boardOps(core: StoreCore<AppData>, lists: readonly BoardList[]) 
 	}
 
 	return {
+		/** Without a name, the board is "Board n" of the first number free; a name another board has is refused with
+		 * a `NameTaken`. */
 		addBoard(name: string): Board {
-			const board = newBoard(name.trim() || `Board ${core.data.boards.length + 1}`, lists);
+			refuseTakenName("board", core.data.boards, name);
+			const board = newBoard(name.trim() || freeName(core.data.boards, (n) => `Board ${n}`), lists);
 			core.change({ ...core.data, boards: [...core.data.boards, board] });
 			return board;
 		},
 
+		/** An empty name is ignored; one another board has is refused with a `NameTaken`. */
 		renameBoard(boardId: string, name: string): void {
 			if (name.trim() === "") return;
+			refuseTakenName("board", core.data.boards, name, boardId);
 			updateBoard(boardId, (b) => ({ ...b, name: name.trim() }));
 		},
 

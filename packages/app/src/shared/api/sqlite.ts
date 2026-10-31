@@ -1,5 +1,5 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
-import { DATA_VERSION, inKindOrder, moveItem, unitStandsOf, untouched, type AppData, type Change, type SavedChanges } from "../core/index.js";
+import { DATA_VERSION, inKindOrder, moveItem, nameTaken, unitStandsOf, untouched, type AppData, type Change, type SavedChanges } from "../core/index.js";
 import type { Api, StoredWorkspace } from "./data.js";
 import { changeEntries, type HistoryEntry, type HistoryOperation, type NewEntry } from "./history.js";
 import { json, parsed, plain } from "./sqlite-values.js";
@@ -297,6 +297,15 @@ export function sqliteStorageOf(path: string, stored: StoredUnits): SqliteStorag
 	};
 
 	/** The workspace's revision and name, or undefined when there is none of that id. */
+	/** Whether another workspace than `selfId` is called `name` (see `nameTaken`); the database is one connection,
+	 * so no other write comes in between before the transaction ends. */
+	const nameIsTaken = (name: string, selfId: string | null) =>
+		nameTaken(
+			db.prepare("select id, name from workspaces").all().map(({ id, name }) => ({ id: id as string, name: name as string })),
+			name,
+			selfId,
+		);
+
 	const workspaceRow = (id: string) => db.prepare("select name, data_version, revision from workspaces where id = ?").get(id);
 
 	/** Everything the workspace holds — its name, revision and data; null when there is none of that id. The data's
@@ -329,6 +338,7 @@ export function sqliteStorageOf(path: string, stored: StoredUnits): SqliteStorag
 
 		async createWorkspace(info, dataVersion, source = null) {
 			return transaction(db, () => {
+				if (nameIsTaken(info.name, null)) return false;
 				const [inserted] = db
 					.prepare(
 						`insert into workspaces (id, position, name, data_version)
@@ -349,6 +359,7 @@ export function sqliteStorageOf(path: string, stored: StoredUnits): SqliteStorag
 			return transaction(db, () => {
 				const was = workspaceRow(id);
 				if (!was) return false;
+				if (nameIsTaken(name, id)) return "nameTaken";
 				db.prepare("update workspaces set name = ?, updated_at = current_timestamp where id = ?").run(name, id);
 				recordHistory(id, source, [{ operation: "rename", revision: String(was.revision), before: { name: was.name as string }, after: { name } }]);
 				return true;

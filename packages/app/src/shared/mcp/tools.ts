@@ -26,8 +26,6 @@ export const object = (properties: Record<string, object>, required: string[]) =
 
 export const json = (value: unknown) => JSON.stringify(value, null, 2);
 
-export const sameName = (a: string, b: string) => a.trim().toLocaleLowerCase() === b.trim().toLocaleLowerCase();
-
 export function text(value: unknown, what: string): string {
 	if (typeof value !== "string") throw new ToolError(`\`${what}\` must be a text.`);
 	return value;

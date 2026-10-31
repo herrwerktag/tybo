@@ -396,7 +396,7 @@ export const DATA_PAGE: PageMaker<Store> = (shell) => {
 						...p,
 						options: p.kind === "options" ? p.options.map((o) => o.trim()).filter((o) => o !== "") : [],
 					}));
-					state.typeErrors = validateType(state.draftName, props, new Set(store.data.types.map((t) => t.id)));
+					state.typeErrors = validateType(state.draftName, props, store.data.types, editingType?.id ?? null);
 					if (state.typeErrors.length > 0) return rerender();
 
 					if (editingType) {

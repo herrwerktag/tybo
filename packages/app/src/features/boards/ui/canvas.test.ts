@@ -312,6 +312,29 @@ test("boards are reordered in the dropdown with their drag handles' arrow keys; 
 	assert.equal(view.querySelector(".board-switch .picker-name")?.textContent, "Board 1", "the current board stays");
 });
 
+test("the boards dropdown refuses a name another board has, and offers the first number free", async () => {
+	const { store, view } = await setup();
+	let dialog = openBoards(view);
+	const newName = dialog.querySelector<HTMLInputElement>(".picker-new input")!;
+	assert.equal(newName.value, text.defaultBoardName(2));
+	newName.value = " board 1 ";
+	dialog.querySelector<HTMLFormElement>(".picker-new")!.requestSubmit();
+	assert.ok(dialog.open, "the dropdown stays open");
+	assert.equal(newName.validationMessage, text.boardNameTaken("board 1"));
+	assert.equal(store.data.boards.length, 1);
+
+	store.addBoard("Planning");
+	dialog.close();
+	dialog = openBoards(view);
+	dialog.querySelector<HTMLButtonElement>(`li:nth-child(2) button[title="${text.renameBoard}"]`)!.click();
+	const input = dialog.querySelector<HTMLInputElement>(".picker-rename input")!;
+	input.value = "Board 1";
+	dialog.querySelector<HTMLFormElement>(".picker-rename")!.requestSubmit();
+	assert.equal(input.validationMessage, text.boardNameTaken("Board 1"));
+	assert.ok(dialog.querySelector(".picker-rename"), "the name field stays");
+	assert.deepEqual(store.data.boards.map((b) => b.name), ["Board 1", "Planning"]);
+});
+
 test("a board is renamed in place in the dropdown; Escape keeps the old name", async () => {
 	const { store, view } = await setup();
 	const dialog = openBoards(view);

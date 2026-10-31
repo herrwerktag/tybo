@@ -23,7 +23,9 @@ import {
 	type PropertyValue,
 } from "./model.js";
 
-const noTypes = new Set<string>();
+const noTypes: { id: string; name: string }[] = [];
+/** The types of these ids, named after them. */
+const typesOf = (...ids: string[]) => ids.map((id) => ({ id, name: id }));
 const noEntities = new Map<string, string>();
 
 const title: PropertyDef = { id: "t", name: "title", kind: "text", options: [], reference: null, cardDisplay: "list" };
@@ -117,13 +119,13 @@ test("migrateValues: changing the target type clears references", () => {
 });
 
 test("validateType: a reference needs an existing target type", () => {
-	assert.deepEqual(validateType("Book", [author], new Set(["person"])), []);
+	assert.deepEqual(validateType("Book", [author], typesOf("person")), []);
 	assert.ok(validateType("Book", [author], noTypes).length > 0);
-	assert.ok(validateType("Book", [{ ...author, reference: null }], new Set(["person"])).length > 0);
+	assert.ok(validateType("Book", [{ ...author, reference: null }], typesOf("person")).length > 0);
 	const targets = (typeIds: string[]): PropertyDef => ({ ...author, reference: { ...author.reference!, typeIds } });
-	assert.deepEqual(validateType("Book", [targets(["person", "tag"])], new Set(["person", "tag"])), []);
-	assert.ok(validateType("Book", [targets([])], new Set(["person"])).length > 0);
-	assert.ok(validateType("Book", [targets(["person", "gone"])], new Set(["person"])).length > 0);
+	assert.deepEqual(validateType("Book", [targets(["person", "tag"])], typesOf("person", "tag")), []);
+	assert.ok(validateType("Book", [targets([])], typesOf("person")).length > 0);
+	assert.ok(validateType("Book", [targets(["person", "gone"])], typesOf("person")).length > 0);
 });
 
 test("nextTypeColor picks the first unused palette color, then repeats", () => {
@@ -186,6 +188,16 @@ test("validateType reports problems as codes with the property label", () => {
 		{ code: "optionsRequired", label: "status" },
 		{ code: "referenceTypeRequired", label: "author" },
 	]);
+});
+
+test("validateType refuses the name of another type, ignoring case and spaces, but not the type's own", () => {
+	const types = [
+		{ id: "book", name: "Book" },
+		{ id: "person", name: "Person" },
+	];
+	assert.deepEqual(validateType(" person ", [], types), [{ code: "typeNameTaken", label: "person" }]);
+	assert.deepEqual(validateType("PERSON", [], types, "book"), [{ code: "typeNameTaken", label: "PERSON" }]);
+	assert.deepEqual(validateType("person", [], types, "person"), []);
 });
 
 test("filterEntities matches names ignoring case and accents, optionally by type and by tag", () => {

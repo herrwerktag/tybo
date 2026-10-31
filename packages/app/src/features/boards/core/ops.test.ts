@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { DraftProperty } from "../../data/core.js";
-import { DATA_VERSION } from "../../../shared/core/index.js";
+import { DATA_VERSION, NameTaken } from "../../../shared/core/index.js";
 import { memoryStorage, open, assertEmpty, firstBoard, noLists, valueOf } from "../../../test-store.js";
 import { REFERENCE_SCREEN } from "./normalize.js";
 import { referencesOffBoard } from "./ops.js";
@@ -250,7 +250,7 @@ test("boards can be added, renamed and deleted, even the last one", async () => 
 	const first = firstBoard(store);
 	const second = store.addBoard(" Planning ");
 	assert.equal(second.name, "Planning");
-	assert.equal(store.addBoard("  ").name, "Board 3");
+	assert.equal(store.addBoard("  ").name, "Board 2", "the first number no board has");
 
 	store.renameBoard(second.id, "Roadmap");
 	store.renameBoard(second.id, "   ");
@@ -266,6 +266,24 @@ test("boards can be added, renamed and deleted, even the last one", async () => 
 	store.deleteBoard(first.id);
 	assert.deepEqual(store.data.boards, []);
 	assert.deepEqual((await open(storage)).data.boards, [], "no new first board once there are entities");
+});
+
+test("a board may not have the name of another one, ignoring case and spaces", async () => {
+	const store = await open(memoryStorage());
+	const first = firstBoard(store);
+	const second = store.addBoard("Planning");
+	assert.throws(() => store.addBoard(" board 1 "), NameTaken);
+	assert.throws(() => store.renameBoard(second.id, "BOARD 1"), NameTaken);
+	store.renameBoard(first.id, "board 1");
+	assert.deepEqual(store.data.boards.map((b) => b.name), ["board 1", "Planning"]);
+});
+
+test("boards with the same name from before stay, and can be renamed", async () => {
+	const twice = { id: "b1", name: "Plan", cards: [], frames: [] };
+	const store = await open(memoryStorage({ version: DATA_VERSION, types: [], entities: [], boards: [twice, { ...twice, id: "b2" }] }));
+	assert.deepEqual(store.data.boards.map((b) => b.name), ["Plan", "Plan"]);
+	store.renameBoard("b2", "Plan B");
+	assert.deepEqual(store.data.boards.map((b) => b.name), ["Plan", "Plan B"]);
 });
 
 test("a new workspace starts with a first board, also when it got copies of entity types", async () => {

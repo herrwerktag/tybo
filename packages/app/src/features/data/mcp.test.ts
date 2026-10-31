@@ -83,6 +83,45 @@ test("update_type keeps listed properties with their values, removes the ones le
 	assert.deepEqual((await call("get_entity", { entity: "Ada" })).values, {});
 });
 
+test("a type gets its color, and a reference its arrow and line label, as the type form gives them", async () => {
+	const { call, refusal, storage } = await withPeople();
+	const { type } = await call("create_type", {
+		name: "Review",
+		color: "teal",
+		properties: [{ name: "Reviews", kind: "reference", targets: ["Task"], cardDisplay: "line", arrow: "from", lineLabel: "checks" }],
+	});
+	assert.equal(type.color, "Teal");
+	assert.deepEqual(type.properties[0], {
+		id: type.properties[0].id,
+		name: "Reviews",
+		kind: "reference",
+		targets: ["Task"],
+		multiple: false,
+		required: false,
+		inverseLabel: "",
+		arrow: "from",
+		lineLabel: "checks",
+		cardDisplay: "line",
+	});
+	const store = await createStore(storage.port, "Projekt");
+	assert.equal(store.data.types[2]!.color, "#b9e4df");
+	assert.equal(store.data.types[2]!.properties[0]!.reference?.arrow, "from");
+
+	// Changing the color and the arrow leaves the rest as it is.
+	const changed = (await call("update_type", { type: "Review", color: "Pink", properties: [{ name: "Reviews", arrow: "none" }] })).type;
+	assert.equal(changed.color, "Pink");
+	assert.deepEqual(
+		[changed.properties[0].arrow, changed.properties[0].lineLabel, changed.properties[0].cardDisplay, changed.properties[0].targets],
+		["none", "checks", "line", ["Task"]],
+	);
+	const described = await call("describe_workspace");
+	assert.equal(described.types[2].color, "Pink");
+
+	assert.match(await refusal("update_type", { type: "Review", color: "#ff0000" }), /isn't a color. Colors: Red, Orange/);
+	assert.match(await refusal("update_type", { type: "Review", properties: [{ name: "Reviews", arrow: "both" }] }), /arrow is one of to, from, none/);
+	assert.match(await refusal("update_type", { type: "Review", name: " task " }), /There is a type "task" already/);
+});
+
 test("update_type removes properties only with confirm, saying what would go", async () => {
 	const { call, refusal, storage } = await withPeople();
 	const saves = storage.saves.length;

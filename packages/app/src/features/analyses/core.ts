@@ -1,4 +1,4 @@
-import { ulid, type DataPart, type UnitKind, type AppData } from "../../shared/core/index.js";
+import { freeName, refuseTakenName, ulid, type DataPart, type UnitKind, type AppData } from "../../shared/core/index.js";
 import { referencedIds, type Entity, type EntityType, type PropertyDef } from "../data/core.js";
 import type { Store } from "../../features.core.js";
 
@@ -267,18 +267,22 @@ export const ANALYSIS_UNIT: UnitKind<AppData, Analysis> = {
 	withList: (data, analyses) => ({ ...data, analyses }),
 };
 
-/** Adds an analysis without a type yet. */
+/** Adds an analysis without a type yet. Without a name, it is "Analysis n" of the first number free; a name another
+ * analysis has is refused with a `NameTaken`. */
 export function addAnalysis(store: Store, name: string): Analysis {
 	const { data } = store;
-	const item: Analysis = { id: ulid(), name: name.trim() || `Analysis ${data.analyses.length + 1}`, typeId: null, groups: [], columns: [] };
+	refuseTakenName("analysis", data.analyses, name);
+	const item: Analysis = { id: ulid(), name: name.trim() || freeName(data.analyses, (n) => `Analysis ${n}`), typeId: null, groups: [], columns: [] };
 	store.change({ ...data, analyses: [...data.analyses, item] });
 	return item;
 }
 
-/** Renames the analysis or sets its type, groups or columns; an empty name is ignored. */
+/** Renames the analysis or sets its type, groups or columns; an empty name is ignored, one another analysis has is
+ * refused with a `NameTaken`. */
 export function updateAnalysis(store: Store, analysisId: string, patch: Partial<Omit<Analysis, "id">>): void {
 	const { data } = store;
 	const name = patch.name?.trim();
+	if (name) refuseTakenName("analysis", data.analyses, name, analysisId);
 	store.change({
 		...data,
 		analyses: data.analyses.map((item) => (item.id === analysisId ? { ...item, ...patch, name: name || item.name } : item)),
