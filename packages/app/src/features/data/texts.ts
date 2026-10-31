@@ -102,6 +102,8 @@ const en = {
 		switch (error.code) {
 			case "typeNameRequired":
 				return "Type name is required.";
+			case "typeNameTaken":
+				return `There is a type "${error.label}" already.`;
 			case "propertyNameRequired":
 				return "Property names are required.";
 			case "reservedName":
@@ -224,6 +226,8 @@ export const text = messages<typeof en>({
 			switch (error.code) {
 				case "typeNameRequired":
 					return "Der Typname ist erforderlich.";
+				case "typeNameTaken":
+					return `Einen Typ „${error.label}“ gibt es schon.`;
 				case "propertyNameRequired":
 					return "Eigenschaften brauchen einen Namen.";
 				case "reservedName":

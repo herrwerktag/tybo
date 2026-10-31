@@ -1,4 +1,5 @@
 import { moveItem } from "./list.js";
+import { freeName, refuseTakenName } from "./names.js";
 import type { DataPort, WorkspaceInfo } from "./ports.js";
 import type { DataFormat } from "./store.js";
 import { ulid } from "./ulid.js";
@@ -37,10 +38,10 @@ export function readWorkspaceFileOf(format: Pick<DataFormat<unknown>, "looksLike
 }
 
 /**
- * The list of workspaces and which one is active; `defaultName(n)` names the n-th workspace when no name is
- * given. With no workspace there yet, the first one is made. Rejects when the storage can't list them (or
- * make the first): without its list there is nothing the app could show. Their data is in `format`, and
- * `openStore` opens one's store.
+ * The list of workspaces and which one is active; `defaultName(n)` names a workspace when no name is given, of
+ * the first number no other one has. With no workspace there yet, the first one is made. Rejects when the
+ * storage can't list them (or make the first): without its list there is nothing the app could show. Their
+ * data is in `format`, and `openStore` opens one's store.
  */
 export async function createWorkspacesOf<D, S>(
 	port: DataPort,
@@ -66,7 +67,7 @@ export async function createWorkspacesOf<D, S>(
 	}
 
 	function newWorkspace(name: string): WorkspaceInfo {
-		return { id: ulid(), name: name.trim() || defaultName(list.length + 1) };
+		return { id: ulid(), name: name.trim() || freeName(list, defaultName) };
 	}
 
 	/** Makes the workspace in the storage, with `data` as its first save. Null when the storage refused. */
@@ -117,21 +118,26 @@ export async function createWorkspacesOf<D, S>(
 		},
 
 		/** Adds a workspace, empty or starting with what `start` makes of nothing. Null if it couldn't be made
-		 * (then nothing is added). The store fills in the rest (a default board, say) when it loads it. */
-		add(name: string, start: (nothing: D) => D = (nothing) => nothing): Promise<WorkspaceInfo | null> {
+		 * (then nothing is added). The store fills in the rest (a default board, say) when it loads it. A name
+		 * another workspace has is refused with a `NameTaken`. */
+		async add(name: string, start: (nothing: D) => D = (nothing) => nothing): Promise<WorkspaceInfo | null> {
+			refuseTakenName("workspace", list, name);
 			return make(newWorkspace(name), start(format.nothing()));
 		},
 
 		/** Adds a workspace holding imported data. Null if the data can't be read, or the workspace couldn't be
-		 * made (then nothing is added). */
+		 * made (then nothing is added). A name another workspace has gets the first number free: "Ideas 2". */
 		async addImported(name: string, data: unknown): Promise<WorkspaceInfo | null> {
 			const prepared = format.prepareImport(data);
-			return prepared ? make(newWorkspace(name), prepared) : null;
+			const free = name.trim() === "" ? name : freeName(list, (n) => (n === 1 ? name.trim() : `${name.trim()} ${n}`));
+			return prepared ? make(newWorkspace(free), prepared) : null;
 		},
 
-		/** Renames a workspace; a rename the storage doesn't take is undone here at its next reload. */
+		/** Renames a workspace; a rename the storage doesn't take is undone here at its next reload. A name another
+		 * workspace has is refused with a `NameTaken`. */
 		rename(id: string, name: string): void {
 			if (name.trim() === "") return;
+			refuseTakenName("workspace", list, name, id);
 			list = list.map((w) => (w.id === id ? { ...w, name: name.trim() } : w));
 			void port.renameWorkspace(id, name.trim()).catch(() => {});
 		},

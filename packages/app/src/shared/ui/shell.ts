@@ -1,5 +1,5 @@
-import { exportWorkspaceOf, readWorkspaceFileOf, type DataFormat, type StoreCore, type WorkspacesOf } from "../core/index.js";
-import { downloadFile, dragHandle, el, reorderable, safeFileName, svgEl } from "./dom.js";
+import { exportWorkspaceOf, freeName, nameTaken, readWorkspaceFileOf, type DataFormat, type StoreCore, type WorkspacesOf } from "../core/index.js";
+import { downloadFile, dragHandle, el, refused, reorderable, safeFileName, svgEl } from "./dom.js";
 import { LANGUAGES, language, setLanguage, type Language } from "./i18n.js";
 import { text } from "./texts.js";
 import { THEMES, setTheme, theme, type Theme } from "./theme.js";
@@ -401,7 +401,7 @@ export async function renderShell<D, S extends StoreCore<D>>(root: HTMLElement, 
 
 		const nameInput = el("input", {
 			ariaLabel: text.name,
-			value: text.defaultWorkspaceName(workspaces.list.length + 1),
+			value: freeName(workspaces.list, text.defaultWorkspaceName),
 		});
 		const options = parts.newWorkspaceOptions.map((option) => ({
 			option,
@@ -413,6 +413,7 @@ export async function renderShell<D, S extends StoreCore<D>>(root: HTMLElement, 
 				className: "workspace-new",
 				onsubmit: async (e) => {
 					e.preventDefault();
+					if (refused(nameInput, nameTaken(workspaces.list, nameInput.value) ? text.workspaceNameTaken(nameInput.value.trim()) : null)) return;
 					const starts = options.filter(({ checkbox }) => checkbox.checked).map(({ option }) => option.start(store));
 					const added = await workspaces.add(nameInput.value, (nothing) => starts.reduce((data, start) => start(data), nothing));
 					if (!added) return alert(text.createFailed);
@@ -487,6 +488,7 @@ export async function renderShell<D, S extends StoreCore<D>>(root: HTMLElement, 
 						onclick: () => {
 							const name = prompt(text.renameWorkspace, current.name);
 							if (name === null) return;
+							if (nameTaken(workspaces.list, name, current.id)) return alert(text.workspaceNameTaken(name.trim()));
 							workspaces.rename(current.id, name);
 							rerender();
 						},

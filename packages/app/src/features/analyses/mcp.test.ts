@@ -22,7 +22,7 @@ test("analyses are made, changed and deleted with their paths named the way run_
 
 	assert.match(await refusal("update_analysis", { analysis: "People", columns: ["Role › Name"] }), /"Role" is a text or options property/);
 	assert.match(await refusal("update_analysis", { analysis: "People", columns: ["Boss"] }), /no step "Boss" here. Steps: Role, owns/);
-	assert.match(await refusal("create_analysis", { name: "people", type: "Task" }), /already/);
+	assert.match(await refusal("create_analysis", { name: "people", type: "Task" }), /There is an analysis "people" already/);
 	assert.match(await refusal("delete_analysis", { analysis: "People", confirm: false }), /confirm: true/);
 	await call("delete_analysis", { analysis: "People", confirm: true });
 	assert.deepEqual((await call("describe_workspace")).analyses, []);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DATA_VERSION, moveItem, storedFeatureData } from "@tybo/app/core";
+import { DATA_VERSION, moveItem, nameTaken, storedFeatureData } from "@tybo/app/core";
 import type { Api, HistoryPage } from "@tybo/app/api";
 import { DEFAULT_PORT, portFromEnv } from "./http.js";
 import { call, startApp } from "./test-server.js";
@@ -16,12 +16,13 @@ function memoryApi(
 	let written = 0;
 	const sources: (string | null | undefined)[] = [];
 	const pages: { id: string; page: HistoryPage }[] = [];
+	const listed = () => [...workspaces].map(([id, { name }]) => ({ id, name }));
 	return {
 		healthy,
-		listWorkspaces: async () => [...workspaces].map(([id, { name }]) => ({ id, name })),
+		listWorkspaces: async () => listed(),
 		createWorkspace: async ({ id, name }, dataVersion, source) => {
 			sources.push(source);
-			if (workspaces.has(id)) return false;
+			if (workspaces.has(id) || nameTaken(listed(), name)) return false;
 			workspaces.set(id, { name, dataVersion, revision: 0 });
 			return true;
 		},
@@ -29,6 +30,7 @@ function memoryApi(
 			sources.push(source);
 			const workspace = workspaces.get(id);
 			if (!workspace) return false;
+			if (nameTaken(listed(), name, id)) return "nameTaken";
 			workspace.name = name;
 			return true;
 		},
@@ -126,6 +128,20 @@ test("workspaces are listed, made, renamed and deleted — each answer with its 
 		assert.equal((await call(api.url, "workspaces/ws-1", { method: "DELETE" })).status, 204);
 		assert.equal((await call(api.url, "workspaces/ws-1", { method: "DELETE" })).status, 204, "gone already is no error");
 		assert.deepEqual(JSON.parse((await call(api.url, "workspaces")).text), [{ id: "ws-2", name: "Zweite" }]);
+	} finally {
+		await api.close();
+	}
+});
+
+test("a workspace name another one has answers 409, when made and when renamed", async () => {
+	const api = await startApp(memoryApi());
+	try {
+		assert.equal((await create(api.url, "ws-1", "Erste")).status, 201);
+		assert.equal((await create(api.url, "ws-2", "Zweite")).status, 201);
+		assert.equal((await create(api.url, "ws-3", " erste ")).status, 409);
+		assert.equal((await call(api.url, "workspaces/ws-2", { method: "PATCH", body: '{"name":"ERSTE"}' })).status, 409);
+		assert.equal((await call(api.url, "workspaces/ws-1", { method: "PATCH", body: '{"name":"erste"}' })).status, 204, "its own name, spelled anew");
+		assert.deepEqual(JSON.parse((await call(api.url, "workspaces")).text).map((w: { name: string }) => w.name), ["erste", "Zweite"]);
 	} finally {
 		await api.close();
 	}

@@ -5,6 +5,19 @@ import { DATA_VERSION, ulid } from "../../shared/core/index.js";
 import { text as dataText } from "../data/texts.js";
 import { text } from "./texts.js";
 
+test("Analyses: a name another analysis has is refused at the name field; a new one gets the first number free", async () => {
+	const root = await startApp({ version: DATA_VERSION, types: [], entities: [], boards: [] }, "#analysis");
+	byText<HTMLButtonElement>(root, "button", text.newAnalysis).click();
+	byText<HTMLButtonElement>(root, "button", text.newAnalysis).click();
+	const name = root.querySelector<HTMLInputElement>(".analysis-setup input")!;
+	assert.equal(name.value, text.defaultAnalysisName(2));
+	name.value = text.defaultAnalysisName(1).toUpperCase();
+	name.dispatchEvent(new Event("change"));
+	assert.equal(name.validationMessage, text.analysisNameTaken(name.value));
+	await settle();
+	assert.deepEqual((await readSaved()).analyses.map((a) => a.name), [text.defaultAnalysisName(1), text.defaultAnalysisName(2)]);
+});
+
 test("Analyses: an analysis set up step by step lists the rows grouped, is saved, and shows the card and details of the entities it names", async () => {
 	const reference = (id: string, name: string, typeId: string, inverseLabel = "") => ({
 		id,

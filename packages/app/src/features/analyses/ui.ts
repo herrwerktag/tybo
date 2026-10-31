@@ -2,8 +2,8 @@ import type { EntityType } from "../data/core.js";
 import type { Store } from "../../features.core.js";
 import { DETAILS_WIDTH_KEY, createCardPreview, entityDetails } from "../data/ui/entity-card.js";
 import { showEntityEditor } from "../data/ui/entity-form.js";
-import { moveItem } from "../../shared/core/index.js";
-import { downloadFile, el, readPreference, resizeHandle, safeFileName, typeDot, writePreference, zipFiles, type PageMaker } from "../../shared/ui/index.js";
+import { freeName, moveItem, nameTaken } from "../../shared/core/index.js";
+import { downloadFile, el, readPreference, refused, resizeHandle, safeFileName, typeDot, writePreference, zipFiles, type PageMaker } from "../../shared/ui/index.js";
 import {
 	addAnalysis,
 	deleteAnalysis,
@@ -119,7 +119,7 @@ export function analysisView(store: Store): HTMLElement {
 				type: "button",
 				className: "primary",
 				onclick: () => {
-					const item = addAnalysis(store, text.defaultAnalysisName(store.data.analyses.length + 1));
+					const item = addAnalysis(store, freeName(store.data.analyses, text.defaultAnalysisName));
 					writePreference(SELECTED_KEY, item.id);
 					render();
 					view.querySelector<HTMLInputElement>(".analysis-setup input")?.select();
@@ -162,7 +162,10 @@ export function analysisView(store: Store): HTMLElement {
 		const name = el("input", {
 			value: analysis.name,
 			ariaLabel: dataText.name,
-			onchange: () => update({ name: name.value }),
+			onchange: () => {
+				const taken = nameTaken(store.data.analyses, name.value, analysis.id);
+				if (!refused(name, taken ? text.analysisNameTaken(name.value.trim()) : null)) update({ name: name.value });
+			},
 		});
 		const rowType = el(
 			"select",

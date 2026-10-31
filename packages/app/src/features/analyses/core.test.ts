@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { memoryDataPort } from "../../memory-port.js";
 import { newReference, type Entity, type EntityType, type PropertyDef } from "../data/core.js";
-import { DATA_VERSION, type AppData, type Change } from "../../shared/core/index.js";
+import { DATA_VERSION, NameTaken, type AppData, type Change } from "../../shared/core/index.js";
 import { createStore, changesBetween } from "../../features.core.js";
 import {
 	addAnalysis,
@@ -217,21 +217,31 @@ test("analyses can be added, changed and deleted, each one undo step, and are sa
 	updateAnalysis(store, first.id, { typeId: "t", groups: [path], columns: [[path[1]!]] });
 	updateAnalysis(store, first.id, { name: "  " });
 	const second = addAnalysis(store, "");
-	assert.equal(second.name, "Analysis 2");
+	assert.equal(second.name, "Analysis 1", "the first number no analysis has");
 
 	const reopened = await open(storage);
 	assert.deepEqual(reopened.data.analyses, [
 		{ id: first.id, name: "Rollen", typeId: "t", groups: [path], columns: [[path[1]]] },
-		{ id: second.id, name: "Analysis 2", typeId: null, groups: [], columns: [] },
+		{ id: second.id, name: "Analysis 1", typeId: null, groups: [], columns: [] },
 	]);
 
 	deleteAnalysis(store, first.id);
-	assert.deepEqual(store.data.analyses.map((a) => a.name), ["Analysis 2"]);
+	assert.deepEqual(store.data.analyses.map((a) => a.name), ["Analysis 1"]);
 	store.undo();
-	assert.deepEqual(store.data.analyses.map((a) => a.name), ["Rollen", "Analysis 2"]);
+	assert.deepEqual(store.data.analyses.map((a) => a.name), ["Rollen", "Analysis 1"]);
 	store.undo();
 	store.undo();
 	assert.deepEqual(store.data.analyses[0]!.groups, [], "undoing the change brings back the analysis before it");
+});
+
+test("an analysis may not have the name of another one, ignoring case and spaces", async () => {
+	const store = await open(memoryStorage());
+	const first = addAnalysis(store, "Rollen");
+	const second = addAnalysis(store, "Ablauf");
+	assert.throws(() => addAnalysis(store, " rollen "), NameTaken);
+	assert.throws(() => updateAnalysis(store, second.id, { name: "ROLLEN" }), NameTaken);
+	updateAnalysis(store, first.id, { name: "rollen" });
+	assert.deepEqual(store.data.analyses.map((a) => a.name), ["rollen", "Ablauf"], "its own name, spelled anew, is no other's");
 });
 
 test("analyses: data from version 6 gets none; malformed analyses and steps are dropped, steps of deleted properties kept", async () => {

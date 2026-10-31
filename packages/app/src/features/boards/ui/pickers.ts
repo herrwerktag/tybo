@@ -1,4 +1,5 @@
-import { dragHandle, el, reorderable, svgEl } from "../../../shared/ui/index.js";
+import { nameTaken } from "../../../shared/core/index.js";
+import { dragHandle, el, refused, reorderable, svgEl } from "../../../shared/ui/index.js";
 import { text as dataText } from "../../data/texts.js";
 
 const PICKER_MIME = "application/x-picker-index";
@@ -9,7 +10,7 @@ const DELETE_ICON = "M2.5 4.5h11 M6 4.5V2.5h4v2 M4 4.5l.7 9h6.6l.7-9 M6.8 7v4 M9
 /**
  * A picker dropdown (boards): its items, the current one marked; clicking one picks it. In the editor (with
  * `editing`), each can be renamed in place and deleted, and a form below adds one; with `move`, too, the items can
- * be reordered.
+ * be reordered. A name another item has is refused (see `nameTaken`).
  */
 export interface Picker {
 	dialog: HTMLDialogElement;
@@ -29,6 +30,8 @@ export interface Picker {
 		newTitle: string;
 		newName: string;
 		add(name: string): void;
+		/** Why a name is refused: another item has it. */
+		nameTaken(name: string): string;
 		/** Moves the item to index `to` among the items. */
 		move?(id: string, to: number): void;
 		/** The label of an item's drag handle. */
@@ -46,6 +49,7 @@ function pickerAction(title: string, icon: string, onclick: () => void): HTMLBut
 }
 
 export function renderPicker({ dialog, title, items, currentId, renamingId, pick, rerender, editing }: Picker): void {
+	const refusal = (name: string, selfId: string | null) => (editing && nameTaken(items, name, selfId) ? editing.nameTaken(name.trim()) : null);
 	const rows = items.map((item, i) => {
 		if (editing && item.id === renamingId) {
 			const input = el("input", { value: item.name, ariaLabel: editing.renameTitle, required: true });
@@ -65,6 +69,7 @@ export function renderPicker({ dialog, title, items, currentId, renamingId, pick
 						className: "picker-rename",
 						onsubmit: (e: SubmitEvent) => {
 							e.preventDefault();
+							if (refused(input, refusal(input.value, item.id))) return;
 							editing.rename(item.id, input.value);
 							rerender();
 						},
@@ -123,6 +128,7 @@ export function renderPicker({ dialog, title, items, currentId, renamingId, pick
 			className: "picker-new",
 			onsubmit: (e: SubmitEvent) => {
 				e.preventDefault();
+				if (refused(nameInput, refusal(nameInput.value, null))) return;
 				dialog.close();
 				editing?.add(nameInput.value);
 			},

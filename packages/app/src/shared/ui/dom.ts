@@ -47,6 +47,16 @@ export function typeDot(color: string): HTMLElement {
 	return dot;
 }
 
+/** Whether `refusal` — why the field's value can't be taken (a name another one has, say), or null — refuses it:
+ * then the field says why, the way it says a value is missing, until it is changed. */
+export function refused(input: HTMLInputElement, refusal: string | null): boolean {
+	if (refusal === null) return false;
+	input.setCustomValidity(refusal);
+	input.reportValidity();
+	input.addEventListener("input", () => input.setCustomValidity(""), { once: true });
+	return true;
+}
+
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 /** Like el(), for SVG elements: properties are set as attributes. */

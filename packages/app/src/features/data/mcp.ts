@@ -1,7 +1,9 @@
-import { ulid, type AppData } from "../../shared/core/index.js";
+import { sameName, ulid, type AppData } from "../../shared/core/index.js";
 import {
 	CARD_DISPLAYS,
+	LINE_ARROWS,
 	PROPERTY_KINDS,
+	TYPE_COLORS,
 	entityTags,
 	filterEntities,
 	missingRequired,
@@ -14,6 +16,7 @@ import {
 	type DraftProperty,
 	type Entity,
 	type EntityType,
+	type LineArrow,
 	type PropertyDef,
 	type PropertyKind,
 	type PropertyValue,
@@ -21,7 +24,7 @@ import {
 	type ValidationError,
 } from "./core.js";
 import type { Store } from "../../features.core.js";
-import { ToolError, WORKSPACE, json, object, record, sameName, text, texts, type Tool, type ToolContext } from "../../shared/mcp/index.js";
+import { ToolError, WORKSPACE, json, object, record, text, texts, type Tool, type ToolContext } from "../../shared/mcp/index.js";
 
 /** The tools on a workspace's types and entities: find and read them, make and change them. */
 export function dataTools({ open, answerSaved }: ToolContext<Store>): Tool[] {
@@ -89,30 +92,31 @@ export function dataTools({ open, answerSaved }: ToolContext<Store>): Tool[] {
 			description:
 				"Creates an entity type. Properties are text, options (with their `options`) or references (with `targets`: names of " +
 				"the types they point to, `multiple` for several, `required` for at least one, `inverseLabel` for how the referenced entities show the reference). " +
-				"A reference to the type itself is added afterwards with update_type.",
+				"A reference to the type itself is added afterwards with update_type. Without a `color`, the type gets the first one no other type has.",
 			inputSchema: object(
 				{
 					workspace: WORKSPACE,
 					name: { type: "string" },
 					properties: { type: "array", items: PROPERTY },
 					contentTemplate: { type: "string", description: "Description new entities of the type start with." },
+					color: COLOR,
 				},
 				["workspace", "name"],
 			),
 			async run(args) {
 				const store = await open(args.workspace);
 				const name = text(args.name, "name");
-				if (store.data.types.some((t) => sameName(t.name, name))) throw new ToolError(`There is a type "${name}" already.`);
 				const properties = drafts(store.data, args.properties ?? [], []);
-				check(store.data, name, properties);
-				const type = store.addType(name, properties, args.contentTemplate === undefined ? "" : text(args.contentTemplate, "contentTemplate"));
+				check(store.data, name, properties, null);
+				const template = args.contentTemplate === undefined ? "" : text(args.contentTemplate, "contentTemplate");
+				const type = store.addType(name, properties, template, ...(args.color === undefined ? [] : [colorOf(args.color)]));
 				return answerSaved(store, { type: describeType(store.data, type) });
 			},
 		},
 		{
 			name: "update_type",
 			description:
-				"Changes an entity type: its name, its content template, or its properties. `properties` replaces the whole list: a " +
+				"Changes an entity type: its name, its color, its content template, or its properties. `properties` replaces the whole list: a " +
 				"property keeps its values when it is listed with its id (or its current name), and what isn't given of it stays as it " +
 				"is; a property left out is removed, together with its values on all entities — which needs `confirm: true`.",
 			inputSchema: object(
@@ -122,6 +126,7 @@ export function dataTools({ open, answerSaved }: ToolContext<Store>): Tool[] {
 					name: { type: "string" },
 					properties: { type: "array", items: { ...PROPERTY, properties: { id: { type: "string" }, ...PROPERTY.properties }, required: [] } },
 					contentTemplate: { type: "string" },
+					color: COLOR,
 					confirm: { type: "boolean", description: "Needed when properties are left out, as they are removed with their values." },
 				},
 				["workspace", "type"],
@@ -130,9 +135,8 @@ export function dataTools({ open, answerSaved }: ToolContext<Store>): Tool[] {
 				const store = await open(args.workspace);
 				const type = typeOf(store.data, args.type);
 				const name = args.name === undefined ? type.name : text(args.name, "name");
-				if (store.data.types.some((t) => t.id !== type.id && sameName(t.name, name))) throw new ToolError(`There is a type "${name}" already.`);
 				const properties = args.properties === undefined ? type.properties : drafts(store.data, args.properties, type.properties);
-				check(store.data, name, properties);
+				check(store.data, name, properties, type.id);
 				const removed = type.properties.filter((p) => !properties.some((d) => d.id === p.id));
 				if (removed.length > 0 && args.confirm !== true) {
 					const losing = store.data.entities.filter((e) => removed.some((p) => e.values[p.id] !== undefined && e.values[p.id] !== null)).length;
@@ -142,7 +146,7 @@ export function dataTools({ open, answerSaved }: ToolContext<Store>): Tool[] {
 					);
 				}
 				const template = args.contentTemplate === undefined ? type.contentTemplate : text(args.contentTemplate, "contentTemplate");
-				store.updateType(type.id, name, properties, template);
+				store.updateType(type.id, name, properties, template, args.color === undefined ? undefined : colorOf(args.color));
 				return answerSaved(store, { type: describeType(store.data, typeOf(store.data, type.id)) });
 			},
 		},
@@ -288,10 +292,25 @@ const PROPERTY = {
 			description: "For references: whether each entity should reference one. Not enforced; entities without one are listed as `missing`.",
 		},
 		inverseLabel: { type: "string", description: "For references: the label on the referenced entities; empty hides it there." },
-		cardDisplay: { type: "string", enum: ["list", "line", "hidden"], description: "How cards show it; line draws references as lines." },
+		cardDisplay: { type: "string", enum: CARD_DISPLAYS, description: "How cards show it; line draws references as lines." },
+		arrow: {
+			type: "string",
+			enum: LINE_ARROWS,
+			description: "For references drawn as lines: the arrowhead at the referenced card (to, the default), at this one (from), or none.",
+		},
+		lineLabel: { type: "string", description: "For references drawn as lines: the text on the line; empty shows the property name." },
 	},
 	required: ["name", "kind"],
 };
+const COLOR = { type: "string", enum: TYPE_COLORS.map((c) => c.name), description: "The color of the type's cards." };
+
+/** The palette color `raw` names (ignoring case), as the type form offers them. */
+function colorOf(raw: unknown): string {
+	const wanted = text(raw, "color");
+	const color = TYPE_COLORS.find((c) => sameName(c.name, wanted));
+	if (!color) throw new ToolError(`"${wanted}" isn't a color. Colors: ${TYPE_COLORS.map((c) => c.name).join(", ")}.`);
+	return color.value;
+}
 
 export const typeName = (data: AppData, typeId: string | null) => data.types.find((t) => t.id === typeId)?.name ?? null;
 
@@ -327,14 +346,24 @@ function describeType(data: AppData, type: EntityType) {
 	return {
 		id: type.id,
 		name: type.name,
+		// A color from before the palette, or chosen otherwise, as its value.
+		color: TYPE_COLORS.find((c) => c.value === type.color.toLowerCase())?.name ?? type.color,
 		properties: type.properties.map((p) => ({
 			id: p.id,
 			name: p.name,
 			kind: p.kind,
 			...(p.kind === "options" ? { options: p.options } : {}),
 			...(p.reference
-				? { targets: p.reference.typeIds.map((id) => typeName(data, id)), multiple: p.reference.multiple, required: p.reference.required, inverseLabel: p.reference.inverseLabel }
+				? {
+						targets: p.reference.typeIds.map((id) => typeName(data, id)),
+						multiple: p.reference.multiple,
+						required: p.reference.required,
+						inverseLabel: p.reference.inverseLabel,
+						arrow: p.reference.arrow,
+						lineLabel: p.reference.lineLabel,
+					}
 				: {}),
+			cardDisplay: p.cardDisplay,
 		})),
 		contentTemplate: type.contentTemplate,
 	};
@@ -469,6 +498,8 @@ function drafts(data: AppData, raw: unknown, current: readonly PropertyDef[]): D
 						...(given.multiple === undefined ? {} : { multiple: given.multiple === true }),
 						...(given.required === undefined ? {} : { required: given.required === true }),
 						...(given.inverseLabel === undefined ? {} : { inverseLabel: text(given.inverseLabel, "inverseLabel") }),
+						...(given.arrow === undefined ? {} : { arrow: arrowOf(given.arrow, index) }),
+						...(given.lineLabel === undefined ? {} : { lineLabel: text(given.lineLabel, "lineLabel") }),
 					};
 		const draft: DraftProperty = {
 			name: given.name === undefined ? (was?.name ?? "") : text(given.name, "name"),
@@ -481,9 +512,16 @@ function drafts(data: AppData, raw: unknown, current: readonly PropertyDef[]): D
 	});
 }
 
-/** Refuses a type the type form would refuse, saying why. */
-function check(data: AppData, name: string, properties: DraftProperty[]): void {
-	const errors = validateType(name, properties, new Set(data.types.map((t) => t.id)));
+/** Where the arrowhead of `properties[index]`'s line goes, as the model gave it. */
+function arrowOf(raw: unknown, index: number): LineArrow {
+	const arrow = raw as LineArrow;
+	if (!LINE_ARROWS.includes(arrow)) throw new ToolError(`properties[${index}].arrow is one of ${LINE_ARROWS.join(", ")}.`);
+	return arrow;
+}
+
+/** Refuses a type (the one of `selfId`, or a new one) the type form would refuse, saying why. */
+function check(data: AppData, name: string, properties: DraftProperty[], selfId: string | null): void {
+	const errors = validateType(name, properties, data.types, selfId);
 	if (errors.length > 0) throw new ToolError(`The type can't be saved: ${errors.map(problem).join(" ")}`);
 }
 
@@ -491,6 +529,8 @@ function problem(error: ValidationError): string {
 	switch (error.code) {
 		case "typeNameRequired":
 			return "It needs a name.";
+		case "typeNameTaken":
+			return `There is a type "${error.label}" already.`;
 		case "propertyNameRequired":
 			return "Every property needs a name.";
 		case "reservedName":

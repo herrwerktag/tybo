@@ -1,3 +1,5 @@
+import { nameTaken, type Named } from "../../../shared/core/index.js";
+
 /**
  * The app's data proper: entity types with their properties, and entities with their values. Its part of the app's
  * data is `types` and `entities` (see `EntityData`); the boards and the other features build on it.
@@ -407,19 +409,24 @@ export function parseValue(
 /** A problem with a type definition; the UI turns it into a message in the current language. */
 export type ValidationError =
 	| { code: "typeNameRequired" }
+	| { code: "typeNameTaken"; label: string }
 	| { code: "propertyNameRequired" }
 	| { code: "reservedName" | "duplicateName"; label: string }
 	| { code: "optionsRequired" | "emptyOption" | "duplicateOptions"; label: string }
 	| { code: "referenceTypeRequired"; label: string };
 
-/** Returns a list of problems; an empty list means the type is valid. */
+/** Returns a list of problems; an empty list means the type is valid. `types` are the types there are, of which the
+ * one of `selfId` is the type itself: another one may not have its name. */
 export function validateType(
 	name: string,
 	properties: Omit<DraftProperty, "id">[],
-	typeIds: ReadonlySet<string>,
+	types: readonly Named[],
+	selfId: string | null = null,
 ): ValidationError[] {
 	const errors: ValidationError[] = [];
+	const typeIds = new Set(types.map((t) => t.id));
 	if (name.trim() === "") errors.push({ code: "typeNameRequired" });
+	else if (nameTaken(types, name, selfId)) errors.push({ code: "typeNameTaken", label: name.trim() });
 	const seen = new Set<string>();
 	for (const prop of properties) {
 		const label = prop.name.trim();

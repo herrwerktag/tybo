@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { memoryDataPort } from "./memory-port.js";
-import { DATA_VERSION, type ActiveWorkspacePreference } from "./shared/core/index.js";
+import { DATA_VERSION, NameTaken, type ActiveWorkspacePreference } from "./shared/core/index.js";
 import { createWorkspaces, exportWorkspace, readWorkspaceFile } from "./features.core.js";
 
 /** Lets background saves finish (a store's saves go out after the change that made them). */
@@ -52,7 +52,7 @@ test("add and rename reach the storage; setActive is remembered; empty names are
 	const second = (await workspaces.add(" Process B "))!;
 	const third = (await workspaces.add("   "))!;
 	assert.equal(second.name, "Process B");
-	assert.equal(third.name, "Workspace 3");
+	assert.equal(third.name, "Workspace 2", "the first number no workspace has");
 
 	workspaces.rename(second.id, "Process C");
 	workspaces.rename(second.id, "  ");
@@ -64,13 +64,26 @@ test("add and rename reach the storage; setActive is remembered; empty names are
 	const reloaded = await createWorkspaces(storage.port, () => "ignored", preference);
 	assert.deepEqual(
 		reloaded.list.map((w) => w.name),
-		["Workspace 1", "Process C", "Workspace 3"],
+		["Workspace 1", "Process C", "Workspace 2"],
 	);
 	assert.equal(reloaded.active.id, second.id);
 
 	// A remembered workspace that's gone opens the first.
 	const elsewhere = await createWorkspaces(storage.port, workspaceName, rememberedActive("gone"));
 	assert.equal(elsewhere.active.id, reloaded.list[0]!.id);
+});
+
+test("a workspace may not have the name of another one; an imported one gets the first number free", async () => {
+	const storage = memoryDataPort();
+	const workspaces = await createWorkspaces(storage.port, workspaceName, rememberedActive());
+	const ideas = (await workspaces.add("Ideas"))!;
+	await assert.rejects(workspaces.add(" workspace 1 "), NameTaken);
+	assert.throws(() => workspaces.rename(ideas.id, "WORKSPACE 1"), NameTaken);
+	workspaces.rename(ideas.id, "ideas");
+	const imported = (await workspaces.addImported("Ideas", { version: DATA_VERSION, types: [], entities: [] }))!;
+	assert.equal(imported.name, "Ideas 2");
+	await settle();
+	assert.deepEqual((await storage.port.listWorkspaces()).map((w) => w.name), ["Workspace 1", "ideas", "Ideas 2"]);
 });
 
 test("move reorders the workspaces, here and in the storage; the active one stays active at the next start", async () => {

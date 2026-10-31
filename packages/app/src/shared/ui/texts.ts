@@ -42,6 +42,7 @@ const en = {
 	unexpectedError: (message: string) =>
 		`Something went wrong: ${message}. Changes saved so far are kept; reloading the page may help.`,
 	workspaceMenuLabel: (name: string) => `Workspace: ${name}`,
+	workspaceNameTaken: (name: string) => `There is a workspace "${name}" already.`,
 	workspaces: "Workspaces",
 	create: "Create",
 	delete: "Delete",
@@ -96,6 +97,7 @@ export const text = messages<typeof en>({
 		unexpectedError: (message) =>
 			`Etwas ist schiefgelaufen: ${message}. Bisher gespeicherte Änderungen bleiben erhalten; ein Neuladen der Seite kann helfen.`,
 		workspaceMenuLabel: (name) => `Arbeitsbereich: ${name}`,
+		workspaceNameTaken: (name) => `Einen Arbeitsbereich „${name}“ gibt es schon.`,
 		workspaces: "Arbeitsbereiche",
 		create: "Erstellen",
 		delete: "Löschen",

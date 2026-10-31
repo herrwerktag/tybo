@@ -26,9 +26,10 @@ export const DEFAULT_CLIENT_DIR = process.env.CLIENT_DIR ?? "";
 /** The HTTP interface of the app's data.
  *
  * GET /workspaces answers the workspaces as JSON (`[{ id, name }]`), in their order. POST /workspaces makes
- * an empty one from the body `{ id, name, dataVersion }` — 201, or 409 when that id is taken. PATCH
- * /workspaces/{id} renames it (`{ name }`) or moves it to another index in the list (`{ position }`) — 204, or
- * 404 when there is none. DELETE /workspaces/{id}
+ * an empty one from the body `{ id, name, dataVersion }` — 201, or 409 when that id is taken, or that name (by
+ * another workspace, ignoring case and surrounding spaces). PATCH /workspaces/{id} renames it (`{ name }`) or
+ * moves it to another index in the list (`{ position }`) — 204, or 404 when there is none; a name another
+ * workspace has answers 409. DELETE /workspaces/{id}
  * deletes it with all its data, 204 either way.
  *
  * GET /workspaces/{id}/data answers the workspace's data as JSON — the app's data marked with the format it
@@ -155,7 +156,8 @@ async function reply(req: IncomingMessage, res: ServerResponse, api: Api, client
 						if (position !== null) return sendEmpty(res, (await api.moveWorkspace(id, position, source)) ? 204 : 404);
 						const name = parseName(body);
 						if (name === null) return sendEmpty(res, 400);
-						return sendEmpty(res, (await api.renameWorkspace(id, name, source)) ? 204 : 404);
+						const renamed = await api.renameWorkspace(id, name, source);
+						return sendEmpty(res, renamed === "nameTaken" ? 409 : renamed ? 204 : 404);
 					}
 					case "DELETE":
 						await api.deleteWorkspace(id, source);

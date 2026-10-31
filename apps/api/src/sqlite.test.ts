@@ -87,6 +87,15 @@ test("sqlite: a workspace is made empty, saved, read back as saved, renamed and 
 		assert.equal(await storage.renameWorkspace("none", "Niemand"), false);
 		assert.deepEqual(await storage.listWorkspaces(), [{ id: "ws", name: "Umbenannt" }]);
 
+		// A name another workspace has is refused, ignoring case and surrounding spaces; the workspace's own isn't.
+		assert.equal(await storage.createWorkspace({ id: "ws-x", name: " umbenannt " }, 1), false);
+		assert.equal(await storage.createWorkspace({ id: "ws-y", name: "Andere" }, 1), true);
+		assert.equal(await storage.renameWorkspace("ws-y", "UMBENANNT"), "nameTaken");
+		assert.equal(await storage.renameWorkspace("ws", "umbenannt"), true);
+		assert.deepEqual(await storage.listWorkspaces(), [{ id: "ws", name: "umbenannt" }, { id: "ws-y", name: "Andere" }]);
+		await storage.deleteWorkspace("ws-y");
+		await storage.renameWorkspace("ws", "Umbenannt");
+
 		await storage.createWorkspace({ id: "ws-2", name: "Zweit" }, 1);
 		await storage.createWorkspace({ id: "ws-3", name: "Dritt" }, 1);
 		assert.equal(await storage.moveWorkspace("ws-3", 0), true);

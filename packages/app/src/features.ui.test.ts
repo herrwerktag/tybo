@@ -102,6 +102,16 @@ test("types and entities are reordered with their drag handles' arrow keys; focu
 	root.querySelectorAll("tbody tr")[1]!.dispatchEvent(drop);
 	assert.deepEqual((await readSaved()).entities.map((e) => e.name), ["Dune", "Emma"]);
 });
+test("the type form refuses the name of another type, saying so", async () => {
+	const root = await startApp(library, "#types");
+	byText(root, "button", dataText.createNewType).click();
+	const form = root.querySelector<HTMLFormElement>("#type-form")!;
+	typeInto(form.querySelector(`input[placeholder="${dataText.typeNamePlaceholder}"]`)!, " book ");
+	byText(form, "button", dataText.createType).click();
+	assert.ok(byText(root, "#type-form p.error", dataText.validation({ code: "typeNameTaken", label: "book" })));
+	assert.deepEqual((await readSaved()).types.map((t) => t.name), ["Book"]);
+});
+
 test("the forms for a new type and a new entity are hidden until asked for, and Cancel hides them again", async () => {
 	const root = await startApp(library, "#types");
 	assert.equal(root.querySelector("#type-form"), null);
@@ -214,6 +224,29 @@ test("a new workspace from the menu starts empty and becomes active; switching b
 	await settle();
 	assert.equal(root.querySelector(".workspace-name")?.textContent, sharedText.defaultWorkspaceName(1));
 	assert.ok(byText(root, ".type-name", "Book"));
+});
+
+test("a new or renamed workspace may not have the name of another one; the new one is offered the first number free", async () => {
+	const alerts: string[] = [];
+	const root = await startApp(library, "#types");
+	await settle(); // the hashchange of the start draws the page anew
+	const newForm = root.querySelector<HTMLFormElement>(".workspace-new")!;
+	const name = newForm.querySelector<HTMLInputElement>("input:not([type])")!;
+	assert.equal(name.value, sharedText.defaultWorkspaceName(2));
+	name.value = sharedText.defaultWorkspaceName(1).toUpperCase();
+	byText(newForm, "button", dataText.create).click();
+	assert.equal(name.validationMessage, sharedText.workspaceNameTaken(name.value));
+	assert.equal((await storage.port.listWorkspaces()).length, 1);
+
+	name.value = "Second";
+	name.dispatchEvent(new Event("input"));
+	byText(newForm, "button", dataText.create).click();
+	await settle();
+	stub({ prompt: () => ` ${sharedText.defaultWorkspaceName(1)} `, alert: (message: string) => void alerts.push(message) });
+	byText(root, "button", sharedText.renameButton).click();
+	assert.deepEqual(alerts, [sharedText.workspaceNameTaken(sharedText.defaultWorkspaceName(1))]);
+	await settle();
+	assert.deepEqual((await storage.port.listWorkspaces()).map((w) => w.name), [sharedText.defaultWorkspaceName(1), "Second"]);
 });
 
 test("workspaces are reordered in the menu with their drag handles' arrow keys; the order is saved", async () => {

@@ -1,4 +1,4 @@
-import { moveItem, type AppData, type Change, type SavedChanges, type WorkspaceInfo } from "../core/index.js";
+import { moveItem, nameTaken, type AppData, type Change, type SavedChanges, type WorkspaceInfo } from "../core/index.js";
 import { recordHistory, type HistoryEntry, type HistoryPage } from "./history.js";
 import type { Sql } from "./schema.js";
 import type { Queries, StoredUnits } from "./storage.js";
@@ -17,10 +17,12 @@ export interface Api {
 	healthy(): Promise<boolean>;
 	/** The workspaces, in their order. */
 	listWorkspaces(): Promise<WorkspaceInfo[]>;
-	/** Makes an empty workspace; false when one of that id is there already (nothing written then). */
+	/** Makes an empty workspace; false when one of that id, or one of that name (see `nameTaken`), is there already
+	 * (nothing written then). */
 	createWorkspace(info: WorkspaceInfo, dataVersion: number, source?: string | null): Promise<boolean>;
-	/** Renames a workspace; false when there is none of that id. */
-	renameWorkspace(id: string, name: string, source?: string | null): Promise<boolean>;
+	/** Renames a workspace; false when there is none of that id, "nameTaken" when another one has the name (nothing
+	 * written then). */
+	renameWorkspace(id: string, name: string, source?: string | null): Promise<boolean | "nameTaken">;
 	/** Moves a workspace to index `to` in the list; false when there is none of that id. */
 	moveWorkspace(id: string, to: number, source?: string | null): Promise<boolean>;
 	/** Deletes a workspace and all its data; there being none of that id is no error. */
@@ -43,10 +45,19 @@ export async function listWorkspaces(sql: Queries): Promise<WorkspaceInfo[]> {
 	return rows.map(({ id, name }) => ({ id: id as string, name: name as string }));
 }
 
-/** Makes an empty workspace at the end of the list. False when a workspace of that id is there already —
- * then nothing was written. Its making goes into the history, under `source`. */
+/** Whether another workspace than `selfId` is called `name` (see `nameTaken`). Holds off the other writes to the
+ * workspaces until the transaction ends, so two of them at once can't both take the one name. */
+async function nameIsTaken(tx: Queries, name: string, selfId: string | null): Promise<boolean> {
+	await tx`lock table workspaces in share row exclusive mode`;
+	const rows = await tx`select id, name from workspaces`;
+	return nameTaken(rows.map(({ id, name }) => ({ id: id as string, name: name as string })), name, selfId);
+}
+
+/** Makes an empty workspace at the end of the list. False when a workspace of that id or that name is there
+ * already — then nothing was written. Its making goes into the history, under `source`. */
 export async function createWorkspace(sql: Sql, info: WorkspaceInfo, dataVersion: number, source: string | null = null): Promise<boolean> {
 	return sql.begin(async (tx) => {
+		if (await nameIsTaken(tx, info.name, null)) return false;
 		const [inserted] = await tx`insert into workspaces (id, position, name, data_version)
 			values (${info.id}, (select coalesce(max(position) + 1, 0) from workspaces), ${info.name}, ${dataVersion})
 			on conflict (id) do nothing
@@ -59,11 +70,14 @@ export async function createWorkspace(sql: Sql, info: WorkspaceInfo, dataVersion
 	});
 }
 
-/** Renames the workspace; false when there is none of that id. The renaming goes into the history. */
-export async function renameWorkspace(sql: Sql, id: string, name: string, source: string | null = null): Promise<boolean> {
+/** Renames the workspace; false when there is none of that id, "nameTaken" when another one has the name. The
+ * renaming goes into the history. */
+export async function renameWorkspace(sql: Sql, id: string, name: string, source: string | null = null): Promise<boolean | "nameTaken"> {
 	return sql.begin(async (tx) => {
+		const taken = await nameIsTaken(tx, name, id);
 		const [was] = await tx`select name, revision::text as revision from workspaces where id = ${id} for update`;
 		if (!was) return false;
+		if (taken) return "nameTaken";
 		await tx`update workspaces set name = ${name}, updated_at = now() where id = ${id}`;
 		await recordHistory(tx, id, source, [
 			{ operation: "rename", revision: was.revision as string, before: { name: was.name as string }, after: { name } },
