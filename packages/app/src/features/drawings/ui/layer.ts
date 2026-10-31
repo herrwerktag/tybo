@@ -25,6 +25,8 @@ import {
 	type NewDrawing,
 } from "../core.js";
 import { text } from "../texts.js";
+import { readImage } from "./images.js";
+import { drawingShape, strokeFor, textPlacement } from "./shapes.js";
 
 /** The drawing tools: select (and move, resize, edit), or draw a text box or a group. */
 export type Tool = "select" | "textbox" | "area";
@@ -44,41 +46,6 @@ const CORNERS: readonly Corner[] = ["nw", "ne", "sw", "se"];
 /** Two presses on the same drawing within this time (ms) and distance (px) are a double-click. */
 const DOUBLE_CLICK_TIME = 400;
 const DOUBLE_CLICK_DISTANCE = 6;
-/** Pictures larger than this (in pixels, on the longer side) are scaled down before they're stored. */
-const MAX_STORED_IMAGE_PIXELS = 1600;
-/** Boxes are filled with a light tint of their color; outlines and text use a darker shade. */
-export const fillFor = (color: string) => `color-mix(in srgb, ${color} 40%, white)`;
-export const strokeFor = (color: string) => `color-mix(in srgb, ${color} 55%, black)`;
-
-/** The SVG elements showing a drawing, without any handlers. Text is left out with `withText: false` (while it's
- * being edited). */
-function drawingShape(d: Drawing, withText = true): SVGElement[] {
-	if (isImage(d)) {
-		return [svgEl("image", { class: "drawing-image", href: d.src, x: d.x, y: d.y, width: d.width, height: d.height, preserveAspectRatio: "none" })];
-	}
-	const area = isArea(d);
-	const shape = svgEl("rect", { x: d.x, y: d.y, width: d.width, height: d.height, rx: area ? 0 : 6 });
-	shape.classList.add(area ? "drawing-area" : "drawing-shape");
-	shape.style.fill = fillFor(d.color);
-	shape.style.stroke = strokeFor(d.color);
-	return d.text && withText ? [shape, textNode(d)] : [shape];
-}
-
-/** Text in a text box is centered; an area's name starts at the top left (as its title). */
-function textPlacement(box: BoxDrawing): string {
-	return box.kind === "area" ? "area-name" : "centered";
-}
-
-function textNode(box: BoxDrawing): SVGForeignObjectElement {
-	const label = el(
-		"div",
-		{ className: `drawing-label size-${box.textSize} ${textPlacement(box)}` },
-		box.text,
-	);
-	label.style.color = strokeFor(box.color);
-	return svgEl("foreignObject", { x: box.x, y: box.y, width: box.width, height: box.height }, label);
-}
-
 /** Whether the drawing tools are folded (see toolsCollapsed). */
 const TOOLS_COLLAPSED_KEY = "drawing-tools-collapsed";
 
@@ -514,37 +481,3 @@ function createDrawingLayer(host: LayerHost): LayerView {
 
 /** The drawings as a layer on the canvas, with their tools. */
 export const DRAWING_LAYER: CanvasLayer = { key: "drawings", create: createDrawingLayer };
-
-/**
- * An image file as a data URL with its size in pixels, or null when the browser can't read it as an image. Large
- * pictures are scaled down to MAX_STORED_IMAGE_PIXELS first, so the board's data stays small enough to load.
- */
-async function readImage(file: File): Promise<{ src: string; width: number; height: number } | null> {
-	const url = URL.createObjectURL(file);
-	try {
-		const image = new Image();
-		image.src = url;
-		await image.decode();
-		const { naturalWidth: width, naturalHeight: height } = image;
-		if (width === 0 || height === 0) return null;
-		const scale = Math.min(1, MAX_STORED_IMAGE_PIXELS / Math.max(width, height));
-		if (scale === 1) return { src: await dataUrl(file), width, height };
-		const canvas = el("canvas", { width: Math.round(width * scale), height: Math.round(height * scale) });
-		canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
-		// WebP keeps transparency at a fraction of PNG's size; browsers that can't write it fall back to PNG.
-		return { src: canvas.toDataURL("image/webp", 0.85), width: canvas.width, height: canvas.height };
-	} catch {
-		return null;
-	} finally {
-		URL.revokeObjectURL(url);
-	}
-}
-
-function dataUrl(file: File): Promise<string> {
-	return new Promise((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onload = () => resolve(reader.result as string);
-		reader.onerror = () => reject(reader.error);
-		reader.readAsDataURL(file);
-	});
-}
