@@ -10,7 +10,8 @@ import { fileURLToPath } from "node:url";
  *
  * - `shared/core` imports nothing but itself; `shared/ui`, `shared/api` and `shared/mcp` import themselves and
  *   `shared/core`.
- * - A feature imports `shared/`, itself, and the features it builds on (FEATURES_BELOW) — nothing of the app put
+ * - A feature imports `shared/`, itself, and the features it builds on (FEATURES_BELOW), of those only their entries
+ *   (`core.ts`, `ui.ts`, `api.ts`, `mcp.ts`, `texts.ts`; a test also their test helpers) — nothing of the app put
  *   together in `features.*.ts` above it, not even types: it works with the store of the features below it
  *   (e.g. `DataStore`, `BoardStore`).
  * - Tests and their helpers (`*.test.ts`, `test-*.ts`) may also use the app as a whole: `features.*.ts` and the
@@ -48,6 +49,10 @@ function area(file: string): string {
 	return top === "shared" || top === "features" ? `${top}/${sub}` : "root";
 }
 
+/** The files of a feature others may import: one per layer, and its texts. */
+const ENTRIES = ["core", "ui", "api", "mcp", "texts"];
+const isEntry = (file: string) => new RegExp(`^features/[^/]+/(${ENTRIES.join("|")})\\.ts$`).test(file);
+
 const isTest = (file: string) => /(^|\/)(test-[^/]*|[^/]*\.test)\.ts$/.test(file);
 
 /** Why the import of `target` from `file` goes the wrong way, or null when it may. */
@@ -61,9 +66,10 @@ function violation(file: string, target: string): string | null {
 	if (to.startsWith("shared/")) return null;
 	if (to.startsWith("features/")) {
 		const other = to.slice("features/".length);
-		return FEATURES_BELOW[feature]?.includes(other)
-			? null
-			: `${feature} doesn't build on ${other} (FEATURES_BELOW): import from below, or decide that it does — see CLAUDE.md`;
+		if (!FEATURES_BELOW[feature]?.includes(other))
+			return `${feature} doesn't build on ${other} (FEATURES_BELOW): import from below, or decide that it does — see CLAUDE.md`;
+		if (isEntry(target) || (isTest(file) && isTest(target))) return null;
+		return `${feature} reaches into ${other}: import from its entry (${ENTRIES.map((name) => `${name}.ts`).join(", ")}), exporting there what's missing`;
 	}
 	if (isTest(file)) return null;
 	return `${feature} imports the app put together above it: use what the features below it give (e.g. their store type)`;

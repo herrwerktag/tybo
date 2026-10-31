@@ -1,5 +1,5 @@
 import type { Point, Rect } from "../../../shared/core/index.js";
-import { GRID_SIZE, snapToGrid } from "../../data/core/model.js";
+import { GRID_SIZE, snapToGrid } from "../../data/core.js";
 import type { Viewport } from "./viewport.js";
 
 /**

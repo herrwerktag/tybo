@@ -1,6 +1,5 @@
 import type { EntityType, DataStore } from "../data/core.js";
-import { detailsPanel } from "../data/ui/details-panel.js";
-import { createCardPreview } from "../data/ui/entity-card.js";
+import { createCardPreview, detailsPanel } from "../data/ui.js";
 import { freeName, moveItem, nameTaken } from "../../shared/core/index.js";
 import { downloadFile, el, isRecord, listenWhileConnected, readPreference, refused, safeFileName, typeDot, writePreference, zipFiles, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
 import {
