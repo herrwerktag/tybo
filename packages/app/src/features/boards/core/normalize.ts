@@ -15,6 +15,9 @@ function readLists(lists: readonly BoardList[], board?: object): Record<string, 
 	return Object.fromEntries(lists.map(({ key, normalize }) => [key, normalize((board as Record<string, unknown> | undefined)?.[key])]));
 }
 
+/** The name a board gets when none is given: "Board n". */
+export const boardName = (n: number): string => `Board ${n}`;
+
 /** A board without cards, its features' `lists` empty too. */
 export function newBoard(name: string, lists: readonly BoardList[]): Board {
 	const viewFrame = visibleRect(defaultViewport(), REFERENCE_SCREEN.width, REFERENCE_SCREEN.height);
@@ -63,8 +66,8 @@ function normalizeBoard(board: Partial<Board> | undefined, fallbackName: string,
  */
 export function normalizeBoards(data: Pick<AppData, "boards" | "entities"> & { canvas?: Partial<Board> }, lists: readonly BoardList[]): Board[] {
 	const raw: Partial<Board>[] = Array.isArray(data.boards) ? data.boards : data.canvas ? [data.canvas] : [];
-	const boards = raw.map((b, i) => normalizeBoard(b, `Board ${i + 1}`, lists));
-	return boards.length > 0 || data.entities.length > 0 ? boards : [newBoard("Board 1", lists)];
+	const boards = raw.map((b, i) => normalizeBoard(b, boardName(i + 1), lists));
+	return boards.length > 0 || data.entities.length > 0 ? boards : [newBoard(boardName(1), lists)];
 }
 
 /** The boards as the storage holds them, as far as they can be compared with this app's: boards without their

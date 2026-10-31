@@ -11,7 +11,7 @@ import {
 	type Relation,
 } from "../../data/core.js";
 import { freeSpot, frameShape, placeAround, placeBeside, type Board, type BoardList, type CanvasCard } from "./model.js";
-import { newBoard } from "./normalize.js";
+import { boardName, newBoard } from "./normalize.js";
 import { clampZoom, type Viewport } from "./viewport.js";
 
 /** How two entities get linked, seen from one of them: through which reference property, held by which side. */
@@ -93,7 +93,7 @@ export function boardOps(core: StoreCore<AppData>, lists: readonly BoardList[]) 
 		 * a `NameTaken`. */
 		addBoard(name: string): Board {
 			refuseTakenName("board", core.data.boards, name);
-			const board = newBoard(name.trim() || freeName(core.data.boards, (n) => `Board ${n}`), lists);
+			const board = newBoard(name.trim() || freeName(core.data.boards, boardName), lists);
 			core.change({ ...core.data, boards: [...core.data.boards, board] });
 			return board;
 		},
