@@ -3,7 +3,7 @@ import type { Store } from "../../features.core.js";
 import { DETAILS_WIDTH_KEY, createCardPreview, entityDetails } from "../data/ui/entity-card.js";
 import { showEntityEditor } from "../data/ui/entity-form.js";
 import { freeName, moveItem, nameTaken } from "../../shared/core/index.js";
-import { downloadFile, el, isRecord, readPreference, refused, resizeHandle, safeFileName, typeDot, writePreference, zipFiles, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
+import { downloadFile, el, isRecord, listenWhileConnected, readPreference, refused, resizeHandle, safeFileName, typeDot, writePreference, zipFiles, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
 import {
 	addAnalysis,
 	deleteAnalysis,
@@ -54,17 +54,14 @@ export function analysisView(store: Store): HTMLElement {
 	detailsHandle.classList.add("details-resize");
 	const view = el("div", { className: "analysis-view" }, main, detailsHandle, details);
 
-	// Every change (here, or undone and redone) shows anew, keeping focus on the control it came from.
-	store.onHistoryChange(() => {
-		if (view.isConnected) render();
-	});
+	// Every change (here, or undone and redone) shows anew, keeping focus on the control it came from; the first
+	// change after this view is gone stops listening (each visit of the page makes a new one).
+	const stopWatching = store.onHistoryChange(() => (view.isConnected ? render() : stopWatching()));
 
-	// Escape closes the details (the listener removes itself once this view is gone).
-	function onKeyDown(e: KeyboardEvent): void {
-		if (!view.isConnected) return document.removeEventListener("keydown", onKeyDown);
+	// Escape closes the details.
+	listenWhileConnected(view, "keydown", (e) => {
 		if (e.key === "Escape" && shownEntityId !== null && !(e.target as Element).closest("input, select, textarea")) showDetails(null);
-	}
-	document.addEventListener("keydown", onKeyDown);
+	});
 
 	function render(): void {
 		const focusKey = (document.activeElement as HTMLElement | null)?.dataset?.focusKey;

@@ -296,7 +296,6 @@ export function sqliteStorageOf(path: string, stored: StoredUnits): SqliteStorag
 		}
 	};
 
-	/** The workspace's revision and name, or undefined when there is none of that id. */
 	/** Whether another workspace than `selfId` is called `name` (see `nameTaken`); the database is one connection,
 	 * so no other write comes in between before the transaction ends. */
 	const nameIsTaken = (name: string, selfId: string | null) =>

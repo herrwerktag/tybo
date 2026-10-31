@@ -1,5 +1,5 @@
-import type { Point, Rect } from "../../../shared/core/index.js";
-import { CLICK_TOLERANCE, el, readPreference, svgEl, trackPointer, writePreference } from "../../../shared/ui/index.js";
+import { touches, type Point, type Rect } from "../../../shared/core/index.js";
+import { CLICK_TOLERANCE, el, listenWhileConnected, readPreference, svgEl, trackPointer, writePreference } from "../../../shared/ui/index.js";
 import { GRID_SIZE } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import type { CanvasLayer, LayerHost, LayerView } from "../../boards/ui.js";
@@ -469,7 +469,6 @@ function createDrawingLayer(host: LayerHost): LayerView {
 
 	// Tool shortcuts, Delete for the selected drawing, Escape back to the select tool or to no selection.
 	function onKeyDown(e: KeyboardEvent): void {
-		if (!svg.isConnected) return document.removeEventListener("keydown", onKeyDown); // the canvas is gone
 		if (e.ctrlKey || e.metaKey || e.altKey) return;
 		if ((e.target as Element).closest?.("input, select, textarea, [contenteditable]")) return;
 		if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
@@ -483,7 +482,7 @@ function createDrawingLayer(host: LayerHost): LayerView {
 			if (shortcut) setTool(shortcut.tool);
 		}
 	}
-	if (!readOnly) document.addEventListener("keydown", onKeyDown);
+	if (!readOnly) listenWhileConnected(svg, "keydown", onKeyDown);
 
 	draw();
 	return {
@@ -516,8 +515,6 @@ function createDrawingLayer(host: LayerHost): LayerView {
 
 /** The drawings as a layer on the canvas, with their tools. */
 export const DRAWING_LAYER: CanvasLayer = { key: "drawings", create: createDrawingLayer };
-
-const touches = (a: Rect, b: Rect): boolean => a.x <= b.x + b.width && b.x <= a.x + a.width && a.y <= b.y + b.height && b.y <= a.y + a.height;
 
 /**
  * An image file as a data URL with its size in pixels, or null when the browser can't read it as an image. Large

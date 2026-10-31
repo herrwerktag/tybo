@@ -106,6 +106,15 @@ export function trackPointer(
 	target.addEventListener("pointercancel", end);
 }
 
+/** Listens to `type` on the document while `node` is on the page: the first event after it's gone removes the listener. */
+export function listenWhileConnected<K extends keyof DocumentEventMap>(node: Node, type: K, listener: (e: DocumentEventMap[K]) => void): void {
+	const listen = (e: DocumentEventMap[K]): void => {
+		if (!node.isConnected) return document.removeEventListener(type, listen);
+		listener(e);
+	};
+	document.addEventListener(type, listen);
+}
+
 /** What a wheel event does on a canvas: zoom by a factor around the pointer, or pan by screen pixels. */
 export type WheelGesture = { zoom: number } | { pan: { dx: number; dy: number } };
 
