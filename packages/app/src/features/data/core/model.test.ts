@@ -6,6 +6,8 @@ import {
 	detailRows,
 	entityTags,
 	filterEntities,
+	changedValueCount,
+	convertedValues,
 	fillPlaceholders,
 	parseTags,
 	placeholderProperty,
@@ -15,6 +17,7 @@ import {
 	migrateValues,
 	missingRequired,
 	nextTypeColor,
+	optionLabel,
 	parseValue,
 	linkCandidates,
 	relationsOf,
@@ -29,15 +32,27 @@ const typesOf = (...ids: string[]) => ids.map((id) => ({ id, name: id }));
 const noEntities = new Map<string, string>();
 
 const title: PropertyDef = { id: "t", name: "title", kind: "text", options: [], reference: null, cardDisplay: "list" };
-const status: PropertyDef = { id: "s", name: "status", kind: "options", options: ["Draft", "Published"], reference: null, cardDisplay: "list" };
+const status: PropertyDef = {
+	id: "s",
+	name: "status",
+	kind: "options",
+	options: [
+		{ id: "opt-draft", label: "Draft" },
+		{ id: "opt-pub", label: "Published" },
+	],
+	reference: null,
+	cardDisplay: "list",
+};
 
 test("parseValue: text trims and treats empty as null", () => {
 	assert.equal(parseValue(title, "  hi  "), "hi");
 	assert.equal(parseValue(title, "   "), null);
 });
 
-test("parseValue: options accepts listed options only", () => {
-	assert.equal(parseValue(status, "Draft"), "Draft");
+test("parseValue: options accepts ids of existing options only", () => {
+	assert.equal(parseValue(status, "opt-draft"), "opt-draft");
+	assert.equal(parseValue(status, " opt-draft "), "opt-draft");
+	assert.equal(parseValue(status, "Draft"), null);
 	assert.equal(parseValue(status, "Archived"), null);
 	assert.equal(parseValue(status, ""), null);
 });
@@ -58,20 +73,55 @@ test("validateType rejects the built-in field names", () => {
 });
 
 test("validateType: options properties need unique, non-empty options", () => {
+	const opt = (label: string) => ({ label });
 	assert.ok(validateType("Book", [{ ...status, options: [] }], noTypes).length > 0);
-	assert.ok(validateType("Book", [{ ...status, options: ["A", " "] }], noTypes).length > 0);
-	assert.ok(validateType("Book", [{ ...status, options: ["A", "A"] }], noTypes).length > 0);
+	assert.ok(validateType("Book", [{ ...status, options: [opt("A"), opt(" ")] }], noTypes).length > 0);
+	assert.ok(validateType("Book", [{ ...status, options: [opt("A"), opt("A")] }], noTypes).length > 0);
+	assert.ok(validateType("Book", [{ ...status, options: [opt("A"), { id: "x", label: "A" }] }], noTypes).length > 0, "labels, not ids");
 });
 
 test("migrateValues drops removed properties and clears values that no longer fit", () => {
-	const values = { t: "Dune", s: "Draft", gone: "x" };
-	assert.deepEqual(migrateValues(values, [title, { ...status, options: ["Published"] }], noEntities), { t: "Dune", s: null });
+	const values = { t: "Dune", s: "opt-draft", gone: "x" };
+	assert.deepEqual(
+		migrateValues(values, [title, { ...status, options: [{ id: "opt-pub", label: "Published" }] }], noEntities),
+		{ t: "Dune", s: null },
+	);
 });
 
-test("migrateValues: text to options keeps values that match an option", () => {
-	const asOptions: PropertyDef = { ...title, kind: "options", options: ["Dune"] };
-	assert.deepEqual(migrateValues({ t: "Dune" }, [asOptions], noEntities), { t: "Dune" });
-	assert.deepEqual(migrateValues({ t: "Emma" }, [asOptions], noEntities), { t: null });
+test("optionLabel: the one place an option's id becomes its label", () => {
+	assert.equal(optionLabel(status, "opt-draft"), "Draft");
+	assert.equal(optionLabel(status, "Draft"), null);
+	assert.equal(optionLabel(title, "x"), null);
+});
+
+test("convertedValues: a kept property changing kind carries the values that fit", () => {
+	const toOptions: PropertyDef = { ...title, kind: "options", options: [{ id: "opt-dune", label: "Dune" }] };
+	assert.deepEqual(convertedValues({ t: "Dune", s: "opt-draft" }, [title, status], [toOptions, status]), { t: "opt-dune", s: "opt-draft" });
+	assert.deepEqual(convertedValues({ t: " Dune " }, [title], [toOptions]), { t: "opt-dune" }, "trimmed");
+	const values = { t: "Emma" };
+	assert.equal(convertedValues(values, [title], [toOptions]), values, "no option of that label: unchanged, the same object");
+
+	const toText: PropertyDef = { ...status, kind: "text" };
+	assert.deepEqual(convertedValues({ s: "opt-draft" }, [status], [toText]), { s: "Draft" });
+	assert.deepEqual(convertedValues({ s: "unknown" }, [status], [toText]), { s: "unknown" }, "kept as it is; migrateValues clears it");
+});
+
+const entityOf = (values: Record<string, PropertyValue>) => ({ id: "e", typeId: "t", name: "E", content: "", description: "", tags: [], values });
+
+test("changedValueCount: renames and reorders are free, carried losses count", () => {
+	const renamed: PropertyDef = { ...status, options: [{ id: "opt-draft", label: "Entwurf" }, { id: "opt-pub", label: "Published" }] };
+	const reordered: PropertyDef = { ...status, options: [...status.options].reverse() };
+	const dropped: PropertyDef = { ...status, options: [{ id: "opt-pub", label: "Published" }] };
+	const entities = [entityOf({ s: "opt-draft" }), entityOf({ s: "opt-draft" }), entityOf({ s: "opt-pub" })];
+	assert.equal(changedValueCount(entities, [status], [renamed], noEntities), 0, "renaming an option");
+	assert.equal(changedValueCount(entities, [status], [reordered], noEntities), 0, "reordering the options");
+	assert.equal(changedValueCount(entities, [status], [dropped], noEntities), 2, "an option two entities hold");
+	assert.equal(changedValueCount(entities, [status], [], noEntities), 3, "the whole property");
+
+	// A text becoming options: a value matching an option's label converts, and doesn't count.
+	const toOptions: PropertyDef = { ...title, kind: "options", options: [{ id: "opt-dune", label: "Dune" }] };
+	assert.equal(changedValueCount([entityOf({ t: "Dune" })], [title], [toOptions], noEntities), 0);
+	assert.equal(changedValueCount([entityOf({ t: "Emma" })], [title], [toOptions], noEntities), 1, "doesn't convert: cleared");
 });
 
 const author: PropertyDef = { id: "a", name: "author", kind: "reference", options: [], reference: { typeIds: ["person"], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" };

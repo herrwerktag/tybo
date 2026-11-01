@@ -46,7 +46,7 @@ const data: Pick<AppData, "types" | "entities" | "boards"> = {
 				prop("responsible", "Verantwortlich", reference(["role"])),
 				prop("input", "Eingabe", reference(["artifact"], { arrow: "from", lineLabel: "liefert" })),
 				prop("informed", "Informiert", reference(["role"])),
-				prop("status", "Status", { kind: "options", options: ["offen", "fertig"] }),
+				prop("status", "Status", { kind: "options", options: [{ id: "o-open", label: "offen" }, { id: "o-fertig", label: "fertig" }, { id: "o-md", label: "*offen*" }]}),
 				prop("secret", "Intern", { cardDisplay: "hidden" }),
 			],
 		},
@@ -58,7 +58,7 @@ const data: Pick<AppData, "types" | "entities" | "boards"> = {
 			"a1",
 			"activity",
 			"Rechnung <prüfen> & buchen",
-			{ responsible: "r1", input: "f1", informed: "r2", status: "offen", secret: "geheim" },
+			{ responsible: "r1", input: "f1", informed: "r2", status: "o-open", secret: "geheim" },
 			{ content: "Zeile 1\nZeile 2", description: "Status: {{Status}}, durch {{Verantwortlich}}" },
 		),
 		entity("r1", "role", "Buchhaltung"),
@@ -119,7 +119,7 @@ test("the tooltip shows the description's Markdown as HTML, filled-in values as 
 	const description = "**Wichtig:** {{Status}}\n\n- [Doku](https://example.org)\n- <b>nein</b>";
 	const withMarkdown = {
 		...data,
-		entities: data.entities.map((e) => (e.id === "a1" ? { ...e, description, values: { ...e.values, status: "*offen*" } } : e)),
+		entities: data.entities.map((e) => (e.id === "a1" ? { ...e, description, values: { ...e.values, status: "o-md" } } : e)),
 	};
 	assert.equal(
 		cell(parse(boardDrawio(withMarkdown, "b")), "card-ca").getAttribute("tooltip"),

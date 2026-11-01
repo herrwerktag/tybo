@@ -23,12 +23,12 @@ const ideas = () => ({
 			name: "Idea",
 			color: "#c4dafa",
 			contentTemplate: "",
-			properties: [{ id: "status", name: "Status", kind: "options", options: ["open", "pitched"], reference: null, cardDisplay: "list" }],
+			properties: [{ id: "status", name: "Status", kind: "options", options: [{ id: "o-open", label: "open" }, { id: "o-pitched", label: "pitched" }], reference: null, cardDisplay: "list" }],
 		},
 	],
 	entities: [
-		{ id: DUNE, typeId: "idea", name: "Dune", content: "A desert planet", description: "The first draft", tags: [], values: { status: "open" } },
-		{ id: EMMA, typeId: "idea", name: "Emma", content: "", description: "", tags: [], values: { status: "open" } },
+		{ id: DUNE, typeId: "idea", name: "Dune", content: "A desert planet", description: "The first draft", tags: [], values: { status: "o-open" } },
+		{ id: EMMA, typeId: "idea", name: "Emma", content: "", description: "", tags: [], values: { status: "o-open" } },
 	],
 	boards: [],
 });
@@ -88,10 +88,10 @@ function keep(entry: Partial<HistoryEntry>): void {
 test("History: every write, newest first, one line each with who wrote it; a write of several units opens to each", async () => {
 	const root = await startApp(ideas());
 	const agent = await writer("mcp");
-	agent.addEntities(["One", "Two", "Three"].map((name) => ({ typeId: "idea", name, content: "", values: { status: "open" } })));
+	agent.addEntities(["One", "Two", "Three"].map((name) => ({ typeId: "idea", name, content: "", values: { status: "o-open" } })));
 	await agent.saved();
 	const web = await writer("web");
-	web.updateEntity(DUNE, "Dune", "A desert planet", { status: "pitched" });
+	web.updateEntity(DUNE, "Dune", "A desert planet", { status: "o-pitched" });
 	await web.saved();
 
 	const view = await openHistory();
@@ -116,7 +116,7 @@ test("History: every write, newest first, one line each with who wrote it; a wri
 test("History: a change lists only the fields that changed; a long text by name, its old text on request", async () => {
 	await startApp(ideas());
 	const web = await writer("web");
-	web.updateEntity(DUNE, "Dune", "A desert planet", { status: "pitched" }, "The second draft");
+	web.updateEntity(DUNE, "Dune", "A desert planet", { status: "o-pitched" }, "The second draft");
 	await web.saved();
 
 	const view = await openHistory();
@@ -165,8 +165,8 @@ test("History: the filter shows only the agent's writes; a write naming nobody i
 test("History: an entity's form links to its history, which shows only the writes of it", async () => {
 	const root = await startApp(ideas(), "#entities");
 	const web = await writer("web");
-	web.updateEntity(DUNE, "Dune", "", { status: "pitched" });
-	web.updateEntity(EMMA, "Emma", "", { status: "pitched" });
+	web.updateEntity(DUNE, "Dune", "", { status: "o-pitched" });
+	web.updateEntity(EMMA, "Emma", "", { status: "o-pitched" });
 	await web.saved();
 	await settle();
 
@@ -374,4 +374,15 @@ test("History: a day's writes in stretches of work — by one source, without a 
 
 	sessions[2]!.querySelector("button")!.click();
 	assert.deepEqual(shown(), [false, true, false, false]);
+});
+
+test("History: an options value shows the option's label; a text from before the ids, as it was", async () => {
+	await startApp(ideas());
+	keep({ after: { value: { name: "Dune", typeId: "idea", values: { status: "o-pitched" } }, position: 0 } });
+	keep({ dataVersion: 9, after: { value: { name: "Dune", typeId: "idea", values: { status: "open" } }, position: 0 } });
+	const view = await openHistory();
+	const units = [...view.querySelectorAll(".history-unit")];
+	// The id through the option it names; the format-9 text as it was written.
+	assert.ok(units[0]!.textContent!.includes("open"));
+	assert.ok(units[1]!.textContent!.includes("pitched"));
 });

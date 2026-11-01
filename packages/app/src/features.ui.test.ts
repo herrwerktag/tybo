@@ -2,6 +2,7 @@ import { WS, byText, goTo, library, memoryStorage, readSaved, settle, startApp, 
 import { freshDom } from "./shared/ui/test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { DATA_VERSION } from "./shared/core/index.js";
 import { setLanguage, activeWorkspacePreference, sharedText } from "./shared/ui/index.js";
 import { text as dataText } from "./features/data/texts.js";
 import { text as boardText } from "./features/boards/texts.js";
@@ -590,4 +591,66 @@ test("the settings let references on cards wrap instead of being cut off, rememb
 	checkbox().click();
 	assert.equal(document.documentElement.dataset.wrapReferences, undefined);
 	assert.equal(localStorage.getItem("wrap-references"), "false");
+});
+
+test("the type form edits options in place: a rename saves without asking, a carried one dropped asks", async () => {
+	const data = {
+		version: DATA_VERSION,
+		types: [
+			{
+				id: "idea",
+				name: "Idea",
+				color: "#c4dafa",
+				contentTemplate: "",
+				properties: [
+					{
+						id: "status",
+						name: "Status",
+						kind: "options",
+						options: [
+							{ id: "o-open", label: "open" },
+							{ id: "o-pitched", label: "pitched" },
+						],
+						reference: null,
+						cardDisplay: "list",
+					},
+				],
+			},
+		],
+		entities: [{ id: "01J00000000000000000000000", typeId: "idea", name: "Dune", content: "", description: "", tags: [], values: { status: "o-pitched" } }],
+		boards: [],
+	};
+	const questions: string[] = [];
+	stub({
+		confirm: (message: string) => {
+			questions.push(message);
+			return true;
+		},
+	});
+	const root = await startApp(data, "#types");
+
+	byText(root.querySelector(".type-item")!, "button", dataText.edit).click();
+	const form = root.querySelector<HTMLFormElement>("#type-form")!;
+	typeInto(form.querySelectorAll<HTMLInputElement>(".option-row input")[1]!, "proposed");
+	byText(form, "button", sharedText.save).click();
+	await settle();
+	assert.deepEqual(questions, [], "renaming an option changes only the type");
+	const saved = await readSaved();
+	assert.deepEqual(
+		saved.types[0]!.properties[0]!.options.map((o) => [o.id, o.label]),
+		[
+			["o-open", "open"],
+			["o-pitched", "proposed"],
+		],
+	);
+	assert.equal(saved.entities[0]!.values.status, "o-pitched", "the entity keeps the option it had");
+
+	// Dropping the option the entity holds asks first; confirmed, the value is cleared.
+	byText(root.querySelector(".type-item")!, "button", dataText.edit).click();
+	const again = root.querySelector<HTMLFormElement>("#type-form")!;
+	[...again.querySelectorAll("button")].find((b) => b.ariaLabel === dataText.removeOption("proposed"))!.click();
+	byText(root.querySelector<HTMLFormElement>("#type-form")!, "button", sharedText.save).click();
+	await settle();
+	assert.deepEqual(questions, [dataText.confirmChangedValues(1)]);
+	assert.equal((await readSaved()).entities[0]!.values.status, null);
 });

@@ -71,14 +71,30 @@ test("a reference shown as a line falls back to the list when it becomes text ag
 	assert.equal(selects(view)[1]!.value, "list");
 });
 
-test("the options of an options property are typed one per line", () => {
-	const prop = draft({ kind: "options", options: ["a", "b"] });
+test("an option is a row: typed, added, removed, and reordered with its drag handle's arrow keys — keeping its id", () => {
+	const prop = draft({ kind: "options", options: [{ id: "a", label: "A" }, { label: "B" }] });
 	const { view } = form([prop]);
-	const options = view.querySelector("textarea")!;
-	assert.equal(options.value, "a\nb");
-	options.value = "a\nb\nc";
-	options.dispatchEvent(new Event("input"));
-	assert.deepEqual(prop.options, ["a", "b", "c"]);
+	const labels = () => [...view.querySelectorAll<HTMLInputElement>(`.option-row input`)];
+	assert.deepEqual(labels().map((i) => i.value), ["A", "B"]);
+
+	labels()[1]!.value = "B2";
+	labels()[1]!.dispatchEvent(new Event("input", { bubbles: true }));
+	assert.deepEqual(prop.options, [{ id: "a", label: "A" }, { label: "B2" }]);
+
+	[...view.querySelectorAll("button")].find((b) => b.textContent === text.addOption)!.click();
+	assert.deepEqual(prop.options.length, 3);
+	labels()[2]!.value = "C";
+	labels()[2]!.dispatchEvent(new Event("input", { bubbles: true }));
+
+	labeled(view, "button", text.removeOption("A"))!.click();
+	assert.deepEqual(prop.options, [{ label: "B2" }, { label: "C" }]);
+
+	// Reordered by the handle's arrow keys, the option keeps its id.
+	const prop2 = draft({ kind: "options", options: [{ id: "a", label: "A" }, { id: "b", label: "B" }, { id: "c", label: "C" }] });
+	const { view: view2 } = form([prop2]);
+	const handle = [...view2.querySelectorAll<HTMLElement>(".option-row .drag-handle")].find((h) => h.dataset.focusKey === "option:0:2")!;
+	handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+	assert.deepEqual(prop2.options.map((o) => o.id), ["a", "c", "b"]);
 });
 
 test("a reference's target types are tags in their colors; the select adds the others, × removes one", () => {

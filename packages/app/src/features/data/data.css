@@ -249,11 +249,18 @@ td.handle-cell {
 	padding: 0.35rem 0.6rem;
 }
 
-.property-head {
+.property-head,
+.option-row {
 	display: grid;
 	grid-template-columns: auto minmax(0, 1fr) auto;
 	align-items: center;
 	gap: 0.25rem;
+}
+
+.option-list {
+	display: grid;
+	gap: 0.25rem;
+	justify-items: start;
 }
 
 .property-settings {

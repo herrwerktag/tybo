@@ -1,4 +1,4 @@
-import { fillPlaceholders, referencedIds, type Entity, type EntityType, type PropertyDef, uniqueNames } from "../data/core.js";
+import { fillPlaceholders, optionLabel, referencedIds, type Entity, type EntityType, type PropertyDef, uniqueNames } from "../data/core.js";
 import type { AppData } from "../../shared/core/index.js";
 import { uniqueFileNames } from "../../shared/ui/index.js";
 import { text as dataText } from "../data/texts.js";
@@ -160,9 +160,11 @@ function descriptionText(entity: Entity, type: EntityType, mentions: ReadonlyMap
 				? referencedIds(prop, value)
 						.flatMap((id) => mentions.get(id) ?? [])
 						.join(", ")
-				: typeof value === "string"
-					? value.trim()
-					: "";
+				: prop.kind === "options"
+					? (optionLabel(prop, String(value)) ?? "")
+					: typeof value === "string"
+						? value.trim()
+						: "";
 		return shown || "—";
 	};
 	return nestHeadings(fillPlaceholders(entity.description, type, placeholder).trim(), depth);

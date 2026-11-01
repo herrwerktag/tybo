@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DATA_VERSION, NameTaken, isUlid } from "../../../shared/core/index.js";
 import { TYPE_COLORS } from "../core.js";
-import { settle, WS, memoryStorage, open, titleDraft, referenceSetup } from "../../../test-store.js";
+import { settle, WS, memoryStorage, open, titleDraft, referenceSetup, valueOf } from "../../../test-store.js";
 
 test("addEntities adds several entities as one change, keeping the ids given", async () => {
 	const storage = memoryStorage();
@@ -50,17 +50,18 @@ test("addEntity assigns a ULID; updateEntity keeps it", async () => {
 
 test("updateType keeps property ids and migrates only that type's entities", async () => {
 	const store = await open(memoryStorage());
-	const book = store.addType("Book", [titleDraft, { name: "status", kind: "options", options: ["Draft", "Published"], reference: null, cardDisplay: "list" }], "");
+	const book = store.addType("Book", [titleDraft, { name: "status", kind: "options", options: [{ label: "Draft" }, { label: "Published" }], reference: null, cardDisplay: "list" }], "");
 	const film = store.addType("Film", [titleDraft], "");
 	const title = book.properties[0]!;
 	const status = book.properties[1]!;
-	const draft = store.addEntity(book.id, "Dune", "", { [title.id]: "Dune", [status.id]: "Draft" });
-	const published = store.addEntity(book.id, "Emma", "", { [title.id]: "Emma", [status.id]: "Published" });
+	const [draftOpt, publishedOpt] = status.options;
+	const draft = store.addEntity(book.id, "Dune", "", { [title.id]: "Dune", [status.id]: draftOpt!.id });
+	const published = store.addEntity(book.id, "Emma", "", { [title.id]: "Emma", [status.id]: publishedOpt!.id });
 	const movie = store.addEntity(film.id, "Alien", "", { [film.properties[0]!.id]: "Alien" });
 
 	store.updateType(book.id, "Novel", [
 		{ ...title, name: "name" },
-		{ ...status, options: ["Published"] },
+		{ ...status, options: [{ id: publishedOpt!.id, label: "Published" }] },
 		{ name: "author", kind: "text", options: [], reference: null, cardDisplay: "list" },
 	], "");
 
@@ -76,7 +77,7 @@ test("updateType keeps property ids and migrates only that type's entities", asy
 	);
 	const values = (id: string) => store.data.entities.find((e) => e.id === id)?.values;
 	assert.deepEqual(values(draft.id), { [title.id]: "Dune", [status.id]: null });
-	assert.deepEqual(values(published.id), { [title.id]: "Emma", [status.id]: "Published" });
+	assert.deepEqual(values(published.id), { [title.id]: "Emma", [status.id]: publishedOpt!.id });
 	assert.deepEqual(values(movie.id), movie.values);
 });
 
@@ -367,4 +368,69 @@ test("one malformed type or entity is dropped on its own — and left as it is s
 	store.addBoard("New");
 	await settle();
 	assert.ok((storage.data(WS)!.types as unknown[]).includes("not a type"));
+});
+
+test("renaming or reordering options keeps every entity's value and saves only the type unit", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
+	const book = store.addType("Book", [
+		{ name: "status", kind: "options", options: [{ label: "Draft" }, { label: "Published" }], reference: null, cardDisplay: "list" },
+	], "");
+	const status = book.properties[0]!;
+	const [draft, published] = status.options;
+	const dune = store.addEntity(book.id, "Dune", "", { [status.id]: draft!.id });
+	const emma = store.addEntity(book.id, "Emma", "", { [status.id]: published!.id });
+	await store.saved();
+
+	const saves = storage.saves.length;
+	store.updateType(book.id, "Book", [{ ...status, options: [{ id: draft!.id, label: "Entwurf" }, { id: published!.id, label: "Published" }] }], "");
+	await store.saved();
+	assert.equal(valueOf(store, dune.id, status.id), draft!.id, "the id stays whatever the label becomes");
+	assert.equal(valueOf(store, emma.id, status.id), published!.id);
+	assert.equal(storage.saves.length, saves + 1);
+	assert.deepEqual(storage.saves.at(-1)!.map((c) => c.kind), ["type"], "the entities' values didn't move: nothing of them to write");
+
+	store.updateType(book.id, "Book", [{ ...status, options: [{ id: published!.id, label: "Published" }, { id: draft!.id, label: "Entwurf" }] }], "");
+	await store.saved();
+	assert.equal(valueOf(store, dune.id, status.id), draft!.id);
+	assert.deepEqual(storage.saves.at(-1)!.map((c) => c.kind), ["type"]);
+
+	assert.ok(store.undo());
+	const restored = store.data.types.find((t) => t.id === book.id)!;
+	assert.deepEqual(restored.properties[0]!.options.map((o) => o.label), ["Entwurf", "Published"], "both renames back in one step");
+});
+
+test("an option added under a renamed option's old label is a new one; entities stay on the renamed", async () => {
+	const store = await open(memoryStorage());
+	const book = store.addType("Book", [
+		{ name: "status", kind: "options", options: [{ label: "Draft" }, { label: "Published" }], reference: null, cardDisplay: "list" },
+	], "");
+	const status = book.properties[0]!;
+	const draft = status.options[0]!;
+	const dune = store.addEntity(book.id, "Dune", "", { [status.id]: draft.id });
+
+	store.updateType(book.id, "Book", [
+		{ ...status, options: [{ id: draft.id, label: "Entwurf" }, status.options[1]!, { label: "Draft" }] },
+	], "");
+	const updated = store.data.types.find((t) => t.id === book.id)!.properties[0]!;
+	const made = updated.options.find((o) => o.label === "Draft")!;
+	assert.notEqual(made.id, draft.id);
+	assert.ok(isUlid(made.id));
+	assert.equal(valueOf(store, dune.id, status.id), draft.id, "the entity followed the rename, not the label");
+});
+
+test("a text property turned options carries a value that is an option's label — as its id — and back as the label", async () => {
+	const store = await open(memoryStorage());
+	const book = store.addType("Book", [titleDraft], "");
+	const title = book.properties[0]!;
+	const dune = store.addEntity(book.id, "Dune", "", { [title.id]: "Dune" });
+	const emma = store.addEntity(book.id, "Emma", "", { [title.id]: "Emma" });
+
+	store.updateType(book.id, "Book", [{ ...title, kind: "options", options: [{ label: "Dune" }] }], "");
+	const options = store.data.types.find((t) => t.id === book.id)!.properties[0]!;
+	assert.equal(valueOf(store, dune.id, title.id), options.options[0]!.id);
+	assert.equal(valueOf(store, emma.id, title.id), null, "not one of the labels: cleared");
+
+	store.updateType(book.id, "Book", [{ ...options, kind: "text" }], "");
+	assert.equal(valueOf(store, dune.id, title.id), "Dune", "the id shows as its label again");
 });

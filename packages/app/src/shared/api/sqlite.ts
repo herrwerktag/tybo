@@ -1,5 +1,5 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
-import { DATA_VERSION, inKindOrder, moveItem, nameTaken, unitStandsOf, untouched, type AppData, type Change, type SavedChanges } from "../core/index.js";
+import { DATA_VERSION, inKindOrder, moveItem, nameTaken, optionsWithIds, unitStandsOf, untouched, type AppData, type Change, type SavedChanges } from "../core/index.js";
 import type { Api, StoredWorkspace } from "./data.js";
 import { changeEntries, type HistoryEntry, type HistoryOperation, type NewEntry } from "./history.js";
 import { json, parsed, plain } from "./sqlite-values.js";
@@ -237,6 +237,32 @@ export const SQLITE_MIGRATIONS: readonly Migration[] = [
 		up(db) {
 			// As Postgres's step 14.
 			db.exec("update workspaces set data_version = 9");
+		},
+	},
+	{
+		version: 12,
+		up(db) {
+			// As Postgres's step 15: the core's `legacyOptionId` gives the options their ids (see the migration
+			// to format 10), so stored rows and imported format-9 data agree on them.
+			const properties = db.prepare("select workspace_id, id, options from properties where kind = 'options'").all() as {
+				workspace_id: string;
+				id: string;
+				options: string | null;
+			}[];
+			const setOptions = db.prepare("update properties set options = ? where workspace_id = ? and id = ?");
+			const rowsOf = db.prepare("select entity_id, value from entity_values where workspace_id = ? and property_id = ?");
+			const setValue = db.prepare("update entity_values set value = ? where workspace_id = ? and entity_id = ? and property_id = ?");
+			const dropValue = db.prepare("delete from entity_values where workspace_id = ? and entity_id = ? and property_id = ?");
+			for (const property of properties) {
+				const options = optionsWithIds(property.id, parsed(property.options));
+				setOptions.run(json(options), property.workspace_id, property.id);
+				for (const row of rowsOf.all(property.workspace_id, property.id) as { entity_id: string; value: string | null }[]) {
+					const option = options.find((o) => o.label === parsed(row.value));
+					if (option) setValue.run(json(option.id), property.workspace_id, row.entity_id, property.id);
+					else dropValue.run(property.workspace_id, row.entity_id, property.id);
+				}
+			}
+			db.exec("update workspaces set data_version = 10");
 		},
 	},
 ];

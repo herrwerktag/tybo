@@ -22,7 +22,7 @@ const DESCRIBES = [describeData, describeAnalyses, describeBoards];
  * as the app's forms (`validateType`, `parseValue`), the same change sets to the API.
  *
  * The model names everything the way a person would: workspaces, types, properties and entities by name (or
- * by id where a name is ambiguous), options by their text.
+ * by id where a name is ambiguous), options by their label or id.
  */
 export function tyboTools(port: DataPort): Tool[] {
 	const context = toolContext(port);
@@ -91,7 +91,7 @@ function workspaceTools(port: DataPort, { open }: ToolContext<Store>, describe: 
 		{
 			name: "describe_workspace",
 			description:
-				"The schema of a workspace: its entity types with their color and properties (kind, options, which types a reference points to, " +
+				"The schema of a workspace: its entity types with their color and properties (kind, options as { id, label }, which types a reference points to, " +
 				"how cards show it, the arrow and label of its line), " +
 				"how many entities each type has, the tags in use, the saved analyses and the boards with how many cards each has. " +
 				"Read this before creating or changing anything.",

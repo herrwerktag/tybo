@@ -4,14 +4,19 @@ import {
 	LINE_ARROWS,
 	PROPERTY_KINDS,
 	TYPE_COLORS,
+	changedValueCount,
 	entityTags,
+	entityTypeMap,
 	filterEntities,
 	missingRequired,
 	newReference,
+	optionLabel,
 	parseValue,
 	placeholderProperty,
+	propertyDefs,
 	referencedIds,
 	validateType,
+	type DraftOption,
 	type CardDisplay,
 	type DraftProperty,
 	type Entity,
@@ -90,7 +95,7 @@ export function dataTools({ open, answerSaved }: ToolContext<DataStore>): Tool[]
 		{
 			name: "create_type",
 			description:
-				"Creates an entity type. Properties are text, options (with their `options`) or references (with `targets`: names of " +
+				"Creates an entity type. Properties are text, options (with their `options`, each a label or `{ id, label }`) or references (with `targets`: names of " +
 				"the types they point to, `multiple` for several, `required` for at least one, `inverseLabel` for how the referenced entities show the reference). " +
 				"A reference to the type itself is added afterwards with update_type. Without a `color`, the type gets the first one no other type has.",
 			inputSchema: object(
@@ -118,7 +123,9 @@ export function dataTools({ open, answerSaved }: ToolContext<DataStore>): Tool[]
 			description:
 				"Changes an entity type: its name, its color, its content template, or its properties. `properties` replaces the whole list: a " +
 				"property keeps its values when it is listed with its id (or its current name), and what isn't given of it stays as it " +
-				"is; a property left out is removed, together with its values on all entities — which needs `confirm: true`.",
+				"is; a property left out is removed, together with its values on all entities — which needs `confirm: true`. An option is " +
+				"kept — and can be renamed — by its id (`{ id, label }`); a label alone keeps the option with that label. Changes that " +
+				"would change or clear values (a removed property or option entities hold) need `confirm: true` too.",
 			inputSchema: object(
 				{
 					workspace: WORKSPACE,
@@ -127,7 +134,7 @@ export function dataTools({ open, answerSaved }: ToolContext<DataStore>): Tool[]
 					properties: { type: "array", items: { ...PROPERTY, properties: { id: { type: "string" }, ...PROPERTY.properties }, required: [] } },
 					contentTemplate: { type: "string" },
 					color: COLOR,
-					confirm: { type: "boolean", description: "Needed when properties are left out, as they are removed with their values." },
+					confirm: { type: "boolean", description: "Needed when the change would change or clear values: properties or options entities hold, left out." },
 				},
 				["workspace", "type"],
 			),
@@ -145,8 +152,19 @@ export function dataTools({ open, answerSaved }: ToolContext<DataStore>): Tool[]
 							"List the properties to keep, or repeat with confirm: true.",
 					);
 				}
+				const after = propertyDefs(properties);
+				const entities = store.data.entities.filter((e) => e.typeId === type.id);
+				const entityTypes = entityTypeMap(store.data);
+				const changed = changedValueCount(entities, type.properties, after, entityTypes);
+				if (changed > 0 && args.confirm !== true) {
+					const affected = entities.filter((e) => changedValueCount([e], type.properties, after, entityTypes) > 0).length;
+					throw new ToolError(
+						`This changes or clears ${changed} values on ${affected} ${type.name} entities. ` +
+							"List the properties and options to keep, or repeat with confirm: true.",
+					);
+				}
 				const template = args.contentTemplate === undefined ? type.contentTemplate : text(args.contentTemplate, "contentTemplate");
-				store.updateType(type.id, name, properties, template, args.color === undefined ? undefined : colorOf(args.color));
+				store.updateType(type.id, name, after, template, args.color === undefined ? undefined : colorOf(args.color));
 				return answerSaved(store, { type: describeType(store.data, typeOf(store.data, type.id)) });
 			},
 		},
@@ -284,7 +302,11 @@ const PROPERTY = {
 	properties: {
 		name: { type: "string" },
 		kind: { type: "string", enum: ["text", "options", "reference"] },
-		options: { type: "array", items: { type: "string" }, description: "For options: the allowed values." },
+		options: {
+			type: "array",
+			items: { type: ["string", "object"], properties: { id: { type: "string" }, label: { type: "string" } } },
+			description: "For options: the allowed values; each a label or { id, label } (an id keeps — and renames — the option it has).",
+		},
 		targets: { type: "array", items: { type: "string" }, description: "For references: names or ids of the types pointed to." },
 		multiple: { type: "boolean", description: "For references: whether several entities can be picked." },
 		required: {
@@ -375,7 +397,12 @@ function describeEntity(data: AppData, entity: Entity) {
 	for (const prop of type?.properties ?? []) {
 		const value = entity.values[prop.id];
 		if (value === undefined || value === null) continue;
-		values[prop.name] = prop.kind === "reference" ? referencedIds(prop, value).map((id) => named(data, id)) : value;
+		values[prop.name] =
+			prop.kind === "reference"
+				? referencedIds(prop, value).map((id) => named(data, id))
+				: prop.kind === "options"
+					? optionLabel(prop, String(value))
+					: value;
 	}
 	const missing = missingRequired(type, entity).map((p) => p.name);
 	return {
@@ -411,8 +438,13 @@ function valueMatches(data: AppData, prop: PropertyDef, value: PropertyValue | u
 	if (prop.kind === "reference") {
 		return referencedIds(prop, value).some((id) => id === wanted || sameName(data.entities.find((e) => e.id === id)?.name ?? "", wanted));
 	}
+	if (prop.kind === "options") {
+		const held = typeof value === "string" ? value : null;
+		const option = prop.options.find((o) => o.id === held);
+		return option !== undefined && (option.id === wanted || sameName(option.label, wanted));
+	}
 	const values = typeof value === "string" ? [value] : value;
-	return values.some((v) => (prop.kind === "options" ? sameName(v, wanted) : v.toLocaleLowerCase().includes(wanted.trim().toLocaleLowerCase())));
+	return values.some((v) => v.toLocaleLowerCase().includes(wanted.trim().toLocaleLowerCase()));
 }
 
 /** What a reference can name: an entity there is, or one about to be created. */
@@ -450,12 +482,17 @@ function valuesOf(
 			values[prop.id] = null;
 			continue;
 		}
-		if (prop.kind !== "reference") {
-			const value = parseValue(prop, text(raw, prop.name), entityTypes);
-			if (value === null && text(raw, prop.name).trim() !== "") {
-				throw new ToolError(`"${raw}" isn't an option of ${prop.name}. Options: ${prop.options.join(", ")}.`);
+		if (prop.kind === "options") {
+			const wanted = text(raw, prop.name).trim();
+			const option = prop.options.find((o) => o.id === wanted) ?? prop.options.find((o) => sameName(o.label, wanted));
+			if (!option && wanted !== "") {
+				throw new ToolError(`"${raw}" isn't an option of ${prop.name}. Options: ${prop.options.map((o) => o.label).join(", ")}.`);
 			}
-			values[prop.id] = value;
+			values[prop.id] = option?.id ?? null;
+			continue;
+		}
+		if (prop.kind !== "reference") {
+			values[prop.id] = parseValue(prop, text(raw, prop.name), entityTypes);
 			continue;
 		}
 		const refs = typeof raw === "string" ? [raw] : texts(raw, prop.name);
@@ -504,11 +541,29 @@ function drafts(data: AppData, raw: unknown, current: readonly PropertyDef[]): D
 		const draft: DraftProperty = {
 			name: given.name === undefined ? (was?.name ?? "") : text(given.name, "name"),
 			kind,
-			options: given.options === undefined ? (was?.options ?? []) : texts(given.options, "options"),
+			options: given.options === undefined ? (was?.options ?? []) : optionDrafts(given.options, was, index),
 			reference,
 			cardDisplay,
 		};
 		return was ? { ...draft, id: was.id } : draft;
+	});
+}
+
+/** The options the model listed: a label keeps the id of the option of `was` with that name (a new one has none);
+ * `{ id, label }` is an option of `was`, renamed by its label. */
+function optionDrafts(raw: unknown, was: PropertyDef | undefined, index: number): DraftOption[] {
+	if (!Array.isArray(raw)) throw new ToolError(`properties[${index}].options must be a list.`);
+	return raw.map((item, i) => {
+		const label = typeof item === "string" ? item : typeof item === "object" && item !== null ? text((item as Record<string, unknown>).label, `options[${i}]`) : "";
+		if (label === "") throw new ToolError(`properties[${index}].options[${i}] needs a label.`);
+		const byId = typeof item === "object" && item !== null ? (item as Record<string, unknown>).id : undefined;
+		if (byId !== undefined) {
+			const existing = was?.options.find((o) => o.id === byId);
+			if (!existing) throw new ToolError(`There is no option with the id ${byId}.`);
+			return { id: existing.id, label };
+		}
+		const named = was?.options.find((o) => sameName(o.label, label));
+		return named ? { id: named.id, label } : { label };
 	});
 }
 

@@ -1,12 +1,12 @@
 import { dragHandle, el, reorderable, typeDot, sharedText } from "../../../shared/ui/index.js";
 import {
 	TYPE_COLORS,
+	changedValueCount,
 	entityTypeMap,
-	migrateValues,
 	nextTypeColor,
+	propertyDefs,
 	validateType,
 	type DraftProperty,
-	type Entity,
 	type EntityType,
 	type PropertyDef,
 	type ValidationError,
@@ -18,21 +18,8 @@ import { propertyRow, type PropertyRows } from "./property-row.js";
 
 const TYPE_MIME = "application/x-type-index";
 
-/** Counts existing non-empty values of the type's entities that saving these properties would change or clear. */
-function countChangedValues(entities: Entity[], props: DraftProperty[], entityTypes: ReadonlyMap<string, string>): number {
-	const kept = props.flatMap((p) => (p.id ? [{ ...p, id: p.id }] : []));
-	let changed = 0;
-	for (const entity of entities) {
-		const migrated = migrateValues(entity.values, kept, entityTypes);
-		for (const [id, value] of Object.entries(entity.values)) {
-			if (value !== null && JSON.stringify(migrated[id] ?? null) !== JSON.stringify(value)) changed++;
-		}
-	}
-	return changed;
-}
-
 function describeProperty(p: PropertyDef, types: EntityType[]): string {
-	if (p.kind === "options") return `${p.name}: ${p.options.join(" / ")}`;
+	if (p.kind === "options") return `${p.name}: ${p.options.map((o) => o.label).join(" / ")}`;
 	if (p.kind === "reference") {
 		const target = (p.reference?.typeIds ?? []).map((id) => types.find((t) => t.id === id)?.name ?? "?").join(" / ") || "?";
 		// No-break spaces keep "→ Target (multiple)" together; a long line wraps after the property name.
@@ -127,14 +114,14 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 					e.preventDefault();
 					const props = state.draftProps.map((p) => ({
 						...p,
-						options: p.kind === "options" ? p.options.map((o) => o.trim()).filter((o) => o !== "") : [],
+						options: p.kind === "options" ? p.options.map((o) => ({ ...o, label: o.label.trim() })).filter((o) => o.label !== "") : [],
 					}));
 					state.typeErrors = validateType(state.draftName, props, store.data.types, editingType?.id ?? null);
 					if (state.typeErrors.length > 0) return rerender();
 
 					if (editingType) {
 						const entities = store.data.entities.filter((en) => en.typeId === editingType.id);
-						const changed = countChangedValues(entities, props, entityTypeMap(store.data));
+						const changed = changedValueCount(entities, editingType.properties, propertyDefs(props), entityTypeMap(store.data));
 						if (changed > 0 && !confirm(text.confirmChangedValues(changed))) return;
 						store.updateType(editingType.id, state.draftName, props, state.draftContentTemplate, state.draftColor);
 						onSaved(editingType.id);
@@ -244,7 +231,7 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 									state.draftColor = type.color;
 									state.draftProps = type.properties.map((p) => ({
 										...p,
-										options: [...p.options],
+										options: p.options.map((o) => ({ ...o })),
 										reference: p.reference && { ...p.reference },
 									}));
 									state.typeErrors = [];

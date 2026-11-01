@@ -1,4 +1,4 @@
-import { nameTaken, type Named } from "../../../shared/core/index.js";
+import { nameTaken, ulid, type Named } from "../../../shared/core/index.js";
 
 /**
  * The app's data proper: entity types with their properties, and entities with their values. Its part of the app's
@@ -48,12 +48,18 @@ export function newReference(typeIds: string[]): ReferenceDef {
 	return { typeIds, multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" };
 }
 
+/** One of an `options` property's allowed values: a fixed id the entities store, and the label it shows. */
+export interface OptionDef {
+	id: string;
+	label: string;
+}
+
 export interface PropertyDef {
 	id: string;
 	name: string;
 	kind: PropertyKind;
 	/** The allowed values of an `options` property; empty for `text`. */
-	options: string[];
+	options: OptionDef[];
 	/** The target of a `reference` property; null for other kinds. */
 	reference: ReferenceDef | null;
 	/** How the value appears on the entity's canvas cards. */
@@ -73,8 +79,26 @@ export function effectiveCardDisplay(prop: Pick<PropertyDef, "kind" | "cardDispl
 	return prop.cardDisplay === "line" && prop.kind !== "reference" ? "list" : prop.cardDisplay;
 }
 
+/** An option as edited in the type form: existing options keep their id, new ones have none. */
+export type DraftOption = { id?: string; label: string };
+
 /** A property as edited in the type form: existing properties keep their id, new ones have none. */
-export type DraftProperty = Omit<PropertyDef, "id"> & { id?: string };
+export type DraftProperty = Omit<PropertyDef, "id" | "options"> & { id?: string; options: DraftOption[] };
+
+/** The property definitions the drafts describe: labels trimmed, new properties and options given an id. */
+export function propertyDefs(drafts: DraftProperty[]): PropertyDef[] {
+	return drafts.map((p) => ({
+		id: p.id ?? ulid(),
+		name: p.name.trim(),
+		kind: p.kind,
+		options: p.kind === "options" ? p.options.map((o) => ({ id: o.id ?? ulid(), label: o.label.trim() })) : [],
+		reference:
+			p.kind === "reference" && p.reference
+				? { ...p.reference, lineLabel: p.reference.lineLabel.trim(), inverseLabel: p.reference.inverseLabel.trim() }
+				: null,
+		cardDisplay: effectiveCardDisplay(p),
+	}));
+}
 
 export interface EntityType {
 	id: string;
@@ -202,10 +226,15 @@ export function linkCandidates(entities: readonly Entity[], entity: Entity, rela
 export interface CardRow {
 	label: string;
 	kind: PropertyKind;
-	/** Text, the chosen option, or the names of the referenced entities. */
+	/** Text, the chosen option's label, or the names of the referenced entities. */
 	values: string[];
 	/** For references: the entity ids, in the same order as `values`; empty for other kinds. */
 	entityIds: string[];
+}
+
+/** The label of the option `value` is the id of, or null when no option has it — the one place an id becomes a label. */
+export function optionLabel(prop: Pick<PropertyDef, "options">, value: string): string | null {
+	return prop.options.find((o) => o.id === value)?.label ?? null;
 }
 
 /** The ids of the entities a property value references (empty for other kinds or no value). */
@@ -231,7 +260,12 @@ export function cardRows(
 		let raw = typeof value === "string" ? [value] : value;
 		if (display === "line") raw = raw.filter((id) => !isLinked(id));
 		const entityIds = prop.kind === "reference" ? raw.filter((id) => entityNames.has(id)) : [];
-		const values = prop.kind === "reference" ? entityIds.map((id) => entityNames.get(id)!) : raw;
+		const values =
+			prop.kind === "reference"
+				? entityIds.map((id) => entityNames.get(id)!)
+				: prop.kind === "options"
+					? raw.flatMap((id) => optionLabel(prop, id) ?? [])
+					: raw;
 		if (values.length === 0) return [];
 		return [{ label: prop.name, kind: prop.kind, values, entityIds }];
 	});
@@ -325,7 +359,12 @@ export function propertyRow(prop: PropertyDef, entity: Entity, entityNames: Read
 	return {
 		label: prop.name,
 		kind: prop.kind,
-		values: prop.kind === "reference" ? entityIds.map((id) => entityNames.get(id)!) : raw,
+		values:
+			prop.kind === "reference"
+				? entityIds.map((id) => entityNames.get(id)!)
+				: prop.kind === "options"
+					? raw.flatMap((id) => optionLabel(prop, id) ?? [])
+					: raw,
 		entityIds,
 	};
 }
@@ -384,7 +423,8 @@ export function entityTypeMap(data: EntityData): Map<string, string> {
 
 /**
  * Turns form input or a stored value into a valid value for the property; empty or invalid input becomes null.
- * References keep only ids of existing entities of the target types (per `entityTypes`, entity id → type id).
+ * Options keep only ids of existing options, references only ids of existing entities of the target types
+ * (per `entityTypes`, entity id → type id).
  */
 export function parseValue(
 	prop: Pick<PropertyDef, "kind" | "options" | "reference">,
@@ -402,7 +442,7 @@ export function parseValue(
 	if (typeof raw !== "string") return null;
 	const trimmed = raw.trim();
 	if (trimmed === "") return null;
-	if (prop.kind === "options") return prop.options.includes(trimmed) ? trimmed : null;
+	if (prop.kind === "options") return prop.options.some((o) => o.id === trimmed) ? trimmed : null;
 	return trimmed;
 }
 
@@ -441,7 +481,7 @@ export function validateType(
 		seen.add(key);
 
 		if (prop.kind === "options") {
-			const options = prop.options.map((o) => o.trim());
+			const options = prop.options.map((o) => o.label.trim());
 			if (options.length === 0) errors.push({ code: "optionsRequired", label });
 			if (options.some((o) => o === "")) errors.push({ code: "emptyOption", label });
 			if (new Set(options).size !== options.length) errors.push({ code: "duplicateOptions", label });
@@ -457,7 +497,7 @@ export function validateType(
 /** Fits existing values to changed property definitions: drops removed properties and clears values that no longer parse. */
 export function migrateValues(
 	values: Record<string, PropertyValue>,
-	properties: PropertyDef[],
+	properties: readonly PropertyDef[],
 	entityTypes: ReadonlyMap<string, string>,
 ): Record<string, PropertyValue> {
 	const migrated: Record<string, PropertyValue> = {};
@@ -466,6 +506,59 @@ export function migrateValues(
 		if (value !== undefined) migrated[prop.id] = value === null ? null : parseValue(prop, value, entityTypes);
 	}
 	return migrated;
+}
+
+/**
+ * `values` read against `after` where a kept property's kind changed: a text that is one of the new option's
+ * labels becomes that option's id; an options value read as text becomes its label (as `before` knew it).
+ * Everything else stays as it is — `migrateValues` clears what then doesn't fit. The same object when nothing
+ * had to be converted.
+ */
+export function convertedValues(
+	values: Record<string, PropertyValue>,
+	before: readonly PropertyDef[],
+	after: readonly PropertyDef[],
+): Record<string, PropertyValue> {
+	const previous = new Map(before.map((p) => [p.id, p]));
+	let converted = values;
+	const set = (id: string, value: PropertyValue) => {
+		if (converted === values) converted = { ...values };
+		converted[id] = value;
+	};
+	for (const prop of after) {
+		const was = previous.get(prop.id);
+		const value = values[prop.id];
+		if (!was || was.kind === prop.kind || typeof value !== "string") continue;
+		if (prop.kind === "options") {
+			const option = prop.options.find((o) => o.label === value.trim());
+			if (option) set(prop.id, option.id);
+		} else if (was.kind === "options") {
+			set(prop.id, optionLabel(was, value) ?? value);
+		}
+	}
+	return converted;
+}
+
+/**
+ * How many of `entities`' non-empty values saving `after` (instead of `before`) would change or clear —
+ * kind changes a value can follow (a text that is an option's label) don't count, values lost to a removed
+ * option or property do.
+ */
+export function changedValueCount(
+	entities: readonly Entity[],
+	before: readonly PropertyDef[],
+	after: readonly PropertyDef[],
+	entityTypes: ReadonlyMap<string, string>,
+): number {
+	let changed = 0;
+	for (const entity of entities) {
+		const converted = convertedValues(entity.values, before, after);
+		const migrated = migrateValues(converted, after, entityTypes);
+		for (const [id, value] of Object.entries(entity.values)) {
+			if (value !== null && JSON.stringify(migrated[id] ?? null) !== JSON.stringify(converted[id] ?? null)) changed++;
+		}
+	}
+	return changed;
 }
 
 // How an entity looks as a card: on the boards, and in the previews elsewhere.

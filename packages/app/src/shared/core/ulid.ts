@@ -1,7 +1,7 @@
 /// <reference path="./globals.d.ts" />
 
 /** Crockford base32, as used by ULID (https://github.com/ulid/spec). */
-const ENCODING = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+export const ULID_ENCODING = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 /**
  * A 26-character ULID: 10 characters of millisecond timestamp, then 16 random characters. Used for all ids, since
@@ -11,13 +11,13 @@ export function ulid(time = Date.now()): string {
 	let timePart = "";
 	for (let i = 0, t = time; i < 10; i++) {
 		const mod = t % 32;
-		timePart = ENCODING[mod] + timePart;
+		timePart = ULID_ENCODING[mod] + timePart;
 		t = (t - mod) / 32;
 	}
 	// 256 is a multiple of 32, so each byte maps uniformly onto one character (5 random bits).
 	const bytes = crypto.getRandomValues(new Uint8Array(16));
 	let randomPart = "";
-	for (const byte of bytes) randomPart += ENCODING[byte % 32];
+	for (const byte of bytes) randomPart += ULID_ENCODING[byte % 32];
 	return timePart + randomPart;
 }
 

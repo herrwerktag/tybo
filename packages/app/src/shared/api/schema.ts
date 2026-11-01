@@ -1,5 +1,6 @@
 import type postgres from "postgres";
-import type { Queries } from "./storage.js";
+import { optionsWithIds } from "../core/index.js";
+import { jsonbParameter, type Queries } from "./storage.js";
 
 /** A connection of the driver, which can open transactions. */
 export type Sql = postgres.Sql<{}>;
@@ -265,6 +266,30 @@ export const POSTGRES_MIGRATIONS: readonly Migration[] = [
 			// the format. The steps before brought every row to format 9, so that is every workspace's now. From
 			// here on, a step that changes the format of the rows also sets it (see DATA_VERSION in the core).
 			await tx`update workspaces set data_version = 9`;
+		},
+	},
+	{
+		version: 15,
+		name: "option ids",
+		async up(tx) {
+			// The ids come from the core's `legacyOptionId` (see the migration to format 10), so a workspace's
+			// stored rows and format-9 data going through import agree on them.
+			const properties = await tx`select workspace_id, id, options from properties where kind = 'options'`;
+			for (const property of properties) {
+				const options = optionsWithIds(property.id, property.options);
+				await tx`update properties set options = ${jsonbParameter(tx, options)} where workspace_id = ${property.workspace_id} and id = ${property.id}`;
+				const rows = await tx`select entity_id, value from entity_values where workspace_id = ${property.workspace_id} and property_id = ${property.id}`;
+				for (const row of rows) {
+					const option = options.find((o) => o.label === row.value);
+					if (option)
+						await tx`update entity_values set value = ${jsonbParameter(tx, option.id)}
+							where workspace_id = ${property.workspace_id} and entity_id = ${row.entity_id} and property_id = ${property.id}`;
+					else
+						await tx`delete from entity_values
+							where workspace_id = ${property.workspace_id} and entity_id = ${row.entity_id} and property_id = ${property.id}`;
+				}
+			}
+			await tx`update workspaces set data_version = 10`;
 		},
 	},
 ];

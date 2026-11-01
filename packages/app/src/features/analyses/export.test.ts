@@ -50,7 +50,7 @@ const data: Pick<AppData, "types" | "entities"> = {
 			properties: [
 				prop("responsible", "Verantwortlicher", reference(["role"])),
 				prop("needs", "Benötigt", reference(["artifact"])),
-				prop("status", "Status", { kind: "options", options: ["offen", "fertig"] }),
+				prop("status", "Status", { kind: "options", options: [{ id: "o-open", label: "offen" }, { id: "o-fertig", label: "fertig" }, { id: "o-pipe", label: "in | Arbeit" }]}),
 			],
 		},
 		{ id: "role", name: "Rolle", color: "#c8ebbf", contentTemplate: "", properties: [] },
@@ -61,7 +61,7 @@ const data: Pick<AppData, "types" | "entities"> = {
 			"a1",
 			"activity",
 			"Rechnung prüfen",
-			{ responsible: ["r1", "r2"], needs: ["x1", "x2"], status: "offen" },
+			{ responsible: ["r1", "r2"], needs: ["x1", "x2"], status: "o-open" },
 			"{{Status}}, mit {{Benötigt}}\n# Schritte",
 			"Gegen die Bestellung prüfen.\n# Notiz",
 		),
@@ -186,7 +186,7 @@ test("a | in a table cell is escaped; headings in code blocks stay as they are a
 	const piped: typeof data = {
 		types: data.types,
 		entities: data.entities.map((e) =>
-			e.id === "a2" ? { ...e, values: { status: "in | Arbeit" }, description: "```\n# kein Titel\n```\n##### Tief" } : e,
+			e.id === "a2" ? { ...e, values: { status: "o-pipe" }, description: "```\n# kein Titel\n```\n##### Tief" } : e,
 		),
 	};
 	const contents = markdownFiles(analysis({ columns: [step("status")] }), piped)["Prüfung 2026-10-21.md"]!;

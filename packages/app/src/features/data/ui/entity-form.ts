@@ -220,7 +220,7 @@ function propertyField(
 					"select",
 					{},
 					el("option", { value: "" }, "—"),
-					...prop.options.map((o) => el("option", { value: o, selected: o === currentText }, o)),
+					...prop.options.map((o) => el("option", { value: o.id, selected: o.id === currentText }, o.label)),
 				)
 			: el("input", { value: currentText });
 	return { prop, element: el("label", { className: "field" }, label, input), read: () => input.value };
