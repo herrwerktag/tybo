@@ -170,10 +170,10 @@ test("Traits: a trait made in its form, bound to two types' statuses, gives an a
 	assert.equal(form().querySelector("input")!.value, traitText.defaultTraitName(1));
 	type(form().querySelector("input")!, "Fortschritt");
 	byText<HTMLButtonElement>(form(), "button", `+ ${traitText.addRole}`).click();
-	type(form().querySelector<HTMLInputElement>(".path-list input")!, "Stand");
+	type(form().querySelector<HTMLInputElement>(".trait-roles input")!, "Stand");
 	choose(labeled<HTMLSelectElement>(form(), traitText.roleKind), dataText.kinds.options);
 	type(labeled<HTMLInputElement>(form(), traitText.roleValues), "offen");
-	byText<HTMLButtonElement>(form(), "button", `+ ${traitText.addValue}`).click();
+	byText<HTMLButtonElement>(form(), "button", traitText.addValue).click();
 	const values = allLabeled<HTMLInputElement>(form(), traitText.roleValues);
 	type(values[1]!, "OFFEN");
 	assert.equal(values[1]!.validationMessage, traitText.duplicateValue("Stand"), "a value twice is refused at its field");
@@ -182,7 +182,7 @@ test("Traits: a trait made in its form, bound to two types' statuses, gives an a
 	for (const [typeName, own] of [["Pitch", ["Entwurf", "abgeschlossen"]], ["Frage", ["offen", "beantwortet"]]] as const) {
 		choose(labeled<HTMLSelectElement>(form(), traitText.addType), typeName);
 		// Every change draws the form anew.
-		const section = () => byText<HTMLElement>(form(), "legend", typeName).parentElement!;
+		const section = () => byText<HTMLElement>(form(), ".trait-bearer h4", typeName).closest<HTMLElement>(".trait-bearer")!;
 		choose(labeled<HTMLSelectElement>(section(), "Stand"), "Status");
 		choose(labeled<HTMLSelectElement>(section(), traitText.standsFor(own[0])), "offen");
 		choose(labeled<HTMLSelectElement>(section(), traitText.standsFor(own[1])), "fertig");
