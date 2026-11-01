@@ -132,9 +132,10 @@ test("the forms for a new type and a new entity are hidden until asked for, and 
 	byText(root.querySelector("#entity-form")!, "button", sharedText.cancel).click();
 	assert.equal(root.querySelector("#entity-form"), null);
 
-	// Edit opens the form too.
-	byText(byText(root, "td", "Dune").closest("tr")!, "button", dataText.edit).click();
-	assert.equal(root.querySelector<HTMLInputElement>("#entity-form input")?.value, "Dune");
+	// An entity there is isn't edited in a form: its name shows its details beside the table.
+	byText(root, ".name-link", "Dune").click();
+	assert.equal(root.querySelector("#entity-form"), null);
+	assert.equal(root.querySelector(".entities-view .details-title")?.textContent, "Dune");
 });
 
 test("a reference allowing several values shows them as tags: × removes one, the select adds another", async () => {
@@ -151,26 +152,25 @@ test("a reference allowing several values shows them as tags: × removes one, th
 		],
 		boards: [],
 	});
-	byText(byText(root, "td", "Core").closest("tr")!, "button", dataText.edit).click();
-	const form = root.querySelector<HTMLFormElement>("#entity-form")!;
-	const tags = () => [...form.querySelectorAll(".reference-type")].map((t) => t.firstChild?.textContent);
+	// In the table, its pencil opens the field; each tag added or taken out is saved, and the field stays open.
+	const cell = () => byText(root, "td", "Core").closest("tr")!.querySelectorAll("td")[2]!;
+	cell().querySelector<HTMLButtonElement>(".field-edit")!.click();
+	const tags = () => [...cell().querySelectorAll(".reference-type")].map((t) => t.firstChild?.textContent);
 	assert.deepEqual(tags(), ["Ada"]);
 
-	const nameInput = form.querySelector<HTMLInputElement>("input")!;
-	nameInput.value = "Core team";
-	const add = form.querySelector<HTMLSelectElement>(".reference-values select")!;
+	const add = cell().querySelector<HTMLSelectElement>(".reference-values select")!;
 	add.value = "01J00000000000000000000002";
 	add.dispatchEvent(new Event("change"));
 	assert.deepEqual(tags(), ["Ada", "Bob"]);
-	assert.equal(form.querySelector(".reference-values select"), null); // nobody left to add
-	byText(form, "button", "×").click();
+	assert.equal(cell().querySelector(".reference-values select"), null); // nobody left to add
+	byText(cell(), "button", "×").click();
 	assert.deepEqual(tags(), ["Bob"]);
-	assert.equal(nameInput.value, "Core team"); // only the field was drawn again
+	await settle();
+	assert.deepEqual((await readSaved()).entities[0]?.values.members, ["01J00000000000000000000002"]);
 
-	byText(form, "button", sharedText.save).click();
-	const [core] = (await readSaved()).entities;
-	assert.equal(core?.name, "Core team");
-	assert.deepEqual(core?.values.members, ["01J00000000000000000000002"]);
+	cell().querySelector("form")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+	assert.equal(cell().querySelector("form"), null);
+	assert.deepEqual([...cell().querySelectorAll(".ref-tag")].map((t) => t.textContent), ["Bob"]);
 });
 
 test("an invalid type shows its problems and isn't saved", async () => {
@@ -291,7 +291,7 @@ test("a page that can't be drawn shows the error screen, which can still export"
 		return createElement(tag);
 	}) as typeof document.createElement;
 
-	byText(byText(root, "td", "Dune").closest("tr")!, "button", dataText.edit).click(); // draws the page again
+	byText(root, ".name-link", "Dune").click(); // draws the page again
 
 	const screen = root.querySelector(".error-screen");
 	assert.ok(screen);
@@ -411,22 +411,32 @@ test("what another tab saves shows up on its own — no hint, no reload, the dat
 	assert.deepEqual((await readSaved()).entities.map((e) => e.name), ["Dune", "Emma"]);
 });
 
-test("while a form is open, what another tab saved waits; once it's closed, it shows up", async () => {
+test("while a field is being edited, what another tab saved waits; details shown don't hold it up", async () => {
 	const root = await startApp(library);
-	byText(byText(root, "td", "Dune").closest("tr")!, "button", dataText.edit).click();
+	// The details beside the table hold nothing up.
+	byText(root, ".name-link", "Dune").click();
 	const other = await otherTab();
 	other.addEntity("book", "Emma", "", {});
 	await settle();
 	lookNow();
 	await settle();
-	assert.equal([...root.querySelectorAll("td")].some((td) => td.textContent === "Emma"), false);
-	assert.ok(root.querySelector("#entity-form"));
+	assert.ok(byText(root, ".name-link", "Emma"));
+	assert.equal(root.querySelector(".entities-view .details-title")?.textContent, "Dune", "the details stay");
 
-	byText(root.querySelector("#entity-form")!, "button", sharedText.cancel).click();
+	// A field being edited does.
+	byText<HTMLElement>(root, "tbody .editable", "Herbert").click();
+	other.addEntity("book", "Clara", "", {});
+	await settle();
+	lookNow();
+	await settle();
+	assert.equal([...root.querySelectorAll(".name-link")].some((b) => b.textContent === "Clara"), false);
+	assert.ok(root.querySelector("tbody form"));
+
+	root.querySelector("tbody form input")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 	(document.activeElement as HTMLElement | null)?.blur();
 	lookNow();
 	await settle();
-	assert.ok(byText(root, "td", "Emma"));
+	assert.ok(byText(root, ".name-link", "Clara"));
 });
 
 test("on the board, another tab's changes are drawn in place: the selected card and its details stay", async () => {
@@ -502,7 +512,7 @@ test("drawing the page again and again starts no further timers: one watch for t
 	// faster with every re-draw): a route switch, a form opening, a language change from the menu.
 	window.dispatchEvent(new Event("hashchange"));
 	assert.equal(started.mock.callCount(), 1);
-	byText(byText(root, "td", "Dune").closest("tr")!, "button", dataText.edit).click();
+	byText(root, ".name-link", "Dune").click();
 	assert.equal(started.mock.callCount(), 1);
 	setLanguage("de"); // a language change draws the page again, every label of it
 	window.dispatchEvent(new Event("hashchange"));
@@ -528,18 +538,26 @@ const choose = (select: HTMLSelectElement, value: string) => {
 	select.dispatchEvent(new Event("change"));
 };
 
-test("the Entities page shows the types as chips with their counts; clicking a row edits its entity, its buttons don't", async () => {
+test("the Entities page shows the types as chips with their counts; a value clicked is changed in its cell, saved on Enter", async () => {
 	const root = await startApp(library, "#entities");
 	assert.deepEqual([...root.querySelectorAll(".type-chip")].map((c) => c.textContent), ["Book1"]);
 	assert.equal(root.querySelector<HTMLElement>(".type-chip")?.ariaPressed, "true");
+	assert.equal([...root.querySelectorAll("th")].some((th) => th.textContent === dataText.id), false, "no ID column: the details have it");
 
-	(byText(root, "tbody td", "Herbert") as HTMLElement).click();
-	assert.equal(root.querySelector<HTMLInputElement>("#entity-form input")?.value, "Dune");
-	byText(root, "#entity-form button", sharedText.cancel).click();
+	byText<HTMLElement>(root, "tbody .editable", "Herbert").click();
+	assert.equal(root.querySelector("#entity-form"), null, "no form for the whole entity");
+	const input = root.querySelector<HTMLInputElement>("tbody form input")!;
+	assert.equal(input.value, "Herbert");
+	input.value = "Frank Herbert";
+	input.form!.requestSubmit();
+	assert.equal(root.querySelector("tbody form"), null);
+	assert.ok(byText(root, "tbody .editable", "Frank Herbert"));
+	await settle();
+	assert.equal((await readSaved()).entities[0]!.values.author, "Frank Herbert");
 
 	stub({ confirm: () => false });
 	byText(root, "tbody button", sharedText.delete).click();
-	assert.equal(root.querySelector("#entity-form"), null, "Delete isn't a click on the row");
+	assert.equal(root.querySelector<HTMLElement>(".entities-view .details-panel")!.hidden, true, "Delete isn't a click on the row");
 });
 
 test("the Entities page filters by tag, remembers it, tags new entities with it, and reorders among all of the type", async () => {

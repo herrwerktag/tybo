@@ -163,7 +163,7 @@ test("History: the filter shows only the agent's writes; a write naming nobody i
 	assert.deepEqual(writeLines(view), [[text.sourceMcp, text.unitSentence(dataText.historyEntities(1), "By the agent", text.created)]]);
 });
 
-test("History: an entity's form links to its history, which shows only the writes of it", async () => {
+test("History: an entity's details link to its history, which shows only the writes of it", async () => {
 	const root = await startApp(ideas(), "#entities");
 	const web = await writer("web");
 	web.updateEntity(DUNE, "Dune", "", { status: "o-pitched" });
@@ -171,8 +171,8 @@ test("History: an entity's form links to its history, which shows only the write
 	await web.saved();
 	await settle();
 
-	byText(byText(root, "td", "Dune").closest("tr")!, "button", dataText.edit).click();
-	const link = byText<HTMLAnchorElement>(root.querySelector("#entity-form")!, "a", text.historyLink);
+	byText(root, ".name-link", "Dune").click();
+	const link = byText<HTMLAnchorElement>(root.querySelector(".entities-view .details-panel")!, "a", text.historyLink);
 	assert.equal(link.getAttribute("href"), `#history/entity/${DUNE}`);
 
 	const view = await openHistory(link.getAttribute("href")!);

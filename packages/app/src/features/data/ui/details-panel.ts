@@ -2,27 +2,26 @@ import { el, resizeHandle, type EntityLink } from "../../../shared/ui/index.js";
 import type { Entity, DataStore } from "../core.js";
 import { text } from "../texts.js";
 import { DETAILS_WIDTH_KEY, entityDetails, type EntityPlaces } from "./entity-card.js";
-import { showEntityEditor } from "./entity-form.js";
+import { fieldEditing } from "./fields.js";
 
 export interface DetailsPanel {
 	/** The panel beside the view, hidden while it shows nothing. */
 	element: HTMLElement;
 	/** The drag handle for the panel's width, to go just before it (hidden along with it, see CSS). */
 	handle: HTMLElement;
-	/** Shows the entity's details, keeping its form if it's being edited (e.g. after the view was drawn anew);
+	/** Shows the entity's details, keeping a field open that is being edited (e.g. after the view was drawn anew);
 	 * none, or one that's gone: hides the panel. Returns whether it shows an entity. */
 	show(entityId: string | null): boolean;
-	/** Shows the entity's details afresh: an open form is closed, what was typed into it dropped. */
+	/** The same as `show` (a field of another entity is never open). */
 	open(entityId: string | null): boolean;
 	/** The entity shown, or null. */
 	shown(): string | null;
 }
 
 /**
- * The details of one entity beside a view: easy to read, and — with Edit, unless `readOnly` — its form in their
- * place. `actions` adds buttons after Edit; the features' `places` and `links` lead from the entity to their pages.
- * Once the form is done, the details show again; when it saved and there is `onSaved`, that draws the view anew
- * instead (and shows them from there).
+ * The details of one entity beside a view, easy to read; unless `readOnly`, each of its fields is changed where it
+ * is shown (see `fieldEditing`) — after a save, `onSaved` draws the view anew (or, without it, the panel). `actions`
+ * adds buttons below its name; the features' `places` and `links` lead from the entity to their pages.
  */
 export function detailsPanel(
 	store: DataStore,
@@ -42,37 +41,17 @@ export function detailsPanel(
 	const handle = resizeHandle(element, { key: DETAILS_WIDTH_KEY, side: "right", min: 16, max: 40 });
 	handle.classList.add("details-resize");
 	let shownId: string | null = null;
-	/** Whether the panel shows the entity's form instead of its details. */
-	let editing = false;
+	const editing = readOnly ? undefined : fieldEditing(store, () => show(shownId), () => (onSaved ? onSaved() : show(shownId)));
 
 	function show(entityId: string | null): boolean {
 		const entity = entityId === null ? undefined : store.data.entities.find((e) => e.id === entityId);
-		if (entity?.id !== shownId) editing = false;
 		shownId = entity?.id ?? null;
 		element.hidden = !entity;
 		if (!entity) {
 			element.replaceChildren();
 			return false;
 		}
-		const type = store.data.types.find((t) => t.id === entity.typeId);
-		if (editing && type) {
-			// Drawing the view anew keeps the open form and what was typed.
-			showEntityEditor(element, store, entity, type, {
-				onClose,
-				onDone: (saved) => {
-					editing = false;
-					if (saved && onSaved) onSaved();
-					else show(shownId);
-				},
-			});
-			return true;
-		}
-		const edit = () => {
-			editing = true;
-			show(shownId);
-		};
-		const buttons = readOnly ? [] : [el("button", { type: "button", onclick: edit }, text.edit), ...actions(entity)];
-		element.replaceChildren(...entityDetails(store, entity, { actions: buttons, onClose, onSelectEntity, places, links }));
+		element.replaceChildren(...entityDetails(store, entity, { actions: readOnly ? [] : actions(entity), onClose, onSelectEntity, places, links, ...(editing && { editing }) }));
 		return true;
 	}
 
@@ -80,10 +59,7 @@ export function detailsPanel(
 		element,
 		handle,
 		show,
-		open(entityId) {
-			editing = false;
-			return show(entityId);
-		},
+		open: show,
 		shown: () => shownId,
 	};
 }

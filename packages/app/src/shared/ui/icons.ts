@@ -8,6 +8,8 @@ const ICONS = {
 	chevronDown: "m4.5 6.5 3.5 3.5 3.5-3.5",
 	/** Folded away upwards. */
 	chevronUp: "m4.5 9.5 3.5-3.5 3.5 3.5",
+	/** Change something: a pencil. */
+	edit: "M10.5 3 13 5.5 6 12.5H3.5V10ZM9 4.5l2.5 2.5",
 	/** Search: a magnifying glass. */
 	search: "M3 7a4 4 0 1 0 8 0 4 4 0 1 0-8 0M10 10l3.5 3.5",
 	/** Settings: two sliders. */

@@ -14,6 +14,7 @@ import {
 } from "../core.js";
 import { GRID_SIZE } from "../../../shared/core/index.js";
 import { el, type EntityLink } from "../../../shared/ui/index.js";
+import type { FieldEditing } from "./fields.js";
 import { text } from "../texts.js";
 import { renderMarkdown } from "../../../shared/ui/index.js";
 
@@ -232,7 +233,8 @@ export interface EntityPlaces {
 /**
  * Easy-to-read details of an entity, for a details panel: its header (colored bar with ×, name, `actions`), then
  * description, all properties, content, the features' `places` and the ID with the features' `links`. A referenced
- * entity is a tag in the color of its type; clicking it calls `onSelectEntity`.
+ * entity is a tag in the color of its type; clicking it calls `onSelectEntity`. With `editing`, each of its own fields
+ * — name, description, properties, tags, content — is changed where it is shown (see `fieldEditing`).
  */
 export function entityDetails(
 	store: DataStore,
@@ -243,12 +245,14 @@ export function entityDetails(
 		onSelectEntity,
 		places = [],
 		links = [],
+		editing,
 	}: {
 		actions: HTMLElement[];
 		onClose: () => void;
 		onSelectEntity: (entityId: string) => void;
 		places?: readonly EntityPlaces[];
 		links?: readonly EntityLink[];
+		editing?: FieldEditing;
 	},
 ): HTMLElement[] {
 	const types = new Map(store.data.types.map((t) => [t.id, t]));
@@ -260,7 +264,7 @@ export function entityDetails(
 		"header",
 		{ className: "details-header" },
 		detailsBar(type, onClose),
-		el("h2", { className: "details-title" }, entity.name),
+		el("h2", { className: "details-title" }, ...(editing ? [editing.name(entity, [document.createTextNode(entity.name)])] : [entity.name])),
 		...(actions.length > 0 ? [el("div", { className: "details-actions" }, ...actions)] : []),
 	);
 
@@ -291,19 +295,57 @@ export function entityDetails(
 		return row.values.flatMap((n, i) => [...(i > 0 ? [document.createTextNode(", ")] : []), refTag(n, row.entityIds[i]!)]);
 	};
 
+	const ownCount = type?.properties.length ?? 0;
+	const propRows = rows.flatMap((row, i) => {
+		const dd = value(row);
+		const prop = i < ownCount ? type!.properties[i] : undefined;
+		if (editing && prop) dd.replaceChildren(editing.property(entity, prop, [...dd.childNodes]));
+		return [el("dt", {}, row.label), dd];
+	});
+	const tagChips = entity.tags.length > 0 ? [el("span", { className: "prop-chips" }, ...entity.tags.map((t) => el("span", { className: "chip" }, t)))] : [el("span", { className: "muted" }, "—")];
+	const description = entity.description.trim() ? renderMarkdown(entity.description, placeholder) : el("p", { className: "muted" }, text.noDescription);
+	const content = entity.content.trim() ? renderMarkdown(entity.content) : el("p", { className: "muted" }, "—");
+	const copyId = el(
+		"button",
+		{
+			type: "button",
+			className: "copy-id",
+			title: text.copyId,
+			ariaLabel: text.copyId,
+			onclick: () => {
+				void navigator.clipboard?.writeText(entity.id).then(() => {
+					copyId.textContent = text.idCopied;
+				});
+			},
+		},
+		text.copyId,
+	);
+
 	return [
 		header,
 		el(
 			"div",
 			{ className: "details-body" },
-			section(
-				text.description,
-				entity.description.trim() ? renderMarkdown(entity.description, placeholder) : el("p", { className: "muted" }, text.noDescription),
-			),
-			...(rows.length > 0
-				? [section(text.properties, el("dl", { className: "details-props" }, ...rows.flatMap((row) => [el("dt", {}, row.label), value(row)])))]
+			section(text.description, editing ? editing.markdown(entity, "description", text.description, [description]) : description),
+			...(rows.length > 0 || editing
+				? [
+						section(
+							text.properties,
+							el(
+								"dl",
+								{ className: "details-props" },
+								...propRows,
+								// The tags too, where they can be changed.
+								...(editing ? [el("dt", {}, text.tags), el("dd", {}, editing.tags(entity, tagChips))] : []),
+							),
+						),
+					]
 				: []),
-			...(entity.content.trim() ? [section(text.content, renderMarkdown(entity.content))] : []),
+			...(editing
+				? [section(text.content, editing.markdown(entity, "content", text.content, [content]))]
+				: entity.content.trim()
+					? [section(text.content, content)]
+					: []),
 			...places.flatMap((where) => {
 				const found = where.places(store, entity.id);
 				if (found.length === 0) return [];
@@ -314,6 +356,8 @@ export function entityDetails(
 				{ className: "details-id" },
 				`${text.id}: `,
 				el("span", { className: "mono" }, entity.id),
+				" ",
+				copyId,
 				...links.flatMap((link) => [" · ", el("a", { href: link.href(entity.id) }, link.label())]),
 			),
 		),

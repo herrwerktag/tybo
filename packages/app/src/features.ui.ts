@@ -34,7 +34,7 @@ export function render(root: HTMLElement, workspaces: Workspaces, { viewScript }
 		format: APP_FORMAT,
 		/** The pages, their tabs in this order. */
 		pages: [
-			dataPage({ entityLinks: [HISTORY_LINK], sections: [TRAITS_SECTION], typeNotes: [TRAIT_CHIPS] }),
+			dataPage({ entityLinks: [HISTORY_LINK], entityPlaces: [BOARD_PLACES], sections: [TRAITS_SECTION], typeNotes: [TRAIT_CHIPS] }),
 			boardsPage({ layers: CANVAS_LAYERS, exports: boardExports(viewScript), entityLinks: [HISTORY_LINK] }),
 			analysesPage({ entityLinks: [HISTORY_LINK], entityPlaces: [BOARD_PLACES] }),
 			historyPage({ describers: HISTORY_DESCRIBERS }),

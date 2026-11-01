@@ -2,7 +2,7 @@ import { freshDom } from "../../../shared/ui/test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { canvas, canvasView } from "./canvas.js";
-import { CLICK_TOLERANCE, sharedText } from "../../../shared/ui/index.js";
+import { CLICK_TOLERANCE } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
 import { text as dataText } from "../../data/texts.js";
 import { createStore } from "../../../features.core.js";
@@ -63,40 +63,42 @@ test("a click with a little jitter selects the card and shows its details withou
 	assert.equal(details(view).hidden, true);
 });
 
-test("Edit in the details shows the entity's form there: saving updates the entity and its card, Cancel changes nothing", async () => {
+test("a field in the details is changed where it's shown: Enter saves it as one step, the card with it; Escape gives it back", async () => {
 	const { store, view, card, dune } = await setup();
-	const editButton = () => [...details(view).querySelectorAll("button")].find((b) => b.textContent === dataText.edit)!;
-	const form = () => details(view).querySelector<HTMLFormElement>("#entity-form")!;
-	const nameInput = () => form().querySelector<HTMLInputElement>("input")!;
+	const name = () => details(view).querySelector<HTMLElement>(".details-title")!;
+	const input = () => name().querySelector<HTMLInputElement>("form input")!;
 	dragBy(cardNode(view, card.id).querySelector("header")!, 0, 0);
+	assert.equal(details(view).querySelector("form"), null, "values are shown, not a form");
 
-	// The form is below the bar of the entity's type.
-	editButton().click();
-	assert.equal(details(view).querySelector(".card-type")?.textContent, "Book");
-
-	// Cancel shows the details again, unchanged.
-	nameInput().value = "Arrakis";
-	[...form().querySelectorAll("button")].find((b) => b.textContent === sharedText.cancel)!.click();
-	assert.equal(details(view).querySelector(".details-title")?.textContent, "Dune");
+	// Escape gives the value back.
+	name().querySelector<HTMLElement>(".editable")!.click();
+	input().value = "Arrakis";
+	input().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+	assert.equal(name().textContent, "Dune");
+	assert.equal(details(view).hidden, false, "Escape closes the field, not the details");
 	assert.equal(store.data.entities.find((e) => e.id === dune.id)?.name, "Dune");
 
-	// Redrawing the board (here: moving the card) keeps what was typed.
-	editButton().click();
-	nameInput().value = "Dune Messiah";
-	dragBy(cardNode(view, card.id).querySelector("header")!, 50, 30);
-	assert.equal(nameInput().value, "Dune Messiah");
+	// An empty name is refused, the field stays open.
+	name().querySelector<HTMLElement>(".editable")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+	input().value = " ";
+	input().form!.requestSubmit();
+	assert.equal(input().validationMessage, dataText.nameRequired);
 
-	form().requestSubmit();
+	input().value = "Dune Messiah";
+	input().dispatchEvent(new Event("input")); // typing takes the refusal back
+	input().form!.requestSubmit();
 	assert.equal(store.data.entities.find((e) => e.id === dune.id)?.name, "Dune Messiah");
-	assert.equal(details(view).querySelector(".details-title")?.textContent, "Dune Messiah");
+	assert.equal(name().textContent, "Dune Messiah");
 	assert.equal(cardNode(view, card.id).querySelector(".card-title")?.textContent, "Dune Messiah");
+	assert.equal(store.undo(), true);
+	assert.equal(store.data.entities.find((e) => e.id === dune.id)?.name, "Dune", "one step to undo");
 });
 
-test("the viewer's details have no Edit", async () => {
+test("the viewer's details can't be changed", async () => {
 	const { view, card } = await setup({ readOnly: true });
 	dragBy(cardNode(view, card.id).querySelector("header")!, 0, 0);
 	assert.equal(details(view).hidden, false);
-	assert.ok(![...details(view).querySelectorAll("button")].some((b) => b.textContent === dataText.edit));
+	assert.equal(details(view).querySelector(".editable, .field-edit"), null);
 });
 
 /**
@@ -177,9 +179,10 @@ test("Delete takes the selected card off the board, like ×; the entity stays", 
 	assert.ok(savedCard(store, card.id), "nothing selected, nothing removed");
 
 	cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-	detailsButton(view, dataText.edit)!.click();
+	details(view).querySelector<HTMLElement>(".details-title .editable")!.click();
 	press("Backspace", details(view).querySelector("input")!);
-	assert.ok(savedCard(store, card.id), "typing in the form removes nothing");
+	assert.ok(savedCard(store, card.id), "typing in a field removes nothing");
+	press("Escape", details(view).querySelector("input")!);
 
 	press("Backspace");
 	assert.equal(savedCard(store, card.id), undefined);
