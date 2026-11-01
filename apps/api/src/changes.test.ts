@@ -10,7 +10,7 @@ import { call, startApp } from "./test-server.js";
 const url = process.env.TEST_DATABASE_URL;
 
 /** A state of the app's data: one type with a text property, two entities, one board with two cards and
- * two drawings, and one analysis — enough of every unit to change, add or delete one without touching the others. */
+ * two drawings, one trait and one analysis — enough of every unit to change, add or delete one without touching the others. */
 function state(): AppData {
 	return {
 		types: [
@@ -42,8 +42,9 @@ function state(): AppData {
 				],
 			},
 		],
+		traits: [{ id: "trait-1", name: "Kurz", roles: [{ id: "role-1", name: "Notiz", kind: "text", options: [] }], bindings: { "type-person": { "role-1": { field: "content" } } } }],
 		analyses: [
-			{ id: "ana-1", name: "Rollen", typeId: null, groups: [[{ propertyId: "gone", direction: "inverse" }]], columns: [] },
+			{ id: "ana-1", name: "Rollen", typeId: null, traitId: null, groups: [[{ propertyId: "gone", direction: "inverse" }]], columns: [] },
 		],
 	};
 }

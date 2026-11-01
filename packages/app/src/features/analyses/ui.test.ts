@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DATA_VERSION, ulid } from "../../shared/core/index.js";
 import { text as dataText } from "../data/texts.js";
+import { text as traitText } from "../traits/texts.js";
 import { text } from "./texts.js";
 
 test("Analyses: a name another analysis has is refused at the name field; a new one gets the first number free", async () => {
@@ -109,4 +110,85 @@ test("Analyses: an analysis set up step by step lists the rows grouped, is saved
 	assert.equal(location.hash, "#analysis", "it stays in the analysis");
 	assert.equal(details.querySelector(".details-title")?.textContent, "Build it");
 	assert.ok(byText(root, ".analysis-result .entity-link", "Build it"), "the result names it anew");
+});
+
+const status = (id: string, labels: string[]) => ({
+	id,
+	name: "Status",
+	kind: "options",
+	options: labels.map((label) => ({ id: `${id}-${label}`, label })),
+	reference: null,
+	cardDisplay: "list",
+});
+
+test("Traits: a trait made in its form, bound to two types' statuses, gives an analysis across both types", async () => {
+	// Entity ids are ULIDs (others are replaced on loading).
+	const entity = (name: string, typeId: string, value: string) => ({ id: ulid(), typeId, name, content: "", description: "", tags: [], values: { [`${typeId}-status`]: `${typeId}-status-${value}` } });
+	const root = await startApp(
+		{
+			version: DATA_VERSION,
+			types: [
+				{ id: "pitch", name: "Pitch", color: "#fbd9b0", contentTemplate: "", properties: [status("pitch-status", ["Entwurf", "abgeschlossen"])] },
+				{ id: "question", name: "Frage", color: "#d6ccf7", contentTemplate: "", properties: [status("question-status", ["offen", "beantwortet"])] },
+			],
+			entities: [entity("Traits", "pitch", "Entwurf"), entity("Verlauf", "pitch", "abgeschlossen"), entity("Wie heißen sie?", "question", "offen")],
+			boards: [],
+		},
+		"#analysis",
+	);
+	const choose = (select: HTMLSelectElement, label: string) => {
+		select.value = [...select.options].find((o) => o.textContent === label)!.value;
+		select.dispatchEvent(new Event("change"));
+	};
+	const form = () => root.querySelector<HTMLElement>(".trait-form")!;
+	/** The controls of that accessible name in `within`, and the first of them. */
+	const allLabeled = <T extends HTMLElement>(within: ParentNode, label: string) => [...within.querySelectorAll<T>("input, select")].filter((e) => e.ariaLabel === label);
+	const labeled = <T extends HTMLElement>(within: ParentNode, label: string) => allLabeled<T>(within, label)[0]!;
+	const type = (input: HTMLInputElement, value: string) => {
+		input.value = value;
+		input.dispatchEvent(new Event("change"));
+	};
+
+	byText<HTMLButtonElement>(root, "button", traitText.newTrait).click();
+	type(form().querySelector("input")!, "Fortschritt");
+	byText<HTMLButtonElement>(form(), "button", `+ ${traitText.addRole}`).click();
+	type(form().querySelector<HTMLInputElement>(".path-list input")!, "Stand");
+	choose(labeled<HTMLSelectElement>(form(), traitText.roleKind), dataText.kinds.options);
+	type(labeled<HTMLInputElement>(form(), traitText.roleValues), "offen");
+	byText<HTMLButtonElement>(form(), "button", `+ ${traitText.addValue}`).click();
+	const values = allLabeled<HTMLInputElement>(form(), traitText.roleValues);
+	type(values[1]!, "OFFEN");
+	assert.equal(values[1]!.validationMessage, traitText.duplicateValue("Stand"), "a value twice is refused at its field");
+	type(values[1]!, "fertig");
+
+	for (const [typeName, own] of [["Pitch", ["Entwurf", "abgeschlossen"]], ["Frage", ["offen", "beantwortet"]]] as const) {
+		choose(labeled<HTMLSelectElement>(form(), traitText.addType), typeName);
+		// Every change draws the form anew.
+		const section = () => byText<HTMLElement>(form(), "legend", typeName).parentElement!;
+		choose(labeled<HTMLSelectElement>(section(), "Stand"), "Status");
+		choose(labeled<HTMLSelectElement>(section(), traitText.standsFor(own[0])), "offen");
+		choose(labeled<HTMLSelectElement>(section(), traitText.standsFor(own[1])), "fertig");
+	}
+
+	byText<HTMLButtonElement>(root, "button", text.newAnalysis).click();
+	choose(root.querySelector<HTMLSelectElement>(".analysis-meta select")!, "Fortschritt");
+	byText<HTMLButtonElement>(root, "button", `+ ${text.addGroupLevel}`).click();
+	choose(root.querySelector<HTMLSelectElement>(".path-list .path-editor select")!, "Stand");
+	const headings = [...root.querySelectorAll(".analysis-result h3")].map((h) => h.textContent);
+	assert.deepEqual(headings, [`offen${text.analysisCount(2)}`, `fertig${text.analysisCount(1)}`]);
+	const rows = [...root.querySelectorAll(".analysis-result tbody tr")].map((tr) => tr.textContent);
+	assert.deepEqual(rows, ["Traits", "Wie heißen sie?", "Verlauf"]);
+
+	await settle();
+	const saved = await readSaved();
+	assert.deepEqual(saved.types.map((t) => t.properties.length), [1, 1], "no type changed");
+	const [trait] = saved.traits;
+	assert.equal(trait!.name, "Fortschritt");
+	assert.deepEqual(trait!.roles.map((r) => [r.name, r.kind, r.options.map((o) => o.label)]), [["Stand", "options", ["offen", "fertig"]]]);
+	const [open, done] = trait!.roles[0]!.options.map((o) => o.id);
+	assert.deepEqual(trait!.bindings, {
+		pitch: { [trait!.roles[0]!.id]: { propertyId: "pitch-status", direction: "forward", values: { "pitch-status-Entwurf": open, "pitch-status-abgeschlossen": done } } },
+		question: { [trait!.roles[0]!.id]: { propertyId: "question-status", direction: "forward", values: { "question-status-offen": open, "question-status-beantwortet": done } } },
+	});
+	assert.deepEqual(saved.analyses.map(({ typeId, traitId }) => [typeId, traitId]), [[null, trait!.id]]);
 });

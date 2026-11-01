@@ -265,6 +265,26 @@ export const SQLITE_MIGRATIONS: readonly Migration[] = [
 			db.exec("update workspaces set data_version = 10");
 		},
 	},
+	{
+		version: 13,
+		up(db) {
+			// As Postgres's step 16.
+			db.exec(`
+				create table traits (
+					workspace_id text not null references workspaces(id) on delete cascade,
+					id text not null,
+					position integer not null,
+					name text,
+					roles text,
+					bindings text,
+					updated_at text not null default current_timestamp,
+					primary key (workspace_id, id)
+				);
+				alter table analyses add column trait_id text;
+				update workspaces set data_version = 11;
+			`);
+		},
+	},
 ];
 
 /** Runs `work` in one transaction: all of it written, or — when it throws — none of it. */

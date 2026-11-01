@@ -4,7 +4,9 @@ Eine Web-Anwendung zum Modellieren eigener Datentypen: Entitaetstypen mit Eigens
 Verweis) anlegen, Entitaeten dazu erfassen und sie als Karten auf Boards anordnen. Verweise koennen als
 Linien zwischen Karten erscheinen, dazu kommen Textboxen, Gruppen und Bilder.
 Auswertungen listen die Entitaeten eines Typs gruppiert nach dem, wohin ihre Verweise fuehren (auch ueber mehrere
-Verweise, vor- und rueckwaerts), mit frei waehlbaren Spalten; das Ergebnis laesst sich samt Beschreibungen als Markdown exportieren (mit Gruppen als ZIP mit je einer Datei pro aeusserster Gruppe). Die Daten liegen in Arbeitsbereichen in Postgres (oder lokal in einer SQLite-Datei).
+Verweise, vor- und rueckwaerts), mit frei waehlbaren Spalten; das Ergebnis laesst sich samt Beschreibungen als Markdown exportieren (mit Gruppen als ZIP mit je einer Datei pro aeusserster Gruppe).
+Traits legen eine gemeinsame Bedeutung (etwa einen Fortschritt) ueber mehrere Typen, indem jeder Typ eigene Felder
+den Rollen des Traits zuordnet; eine Auswertung auf einem Trait zeigt die Entitaeten all dieser Typen. Die Daten liegen in Arbeitsbereichen in Postgres (oder lokal in einer SQLite-Datei).
 
 ## Aufbau
 
@@ -19,7 +21,7 @@ pnpm-Monorepo mit TypeScript:
 
 ### Features
 
-Ein Feature liegt mit den Schichten, die es hat, in einem Ordner unter `packages/app/src/features/` (bisher: `data` für Typen und Entitäten, `analyses`, `boards`, `drawings`, `exports`, `history` für den Verlauf):
+Ein Feature liegt mit den Schichten, die es hat, in einem Ordner unter `packages/app/src/features/` (bisher: `data` für Typen und Entitäten, `traits`, `analyses`, `boards`, `drawings`, `exports`, `history` für den Verlauf):
 `core.ts` (Modell, Store-Funktionen, Einheit und Datenteil), `ui.ts` (Seite), `api.ts` (Speicherung in Postgres
 und SQLite), `mcp.ts` (Werkzeuge), `texts.ts` (Texte en/de), eigenes CSS und die Tests daneben. Die Laufzeit folgt
 dem Namen: `core` ohne DOM, `ui` im Browser, `api` und `mcp` in Node (je eine tsconfig prueft das).
@@ -134,10 +136,10 @@ Format der API ab (etwa ein Tab mit einer aelteren App), antwortet sie mit 409 u
 
 `apps/mcp` ist ein MCP-Server, ueber den ein LLM-Client (Claude Code, Claude Desktop, …) mit den Daten arbeitet:
 Arbeitsbereiche und ihr Schema lesen, Entitaeten suchen (auch die ohne Pflicht-Referenz) und ansehen, Typen und
-Entitaeten anlegen und aendern (auch viele Entitaeten auf einmal, als eine Aenderung), Auswertungen anlegen, aendern
-und ausfuehren, Entitaeten als Karten auf ein Board legen (ohne Positionen geschichtet in Spalten entlang der Verweise,
+Entitaeten anlegen und aendern (auch viele Entitaeten auf einmal, als eine Aenderung), Traits anlegen und aendern,
+Auswertungen anlegen, aendern und ausfuehren, Entitaeten als Karten auf ein Board legen (ohne Positionen geschichtet in Spalten entlang der Verweise,
 je Typ ein eigener Bereich, so sortiert, dass sich moeglichst wenige Linien kreuzen; ein Board des Namens wird
-angelegt, wenn es keins gibt). Was Daten wegnimmt, braucht `confirm: true`: Entitaeten und Auswertungen loeschen, Eigenschaften
+angelegt, wenn es keins gibt). Was Daten wegnimmt, braucht `confirm: true`: Entitaeten, Traits und Auswertungen loeschen, Eigenschaften
 aus einem Typ entfernen. Er schreibt ueber denselben
 Store wie die Anwendung, es gelten also dieselben Regeln wie in den Formularen. Typen, Eigenschaften, Optionen
 und Entitaeten nennt das LLM beim Namen.

@@ -244,6 +244,34 @@ export function referencedIds(prop: PropertyDef, value: PropertyValue | undefine
 }
 
 /**
+ * What a property holds on an entity, read along `direction`: forward, its value on entities of `ownerTypeId` — the
+ * ids of the entities a reference points to, an option's id, a text; inverse (references only), for an entity, the
+ * entities of `ownerTypeId` pointing at it through the property, in entity order. Empty texts count as none.
+ */
+export function propertyReader(
+	entities: readonly Entity[],
+	prop: PropertyDef,
+	ownerTypeId: string,
+	direction: "forward" | "inverse",
+): (entity: Entity) => string[] {
+	if (direction === "inverse") {
+		const referencing = new Map<string, string[]>();
+		for (const e of entities) {
+			if (e.typeId !== ownerTypeId) continue;
+			for (const id of referencedIds(prop, e.values[prop.id])) referencing.set(id, [...(referencing.get(id) ?? []), e.id]);
+		}
+		return (entity) => referencing.get(entity.id) ?? [];
+	}
+	return (entity) => {
+		if (entity.typeId !== ownerTypeId) return [];
+		const value = entity.values[prop.id];
+		if (prop.kind === "reference") return referencedIds(prop, value);
+		const held = value === null || value === undefined ? [] : typeof value === "string" ? [value] : value;
+		return held.filter((v) => v.trim() !== "");
+	};
+}
+
+/**
  * The rows a card shows, in property order: `list` properties with a value, plus the targets of `line`
  * properties that `isLinked` says can't be drawn as a line (their card isn't on the board).
  */

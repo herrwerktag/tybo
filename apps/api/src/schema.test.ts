@@ -8,7 +8,7 @@ import { POSTGRES_MIGRATIONS, SchemaMismatch, migrateSchema } from "@tybo/app/ap
 const url = process.env.TEST_DATABASE_URL;
 
 /** Every table of the schema, and the library's, which only steps 4 to 10 have. */
-const ALL_TABLES = ["schema_migrations", "workspaces", "entity_types", "properties", "entities", "entity_values", "boards", "cards", "drawings", "library_drawings", "analyses", "history"];
+const ALL_TABLES = ["schema_migrations", "workspaces", "entity_types", "properties", "entities", "entity_values", "boards", "cards", "drawings", "library_drawings", "analyses", "history", "traits"];
 
 /** Takes the test database back to before any schema: none of its tables there. */
 async function wipe(sql: postgres.Sql<{}>): Promise<void> {
@@ -30,7 +30,7 @@ test("an empty database gets the whole schema, and a second run has nothing left
 	try {
 		await wipe(sql);
 		assert.deepEqual(await migrateSchema(sql), POSTGRES_MIGRATIONS.map((m) => m.version));
-		assert.deepEqual(await tables(sql), ["analyses", "boards", "cards", "drawings", "entities", "entity_types", "entity_values", "history", "properties", "schema_migrations", "workspaces"]);
+		assert.deepEqual(await tables(sql), ["analyses", "boards", "cards", "drawings", "entities", "entity_types", "entity_values", "history", "properties", "schema_migrations", "traits", "workspaces"]);
 		assert.deepEqual(await migrateSchema(sql), []);
 	} finally {
 		await sql.end({ timeout: 5 });
@@ -222,7 +222,7 @@ test("step 15 gives options their ids; entity values hold the id of their text",
 		await sql`insert into entity_values (workspace_id, entity_id, property_id, position, value) values
 			('ws', 'e1', 'status', 0, ${sql.json("Draft")}), ('ws', 'e2', 'status', 0, ${sql.json("Archived")}), ('ws', 'e3', 'status', 0, 'null')`;
 
-		assert.deepEqual(await migrateSchema(sql), [15]);
+		assert.deepEqual(await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 16)), [15]);
 		const [property] = await sql`select options from properties where id = 'status'`;
 		assert.deepEqual(property!.options, [
 			{ id: legacyOptionId("status", "Draft"), label: "Draft" },
@@ -232,6 +232,23 @@ test("step 15 gives options their ids; entity values hold the id of their text",
 			{ entity_id: "e1", value: legacyOptionId("status", "Draft") },
 		]);
 		assert.deepEqual([...(await sql`select data_version from workspaces where id = 'ws'`)], [{ data_version: 10 }]);
+	} finally {
+		await sql.end({ timeout: 5 });
+	}
+});
+
+test("step 16 adds the traits; the analyses there are stay of their type", { skip: !url }, async () => {
+	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
+	try {
+		await wipe(sql);
+		await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 16));
+		await sql`insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 10)`;
+		await sql`insert into analyses (workspace_id, id, position, name, type_id) values ('ws', 'a', 0, 'Alle', 'book')`;
+
+		assert.deepEqual(await migrateSchema(sql), [16]);
+		assert.deepEqual([...(await sql`select type_id, trait_id from analyses`)], [{ type_id: "book", trait_id: null }]);
+		assert.deepEqual([...(await sql`select count(*)::int as n from traits`)], [{ n: 0 }]);
+		assert.deepEqual([...(await sql`select data_version from workspaces where id = 'ws'`)], [{ data_version: 11 }]);
 	} finally {
 		await sql.end({ timeout: 5 });
 	}

@@ -35,6 +35,7 @@ function sample(): AppData {
 				drawings: [],
 			},
 		],
+		traits: [],
 		analyses: [],
 	};
 }

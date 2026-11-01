@@ -9,6 +9,7 @@ import {
 	deleteAnalysis,
 	pathOptions,
 	resolvePath,
+	rowTypeIds,
 	runAnalysis,
 	updateAnalysis,
 	type Analysis,
@@ -16,6 +17,7 @@ import {
 	type AnalysisResult,
 	type PathStep,
 } from "./core.js";
+import { progressModel } from "../traits/test-progress.js";
 
 const reference = (id: string, name: string, typeIds: string[], multiple = false): PropertyDef => ({
 	id,
@@ -44,8 +46,9 @@ const entity = (id: string, typeId: string, values: Entity["values"] = {}): Enti
 
 /** Activities, each with a responsible role, a process, events or states triggering it and states it leads to —
  * the shape of a process model. */
-function processModel(): Pick<AppData, "types" | "entities"> {
+function processModel(): Pick<AppData, "types" | "entities" | "traits"> {
 	return {
+		traits: [],
 		types: [
 			type("event", "Event"),
 			type("state", "State"),
@@ -94,6 +97,7 @@ const analysis = (typeId: string | null, groups: PathStep[][], columns: PathStep
 	id: "a",
 	name: "A",
 	typeId,
+	traitId: null,
 	groups,
 	columns,
 });
@@ -108,8 +112,9 @@ function outline(result: AnalysisResult): string[] {
 }
 
 test("pathOptions: a type's own properties, then the references of any type that can point at it", () => {
-	const { types } = processModel();
-	const describe = (from: string[]) => pathOptions(types, from).map((o) => `${o.step.direction} ${o.prop.name} → ${o.typeIds.join("/")}`);
+	const data = processModel();
+	const describe = (from: string[]) =>
+		pathOptions(data, { typeIds: from }).map((o) => ("prop" in o ? `${o.step.direction} ${o.prop.name} → ${o.typeIds.join("/")}` : ""));
 	assert.deepEqual(describe(["activity"]), [
 		"forward getriggert durch → event/state",
 		"forward Verantwortlicher → role",
@@ -122,11 +127,12 @@ test("pathOptions: a type's own properties, then the references of any type that
 });
 
 test("resolvePath: where a path stops fitting — a property that's gone, or a step after a text or options property", () => {
-	const { types } = processModel();
-	assert.deepEqual(resolvePath(types, "role", [inverse("responsible"), forward("trigger")]).broken, null);
-	assert.equal(resolvePath(types, "role", [forward("responsible")]).broken, 0);
-	assert.equal(resolvePath(types, "activity", [forward("process"), forward("gone")]).broken, 1);
-	assert.equal(resolvePath(types, "activity", [forward("status"), forward("process")]).broken, 1);
+	const data = processModel();
+	const from = (typeId: string) => ({ typeIds: [typeId] });
+	assert.deepEqual(resolvePath(data, from("role"), [inverse("responsible"), forward("trigger")]).broken, null);
+	assert.equal(resolvePath(data, from("role"), [forward("responsible")]).broken, 0);
+	assert.equal(resolvePath(data, from("activity"), [forward("process"), forward("gone")]).broken, 1);
+	assert.equal(resolvePath(data, from("activity"), [forward("status"), forward("process")]).broken, 1);
 });
 
 test("per role and process: the activities with what triggers them; activities without a role last", () => {
@@ -212,7 +218,7 @@ test("analyses can be added, changed and deleted, each one undo step, and are sa
 	const storage = memoryStorage();
 	const store = await open(storage);
 	const first = addAnalysis(store, " Rollen ");
-	assert.deepEqual(first, { id: first.id, name: "Rollen", typeId: null, groups: [], columns: [] });
+	assert.deepEqual(first, { id: first.id, name: "Rollen", typeId: null, traitId: null, groups: [], columns: [] });
 	const path = [{ propertyId: "p", direction: "inverse" as const }, { propertyId: "q", direction: "forward" as const }];
 	updateAnalysis(store, first.id, { typeId: "t", groups: [path], columns: [[path[1]!]] });
 	updateAnalysis(store, first.id, { name: "  " });
@@ -221,8 +227,8 @@ test("analyses can be added, changed and deleted, each one undo step, and are sa
 
 	const reopened = await open(storage);
 	assert.deepEqual(reopened.data.analyses, [
-		{ id: first.id, name: "Rollen", typeId: "t", groups: [path], columns: [[path[1]]] },
-		{ id: second.id, name: "Analysis 1", typeId: null, groups: [], columns: [] },
+		{ id: first.id, name: "Rollen", typeId: "t", traitId: null, groups: [path], columns: [[path[1]]] },
+		{ id: second.id, name: "Analysis 1", typeId: null, traitId: null, groups: [], columns: [] },
 	]);
 
 	deleteAnalysis(store, first.id);
@@ -267,7 +273,7 @@ test("analyses: data from version 6 gets none; malformed analyses and steps are 
 		}),
 	);
 	assert.deepEqual(store.data.analyses, [
-		{ id: "a", name: "Analysis 1", typeId: null, groups: [[{ propertyId: "gone", direction: "forward" }], []], columns: [] },
+		{ id: "a", name: "Analysis 1", typeId: null, traitId: null, groups: [[{ propertyId: "gone", direction: "forward" }], []], columns: [] },
 	]);
 });
 
@@ -276,11 +282,12 @@ test("an analysis is one unit with its paths; changing one of them touches nothi
 		types: [],
 		entities: [],
 		boards: [],
-		analyses: [{ id: "ana-notes", name: "Notizen", typeId: "type-person", groups: [], columns: [[{ propertyId: "p-note", direction: "forward" }]] }],
+		traits: [],
+		analyses: [{ id: "ana-notes", name: "Notizen", typeId: "type-person", traitId: null, groups: [], columns: [[{ propertyId: "p-note", direction: "forward" }]] }],
 	};
 	const after = structuredClone(before);
 	after.analyses[0]!.groups = [[{ propertyId: "p-note", direction: "forward" }]];
-	after.analyses.push({ id: "ana-new", name: "Neu", typeId: null, groups: [], columns: [] });
+	after.analyses.push({ id: "ana-new", name: "Neu", typeId: null, traitId: null, groups: [], columns: [] });
 
 	const changes = changesBetween(before, after);
 	assert.deepEqual(changes.map((c) => `${c.kind}:${c.id}`), ["analysis:ana-notes", "analysis:ana-new"]);
@@ -294,4 +301,45 @@ test("an options end shows labels in the options' order, ids without an option d
 	const result = runAnalysis(data, analysis("activity", [[forward("status")]]));
 	assert.deepEqual(outline(result), ["neu (1)", "  Umsetzen", "fertig (1)", "  Sortieren", "– (2)", "  Deployen", "  Aufräumen"]);
 	assert.deepEqual(result.groups[0]!.value, { label: "neu", entityId: null });
+});
+
+const role = (roleId: string, traitId = "progress"): PathStep => ({ traitId, roleId });
+const ofTrait = (traitId: string, groups: PathStep[][], columns: PathStep[][] = []): Analysis => ({
+	id: "t",
+	name: "T",
+	typeId: null,
+	traitId,
+	groups,
+	columns,
+});
+
+test("an analysis of a trait: the entities of every type bearing it as rows, grouped by a role across the types in the order of its values", () => {
+	const data = progressModel();
+	const result = runAnalysis(data, ofTrait("progress", [[role("stand")]], [[role("short")]]));
+	assert.deepEqual(outline(result), [
+		"offen (2)",
+		"  traits | Bedeutungen",
+		"  naming | Trait oder Merkmal?",
+		"fertig (2)",
+		"  history | ",
+		"  where | ",
+		"– (2)",
+		"  story-mode | ",
+		"  see | ",
+	]);
+	assert.equal(result.count, 6, "no rule: Regel doesn't bear the trait");
+	assert.deepEqual(rowTypeIds(data, ofTrait("progress", [])), ["pitch", "question", "story"]);
+	assert.deepEqual(runAnalysis(data, ofTrait("gone", [])), { count: 0, groups: [], rows: [] });
+});
+
+test("from a trait, every step is a role: after a reference role, the roles of the traits the entities reached bear", () => {
+	const data = progressModel();
+	const from = { traitIds: ["progress"] };
+	assert.deepEqual(pathOptions(data, from).map((o) => `${"role" in o ? o.role.name : "?"} → ${o.typeIds.join("/")}`), ["Stand → ", "Kurz → ", "gehört zu → pitch"]);
+	assert.equal(resolvePath(data, from, [role("belongs"), role("stand")]).broken, null);
+	assert.equal(resolvePath(data, from, [{ propertyId: "p-status", direction: "forward" }]).broken, 0, "no properties from a trait");
+	assert.equal(resolvePath(data, from, [role("stand"), role("short")]).broken, 1, "an options role ends the path");
+
+	const result = runAnalysis(data, ofTrait("progress", [[role("belongs"), role("stand")]], [[role("belongs")]]));
+	assert.deepEqual(outline(result), ["offen (1)", "  see | Traits", "– (5)", "  traits | ", "  history | ", "  story-mode | ", "  naming | ", "  where | "]);
 });

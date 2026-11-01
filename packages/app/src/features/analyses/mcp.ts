@@ -1,17 +1,21 @@
 import { sameName, type AppData } from "../../shared/core/index.js";
 import type { DataStore } from "../data/core.js";
 import { typeName, typeOf } from "../data/mcp.js";
+import { traitName, traitOf } from "../traits/mcp.js";
 import { ToolError, WORKSPACE, json, object, text, texts, type Tool, type ToolContext } from "../../shared/mcp/index.js";
 import {
 	addAnalysis,
+	analysisFrom,
 	deleteAnalysis,
-	pathOptions,
+	isRoleOption,
+	nextOptions,
 	resolvePath,
 	runAnalysis,
 	updateAnalysis,
 	type Analysis,
 	type AnalysisGroup,
 	type AnalysisRow,
+	type PathFrom,
 	type PathOption,
 	type PathStep,
 } from "./core.js";
@@ -22,9 +26,9 @@ export function analysisTools({ open, answerSaved }: ToolContext<DataStore>): To
 		{
 			name: "run_analysis",
 			description:
-				"Runs a saved analysis (see describe_workspace): the entities of its type as rows, nested in groups by what its grouping " +
-				"paths lead to, with a cell per column (`columns` names them, in the order of the cells). At most `limit` rows are " +
-				"shown (default 100); the groups' counts are always whole.",
+				"Runs a saved analysis (see describe_workspace): the entities of its type (or of the types bearing its trait, each row " +
+				"with its type) as rows, nested in groups by what its grouping paths lead to, with a cell per column (`columns` names " +
+				"them, in the order of the cells). At most `limit` rows are shown (default 100); the groups' counts are always whole.",
 			inputSchema: object(
 				{
 					workspace: WORKSPACE,
@@ -36,8 +40,9 @@ export function analysisTools({ open, answerSaved }: ToolContext<DataStore>): To
 			async run(args) {
 				const { data } = await open(args.workspace);
 				const analysis = analysisOf(data, args.analysis);
-				if (analysis.typeId === null) throw new ToolError(`The analysis "${analysis.name}" has no type picked yet.`);
-				const typeId = analysis.typeId;
+				const from = analysisFrom(data, analysis);
+				if (!from) throw new ToolError(`The analysis "${analysis.name}" has no type or trait picked yet.`);
+				const ofTrait = "traitIds" in from;
 				const result = runAnalysis(data, analysis);
 				const limit = typeof args.limit === "number" && args.limit >= 1 ? Math.floor(args.limit) : 100;
 				// The rows still to show; once none are left, the groups after are left out.
@@ -47,7 +52,10 @@ export function analysisTools({ open, answerSaved }: ToolContext<DataStore>): To
 					const shown = rs.slice(0, left);
 					left -= shown.length;
 					cut ||= shown.length < rs.length;
-					return shown.map((r) => ({ entity: { id: r.entity.id, name: r.entity.name }, cells: r.cells.map((c) => c.map((v) => v.label)) }));
+					return shown.map((r) => ({
+						entity: { id: r.entity.id, name: r.entity.name, ...(ofTrait ? { type: typeName(data, r.entity.typeId) } : {}) },
+						cells: r.cells.map((c) => c.map((v) => v.label)),
+					}));
 				};
 				const groups = (gs: readonly AnalysisGroup[]): object[] =>
 					gs.flatMap((g) => {
@@ -60,9 +68,9 @@ export function analysisTools({ open, answerSaved }: ToolContext<DataStore>): To
 				const shown = result.groups.length > 0 ? { groups: groups(result.groups) } : { rows: rows(result.rows) };
 				return json({
 					analysis: analysis.name,
-					type: typeName(data, typeId),
-					groupedBy: analysis.groups.map((path) => pathLabel(data, typeId, path)),
-					columns: analysis.columns.map((path) => pathLabel(data, typeId, path)),
+					...basisOf(data, analysis),
+					groupedBy: analysis.groups.map((path) => pathLabel(data, from, path)),
+					columns: analysis.columns.map((path) => pathLabel(data, from, path)),
 					count: result.count,
 					...shown,
 					...(cut ? { truncated: `Only the first ${limit} rows are shown; ask with a higher limit for more.` } : {}),
@@ -72,33 +80,31 @@ export function analysisTools({ open, answerSaved }: ToolContext<DataStore>): To
 		{
 			name: "create_analysis",
 			description:
-				"Creates an analysis: the entities of `type` as rows, grouped by the paths in `groups` (outermost first), with a column " +
-				"per path in `columns`. " +
+				"Creates an analysis: the entities of `type` (or of every type bearing `trait`; give one of them) as rows, grouped by " +
+				"the paths in `groups` (outermost first), with a column per path in `columns`. " +
 				PATHS,
-			inputSchema: object({ workspace: WORKSPACE, name: { type: "string" }, type: { type: "string", description: "Name or id of the row type." }, groups: PATH_LIST, columns: PATH_LIST }, [
-				"workspace",
-				"name",
-				"type",
-			]),
+			inputSchema: object({ workspace: WORKSPACE, name: { type: "string" }, type: ROW_TYPE, trait: ROW_TRAIT, groups: PATH_LIST, columns: PATH_LIST }, ["workspace", "name"]),
 			async run(args) {
 				const store = await open(args.workspace);
 				const name = analysisName(args.name);
-				const type = typeOf(store.data, args.type);
-				const groups = args.groups === undefined ? [] : paths(store.data, type.id, args.groups, "groups");
-				const columns = args.columns === undefined ? [] : paths(store.data, type.id, args.columns, "columns");
+				if ((args.type === undefined) === (args.trait === undefined)) throw new ToolError("Give the analysis a `type` or a `trait`, one of them.");
+				const basis = basisPatch(store.data, args);
+				const from = analysisFrom(store.data, basis)!;
+				const groups = args.groups === undefined ? [] : paths(store.data, from, args.groups, "groups");
+				const columns = args.columns === undefined ? [] : paths(store.data, from, args.columns, "columns");
 				const analysis = addAnalysis(store, name);
-				updateAnalysis(store, analysis.id, { typeId: type.id, groups, columns });
+				updateAnalysis(store, analysis.id, { ...basis, groups, columns });
 				return answerSaved(store, { analysis: describeAnalysis(store.data, analysisOf(store.data, analysis.id)) });
 			},
 		},
 		{
 			name: "update_analysis",
 			description:
-				"Changes an analysis: its name, its row type, its groups or its columns. `groups` and `columns` each replace the whole list; " +
-				"a new `type` without them empties them, as the paths of the old type don't fit. " +
+				"Changes an analysis: its name, its row type or trait, its groups or its columns. `groups` and `columns` each replace the " +
+				"whole list; a new `type` or `trait` without them empties them, as the paths of the old one don't fit. " +
 				PATHS,
 			inputSchema: object(
-				{ workspace: WORKSPACE, analysis: ANALYSIS, name: { type: "string" }, type: { type: "string", description: "Name or id of the row type." }, groups: PATH_LIST, columns: PATH_LIST },
+				{ workspace: WORKSPACE, analysis: ANALYSIS, name: { type: "string" }, type: ROW_TYPE, trait: ROW_TRAIT, groups: PATH_LIST, columns: PATH_LIST },
 				["workspace", "analysis"],
 			),
 			async run(args) {
@@ -106,14 +112,15 @@ export function analysisTools({ open, answerSaved }: ToolContext<DataStore>): To
 				const analysis = analysisOf(store.data, args.analysis);
 				const patch: Partial<Omit<Analysis, "id">> = {};
 				if (args.name !== undefined) patch.name = analysisName(args.name);
-				if (args.type !== undefined) {
-					const type = typeOf(store.data, args.type);
-					if (type.id !== analysis.typeId) Object.assign(patch, { typeId: type.id, groups: [], columns: [] });
+				if (args.type !== undefined && args.trait !== undefined) throw new ToolError("Give the analysis a `type` or a `trait`, not both.");
+				if (args.type !== undefined || args.trait !== undefined) {
+					const basis = basisPatch(store.data, args);
+					if (basis.typeId !== analysis.typeId || basis.traitId !== analysis.traitId) Object.assign(patch, { ...basis, groups: [], columns: [] });
 				}
-				const typeId = patch.typeId ?? analysis.typeId;
-				if ((args.groups !== undefined || args.columns !== undefined) && typeId === null) throw new ToolError("Give the analysis a `type` first.");
-				if (args.groups !== undefined) patch.groups = paths(store.data, typeId!, args.groups, "groups");
-				if (args.columns !== undefined) patch.columns = paths(store.data, typeId!, args.columns, "columns");
+				const from = analysisFrom(store.data, { ...analysis, ...patch });
+				if ((args.groups !== undefined || args.columns !== undefined) && !from) throw new ToolError("Give the analysis a `type` or a `trait` first.");
+				if (args.groups !== undefined) patch.groups = paths(store.data, from!, args.groups, "groups");
+				if (args.columns !== undefined) patch.columns = paths(store.data, from!, args.columns, "columns");
 				updateAnalysis(store, analysis.id, patch);
 				return answerSaved(store, { analysis: describeAnalysis(store.data, analysisOf(store.data, analysis.id)) });
 			},
@@ -139,6 +146,8 @@ export function describeAnalyses(data: AppData): object {
 }
 
 const ANALYSIS = { type: "string", description: "Name or id of the analysis." };
+const ROW_TYPE = { type: "string", description: "Name or id of the row type." };
+const ROW_TRAIT = { type: "string", description: "Name or id of a trait: the rows are the entities of every type bearing it, and paths go over its roles." };
 const PATH_LIST = {
 	type: "array",
 	items: { anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }] },
@@ -147,42 +156,52 @@ const PATH_LIST = {
 const PATHS =
 	"A path goes from the row type step by step: a property's name (a reference leads on to the entities it points to, a text or " +
 	"options property ends the path), or for the entities referencing these, the reference's inverse label or Type.Property. " +
-	"`Owner › Role` is the role of the owner; describe_workspace and run_analysis write paths the same way.";
+	"`Owner › Role` is the role of the owner. From a trait, every step is a role: of the trait, and after a reference role of " +
+	"a trait the entities reached bear (by its name, or Trait.Role). describe_workspace and run_analysis write paths the same way.";
 
 /** How a path reads: its steps' names, an inverse step by its label or the referencing type and property. */
-function pathLabel(data: AppData, typeId: string, path: readonly PathStep[]): string {
-	return resolvePath(data.types, typeId, path)
+function pathLabel(data: AppData, from: PathFrom, path: readonly PathStep[]): string {
+	return resolvePath(data, from, path)
 		.options.map((o) => stepLabel(data, o))
 		.join(" › ");
 }
 
-const stepLabel = (data: AppData, o: PathOption) =>
-	o.step.direction === "inverse" ? o.prop.reference?.inverseLabel || `${typeName(data, o.ownerTypeId)}.${o.prop.name} (inverse)` : o.prop.name;
+function stepLabel(data: AppData, o: PathOption): string {
+	if (isRoleOption(o)) return o.role.name;
+	return o.step.direction === "inverse" ? o.prop.reference?.inverseLabel || `${typeName(data, o.ownerTypeId)}.${o.prop.name} (inverse)` : o.prop.name;
+}
 
-/** The paths the model gave from entities of `typeId`, each step named the way `stepLabel` reads it (an inverse
- * one also as Type.Property). */
-function paths(data: AppData, typeId: string, raw: unknown, what: string): PathStep[][] {
+/** Whether the model named the option `wanted`: a property or role by name or id, an inverse step also as
+ * Type.Property, a role also as Trait.Role. */
+function names(data: AppData, o: PathOption, wanted: string): boolean {
+	if (isRoleOption(o)) return o.role.id === wanted || sameName(o.role.name, wanted) || sameName(`${o.trait.name}.${o.role.name}`, wanted);
+	return o.step.direction === "forward"
+		? o.prop.id === wanted || sameName(o.prop.name, wanted)
+		: sameName(stepLabel(data, o), wanted) || sameName(`${typeName(data, o.ownerTypeId)}.${o.prop.name}`, wanted);
+}
+
+/** The paths the model gave from where the analysis's paths start, each step named the way `stepLabel` reads it (see
+ * `names`). */
+function paths(data: AppData, from: PathFrom, raw: unknown, what: string): PathStep[][] {
 	if (!Array.isArray(raw)) throw new ToolError(`\`${what}\` must be a list of paths.`);
 	return raw.map((item, index) => {
 		const steps = typeof item === "string" ? item.split("›") : texts(item, `${what}[${index}]`);
 		if (steps.every((s) => s.trim() === "")) throw new ToolError(`${what}[${index}] needs at least one step.`);
-		let from = [typeId];
-		return steps.map((step, i) => {
+		const path: PathStep[] = [];
+		let ended: PathOption | null = null;
+		for (const step of steps) {
 			const wanted = step.trim();
-			if (from.length === 0) throw new ToolError(`${what}[${index}]: "${steps[i - 1]!.trim()}" is a text or options property; the path ends there.`);
-			const options = pathOptions(data.types, from);
-			const fits = options.filter((o) =>
-				o.step.direction === "forward"
-					? o.prop.id === wanted || sameName(o.prop.name, wanted)
-					: sameName(stepLabel(data, o), wanted) || sameName(`${typeName(data, o.ownerTypeId)}.${o.prop.name}`, wanted),
-			);
+			if (ended) throw new ToolError(`${what}[${index}]: "${stepLabel(data, ended)}" is a text or options ${isRoleOption(ended) ? "role" : "property"}; the path ends there.`);
+			const options = nextOptions(data, from, path);
+			const fits = options.filter((o) => names(data, o, wanted));
 			if (fits.length !== 1) {
 				const known = options.map((o) => stepLabel(data, o)).join(", ") || "none";
 				throw new ToolError(`${what}[${index}]: ${fits.length > 1 ? `"${wanted}" is ambiguous` : `there is no step "${wanted}"`} here. Steps: ${known}.`);
 			}
-			from = fits[0]!.typeIds;
-			return fits[0]!.step;
-		});
+			path.push(fits[0]!.step);
+			if (fits[0]!.typeIds.length === 0) ended = fits[0]!;
+		}
+		return path;
 	});
 }
 
@@ -201,13 +220,23 @@ function analysisName(raw: unknown): string {
 	return name;
 }
 
+/** The type or the trait the analysis's rows are of, by name. */
+function basisOf(data: AppData, analysis: Analysis) {
+	return analysis.traitId !== null ? { trait: traitName(data, analysis.traitId) } : { type: typeName(data, analysis.typeId) };
+}
+
+/** The type or the trait the model gave the analysis's rows. */
+function basisPatch(data: AppData, args: Record<string, unknown>): Pick<Analysis, "typeId" | "traitId"> {
+	return args.trait !== undefined ? { typeId: null, traitId: traitOf(data, args.trait).id } : { typeId: typeOf(data, args.type).id, traitId: null };
+}
+
 function describeAnalysis(data: AppData, analysis: Analysis) {
-	const typeId = analysis.typeId;
+	const from = analysisFrom(data, analysis);
 	return {
 		id: analysis.id,
 		name: analysis.name,
-		type: typeName(data, typeId),
-		groupedBy: typeId === null ? [] : analysis.groups.map((path) => pathLabel(data, typeId, path)),
-		columns: typeId === null ? [] : analysis.columns.map((path) => pathLabel(data, typeId, path)),
+		...basisOf(data, analysis),
+		groupedBy: from === null ? [] : analysis.groups.map((path) => pathLabel(data, from, path)),
+		columns: from === null ? [] : analysis.columns.map((path) => pathLabel(data, from, path)),
 	};
 }

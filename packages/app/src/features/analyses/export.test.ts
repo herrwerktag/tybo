@@ -5,6 +5,7 @@ import type { AppData } from "../../shared/core/index.js";
 import type { PropertyDef } from "../data/core.js";
 import { setLanguage } from "../../shared/ui/index.js";
 import type { Analysis, PathStep } from "./core.js";
+import { progressModel } from "../traits/test-progress.js";
 import { analysisMarkdownFiles } from "./export.js";
 
 const prop = (id: string, name: string, more: Partial<PropertyDef> = {}): PropertyDef => ({
@@ -37,10 +38,11 @@ const entity = (
 	values,
 });
 const step = (propertyId: string): PathStep[] => [{ propertyId, direction: "forward" }];
-const analysis = (more: Partial<Analysis> = {}): Analysis => ({ id: "an", name: "Prüfung", typeId: "activity", groups: [], columns: [], ...more });
+const analysis = (more: Partial<Analysis> = {}): Analysis => ({ id: "an", name: "Prüfung", typeId: "activity", traitId: null, groups: [], columns: [], ...more });
 
 /** Activities with responsible roles (several), needed artifacts (several, two sharing a name) and a status. */
-const data: Pick<AppData, "types" | "entities"> = {
+const data: Pick<AppData, "types" | "entities" | "traits"> = {
+	traits: [],
 	types: [
 		{
 			id: "activity",
@@ -176,7 +178,7 @@ test("a group's file starts with its entity's content and description, their hea
 	assert.match(files["Prüfung 2026-10-21.md"]!, /^## Rechnung\n\n### Aktivität/m, "the full analysis has no group texts");
 
 	const headed: typeof data = {
-		types: data.types,
+		...data,
 		entities: data.entities.map((e) => (e.id === "x1" ? { ...e, content: "", description: "# Zweck\nBeleg." } : e)),
 	};
 	assert.match(markdownFiles(analysis({ groups: [step("needs")] }), headed)["Rechnung.md"]!, /^# Rechnung\n\n## Zweck\nBeleg\.\n\n## Aktivität/);
@@ -184,7 +186,7 @@ test("a group's file starts with its entity's content and description, their hea
 
 test("a | in a table cell is escaped; headings in code blocks stay as they are and nested headings don't go below the sixth level", () => {
 	const piped: typeof data = {
-		types: data.types,
+		...data,
 		entities: data.entities.map((e) =>
 			e.id === "a2" ? { ...e, values: { status: "o-pipe" }, description: "```\n# kein Titel\n```\n##### Tief" } : e,
 		),
@@ -200,4 +202,17 @@ test("deeply nested groups don't go below the sixth heading level; an analysis w
 	assert.match(deep, /^###### Aktivität "Rechnung prüfen"$/m);
 	assert.doesNotMatch(deep, /#######/);
 	assert.deepEqual(markdownFiles(analysis({ typeId: null })), { "Prüfung 2026-10-21.md": "# Prüfung (as of 2026-10-21)\n" });
+});
+
+test("an analysis of a trait as Markdown: the rows of every type bearing it, mixed in its groups, each with its own type", () => {
+	setLanguage("de");
+	try {
+		const progress = progressModel();
+		const files = analysisMarkdownFiles(progress, { id: "t", name: "Offen", typeId: null, traitId: "progress", groups: [[{ traitId: "progress", roleId: "stand" }]], columns: [[{ traitId: "progress", roleId: "short" }]] }, "2026-11-01");
+		assert.deepEqual(files.map((f) => f.name), ["Offen 2026-11-01.md", "offen.md", "fertig.md", "Ohne Stand.md"]);
+		const open = files[1]!.contents;
+		assert.match(open, /^# offen\n\n## Pitch „Traits“\n\nBedeutungen\n\n\| Kurz \|\n\| --- \|\n\| Bedeutungen \|\n\n## Offene Frage „Wie heißen sie\?“/);
+	} finally {
+		setLanguage("en");
+	}
 });
