@@ -4,6 +4,7 @@ import {
 	filterEntities,
 	inverseReferences,
 	inverseRelations,
+	optionLabel,
 	type Entity,
 	type EntityType,
 	type PropertyDef,
@@ -108,7 +109,9 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 		const format = (p: PropertyDef, value: PropertyValue | undefined): string => {
 			if (value === null || value === undefined) return "—";
 			const parts = typeof value === "string" ? [value] : value;
-			return p.kind === "reference" ? parts.map((id) => names.get(id) ?? "?").join(", ") : parts.join(", ");
+			if (p.kind === "reference") return parts.map((id) => names.get(id) ?? "?").join(", ");
+			if (p.kind === "options") return parts.map((id) => optionLabel(p, id) ?? "?").join(", ");
+			return parts.join(", ");
 		};
 
 		// Read-only columns for the reverse side of references to this type, e.g. "responsible for" on Role.

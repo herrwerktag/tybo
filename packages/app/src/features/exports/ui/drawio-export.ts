@@ -2,7 +2,7 @@ import { uniqueFileNames } from "../../../shared/ui/index.js";
 import { areaContents, isArea, type BoxDrawing } from "../../drawings/core.js";
 import { text } from "../texts.js";
 import { renderMarkdown } from "../../../shared/ui/index.js";
-import { cardRows, effectiveCardDisplay, inverseCardRows, placeholderProperty, referencedIds, type CardRow, type Entity, type EntityType, type LineArrow } from "../../data/core.js";
+import { cardRows, effectiveCardDisplay, inverseCardRows, optionLabel, placeholderProperty, referencedIds, type CardRow, type Entity, type EntityType, type LineArrow } from "../../data/core.js";
 import { nearest, type Board, type CanvasCard } from "../../boards/core.js";
 import type { AppData, Point, Rect } from "../../../shared/core/index.js";
 
@@ -191,9 +191,11 @@ function description(entity: Entity, type: EntityType | undefined, entityNames: 
 		const shown =
 			prop.kind === "reference"
 				? referencedIds(prop, value).flatMap((id) => entityNames.get(id) ?? []).join(", ")
-				: typeof value === "string"
-					? value.trim()
-					: "";
+				: prop.kind === "options"
+					? (optionLabel(prop, String(value)) ?? "")
+					: typeof value === "string"
+						? value.trim()
+						: "";
 		return [document.createTextNode(shown || "—")];
 	}).innerHTML;
 }

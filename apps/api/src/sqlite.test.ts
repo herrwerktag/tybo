@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { DATA_VERSION, changesBetween, storedFeatureData, type AppData } from "@tybo/app/core";
+import { DATA_VERSION, changesBetween, legacyOptionId, storedFeatureData, type AppData } from "@tybo/app/core";
 import { DatabaseSync } from "node:sqlite";
 import { SQLITE_MIGRATIONS, sqliteStorage } from "@tybo/app/api";
 import { call, startApp } from "./test-server.js";
@@ -56,7 +56,7 @@ async function fresh() {
 test("sqlite: the schema is made once, and survives reopening the file", async () => {
 	const { storage, path, close } = await fresh();
 	try {
-		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
 		assert.deepEqual(await storage.init(), [], "the second start has nothing left to do");
 		assert.equal(await storage.healthy(), true);
 		await storage.createWorkspace({ id: "ws", name: "Bleibt" }, 1);
@@ -181,7 +181,7 @@ test("sqlite: what was saved of stories, by any version before, is dropped; the 
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7, 8, 9, 10, 11]);
+		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
 		const { data } = (await storage.readWorkspace("ws"))!;
 		// Null, not missing: the app makes the frame of the board's pan/zoom.
 		assert.deepEqual(
@@ -215,7 +215,7 @@ test("sqlite: step 8 drops the library and the library drawings placed on boards
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [8, 9, 10, 11]);
+		assert.deepEqual(await storage.init(), [8, 9, 10, 11, 12]);
 		await storage.close();
 		const check = new DatabaseSync(path);
 		assert.deepEqual(check.prepare("select name from sqlite_master where name = 'library_drawings'").all(), []);
@@ -390,7 +390,7 @@ test("sqlite: step 10 gives the entries written before it their format, 9", asyn
 		raw.prepare("insert into history (workspace_id, operation) values ('ws', 'create')").run();
 		raw.close();
 
-		assert.deepEqual(await storage.init(), [10, 11]);
+		assert.deepEqual(await storage.init(), [10, 11, 12]);
 		assert.deepEqual((await storage.readHistory("ws", { limit: 10 })).map((e) => e.dataVersion), [9]);
 	} finally {
 		await close();
@@ -413,5 +413,47 @@ test("sqlite: after the schema is up to date, every workspace says the app's dat
 		assert.equal((await storage.readWorkspace("old"))?.data.version, DATA_VERSION);
 	} finally {
 		await close();
+	}
+});
+
+test("sqlite: step 12 gives options their ids; entity values hold the id of their text", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "tybo-sqlite-"));
+	const path = join(dir, "test.sqlite");
+	try {
+		// A file as format 9 left it: options as label strings, an entity value of each — one no option has.
+		const db = new DatabaseSync(path);
+		for (const migration of SQLITE_MIGRATIONS.slice(0, 11)) migration.up(db);
+		db.exec("pragma user_version = 11");
+		db.exec("insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 9)");
+		db.exec("insert into entity_types (workspace_id, id, position, name) values ('ws', 'book', 0, 'Book')");
+		db.exec(`insert into properties (workspace_id, id, type_id, position, name, kind, options)
+			values ('ws', 'status', 'book', 0, 'Status', 'options', '["Draft","Published","Draft"]')`);
+		db.exec(`insert into entities (workspace_id, id, type_id, position, name) values
+			('ws', 'e1', 'book', 0, 'Dune'), ('ws', 'e2', 'book', 1, 'Emma'), ('ws', 'e3', 'book', 2, 'Clara')`);
+		const value = db.prepare("insert into entity_values (workspace_id, entity_id, property_id, position, value) values ('ws', ?, 'status', 0, ?)");
+		value.run("e1", JSON.stringify("Draft"));
+		value.run("e2", JSON.stringify("Archived"));
+		value.run("e3", JSON.stringify(null));
+		db.close();
+
+		const storage = sqliteStorage(path);
+		assert.deepEqual(await storage.init(), [12]);
+		await storage.close();
+
+		const check = new DatabaseSync(path);
+		const options = JSON.parse(check.prepare("select options from properties where id = 'status'").get()!.options as string);
+		assert.deepEqual(options, [
+			{ id: legacyOptionId("status", "Draft"), label: "Draft" },
+			{ id: legacyOptionId("status", "Published"), label: "Published" },
+		]);
+		const rows = check.prepare("select entity_id, value from entity_values where property_id = 'status'").all() as { entity_id: string; value: string }[];
+		assert.deepEqual(
+			rows.map((row) => [row.entity_id, row.value]),
+			[["e1", JSON.stringify(options[0]!.id)]],
+		);
+		assert.equal(check.prepare("select data_version from workspaces where id = 'ws'").get()!.data_version, 10);
+		check.close();
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
 	}
 });

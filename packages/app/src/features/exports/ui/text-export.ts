@@ -1,5 +1,5 @@
 import type { AppData } from "../../../shared/core/index.js";
-import { fillPlaceholders, referencedIds, uniqueNames, type Entity, type EntityType, type PropertyDef } from "../../data/core.js";
+import { fillPlaceholders, optionLabel, referencedIds, uniqueNames, type Entity, type EntityType, type PropertyDef } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import { text } from "../texts.js";
 
@@ -40,7 +40,7 @@ export function workspaceText(name: string, data: Pick<AppData, "types" | "entit
 function typeSection(type: EntityType, types: ReadonlyMap<string, EntityType>): string {
 	const lines = type.properties.map((prop) => {
 		let kind = dataText.kinds[prop.kind];
-		if (prop.kind === "options" && prop.options.length > 0) kind += ` (${prop.options.join(", ")})`;
+		if (prop.kind === "options" && prop.options.length > 0) kind += ` (${prop.options.map((o) => o.label).join(", ")})`;
 		if (prop.kind === "reference" && prop.reference) {
 			kind += ` → ${prop.reference.typeIds.flatMap((id) => types.get(id)?.name ?? []).join(", ")}`;
 			if (prop.reference.multiple) kind += ` ${dataText.multipleSuffix}`;
@@ -66,7 +66,8 @@ function entitySection(
 			const linked = referencedIds(prop, value).flatMap((id) => mentions.get(id) ?? []);
 			if (linked.length > 0) lines.push(`${prop.name}: ${linked.join(", ")}`);
 		} else if (typeof value === "string" && value.trim() !== "") {
-			lines.push(field(prop.name, value));
+			const shown = prop.kind === "options" ? optionLabel(prop, value) : value;
+			if (shown !== null) lines.push(field(prop.name, shown));
 		}
 	}
 	// The other side of references, in type and property order, whether or not they have a label for it.
@@ -81,7 +82,8 @@ function entitySection(
 	const placeholder = (prop: PropertyDef): string => {
 		const value = entity.values[prop.id];
 		const linked = referencedIds(prop, value).flatMap((id) => mentions.get(id) ?? []);
-		const shown = prop.kind === "reference" ? linked.join(", ") : typeof value === "string" ? value.trim() : "";
+		const shown =
+			prop.kind === "reference" ? linked.join(", ") : prop.kind === "options" ? (optionLabel(prop, String(value)) ?? "") : typeof value === "string" ? value.trim() : "";
 		return shown || "—";
 	};
 	if (entity.description.trim() !== "") lines.push(field(dataText.description, fillPlaceholders(entity.description, type, placeholder)));

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { test } from "node:test";
-import { DATA_VERSION } from "@tybo/app/core";
+import { DATA_VERSION, legacyOptionId } from "@tybo/app/core";
 import { POSTGRES_MIGRATIONS, SchemaMismatch, migrateSchema } from "@tybo/app/api";
 
 /** The test database these tests run against (never the productive DATABASE_URL); without it they are skipped, not failed. */
@@ -203,6 +203,35 @@ test("after the schema is up to date, every workspace says the app's data format
 
 		await migrateSchema(sql);
 		assert.deepEqual([...(await sql`select data_version from workspaces`)], [{ data_version: DATA_VERSION }]);
+	} finally {
+		await sql.end({ timeout: 5 });
+	}
+});
+
+test("step 15 gives options their ids; entity values hold the id of their text", { skip: !url }, async () => {
+	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
+	try {
+		await wipe(sql);
+		await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 15));
+		await sql`insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 9)`;
+		await sql`insert into entity_types (workspace_id, id, position, name) values ('ws', 'book', 0, 'Book')`;
+		await sql`insert into properties (workspace_id, id, type_id, position, name, kind, options)
+			values ('ws', 'status', 'book', 0, 'Status', 'options', ${sql.json(["Draft", "Published", "Draft"])})`;
+		await sql`insert into entities (workspace_id, id, type_id, position, name) values
+			('ws', 'e1', 'book', 0, 'Dune'), ('ws', 'e2', 'book', 1, 'Emma'), ('ws', 'e3', 'book', 2, 'Clara')`;
+		await sql`insert into entity_values (workspace_id, entity_id, property_id, position, value) values
+			('ws', 'e1', 'status', 0, ${sql.json("Draft")}), ('ws', 'e2', 'status', 0, ${sql.json("Archived")}), ('ws', 'e3', 'status', 0, 'null')`;
+
+		assert.deepEqual(await migrateSchema(sql), [15]);
+		const [property] = await sql`select options from properties where id = 'status'`;
+		assert.deepEqual(property!.options, [
+			{ id: legacyOptionId("status", "Draft"), label: "Draft" },
+			{ id: legacyOptionId("status", "Published"), label: "Published" },
+		]);
+		assert.deepEqual([...(await sql`select entity_id, value from entity_values where property_id = 'status'`)], [
+			{ entity_id: "e1", value: legacyOptionId("status", "Draft") },
+		]);
+		assert.deepEqual([...(await sql`select data_version from workspaces where id = 'ws'`)], [{ data_version: 10 }]);
 	} finally {
 		await sql.end({ timeout: 5 });
 	}

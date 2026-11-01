@@ -16,6 +16,7 @@ import {
 import { text } from "../texts.js";
 
 const PROPERTY_MIME = "application/x-property-index";
+const OPTION_MIME = "application/x-option-index";
 
 /** What a property's card in the type form works with (see `propertyRow`). */
 export interface PropertyRows {
@@ -159,16 +160,67 @@ export function propertyRow(prop: DraftProperty, i: number, rows: PropertyRows):
 		},
 	});
 	if (prop.kind === "options") {
-		row.append(
-			setting(
-				text.optionsOnePerLine,
-				el("textarea", {
-					rows: Math.max(3, prop.options.length + 1),
-					value: prop.options.join("\n"),
+		// One row per option: its label, draggable to another place, removable. Each keeps the id it has.
+		const items = prop.options.map((option, o) => {
+			const label = () => option.label.trim() || String(o + 1);
+			const handle = dragHandle(text.moveOption(label()), `option:${i}:${o}`);
+			const item = el(
+				"div",
+				{ className: "option-row" },
+				handle,
+				el("input", {
+					ariaLabel: text.optionName,
+					value: option.label,
 					oninput: (e) => {
-						prop.options = (e.target as HTMLTextAreaElement).value.split("\n");
+						option.label = (e.target as HTMLInputElement).value;
 					},
 				}),
+				el(
+					"button",
+					{
+						type: "button",
+						className: "property-remove",
+						title: text.removeOption(label()),
+						ariaLabel: text.removeOption(label()),
+						onclick: () => {
+							prop.options.splice(o, 1);
+							rows.rerender();
+						},
+					},
+					"✕",
+				),
+			);
+			reorderable(item, handle, {
+				index: o,
+				count: prop.options.length,
+				mime: OPTION_MIME,
+				move: (from, to) => {
+					prop.options = moveItem(prop.options, from, to);
+					rows.focusHandle(`option:${i}:${to}`);
+					rows.rerender();
+				},
+			});
+			return item;
+		});
+		row.append(
+			setting(
+				text.options,
+				el(
+					"div",
+					{ className: "option-list" },
+					...items,
+					el(
+						"button",
+						{
+							type: "button",
+							onclick: () => {
+								prop.options.push({ label: "" });
+								rows.rerender();
+							},
+						},
+						text.addOption,
+					),
+				),
 			),
 		);
 	}

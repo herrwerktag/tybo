@@ -1,5 +1,5 @@
 import { freeName, refuseTakenName, ulid, type DataPart, type UnitKind, type AppData } from "../../shared/core/index.js";
-import { referencedIds, type Entity, type EntityType, type PropertyDef, type DataStore } from "../data/core.js";
+import { optionLabel, referencedIds, type Entity, type EntityType, type PropertyDef, type DataStore } from "../data/core.js";
 
 /**
  * Analyses: grouped listings of one type's entities, saved with the workspace. Their part of the app's data is
@@ -150,9 +150,10 @@ function pathFollower(data: Pick<AppData, "types" | "entities">, typeId: string,
 	}
 	const last = options[options.length - 1]!;
 	const endsInText = last.typeIds.length === 0;
-	const optionOrder = last.prop.kind === "options" ? last.prop.options : [];
+	// An options end: the held ids become labels, ranked by the option's place.
+	const optionRank = new Map(last.prop.kind === "options" ? last.prop.options.map((o, i) => [o.label, i] as const) : []);
 	const rank = (value: AnalysisValue) =>
-		value.entityId !== null ? (order.get(value.entityId) ?? Number.MAX_SAFE_INTEGER) : unknownLast(optionOrder.indexOf(value.label));
+		value.entityId !== null ? (order.get(value.entityId) ?? Number.MAX_SAFE_INTEGER) : unknownLast(optionRank.get(value.label) ?? -1);
 	const follow = (entity: Entity): AnalysisValue[] => {
 		let ids = [entity.id];
 		for (const option of endsInText ? options.slice(0, -1) : options) {
@@ -170,7 +171,8 @@ function pathFollower(data: Pick<AppData, "types" | "entities">, typeId: string,
 				const value = e.typeId === last.ownerTypeId ? e.values[last.prop.id] : null;
 				return value === null || value === undefined ? [] : typeof value === "string" ? [value] : value;
 			});
-			const values = [...new Set(texts.filter((t) => t.trim() !== ""))].map((label) => ({ label, entityId: null }));
+			const labels = last.prop.kind === "options" ? texts.flatMap((id) => optionLabel(last.prop, id) ?? []) : texts.filter((t) => t.trim() !== "");
+			const values = [...new Set(labels)].map((label) => ({ label, entityId: null }));
 			return values.sort((a, b) => rank(a) - rank(b));
 		}
 		return ids.sort((a, b) => order.get(a)! - order.get(b)!).map((id) => ({ label: byId.get(id)!.name, entityId: id }));

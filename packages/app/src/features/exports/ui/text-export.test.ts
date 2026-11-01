@@ -43,7 +43,7 @@ const data: Pick<AppData, "types" | "entities"> = {
 			properties: [
 				prop("responsible", "Verantwortlicher", reference(["role"], { inverseLabel: "verantwortlich für" })),
 				prop("needs", "Benötigt", { ...reference(["artifact"], { multiple: true }), cardDisplay: "hidden" }),
-				prop("status", "Status", { kind: "options", options: ["offen", "fertig"] }),
+				prop("status", "Status", { kind: "options", options: [{ id: "o-open", label: "offen" }, { id: "o-fertig", label: "fertig" }]}),
 				prop("process", "Prozess"),
 			],
 		},
@@ -55,7 +55,7 @@ const data: Pick<AppData, "types" | "entities"> = {
 			"a1",
 			"activity",
 			"Rechnung prüfen",
-			{ responsible: "r1", needs: ["x1", "x2"], status: "offen", process: "Rechnungseingang" },
+			{ responsible: "r1", needs: ["x1", "x2"], status: "o-open", process: "Rechnungseingang" },
 			{ tags: ["Finanzen"], content: "Gegen die Bestellung prüfen.", description: "# Schritte\nBetrag prüfen\n  # Datum prüfen" },
 		),
 		entity("a2", "activity", "Zahlung anweisen", { responsible: "r1", needs: null, status: null }),

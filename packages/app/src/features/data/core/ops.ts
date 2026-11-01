@@ -1,14 +1,14 @@
 import { moveItem, refuseTakenName, ulid, type AppData, type StoreCore } from "../../../shared/core/index.js";
 import { reconcileValues } from "./normalize.js";
 import {
-	effectiveCardDisplay,
+	convertedValues,
 	nextTypeColor,
 	parseTags,
+	propertyDefs,
 	type DraftProperty,
 	type Entity,
 	type EntityData,
 	type EntityType,
-	type PropertyDef,
 	type PropertyValue,
 } from "./model.js";
 
@@ -21,20 +21,6 @@ export interface NewEntity {
 	values: Record<string, PropertyValue>;
 	description?: string;
 	tags?: readonly string[];
-}
-
-function toPropertyDefs(properties: DraftProperty[]): PropertyDef[] {
-	return properties.map((p) => ({
-		id: p.id ?? ulid(),
-		name: p.name.trim(),
-		kind: p.kind,
-		options: p.kind === "options" ? p.options.map((o) => o.trim()) : [],
-		reference:
-			p.kind === "reference" && p.reference
-				? { ...p.reference, lineLabel: p.reference.lineLabel.trim(), inverseLabel: p.reference.inverseLabel.trim() }
-				: null,
-		cardDisplay: effectiveCardDisplay(p),
-	}));
 }
 
 /**
@@ -57,7 +43,7 @@ export function dataOps<D extends EntityData>(core: StoreCore<D>, settle: (data:
 			const type: EntityType = {
 				id: ulid(),
 				name: name.trim(),
-				properties: toPropertyDefs(properties),
+				properties: propertyDefs(properties),
 				contentTemplate,
 				color,
 			};
@@ -73,11 +59,24 @@ export function dataOps<D extends EntityData>(core: StoreCore<D>, settle: (data:
 			const updated: EntityType = {
 				id: typeId,
 				name: name.trim(),
-				properties: toPropertyDefs(properties),
+				properties: propertyDefs(properties),
 				contentTemplate,
 				color: color ?? current?.color ?? nextTypeColor(core.data.types.map((t) => t.color)),
 			};
-			core.change(reconciled({ ...core.data, types: core.data.types.map((t) => (t.id === typeId ? updated : t)) }));
+			// Values a changed kind can carry over (a text that is an option's label) change with the type; what
+			// doesn't follow is `reconciled`'s to clear. Entities whose values stay equal produce no change.
+			const before = current?.properties ?? [];
+			core.change(
+				reconciled({
+					...core.data,
+					types: core.data.types.map((t) => (t.id === typeId ? updated : t)),
+					entities: core.data.entities.map((e) => {
+						if (e.typeId !== typeId) return e;
+						const values = convertedValues(e.values, before, updated.properties);
+						return values === e.values ? e : { ...e, values };
+					}),
+				}),
+			);
 		},
 
 		deleteType(typeId: string): void {

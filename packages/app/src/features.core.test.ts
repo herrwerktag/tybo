@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DATA_VERSION, MIGRATIONS, migrate, type AppData } from "./shared/core/index.js";
+import { DATA_VERSION, MIGRATIONS, isUlid, legacyOptionId, migrate, type AppData } from "./shared/core/index.js";
 import type { Entity } from "./features/data/core.js";
-import { createStore } from "./features.core.js";
+import { createStore, prepareImport } from "./features.core.js";
 import { settle, WS, memoryStorage, open, assertEmpty, firstBoard, titleDraft, storedBoards } from "./test-store.js";
 
 test("data persists across store instances", async () => {
@@ -230,6 +230,47 @@ test("migrate runs one step per version, in order, from the saved version up", (
 
 	// Every version before the current one has its step.
 	for (let v = 0; v < DATA_VERSION; v++) assert.equal(typeof MIGRATIONS[v], "function", `no step from version ${v}`);
+});
+
+test("format 9 to 10: options get deterministic ULIDs; entities hold the id instead of the text", () => {
+	const saved = () => ({
+		version: 9,
+		types: [
+			{
+				id: "book",
+				name: "Book",
+				properties: [
+					{ id: "status", name: "Status", kind: "options", options: ["Draft", "Published", "Draft", 3] },
+					{ id: "title", name: "title", kind: "text" },
+				],
+			},
+		],
+		entities: [
+			{ id: "e1", typeId: "book", name: "Dune", values: { status: "Draft", title: "Dune" } },
+			{ id: "e2", typeId: "book", name: "Emma", values: { status: "Archived", title: "Emma" } },
+			{ id: "e3", typeId: "book", name: "Clara", values: { status: 12 } },
+		],
+	});
+	const raw = saved();
+	const held = JSON.parse(JSON.stringify(raw));
+	const migrated = migrate(raw as never) as unknown as AppData;
+	assert.deepEqual(raw, held, "the step leaves the data it was given untouched");
+	const options = migrated.types[0]!.properties[0]!.options;
+	assert.deepEqual(options, [
+		{ id: legacyOptionId("status", "Draft"), label: "Draft" },
+		{ id: legacyOptionId("status", "Published"), label: "Published" },
+	], "duplicate labels collapse, non-strings go");
+	for (const option of options) assert.ok(isUlid(option.id));
+	assert.notEqual(options[0]!.id, options[1]!.id);
+	assert.deepEqual(migrated.entities.map((e) => e.values.status), [options[0]!.id, undefined, undefined]);
+	assert.equal(migrated.entities[0]!.values.title, "Dune", "other properties untouched");
+
+	assert.deepEqual(migrate(saved() as never), migrated, "the same data gives the same ids");
+
+	// An export in format 9, imported, holds the very same ids.
+	const imported = prepareImport(JSON.parse(JSON.stringify(saved())))!;
+	assert.deepEqual(imported.types[0]!.properties[0]!.options, options);
+	assert.deepEqual(imported.entities.map((e) => e.values.status), [options[0]!.id, undefined, undefined]);
 });
 
 test("data from a newer version is shown as far as it's understood, but never saved over", async () => {

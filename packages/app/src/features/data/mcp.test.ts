@@ -11,7 +11,8 @@ test("types and entities made by the tools are saved, references named by name",
 	assert.deepEqual(task!.properties[0]!.reference?.typeIds, [person!.id]);
 	const ada = store.data.entities.find((e) => e.name === "Ada")!;
 	const spec = store.data.entities.find((e) => e.name === "Write the spec")!;
-	assert.equal(ada.values[person!.properties[0]!.id], "Lead");
+	const lead = person!.properties[0]!.options.find((o) => o.label === "Lead")!;
+	assert.equal(ada.values[person!.properties[0]!.id], lead.id);
 	assert.equal(spec.values[task!.properties[0]!.id], ada.id);
 	assert.deepEqual(spec.tags, ["q4"]);
 });
@@ -208,4 +209,46 @@ test("a save that fails is the tool's failure", async () => {
 	const { refusal, storage } = await withPeople();
 	storage.failing.saves = true;
 	assert.match(await refusal("create_entity", { type: "Person", name: "Grace" }), /couldn't be saved/);
+});
+
+test("describe_workspace shows options as { id, label }; renaming by id keeps the values", async () => {
+	const { call } = await withPeople();
+	const options = (await call("describe_workspace")).types[0].properties[0].options;
+	assert.deepEqual(options.map((o: { label: string }) => o.label), ["Dev", "Lead"]);
+	const lead = options.find((o: { label: string }) => o.label === "Lead");
+
+	// Renamed by its id; a bare label keeps the option with that label.
+	const { type } = await call("update_type", { type: "Person", properties: [{ name: "Role", options: [{ id: lead.id, label: "Chef" }, "Dev"] }] });
+	assert.equal(type.properties[0].options.find((o: { id: string }) => o.id === options[0].id).label, "Dev");
+	assert.equal((await call("get_entity", { entity: "Ada" })).values.Role, "Chef");
+	assert.equal((await call("get_entity", { entity: "Alan" })).values.Role, "Dev");
+
+	// A value may name an option by its id or by its label.
+	await call("update_entity", { entity: "Ada", values: { Role: options[0].id } });
+	assert.equal((await call("get_entity", { entity: "Ada" })).values.Role, "Dev");
+	await call("create_entity", { type: "Person", name: "Grace", values: { Role: "chef" } });
+	assert.equal((await call("get_entity", { entity: "Grace" })).values.Role, "Chef");
+	assert.deepEqual(
+		(await call("find_entities", { type: "Person", values: { Role: "chef" } })).entities.map((e: { name: string }) => e.name),
+		["Grace"],
+	);
+});
+
+test("an option id that isn't one of the type's is refused, as is removing a carried option without confirm", async () => {
+	const { call, refusal, storage } = await withPeople();
+	assert.match(
+		await refusal("update_type", { type: "Person", properties: [{ name: "Role", options: [{ id: "01BADJOB0000000000000000", label: "X" }] }] }),
+		/There is no option with the id/,
+	);
+
+	// Ada holds Lead, Alan Dev: leaving out Lead would clear one value on one entity.
+	const saves = storage.saves.length;
+	assert.match(
+		await refusal("update_type", { type: "Person", properties: [{ name: "Role", options: ["Dev"] }] }),
+		/changes or clears 1 values on 1 Person entities.*confirm: true/,
+	);
+	assert.equal(storage.saves.length, saves);
+	await call("update_type", { type: "Person", properties: [{ name: "Role", options: ["Dev"] }], confirm: true });
+	assert.equal((await call("get_entity", { entity: "Ada" })).values.Role, undefined);
+	assert.equal((await call("get_entity", { entity: "Alan" })).values.Role, "Dev");
 });

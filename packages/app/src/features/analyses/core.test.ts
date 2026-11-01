@@ -54,7 +54,7 @@ function processModel(): Pick<AppData, "types" | "entities"> {
 				reference("responsible", "Verantwortlicher", ["role"]),
 				reference("process", "Prozess", ["process"]),
 				reference("leadsTo", "führt zu", ["state"], true),
-				{ id: "status", name: "Status", kind: "options", options: ["neu", "fertig"], reference: null, cardDisplay: "list" },
+				{ id: "status", name: "Status", kind: "options", options: [{ id: "o-neu", label: "neu" }, { id: "o-fertig", label: "fertig" }], reference: null, cardDisplay: "list" },
 			]),
 			type("role", "Rolle"),
 			type("process", "Prozess"),
@@ -69,14 +69,14 @@ function processModel(): Pick<AppData, "types" | "entities"> {
 				responsible: "Manager",
 				process: "Klärung",
 				leadsTo: ["Anforderungen geklärt"],
-				status: "fertig",
+				status: "o-fertig",
 			}),
 			entity("Umsetzen", "activity", {
 				trigger: ["Anforderungen geklärt"],
 				responsible: "Entwickler",
 				process: "Klärung",
 				leadsTo: ["Bereit zum Rollout"],
-				status: "neu",
+				status: "o-neu",
 			}),
 			entity("Deployen", "activity", { trigger: ["Bereit zum Rollout"], responsible: "Entwickler", process: "Deployment" }),
 			entity("Aufräumen", "activity", { process: "Deployment" }),
@@ -286,4 +286,12 @@ test("an analysis is one unit with its paths; changing one of them touches nothi
 	assert.deepEqual(changes.map((c) => `${c.kind}:${c.id}`), ["analysis:ana-notes", "analysis:ana-new"]);
 	const [changed] = changes as [Change<Analysis>];
 	assert.deepEqual(changed.after!.value.groups, [[{ propertyId: "p-note", direction: "forward" }]]);
+});
+
+test("an options end shows labels in the options' order, ids without an option dropped", () => {
+	const data = processModel();
+	data.entities = data.entities.map((e) => (e.name === "Deployen" ? { ...e, values: { ...e.values, status: "gone" } } : e));
+	const result = runAnalysis(data, analysis("activity", [[forward("status")]]));
+	assert.deepEqual(outline(result), ["neu (1)", "  Umsetzen", "fertig (1)", "  Sortieren", "– (2)", "  Deployen", "  Aufräumen"]);
+	assert.deepEqual(result.groups[0]!.value, { label: "neu", entityId: null });
 });

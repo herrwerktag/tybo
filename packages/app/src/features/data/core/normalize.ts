@@ -82,7 +82,9 @@ export function normalizeEntityData(data: EntityData): EntityData {
 			properties: type.properties.map(({ showOnCard, ...prop }: PropertyDef & { showOnCard?: unknown }) => ({
 				...prop,
 				kind: PROPERTY_KINDS.includes(prop.kind) ? prop.kind : "text",
-				options: Array.isArray(prop.options) ? prop.options : [],
+				options: Array.isArray(prop.options)
+					? prop.options.filter((o: unknown) => isObject(o) && typeof o.id === "string" && typeof o.label === "string")
+					: [],
 				reference: prop.reference ? normalizeReference(prop.reference) : null,
 				cardDisplay: cardDisplayFor(prop, showOnCard),
 			})),

@@ -1,5 +1,5 @@
 import { isRecord, type HistoryField, type UnitDescriber } from "../../../shared/ui/index.js";
-import { TYPE_COLORS, type EntityType, type PropertyDef, type DataStore } from "../core.js";
+import { TYPE_COLORS, optionLabel, type EntityType, type PropertyDef, type DataStore } from "../core.js";
 import { text } from "../texts.js";
 
 /** A list of texts in a stand, or null when it isn't one. */
@@ -46,7 +46,10 @@ export const ENTITY_HISTORY: UnitDescriber<DataStore> = {
 		const names = new Map(store.data.entities.map((e) => [e.id, e.name]));
 		const shown = (prop: PropertyDef, raw: unknown): string => {
 			const parts = typeof raw === "string" ? [raw] : (texts(raw) ?? []);
-			return (prop.kind === "reference" ? parts.map((id) => names.get(id) ?? text.historyGone) : parts).join(", ");
+			if (prop.kind === "reference") return parts.map((id) => names.get(id) ?? text.historyGone).join(", ");
+			// A held id shows its label; a text from before the ids (format 9) shows as it was.
+			if (prop.kind === "options") return parts.map((v) => optionLabel(prop, v) ?? v).join(", ");
+			return parts.join(", ");
 		};
 		const fields: HistoryField[] = [
 			{ label: text.tags, text: (texts(value.tags) ?? []).join(", ") },
