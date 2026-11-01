@@ -150,11 +150,20 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 			el(
 				"div",
 				{ className: "builtin" },
-				el("p", {}, el("strong", {}, "id"), text.builtinId),
-				el("p", {}, el("strong", {}, "name"), text.builtinName),
-				el("p", {}, el("strong", {}, "description"), text.builtinDescription),
-				// The template below belongs to content, so content comes last.
-				el("p", {}, el("strong", {}, "content"), text.builtinContent),
+				el("p", { className: "builtin-title" }, text.builtinTitle),
+				el(
+					"dl",
+					{ className: "builtin-fields" },
+					el("dt", {}, sharedText.name),
+					el("dd", {}, text.builtinName),
+					el("dt", {}, text.description),
+					el("dd", {}, text.builtinDescription),
+					// The template below belongs to content, so content comes last but the ID.
+					el("dt", {}, text.content),
+					el("dd", {}, text.builtinContent),
+					el("dt", {}, text.id),
+					el("dd", {}, text.builtinId),
+				),
 				el(
 					"label",
 					{ className: "field wide" },
@@ -169,20 +178,22 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 				),
 			),
 			...state.draftProps.map((prop, i) => propertyRow(prop, i, propertyRows)),
+			// Below the properties, where the new one appears; the form's own buttons follow apart from it.
+			el(
+				"button",
+				{
+					type: "button",
+					className: "add-property",
+					onclick: () => {
+						state.draftProps.push(newDraftProperty());
+						rerender();
+					},
+				},
+				`+ ${text.addProperty}`,
+			),
 			el(
 				"div",
-				{ className: "row" },
-				el(
-					"button",
-					{
-						type: "button",
-						onclick: () => {
-							state.draftProps.push(newDraftProperty());
-							rerender();
-						},
-					},
-					text.addProperty,
-				),
+				{ className: "row form-actions" },
 				el("button", { type: "submit", className: "primary" }, editingType ? sharedText.save : text.createType),
 				el(
 					"button",
