@@ -30,6 +30,8 @@ import { text } from "./texts.js";
 
 /** The analysis (or trait) open in the Analyses tab. */
 const SELECTED_KEY = "analysis-selected";
+/** Whether the analysis's setup is unfolded; folded, only a line telling it is left and the result moves up. */
+const SETUP_OPEN_KEY = "analysis-setup-open";
 
 /**
  * The Analyses tab: the saved analyses and the traits in lists, the analysis chosen set up above (the type or trait of
@@ -91,10 +93,10 @@ export function analysisView(store: DataStore): HTMLElement {
 			"button",
 			{
 				type: "button",
-				className: "primary",
 				onclick: () => {
 					const item = addAnalysis(store, freeName(store.data.analyses, text.defaultAnalysisName));
 					writePreference(SELECTED_KEY, item.id);
+					writePreference(SETUP_OPEN_KEY, "true"); // a new one needs setting up
 					render();
 					view.querySelector<HTMLInputElement>(".analysis-setup input")?.select();
 				},
@@ -186,9 +188,35 @@ export function analysisView(store: DataStore): HTMLElement {
 			text.deleteAnalysis,
 		);
 		const from = analysisFrom(store.data, analysis);
-		return el(
-			"section",
-			{ className: "analysis-setup" },
+		// Folded: the name and, in short, what the rows are, how they're grouped and their columns.
+		const open = readPreference(SETUP_OPEN_KEY) === "true";
+		const toggle = el(
+			"button",
+			{
+				type: "button",
+				title: text.setupHint,
+				ariaExpanded: String(open),
+				onclick: () => {
+					writePreference(SETUP_OPEN_KEY, String(!open));
+					render();
+				},
+			},
+			open ? text.hideSetup : text.showSetup,
+		);
+		toggle.dataset.focusKey = "setup-toggle";
+		const paths = (list: PathStep[][]) => (from ? list.map((path) => pathLabel(store.data, from, path)).join(", ") : "");
+		const trait = store.data.traits.find((t) => t.id === analysis.traitId);
+		const basis = trait?.name ?? (analysis.typeId ? typeName(analysis.typeId) : "—");
+		const summary = el(
+			"p",
+			{ className: "analysis-summary muted" },
+			el("span", {}, `${text.analysisRowType}: `, el("strong", {}, basis)),
+			...(analysis.groups.length > 0 ? [el("span", {}, `${text.analysisGroups}: ${paths(analysis.groups)}`)] : []),
+			...(analysis.columns.length > 0 ? [el("span", {}, `${text.analysisColumns}: ${paths(analysis.columns)}`)] : []),
+		);
+		const body = el(
+			"div",
+			{ className: "analysis-setup-body" },
 			el(
 				"div",
 				{ className: "analysis-meta" },
@@ -206,6 +234,14 @@ export function analysisView(store: DataStore): HTMLElement {
 						),
 					]
 				: []),
+		);
+		body.hidden = !open;
+		return el(
+			"section",
+			{ className: open ? "analysis-setup open" : "analysis-setup" },
+			el("div", { className: "analysis-setup-head" }, el("h2", {}, analysis.name), toggle),
+			...(open ? [] : [summary]),
+			body,
 		);
 	}
 
