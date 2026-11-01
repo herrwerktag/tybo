@@ -9,6 +9,9 @@ import { text as boardText } from "./features/boards/texts.js";
 import { createStore, createWorkspaces } from "./features.core.js";
 import { render } from "./features.ui.js";
 
+/** The names in the entity table, top to bottom. */
+const rowNames = (root: HTMLElement) => [...root.querySelectorAll("tbody tr .name-cell")].map((td) => td.textContent);
+
 test("a type with a property, then an entity of it, can be created through the forms and are saved", async () => {
 	const root = await startApp(undefined, "#types");
 	byText(root, "button", dataText.createNewType).click();
@@ -37,7 +40,8 @@ test("a type with a property, then an entity of it, can be created through the f
 
 	assert.ok(byText(root, "td", "Dune"));
 	assert.ok(byText(root, "td", "Herbert"));
-	assert.ok(byText(root, "td", "Classic, sci-fi"));
+	assert.ok(byText(root, "td .chip", "Classic"));
+	assert.ok(byText(root, "td .chip", "sci-fi"));
 	const [dune] = (await readSaved()).entities;
 	assert.equal(dune?.name, "Dune");
 	assert.equal(dune?.values[book!.properties[0]!.id], "Herbert");
@@ -87,11 +91,9 @@ test("types and entities are reordered with their drag handles' arrow keys; focu
 	assert.deepEqual((await readSaved()).types.map((t) => t.id), ["film", "book"]);
 
 	goTo("#entities");
-	const select = root.querySelector<HTMLSelectElement>(".section-header select")!;
-	select.value = "book";
-	select.dispatchEvent(new Event("change"));
+	byText(root, ".type-chip span", "Book").closest("button")!.click();
 	press(root.querySelector<HTMLElement>("tbody .drag-handle")!, "ArrowDown");
-	assert.deepEqual([...root.querySelectorAll("tbody tr")].map((tr) => tr.children[2]?.textContent), ["Emma", "Dune"]);
+	assert.deepEqual(rowNames(root), ["Emma", "Dune"]);
 	assert.equal((document.activeElement as HTMLElement).dataset.focusKey, "entity:01J00000000000000000000000");
 	assert.deepEqual((await readSaved()).entities.map((e) => e.name), ["Emma", "Dune"]);
 
@@ -517,15 +519,28 @@ const tagged = {
 /** The tag filter select in `scope`, if there is one. */
 const tagSelectIn = (scope: ParentNode | null) =>
 	[...(scope?.querySelectorAll<HTMLSelectElement>("select") ?? [])].find((s) => s.ariaLabel === sharedText.filterByTag) ?? null;
-const rowNames = (root: HTMLElement) => [...root.querySelectorAll("tbody tr")].map((tr) => tr.children[2]?.textContent);
 const choose = (select: HTMLSelectElement, value: string) => {
 	select.value = value;
 	select.dispatchEvent(new Event("change"));
 };
 
+test("the Entities page shows the types as chips with their counts; clicking a row edits its entity, its buttons don't", async () => {
+	const root = await startApp(library, "#entities");
+	assert.deepEqual([...root.querySelectorAll(".type-chip")].map((c) => c.textContent), ["Book1"]);
+	assert.equal(root.querySelector<HTMLElement>(".type-chip")?.ariaPressed, "true");
+
+	(byText(root, "tbody td", "Herbert") as HTMLElement).click();
+	assert.equal(root.querySelector<HTMLInputElement>("#entity-form input")?.value, "Dune");
+	byText(root, "#entity-form button", sharedText.cancel).click();
+
+	stub({ confirm: () => false });
+	byText(root, "tbody button", sharedText.delete).click();
+	assert.equal(root.querySelector("#entity-form"), null, "Delete isn't a click on the row");
+});
+
 test("the Entities page filters by tag, remembers it, tags new entities with it, and reorders among all of the type", async () => {
 	const root = await startApp(tagged, "#entities");
-	const tagSelect = () => tagSelectIn(root.querySelector(".section-header"))!;
+	const tagSelect = () => tagSelectIn(root.querySelector(".section-filters"))!;
 	assert.deepEqual([...tagSelect().options].map((o) => o.textContent), [sharedText.allTags, "Classic", "Romance"]);
 	choose(tagSelect(), "Classic");
 	assert.deepEqual(rowNames(root), ["Dune", "Emma"]);

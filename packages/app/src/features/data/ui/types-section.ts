@@ -1,4 +1,4 @@
-import { dragHandle, el, reorderable, typeDot, sharedText } from "../../../shared/ui/index.js";
+import { dragHandle, el, reorderable, sharedText } from "../../../shared/ui/index.js";
 import {
 	TYPE_COLORS,
 	changedValueCount,
@@ -204,12 +204,18 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 			{ className: "type-list" },
 			...store.data.types.map((type, i) => {
 				const handle = dragHandle(text.moveType(type.name), `type:${type.id}`);
+				const count = store.data.entities.filter((e) => e.typeId === type.id).length;
 				const item = el(
 					"li",
 					{ className: type.id === state.editingTypeId ? "type-item current" : "type-item" },
 					// Name and buttons on top; the properties below, one per line, across the full width.
 					handle,
-					el("strong", { className: "type-name" }, typeDot(type.color), type.name),
+					el(
+						"div",
+						{ className: "type-head" },
+						el("strong", { className: "type-name" }, type.name),
+						el("span", { className: "type-count muted" }, `${count} ${text.historyEntities(count)}`),
+					),
 					type.properties.length > 0
 						? el(
 								"ul",
@@ -251,7 +257,6 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 										alert(text.cannotDeleteType(type.name, referrers.join(", ")));
 										return;
 									}
-									const count = store.data.entities.filter((e) => e.typeId === type.id).length;
 									if (confirm(text.confirmDeleteType(type.name, count))) {
 										store.deleteType(type.id);
 										if (state.editingTypeId === type.id) resetTypeForm();
@@ -263,6 +268,8 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 						),
 					),
 				);
+				// A stripe in the type's color down its left edge, like the bar on its cards.
+				item.style.setProperty("--type-color", type.color);
 				reorderable(item, handle, {
 					index: i,
 					count: store.data.types.length,

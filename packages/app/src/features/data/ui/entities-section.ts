@@ -1,4 +1,4 @@
-import { dragHandle, el, reorderable, tagFilter, sharedText, type EntityLink } from "../../../shared/ui/index.js";
+import { dragHandle, el, reorderable, tagFilter, typeDot, sharedText, type EntityLink } from "../../../shared/ui/index.js";
 import {
 	entityTags,
 	filterEntities,
@@ -43,18 +43,27 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 			return section;
 		}
 
-		const typeSelect = el(
-			"select",
-			{
-				ariaLabel: text.entityType,
-				onchange: () => {
-					state.selectedTypeId = typeSelect.value;
-					state.editingEntityId = null;
-					state.creatingEntity = false;
-					rerender();
-				},
-			},
-			...store.data.types.map((t) => el("option", { value: t.id, selected: t.id === type.id }, t.name)),
+		// The types as chips in their colors, each with how many entities it has: the type is what the table is about.
+		const showType = (typeId: string) => {
+			state.selectedTypeId = typeId;
+			state.editingEntityId = null;
+			state.creatingEntity = false;
+			rerender();
+		};
+		const typeChips = el(
+			"div",
+			{ className: "type-chips", role: "group", ariaLabel: text.entityType },
+			...store.data.types.map((t) => {
+				const chip = el(
+					"button",
+					{ type: "button", className: "type-chip", ariaPressed: String(t.id === type.id), onclick: () => showType(t.id) },
+					typeDot(t.color),
+					el("span", {}, t.name),
+					el("span", { className: "type-chip-count" }, String(store.data.entities.filter((e) => e.typeId === t.id).length)),
+				);
+				chip.style.setProperty("--type-color", t.color);
+				return chip;
+			}),
 		);
 
 		// Only with tags in use: shows one set of entities that belong together (e.g. one project's).
@@ -79,10 +88,8 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 			text.createNewEntity,
 		);
 
-		header.append(
-			el("div", { className: "section-filters" }, typeSelect, ...(tags.length > 0 ? [byTag.select] : [])),
-			...(formOpen ? [] : [createButton]),
-		);
+		header.append(...(formOpen ? [] : [createButton]));
+		section.append(el("div", { className: "section-filters" }, typeChips, ...(tags.length > 0 ? [byTag.select] : [])));
 		const empty = byTag.tag && ofType.length > 0 ? text.noEntitiesWithTag(type.name, byTag.tag) : text.noEntitiesOfType(type.name);
 		section.append(
 			...(formOpen
@@ -106,20 +113,38 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 	/** The entities shown (maybe filtered by a tag) of all those of the type, `ofType`, in which they're reordered. */
 	function entityTable(type: EntityType, entities: Entity[], ofType: Entity[]): HTMLElement {
 		const names = new Map(store.data.entities.map((e) => [e.id, e.name]));
-		const format = (p: PropertyDef, value: PropertyValue | undefined): string => {
-			if (value === null || value === undefined) return "—";
+		const types = new Map(store.data.types.map((t) => [t.id, t]));
+		const entityTypes = new Map(store.data.entities.map((e) => [e.id, e.typeId]));
+		/** Referenced entities as tags in their type's color, like on the cards. */
+		const refTags = (ids: readonly string[]): HTMLElement => {
+			const tags = ids.map((id) => {
+				const tag = el("span", { className: "ref-tag" }, names.get(id) ?? "?");
+				const color = types.get(entityTypes.get(id) ?? "")?.color;
+				if (color) tag.style.background = color;
+				return tag;
+			});
+			return el("div", { className: "prop-chips" }, ...tags);
+		};
+		const empty = () => el("span", { className: "muted" }, "—");
+		const format = (p: PropertyDef, value: PropertyValue | undefined): Node => {
+			if (value === null || value === undefined) return empty();
 			const parts = typeof value === "string" ? [value] : value;
-			if (p.kind === "reference") return parts.map((id) => names.get(id) ?? "?").join(", ");
-			if (p.kind === "options") return parts.map((id) => optionLabel(p, id) ?? "?").join(", ");
-			return parts.join(", ");
+			if (p.kind === "reference") return refTags(parts);
+			if (p.kind === "options") return el("div", { className: "prop-chips" }, ...parts.map((id) => el("span", { className: "chip" }, optionLabel(p, id) ?? "?")));
+			return document.createTextNode(parts.join(", "));
 		};
 
 		// Read-only columns for the reverse side of references to this type, e.g. "responsible for" on Role.
 		const inverseColumns = inverseRelations(store.data.types, type.id);
 		const sourceTypeName = (id: string) => store.data.types.find((t) => t.id === id)?.name ?? "?";
-		const inverseCell = (entity: Entity, propId: string): string => {
+		const inverseCell = (entity: Entity, propId: string): Node => {
 			const ids = inverseReferences(store.data, entity).find((r) => r.prop.id === propId)?.entityIds ?? [];
-			return ids.length > 0 ? ids.map((id) => names.get(id) ?? "?").join(", ") : "—";
+			return ids.length > 0 ? refTags(ids) : empty();
+		};
+		const edit = (entity: Entity) => {
+			state.editingEntityId = entity.id;
+			page.focusForm("entity");
+			rerender();
 		};
 
 		const table = el(
@@ -132,13 +157,13 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 					"tr",
 					{},
 					el("th", {}),
-					el("th", {}, text.id),
 					el("th", {}, sharedText.name),
 					...type.properties.map((p) => el("th", {}, p.name)),
 					...inverseColumns.map((c) =>
 						el("th", { className: "inverse", title: text.setOn(sourceTypeName(c.sourceTypeId), c.prop.name) }, c.label),
 					),
 					el("th", {}, text.tags),
+					el("th", {}, text.id),
 					el("th", {}),
 				),
 			),
@@ -151,27 +176,24 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 						"tr",
 						{},
 						el("td", { className: "handle-cell" }, handle),
-						el("td", { className: "mono nowrap", title: entity.id }, `…${entity.id.slice(-8)}`),
-						el("td", {}, entity.name),
+						el("td", { className: "name-cell" }, entity.name),
 						...type.properties.map((p) => el("td", {}, format(p, entity.values[p.id]))),
 						...inverseColumns.map((c) => el("td", { className: "inverse" }, inverseCell(entity, c.prop.id))),
-						el("td", {}, entity.tags.length > 0 ? entity.tags.join(", ") : "—"),
 						el(
 							"td",
 							{},
+							entity.tags.length > 0 ? el("div", { className: "prop-chips" }, ...entity.tags.map((t) => el("span", { className: "chip" }, t))) : empty(),
+						),
+						el("td", { className: "id-cell mono nowrap", title: entity.id }, `…${entity.id.slice(-8)}`),
+						el(
+							"td",
+							{ className: "actions-cell" },
 							el(
 								"div",
 								{ className: "actions" },
 								el(
 									"button",
-									{
-										type: "button",
-										onclick: () => {
-											state.editingEntityId = entity.id;
-											page.focusForm("entity");
-											rerender();
-										},
-									},
+									{ type: "button", onclick: () => edit(entity) },
 									text.edit,
 								),
 								el(
@@ -192,6 +214,10 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 							),
 						),
 					);
+					// Clicking the row anywhere but on its buttons edits the entity.
+					row.addEventListener("click", (event) => {
+						if (!(event.target as Element).closest("button, a, input")) edit(entity);
+					});
 					reorderable(row, handle, {
 						index: i,
 						count: entities.length,
