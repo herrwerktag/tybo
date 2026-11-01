@@ -17,7 +17,7 @@ test("a type with a property, then an entity of it, can be created through the f
 	byText(root, "button", dataText.createNewType).click();
 	const typeForm = root.querySelector<HTMLFormElement>("#type-form")!;
 	typeInto(typeForm.querySelector(`input[placeholder="${dataText.typeNamePlaceholder}"]`)!, "Book");
-	byText(typeForm, "button", dataText.addProperty).click();
+	byText(typeForm, "button", `+ ${dataText.addProperty}`).click();
 	// The form was drawn again with the new property; the typed name is kept.
 	const form = root.querySelector<HTMLFormElement>("#type-form")!;
 	typeInto(form.querySelector(`input[placeholder="${dataText.propertyName}"]`)!, "author");

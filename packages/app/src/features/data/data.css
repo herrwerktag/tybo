@@ -109,13 +109,15 @@
 	height: 23px;
 	padding: 0 0.35rem 0 0.75rem;
 	background: var(--surface-inset);
+	box-shadow: var(--tint-shade);
+	color: var(--on-tint);
 	/* Inside the card's 1px border and 6px corners. */
 	border-radius: calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px) 0 0;
 }
 
 .card-type {
 	font-weight: 600;
-	color: rgb(0 0 0 / 0.65);
+	color: var(--on-tint-muted);
 	font-size: var(--text-xs);
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
@@ -283,12 +285,13 @@
 .type-chip[aria-pressed="true"]:hover:not(:disabled) {
 	background: var(--type-color);
 	border-color: transparent;
-	color: rgb(0 0 0 / 0.85);
+	color: var(--on-tint);
+	box-shadow: var(--tint-shade);
 	font-weight: 600;
 }
 
 .type-chip[aria-pressed="true"] :is(.type-dot, .type-chip-count) {
-	color: rgb(0 0 0 / 0.6);
+	color: var(--on-tint-muted);
 }
 
 .type-chip[aria-pressed="true"] .type-dot {
@@ -415,6 +418,51 @@ td.handle-cell {
 	color: var(--muted);
 	background: var(--surface-inset);
 	border-style: dashed;
+}
+
+/* The fields every entity has, in short: what they are, as a quiet two-column list. */
+.builtin-title {
+	font-size: var(--text-sm);
+	font-weight: 600;
+}
+
+.builtin-fields {
+	display: grid;
+	grid-template-columns: fit-content(10rem) minmax(0, 1fr);
+	gap: 0.25rem 1rem;
+	font-size: var(--text-sm);
+}
+
+.builtin-fields dt {
+	color: var(--text);
+}
+
+/* Adding a property: a dashed line across the form where the next one will be. */
+.add-property {
+	justify-self: stretch;
+	border-style: dashed;
+	color: var(--muted);
+	background: transparent;
+}
+
+.add-property:hover:not(:disabled) {
+	color: var(--text);
+}
+
+/* The form's own buttons, apart from what's being edited. */
+.form-actions {
+	justify-self: stretch;
+	padding-top: 0.75rem;
+	border-top: 1px solid var(--border);
+}
+
+/* The data forms: one width for all their fields, wide enough for long values, not across a wide screen. */
+:is(#type-form, #entity-form) {
+	max-width: 48rem;
+}
+
+:is(#type-form, #entity-form) .field :is(input:not([type="checkbox"]), select) {
+	max-width: none;
 }
 
 .type-list {

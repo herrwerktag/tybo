@@ -15,6 +15,10 @@
 	--focus: #3b6fe0;
 	--chip: #ebebeb;
 	--ref-tag: var(--surface-inset);
+	/* Text on type colors and chips, and what lies over a type color to fit the theme (nothing in light). */
+	--on-tint: rgb(0 0 0 / 0.8);
+	--on-tint-muted: rgb(0 0 0 / 0.6);
+	--tint-shade: none;
 
 	/* The type scale: every text size in the app is one of these. */
 	--text-xs: 0.75rem;
@@ -36,7 +40,8 @@
 }
 
 /* Dark colors: following the system unless light is chosen in the settings, or chosen there (data-theme="dark").
-   Type colors, chips and drawings keep their light tints, with dark text on them. */
+   Type colors on tags and card bars keep their hue and dark text but are shaded a little (--tint-shade), so they
+   don't glare on the dark surfaces; drawings keep their light tints. */
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme="light"]) {
 		color-scheme: dark;
@@ -55,6 +60,7 @@
 		--focus: #6f97f2;
 		--chip: #d6d6d6;
 		--ref-tag: #d6d6d6;
+		--tint-shade: inset 0 0 0 100vmax rgb(0 0 0 / 0.22);
 	}
 }
 
@@ -75,6 +81,7 @@
 	--focus: #6f97f2;
 	--chip: #d6d6d6;
 	--ref-tag: #d6d6d6;
+	--tint-shade: inset 0 0 0 100vmax rgb(0 0 0 / 0.22);
 }
 
 body {
@@ -796,7 +803,8 @@ button.ref-tag {
 	border-radius: var(--radius-sm);
 	font-size: var(--text-sm);
 	line-height: 1.375rem;
-	color: rgb(0 0 0 / 0.8);
+	color: var(--on-tint);
+	box-shadow: var(--tint-shade);
 	overflow-wrap: anywhere;
 }
 

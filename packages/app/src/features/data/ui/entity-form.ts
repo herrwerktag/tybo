@@ -75,7 +75,7 @@ export function entityForm(
 		el("label", { className: "field wide" }, el("span", {}, text.description), descriptionInput),
 		el(
 			"div",
-			{ className: "row" },
+			{ className: "row form-actions" },
 			el("button", { type: "submit", className: "primary" }, editing ? sharedText.save : sharedText.create),
 			el(
 				"button",

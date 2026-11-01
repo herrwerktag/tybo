@@ -249,7 +249,7 @@ main:has(.analysis-view) {
 }
 
 .entity-link.ref-tag:hover {
-	box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.25);
+	outline: 1px solid var(--border-strong);
 }
 
 /* The row's entity leads its row. */
