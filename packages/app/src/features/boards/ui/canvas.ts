@@ -143,7 +143,7 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 	 * space, so zoom doesn't shrink it. */
 	const preview = createCardPreview(store, canvasMain);
 
-	const panel = entityPanel(store, { board: currentBoard, readOnly, preview, onHide: () => setPanelCollapsed(true) });
+	const panel = entityPanel(store, { board: currentBoard, readOnly, preview, onHide: () => setPanelCollapsed(true), onNewEntity: () => newEntity.open() });
 	const renderPanel = panel.render;
 	const layer = el("div", { className: "canvas-board" });
 	const surface = el("div", { className: "canvas-surface" }, layer);

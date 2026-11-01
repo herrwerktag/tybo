@@ -1,4 +1,4 @@
-import { dragHandle, el, icon, reorderable, sharedText } from "../../../shared/ui/index.js";
+import { dragHandle, el, emptyState, icon, reorderable, sharedText } from "../../../shared/ui/index.js";
 import {
 	TYPE_COLORS,
 	changedValueCount,
@@ -379,8 +379,23 @@ export function typesSection(page: DataPage, { onSaved, typeNotes = [] }: { onSa
 		return el(
 			"section",
 			{},
-			el("div", { className: "section-header" }, page.dataSwitch("types"), ...(editingType || state.creatingType ? [] : [createButton])),
-			...(editingType || state.creatingType ? [form] : store.data.types.length > 0 ? [list] : [el("p", { className: "muted" }, text.noTypesYet)]),
+			// Without types, the empty list offers the button.
+			el("div", { className: "section-header" }, page.dataSwitch("types"), ...(editingType || state.creatingType || store.data.types.length === 0 ? [] : [createButton])),
+			...(editingType || state.creatingType
+				? [form]
+				: store.data.types.length > 0
+					? [list]
+					: [
+							emptyState(text.noTypesYet, {
+								label: text.createNewType,
+								run: () => {
+									resetTypeForm();
+									state.creatingType = true;
+									page.focusForm("type");
+									rerender();
+								},
+							}),
+						]),
 		);
 	}
 

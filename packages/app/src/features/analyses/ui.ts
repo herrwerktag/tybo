@@ -2,8 +2,9 @@ import type { DataStore } from "../data/core.js";
 import { createCardPreview, detailsPanel, type EntityPlaces } from "../data/ui.js";
 import { traitRoute } from "../traits/ui.js";
 import { text as traitText } from "../traits/texts.js";
+import { text as dataText } from "../data/texts.js";
 import { freeName, moveItem, nameTaken } from "../../shared/core/index.js";
-import { downloadFile, el, isRecord, listenWhileConnected, readPreference, refused, safeFileName, typeDot, writePreference, zipFiles, sharedText, type EntityLink, type PageMaker, type SearchSource, type UnitDescriber } from "../../shared/ui/index.js";
+import { downloadFile, el, emptyState, isRecord, listenWhileConnected, readPreference, refused, safeFileName, typeDot, writePreference, zipFiles, sharedText, type EntityLink, type PageMaker, type SearchSource, type UnitDescriber } from "../../shared/ui/index.js";
 import {
 	addAnalysis,
 	analysisFrom,
@@ -79,7 +80,8 @@ export function analysisView(
 			listSection(current),
 			...(current ? [setupSection(current), resultSection(current)] : []),
 		);
-		if (!current) content.append(el("section", {}, el("p", { className: "muted" }, text.analysisEmpty)));
+		// "New analysis" is right beside, in the list.
+		if (!current) content.append(el("section", {}, emptyState(text.analysisEmpty)));
 		if (focusKey) content.querySelector<HTMLElement>(`[data-focus-key="${focusKey}"]`)?.focus();
 		showDetails(details.shown()); // the entity may have changed or been removed
 	}
@@ -375,8 +377,14 @@ export function analysisView(
 			const hiding = analysis.groups.filter((level) => level.hideEmpty).map((level) => pathLabel(store.data, from, level.path));
 			const rowTypes = new Set(rowTypeIds(store.data, analysis));
 			const hidden = hiding.length > 0 && store.data.entities.some((e) => rowTypes.has(e.typeId));
-			const message = hidden ? text.analysisAllHidden(hiding.join(", ")) : trait ? text.analysisNoTraitRows(trait.name) : text.analysisNoRows(basisName);
-			section.append(el("p", { className: "muted" }, message));
+			// No rows for good: the next step is making some (of the type), or giving the trait types to bear it.
+			section.append(
+				hidden
+					? emptyState(text.analysisAllHidden(hiding.join(", ")))
+					: trait
+						? emptyState(text.analysisNoTraitRows(trait.name), { label: traitText.openTrait(trait.name), href: traitRoute(trait.id) })
+						: emptyState(text.analysisNoRows(basisName), { label: dataText.createNewEntity, href: `#entities/new/${encodeURIComponent(analysis.typeId ?? "")}` }),
+			);
 			return section;
 		}
 		const exportMarkdown = () => {

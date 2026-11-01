@@ -91,14 +91,14 @@ function dataPageIn(
 				types.reset(current);
 				entities.reset(current);
 			}
-			const [route, id] = location.hash.slice(1).split("/");
+			const [route, id, more] = location.hash.slice(1).split("/");
 			const section = sections.find((s) => s.route === route);
 			const target = route === "entities" && id ? decodeURIComponent(id) : null;
 			const shown = section
 				? section.render(current, page)
 				: route === "types"
 					? types.render(current, id ? decodeURIComponent(id) : null)
-					: entities.render(current, target);
+					: entities.render(current, target, more ? decodeURIComponent(more) : null);
 			return el("div", { className: "data-view" }, shown);
 		},
 		afterRender(root: HTMLElement): void {

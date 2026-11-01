@@ -1,5 +1,5 @@
 import type { HistoryEntry, StoreCore } from "../../shared/core/index.js";
-import { el, language, type EntityLink, type HistoryArea, type HistoryField, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
+import { el, emptyState, language, type EntityLink, type HistoryArea, type HistoryField, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
 import { text } from "./texts.js";
 import { historyLoader, startOfDay, type HistoryLoader } from "./ui/loader.js";
 import { groupWrites, sessionsOf, storyGroups, unitStory, workspaceStory, writeSentence, writeToken, type FieldChange, type Session, type UnitAction, type UnitStory, type Write, type WriteToken } from "./ui/writes.js";
@@ -137,7 +137,7 @@ export function historyPage<S extends Pick<StoreCore<unknown>, "readHistory">>({
 			);
 			const status: Node[] = [];
 			if (failed) status.push(el("p", { role: "alert" }, text.historyFailed, " ", el("button", { type: "button", onclick: () => void loader!.loadOlder() }, text.retry)));
-			else if (writes.length === 0 && !loading) status.push(el("p", { className: "muted" }, entries.length === 0 && complete ? text.historyEmpty : text.historyNoneShown));
+			else if (writes.length === 0 && !loading) status.push(emptyState(entries.length === 0 && complete ? text.historyEmpty : text.historyNoneShown));
 			if (loading) status.push(el("p", { className: "muted" }, text.loading));
 			view.replaceChildren(
 				el(

@@ -1,5 +1,5 @@
 import type { Point } from "../../../shared/core/index.js";
-import { el, sharedText } from "../../../shared/ui/index.js";
+import { el, emptyState, sharedText } from "../../../shared/ui/index.js";
 import { filterEntities, linkCandidates, relationsOf, type Entity, type Relation } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import type { CanvasCard, BoardStore } from "../core.js";
@@ -150,7 +150,7 @@ export function newEntityDialog(
 		dialog.replaceChildren(
 			dialogHeader(dialog, text.newEntityTitle),
 			types.length === 0
-				? el("p", { className: "muted" }, dataText.createTypeFirst)
+				? emptyState(dataText.createTypeFirst, { label: dataText.createNewType, href: "#types/new" })
 				: el(
 						"form",
 						{

@@ -1,4 +1,4 @@
-import { el, icon, tagFilter, typeDot } from "../../../shared/ui/index.js";
+import { el, emptyState, icon, sharedText, tagFilter, typeDot } from "../../../shared/ui/index.js";
 import { entityTags, filterEntities } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import type { CardPreview } from "../../data/ui.js";
@@ -15,11 +15,18 @@ const PANEL_TAG_KEY = "canvas-panel-tag";
  * The editor's side panel: the entities, by type, to drag onto the board (`board`), found by name, type and tag, or
  * only those still missing there. What has no card on the board is marked, and each type says how many of its
  * entities are missing; what is there already is quieter. Hovering or focusing one shows its card beside it
- * (`preview`). Its fold button calls `onHide`.
+ * (`preview`). Its fold button calls `onHide`. Empty, it says why and offers the next step: a new entity
+ * (`onNewEntity`) or first a type, or resetting the filters that left nothing.
  */
 export function entityPanel(
 	store: BoardStore,
-	{ board, readOnly, preview, onHide }: { board: () => Board; readOnly: boolean; preview: CardPreview; onHide: () => void },
+	{
+		board,
+		readOnly,
+		preview,
+		onHide,
+		onNewEntity,
+	}: { board: () => Board; readOnly: boolean; preview: CardPreview; onHide: () => void; onNewEntity: () => void },
 ) {
 	const element = el("aside", { className: "canvas-panel" });
 	// Scrolling the list would leave the preview beside an entity no longer there (scrolling to a focused one doesn't).
@@ -109,9 +116,27 @@ export function entityPanel(
 			})
 			.filter((g) => g.entities.length > 0);
 
-		const empty = store.data.entities.length === 0 ? text.noEntitiesYet : onlyMissing && matches.length > 0 ? text.nothingMissing : text.noMatches;
+		/** Every filter back to all (the tag's remembered one too), the controls built anew. */
+		const resetFilters = () => {
+			query = "";
+			typeId = null;
+			onlyMissing = false;
+			const tagSelect = element.querySelector<HTMLSelectElement>(`select[aria-label="${sharedText.filterByTag}"]`);
+			if (tagSelect) {
+				tagSelect.value = "";
+				tagSelect.dispatchEvent(new Event("change"));
+			}
+			build();
+			render();
+		};
+		const empty =
+			store.data.entities.length > 0
+				? emptyState(onlyMissing && matches.length > 0 ? text.nothingMissing : text.noMatches, { label: sharedText.resetFilters, run: resetFilters })
+				: store.data.types.length > 0
+					? emptyState(text.noEntitiesYet, { label: text.newEntityTitle, run: onNewEntity })
+					: emptyState(dataText.createTypeFirst, { label: dataText.createNewType, href: "#types/new" });
 		list.replaceChildren(
-			...(groups.length === 0 ? [el("p", { className: "muted" }, empty)] : []),
+			...(groups.length === 0 ? [empty] : []),
 			...groups.map(({ type, all, missing, entities }) =>
 				el(
 					"div",

@@ -1,5 +1,5 @@
 import { freeName, moveItem, ulid } from "../../shared/core/index.js";
-import { el, isRecord, refused, sharedText, type SearchSource, type UnitDescriber } from "../../shared/ui/index.js";
+import { el, emptyState, isRecord, refused, sharedText, type SearchSource, type UnitDescriber } from "../../shared/ui/index.js";
 import type { DataStore, EntityType } from "../data/core.js";
 import type { DataSection, TypeNote } from "../data/ui.js";
 import { text as dataText } from "../data/texts.js";
@@ -384,21 +384,14 @@ export const TRAITS_SECTION: DataSection = {
 			const focusKey = (document.activeElement as HTMLElement | null)?.dataset?.focusKey;
 			const id = traitOfRoute(location.hash);
 			const current = store.data.traits.find((t) => t.id === id) ?? store.data.traits[0];
-			const add = el(
-				"button",
-				{
-					type: "button",
-					className: "primary",
-					onclick: () => {
-						const item = addTrait(store, freeName(store.data.traits, text.defaultTraitName));
-						// Its address without drawing the page anew (as a hash change would), so its name stays selected.
-						history.pushState(null, "", traitRoute(item.id));
-						draw();
-						view.querySelector<HTMLInputElement>(".trait-form input")?.select();
-					},
-				},
-				text.newTrait,
-			);
+			const make = () => {
+				const item = addTrait(store, freeName(store.data.traits, text.defaultTraitName));
+				// Its address without drawing the page anew (as a hash change would), so its name stays selected.
+				history.pushState(null, "", traitRoute(item.id));
+				draw();
+				view.querySelector<HTMLInputElement>(".trait-form input")?.select();
+			};
+			const add = el("button", { type: "button", className: "primary", onclick: make }, text.newTrait);
 			const list = el(
 				"ul",
 				{ className: "trait-list" },
@@ -406,8 +399,9 @@ export const TRAITS_SECTION: DataSection = {
 					el("li", {}, el("a", { href: traitRoute(trait.id), className: "trait-entry", ariaCurrent: trait.id === current?.id ? "page" : "false" }, trait.name)),
 				),
 			);
-			const form = current ? traitForm(store, current) : el("p", { className: "muted" }, text.noTraitsYet);
-			view.replaceChildren(el("div", { className: "section-header" }, page.dataSwitch("traits"), add), el("div", { className: "traits-layout" }, list, form));
+			// None yet: what a trait is, and the button making the first.
+			const shown = current ? el("div", { className: "traits-layout" }, list, traitForm(store, current)) : emptyState(text.noTraitsYet, { label: text.newTrait, run: make });
+			view.replaceChildren(el("div", { className: "section-header" }, page.dataSwitch("traits"), ...(current ? [add] : [])), shown);
 			if (focusKey) view.querySelector<HTMLElement>(`[data-focus-key="${focusKey}"]`)?.focus();
 		};
 		// Every change (here, or undone and redone) draws anew; the first after the section is gone stops listening.

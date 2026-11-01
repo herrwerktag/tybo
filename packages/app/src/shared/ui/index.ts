@@ -1,4 +1,5 @@
 export * from "./dom.js";
+export * from "./empty.js";
 export * from "./history.js";
 export * from "./icons.js";
 export * from "./i18n.js";
