@@ -45,13 +45,23 @@
 	overflow-y: auto;
 	display: grid;
 	align-content: start;
-	gap: 1.25rem;
+	gap: 1rem;
 	padding: 1rem;
 }
 
+/* Parts of the details, not page sections: no box of their own, a line between them. */
 .details-section {
 	display: grid;
-	gap: 0.4rem;
+	gap: 0.5rem;
+	padding: 0;
+	background: none;
+	border: none;
+	border-radius: 0;
+}
+
+.details-section + .details-section {
+	padding-top: 1rem;
+	border-top: 1px solid var(--border);
 }
 
 .details-section h3 {
@@ -68,23 +78,22 @@
 	line-height: 1.55;
 }
 
-/* Label above value: easy to scan in a narrow column. */
+/* Label column, value column, like on the cards: labels as wide as they need (at most 9rem), values wrapping. */
 .details-props {
 	display: grid;
-	gap: 0.75rem;
+	grid-template-columns: fit-content(9rem) minmax(0, 1fr);
+	gap: 0.6rem 1rem;
+	align-items: baseline;
+	font-size: var(--text-md);
 }
 
 .details-props dt {
-	font-size: var(--text-sm);
 	color: var(--muted);
+	overflow-wrap: anywhere;
 }
 
 .details-props dd {
 	overflow-wrap: anywhere;
-}
-
-.details-props .prop-chips {
-	margin-top: 0.15rem;
 }
 
 .details-id {
@@ -186,8 +195,21 @@
 	padding: 0.6rem 0.75rem;
 	font-size: var(--text-md);
 	line-height: 1.5;
-	white-space: pre-wrap;
 	overflow-wrap: anywhere;
+}
+
+/* Markdown on a card: as compact as the rest of it, headings only a little stronger than the text. */
+.card-content .markdown {
+	gap: 0.35rem;
+	line-height: 1.5;
+}
+
+.card-content .markdown :is(h4, h5, h6) {
+	font-size: var(--text-md);
+}
+
+.details-section .markdown h4 {
+	font-size: var(--text-base);
 }
 
 .swatches {

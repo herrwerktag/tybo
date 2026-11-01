@@ -203,7 +203,8 @@ export function cardParts(
 					{ className: "card-body" },
 					...(missing.length > 0 ? [el("p", { className: "card-missing" }, text.missingRequired(missing.join(", ")))] : []),
 					...(rows.length > 0 ? [propertyList(store, rows, options.preview)] : []),
-					...(content ? [el("div", { className: "card-content" }, entity.content)] : []),
+					// Written in Markdown, like the description (e.g. a type's template "# Notes").
+					...(content ? [el("div", { className: "card-content" }, renderMarkdown(entity.content))] : []),
 				)
 			: null;
 	return { header, body };
@@ -283,7 +284,7 @@ export function entityDetails(
 			...(rows.length > 0
 				? [section(text.properties, el("dl", { className: "details-props" }, ...rows.flatMap((row) => [el("dt", {}, row.label), value(row)])))]
 				: []),
-			...(entity.content.trim() ? [section(text.content, el("p", { className: "details-text" }, entity.content))] : []),
+			...(entity.content.trim() ? [section(text.content, renderMarkdown(entity.content))] : []),
 			el("p", { className: "details-id" }, `${text.id}: `, el("span", { className: "mono" }, entity.id)),
 		),
 	];
