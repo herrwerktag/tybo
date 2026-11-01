@@ -7,10 +7,6 @@
 	}
 }
 
-.field-hint {
-	font-size: var(--text-sm);
-}
-
 /* Details of the selected card: description first, then every property, content and the ID. */
 .details-panel {
 	flex: 0 0 var(--panel-width, 22rem);
@@ -633,19 +629,6 @@ td.handle-cell {
 	}
 }
 
-/* The entity's ID and the features' links from its form to their pages (its history, say): one quiet line. */
-.entity-links {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: baseline;
-	gap: 0.25rem 1rem;
-	font-size: var(--text-sm);
-}
-
-.entity-links a {
-	text-decoration: underline;
-	text-underline-offset: 0.2em;
-}
 
 /* A property folded to one line: handle, name, what it is in short, unfold, remove. */
 .property-head {
@@ -746,4 +729,124 @@ td.handle-cell {
 
 .entity-table a.ref-tag:hover {
 	text-decoration: underline;
+}
+
+/* With an entity's details beside the table, the page takes the whole width. */
+.data-view:has(.entities-view > .details-panel:not([hidden])) {
+	max-width: none;
+}
+
+/* The entities with the details of one beside them, like on a board: the details stay in view while the table
+   scrolls past. */
+.entities-view {
+	display: flex;
+	align-items: start;
+	min-width: 0;
+}
+
+.entities-view > section {
+	flex: 1 1 0;
+	min-width: 0;
+}
+
+.entities-view > .details-panel {
+	position: sticky;
+	top: 1rem;
+	max-height: calc(100dvh - 6rem);
+	margin-left: 1rem;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	overflow: hidden;
+}
+
+.entities-view:has(> .details-panel[hidden]) > .details-resize {
+	display: none;
+}
+
+/* An entity's name in the table: shows its details. */
+.name-link {
+	padding: 0;
+	border: none;
+	background: transparent;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.name-link:hover {
+	text-decoration: underline;
+	text-underline-offset: 0.2em;
+}
+
+/* A value that can be changed where it is: clicked, an editor takes its place. */
+.field-value.editable {
+	margin: -0.15rem -0.3rem;
+	padding: 0.15rem 0.3rem;
+	border-radius: var(--radius-sm);
+	cursor: text;
+}
+
+.field-value.editable:hover {
+	background: var(--surface-inset);
+	box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.field-value.editable:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 0;
+}
+
+/* A reference's value: its tags lead to the entities, the pencil changes them. */
+.field-value:has(> .field-edit) {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.25rem;
+}
+
+.field-edit {
+	display: inline-flex;
+	padding: 0.15rem 0.3rem;
+	border: none;
+	background: transparent;
+	color: var(--muted);
+}
+
+/* In the table only on the row under the pointer (or with the focus), so the values stay calm. */
+.entity-table .field-edit {
+	opacity: 0;
+}
+
+.entity-table tr:is(:hover, :focus-within) .field-edit {
+	opacity: 1;
+}
+
+.field-edit:hover:not(:disabled) {
+	color: var(--text);
+}
+
+/* The editor in a value's place, as wide as there is room. */
+.field-editor {
+	display: grid;
+	gap: 0.25rem;
+	min-width: 0;
+}
+
+.field-editor :is(input, select, textarea) {
+	width: 100%;
+	min-width: 8rem;
+}
+
+.details-title .field-editor input {
+	font: inherit;
+}
+
+.copy-id {
+	padding: 0 0.35rem;
+	border: none;
+	background: transparent;
+	color: var(--muted);
+	font-size: var(--text-xs);
+	text-decoration: underline;
+	text-underline-offset: 0.2em;
 }

@@ -3,6 +3,7 @@ import { el, type EntityLink, type Page, type PageMaker, type Shell } from "../.
 import { text } from "../texts.js";
 import { entitiesSection } from "./entities-section.js";
 import { typesSection } from "./types-section.js";
+import type { EntityPlaces } from "./entity-card.js";
 
 /** What the data pages' sections get from the page. */
 export interface DataPage {
@@ -33,18 +34,23 @@ export interface DataSection {
 
 /**
  * The Data tab: the entity types with their properties (#types), and the entities of a type in a table (#entities),
- * each with its form — where the features' `entityLinks` lead from an entity to their pages, and their `typeNotes` say
+ * each with its form — where the features' `entityLinks` and `entityPlaces` lead from an entity to their pages, and their `typeNotes` say
  * what they know of a type — and after them the features' `sections`. What is being edited stays while the page is drawn anew; another workspace starts afresh.
  */
 export function dataPage(
-	parts: { entityLinks?: readonly EntityLink[]; sections?: readonly DataSection[]; typeNotes?: readonly TypeNote[] } = {},
+	parts: { entityLinks?: readonly EntityLink[]; entityPlaces?: readonly EntityPlaces[]; sections?: readonly DataSection[]; typeNotes?: readonly TypeNote[] } = {},
 ): PageMaker<DataStore> {
 	return (shell) => dataPageIn(shell, parts);
 }
 
 function dataPageIn(
 	shell: Shell,
-	{ entityLinks = [], sections = [], typeNotes = [] }: { entityLinks?: readonly EntityLink[]; sections?: readonly DataSection[]; typeNotes?: readonly TypeNote[] },
+	{
+		entityLinks = [],
+		entityPlaces = [],
+		sections = [],
+		typeNotes = [],
+	}: { entityLinks?: readonly EntityLink[]; entityPlaces?: readonly EntityPlaces[]; sections?: readonly DataSection[]; typeNotes?: readonly TypeNote[] },
 ): Page<DataStore> {
 	/** The store the page last started afresh for. */
 	let shownStore: DataStore | null = null;
@@ -71,7 +77,7 @@ function dataPageIn(
 			return nav;
 		},
 	};
-	const entities = entitiesSection(page, entityLinks);
+	const entities = entitiesSection(page, entityLinks, entityPlaces);
 	// A type just saved: the entities page shows its entities.
 	const types = typesSection(page, { onSaved: (typeId) => entities.showType(typeId), typeNotes });
 

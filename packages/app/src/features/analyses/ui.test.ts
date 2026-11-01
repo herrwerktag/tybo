@@ -114,11 +114,12 @@ test("Analyses: an analysis set up step by step lists the rows grouped, is saved
 	// Its details name the activities the process includes (the other side of the references): clicking one shows that.
 	byText<HTMLButtonElement>(details, ".ref-tag", "Build").click();
 	assert.equal(details.querySelector(".details-title")?.textContent, "Build");
-	byText<HTMLButtonElement>(details, "button", dataText.edit).click();
-	const form = details.querySelector<HTMLFormElement>("#entity-form")!;
 	assert.equal(details.querySelector(".card-type")?.textContent, "Activity", "below the bar of its type");
-	form.querySelector<HTMLInputElement>("input")!.value = "Build it";
-	form.requestSubmit();
+	// Its name is changed where it's shown.
+	details.querySelector<HTMLElement>(".details-title .editable")!.click();
+	const input = details.querySelector<HTMLInputElement>(".details-title form input")!;
+	input.value = "Build it";
+	input.form!.requestSubmit();
 	await settle();
 	assert.equal(location.hash, "#analysis", "it stays in the analysis");
 	assert.equal(details.querySelector(".details-title")?.textContent, "Build it");

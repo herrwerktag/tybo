@@ -1,7 +1,5 @@
 import {
 	entityTypeMap,
-	inverseReferences,
-	inverseRelations,
 	parseTags,
 	parseValue,
 	type Entity,
@@ -10,28 +8,23 @@ import {
 	type PropertyValue,
 	type DataStore,
 } from "../core.js";
-import { el, sharedText, type EntityLink } from "../../../shared/ui/index.js";
-import { detailsBar } from "./entity-card.js";
+import { el, sharedText } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
 
 /**
- * The form for a new entity (tagged like the filter shows, `filterTag`) or for editing one, with `links` from it to
- * the features' pages. Save or Cancel calls `onDone`, with whether something was saved.
+ * The form for a new entity (tagged like the filter shows, `filterTag`); one there is is changed field by field (see
+ * `fieldEditing`). Create or Cancel calls `onDone`, with whether something was saved.
  */
 export function entityForm(
 	store: DataStore,
 	type: EntityType,
-	editing: Entity | undefined,
-	{ filterTag, links = [], onDone }: { filterTag: string | null; links?: readonly EntityLink[]; onDone: (saved: boolean) => void },
+	{ filterTag, onDone }: { filterTag: string | null; onDone: (saved: boolean) => void },
 ): HTMLFormElement {
-	const nameInput = el("input", { required: true, pattern: ".*\\S.*", value: editing?.name ?? "" });
-	const tagsInput = el("input", {
-		value: (editing ? editing.tags : filterTag ? [filterTag] : []).join(", "),
-		placeholder: text.tagsHint,
-	});
-	const contentInput = el("textarea", { rows: 6, value: editing?.content ?? "" });
-	const descriptionInput = el("textarea", { rows: 10, value: editing ? editing.description : type.contentTemplate });
-	const fields = type.properties.map((prop) => propertyField(store, prop, editing?.values[prop.id] ?? null));
+	const nameInput = el("input", { required: true, pattern: ".*\\S.*", value: "" });
+	const tagsInput = el("input", { value: filterTag ?? "", placeholder: text.tagsHint });
+	const contentInput = el("textarea", { rows: 6, value: "" });
+	const descriptionInput = el("textarea", { rows: 10, value: type.contentTemplate });
+	const fields = type.properties.map((prop) => propertyField(store, prop, null));
 
 	return el(
 		"form",
@@ -46,37 +39,20 @@ export function entityForm(
 				for (const { prop, read } of fields) {
 					values[prop.id] = parseValue(prop, read(), entityTypes);
 				}
-				const tags = parseTags(tagsInput.value);
-				if (editing) {
-					store.updateEntity(editing.id, name, contentInput.value, values, descriptionInput.value, tags);
-				} else {
-					store.addEntity(type.id, name, contentInput.value, values, descriptionInput.value, tags);
-				}
+				store.addEntity(type.id, name, contentInput.value, values, descriptionInput.value, parseTags(tagsInput.value));
 				onDone(true);
 			},
 		},
-		el("h3", {}, editing ? text.editNamed(type.name) : text.newEntity(type.name)),
-		...(editing
-			? [
-					// The ID and the links to the features' pages: one quiet line, the fields below matter more.
-					el(
-						"p",
-						{ className: "entity-links muted" },
-						el("span", { title: text.id }, `${text.id} `, el("span", { className: "mono" }, editing.id)),
-						...links.map((link) => el("a", { href: link.href(editing.id) }, link.label())),
-					),
-				]
-			: []),
+		el("h3", {}, text.newEntity(type.name)),
 		el("label", { className: "field" }, el("span", {}, sharedText.name), nameInput),
 		...fields.map((f) => f.element),
-		...(editing ? inverseFields(store, editing) : []),
 		el("label", { className: "field" }, el("span", {}, text.tags), tagsInput),
 		el("label", { className: "field wide" }, el("span", {}, text.content), contentInput),
 		el("label", { className: "field wide" }, el("span", {}, text.description), descriptionInput),
 		el(
 			"div",
 			{ className: "row form-actions" },
-			el("button", { type: "submit", className: "primary" }, editing ? sharedText.save : sharedText.create),
+			el("button", { type: "submit", className: "primary" }, sharedText.create),
 			el(
 				"button",
 				{
@@ -89,61 +65,13 @@ export function entityForm(
 	);
 }
 
-/**
- * Shows the form for editing `entity` in a details panel, below the bar of its type (× calls `onClose`). If the panel
- * shows it already, it's left as it is, so drawing the panel again keeps what was typed.
- */
-export function showEntityEditor(
-	panel: HTMLElement,
-	store: DataStore,
-	entity: Entity,
-	type: EntityType,
-	{ onClose, onDone }: { onClose: () => void; onDone: (saved: boolean) => void },
-): void {
-	if (panel.querySelector<HTMLFormElement>("#entity-form")?.dataset.entityId === entity.id) return;
-	const form = entityForm(store, type, entity, { filterTag: null, onDone });
-	form.dataset.entityId = entity.id;
-	panel.replaceChildren(
-		el("header", { className: "details-header" }, detailsBar(type, onClose)),
-		el("div", { className: "details-body" }, form),
-	);
-	form.querySelector("input")?.focus();
-}
-
-/** Read-only fields for the reverse side of references (e.g. "responsible for"); edited on the other entities. */
-function inverseFields(store: DataStore, entity: Entity): HTMLElement[] {
-	const names = new Map(store.data.entities.map((e) => [e.id, e.name]));
-	const types = new Map(store.data.types.map((t) => [t.id, t]));
-	const entityTypes = entityTypeMap(store.data);
-	const found = inverseReferences(store.data, entity);
-	return inverseRelations(store.data.types, entity.typeId).map((relation) => {
-		const ids = found.find((r) => r.prop.id === relation.prop.id)?.entityIds ?? [];
-		const sourceType = store.data.types.find((t) => t.id === relation.sourceTypeId)?.name ?? "?";
-		return el(
-			"div",
-			{ className: "field" },
-			el("span", {}, relation.label),
-			ids.length > 0
-				? el(
-						"div",
-						{ className: "prop-chips" },
-						...ids.map((id) => {
-							const tag = el("span", { className: "ref-tag" }, names.get(id) ?? "?");
-							tag.style.background = types.get(entityTypes.get(id) ?? "")?.color ?? "";
-							return tag;
-						}),
-					)
-				: el("span", { className: "muted" }, "—"),
-			el("span", { className: "field-hint muted" }, text.setOn(sourceType, relation.prop.name)),
-		);
-	});
-}
-
-/** An input for one property in the entity form, plus a function reading its raw value. */
-function propertyField(
+/** An input for one property in the entity form, plus a function reading its raw value; `onChange` hears of each
+ * change of a multiple reference's tags (a select's own change event bubbles). */
+export function propertyField(
 	store: DataStore,
 	prop: PropertyDef,
 	current: PropertyValue,
+	onChange: () => void = () => {},
 ): { prop: PropertyDef; element: HTMLElement; read: () => string | string[] } {
 	const label = el(
 		"span",
@@ -183,6 +111,7 @@ function propertyField(
 								onclick: () => {
 									chosen = chosen.filter((c) => c !== t);
 									draw();
+									onChange();
 								},
 							},
 							"×",
@@ -202,6 +131,8 @@ function propertyField(
 										const id = (e.target as HTMLSelectElement).value;
 										chosen = [...chosen, rest.find((t) => t.id === id)!];
 										draw();
+										e.stopPropagation(); // told by onChange, not as the select's own change
+										onChange();
 									},
 								},
 								el("option", { value: "", selected: true, disabled: true }, text.addReference),
