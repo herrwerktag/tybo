@@ -15,6 +15,7 @@ import {
 	type Analysis,
 	type AnalysisGroup,
 	type AnalysisRow,
+	type GroupLevel,
 	type PathFrom,
 	type PathOption,
 	type PathStep,
@@ -28,7 +29,8 @@ export function analysisTools({ open, answerSaved }: ToolContext<DataStore>): To
 			description:
 				"Runs a saved analysis (see describe_workspace): the entities of its type (or of the types bearing its trait, each row " +
 				"with its type) as rows, nested in groups by what its grouping paths lead to, with a cell per column (`columns` names " +
-				"them, in the order of the cells). At most `limit` rows are shown (default 100); the groups' counts are always whole.",
+				"them, in the order of the cells). A level with `hideEmpty` leaves out the rows its path leads nowhere from, everywhere. " +
+				"At most `limit` rows are shown (default 100); the groups' counts are always whole.",
 			inputSchema: object(
 				{
 					workspace: WORKSPACE,
@@ -69,7 +71,7 @@ export function analysisTools({ open, answerSaved }: ToolContext<DataStore>): To
 				return json({
 					analysis: analysis.name,
 					...basisOf(data, analysis),
-					groupedBy: analysis.groups.map((path) => pathLabel(data, from, path)),
+					groupedBy: analysis.groups.map((level) => levelLabel(data, from, level)),
 					columns: analysis.columns.map((path) => pathLabel(data, from, path)),
 					count: result.count,
 					...shown,
@@ -83,14 +85,14 @@ export function analysisTools({ open, answerSaved }: ToolContext<DataStore>): To
 				"Creates an analysis: the entities of `type` (or of every type bearing `trait`; give one of them) as rows, grouped by " +
 				"the paths in `groups` (outermost first), with a column per path in `columns`. " +
 				PATHS,
-			inputSchema: object({ workspace: WORKSPACE, name: { type: "string" }, type: ROW_TYPE, trait: ROW_TRAIT, groups: PATH_LIST, columns: PATH_LIST }, ["workspace", "name"]),
+			inputSchema: object({ workspace: WORKSPACE, name: { type: "string" }, type: ROW_TYPE, trait: ROW_TRAIT, groups: GROUP_LIST, columns: PATH_LIST }, ["workspace", "name"]),
 			async run(args) {
 				const store = await open(args.workspace);
 				const name = analysisName(args.name);
 				if ((args.type === undefined) === (args.trait === undefined)) throw new ToolError("Give the analysis a `type` or a `trait`, one of them.");
 				const basis = basisPatch(store.data, args);
 				const from = analysisFrom(store.data, basis)!;
-				const groups = args.groups === undefined ? [] : paths(store.data, from, args.groups, "groups");
+				const groups = args.groups === undefined ? [] : levels(store.data, from, args.groups);
 				const columns = args.columns === undefined ? [] : paths(store.data, from, args.columns, "columns");
 				const analysis = addAnalysis(store, name);
 				updateAnalysis(store, analysis.id, { ...basis, groups, columns });
@@ -104,7 +106,7 @@ export function analysisTools({ open, answerSaved }: ToolContext<DataStore>): To
 				"whole list; a new `type` or `trait` without them empties them, as the paths of the old one don't fit. " +
 				PATHS,
 			inputSchema: object(
-				{ workspace: WORKSPACE, analysis: ANALYSIS, name: { type: "string" }, type: ROW_TYPE, trait: ROW_TRAIT, groups: PATH_LIST, columns: PATH_LIST },
+				{ workspace: WORKSPACE, analysis: ANALYSIS, name: { type: "string" }, type: ROW_TYPE, trait: ROW_TRAIT, groups: GROUP_LIST, columns: PATH_LIST },
 				["workspace", "analysis"],
 			),
 			async run(args) {
@@ -119,7 +121,7 @@ export function analysisTools({ open, answerSaved }: ToolContext<DataStore>): To
 				}
 				const from = analysisFrom(store.data, { ...analysis, ...patch });
 				if ((args.groups !== undefined || args.columns !== undefined) && !from) throw new ToolError("Give the analysis a `type` or a `trait` first.");
-				if (args.groups !== undefined) patch.groups = paths(store.data, from!, args.groups, "groups");
+				if (args.groups !== undefined) patch.groups = levels(store.data, from!, args.groups);
 				if (args.columns !== undefined) patch.columns = paths(store.data, from!, args.columns, "columns");
 				updateAnalysis(store, analysis.id, patch);
 				return answerSaved(store, { analysis: describeAnalysis(store.data, analysisOf(store.data, analysis.id)) });
@@ -148,10 +150,31 @@ export function describeAnalyses(data: AppData): object {
 const ANALYSIS = { type: "string", description: "Name or id of the analysis." };
 const ROW_TYPE = { type: "string", description: "Name or id of the row type." };
 const ROW_TRAIT = { type: "string", description: "Name or id of a trait: the rows are the entities of every type bearing it, and paths go over its roles." };
+const PATH = { anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }] };
 const PATH_LIST = {
 	type: "array",
-	items: { anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }] },
+	items: PATH,
 	description: "Paths: each a list of steps, or the steps in one text joined by ›.",
+};
+const GROUP_LIST = {
+	type: "array",
+	items: {
+		anyOf: [
+			...PATH.anyOf,
+			{
+				type: "object",
+				properties: {
+					path: PATH,
+					hideEmpty: { type: "boolean", description: "Leave the rows this path leads nowhere from out of the whole analysis (its counts, columns and export too)." },
+				},
+				required: ["path"],
+				additionalProperties: false,
+			},
+		],
+	},
+	description:
+		"Grouping levels, outermost first: each a path (a list of steps, or the steps in one text joined by ›), or { path, hideEmpty: true } " +
+		"to leave out the rows that path leads nowhere from instead of gathering them in a last group without a value.",
 };
 const PATHS =
 	"A path goes from the row type step by step: a property's name (a reference leads on to the entities it points to, a text or " +
@@ -180,29 +203,50 @@ function names(data: AppData, o: PathOption, wanted: string): boolean {
 		: sameName(stepLabel(data, o), wanted) || sameName(`${typeName(data, o.ownerTypeId)}.${o.prop.name}`, wanted);
 }
 
-/** The paths the model gave from where the analysis's paths start, each step named the way `stepLabel` reads it (see
- * `names`). */
+/** How a grouping level reads: its path's label, or with `hideEmpty` as it is given. */
+function levelLabel(data: AppData, from: PathFrom, level: GroupLevel): string | object {
+	const path = pathLabel(data, from, level.path);
+	return level.hideEmpty ? { path, hideEmpty: true } : path;
+}
+
+/** The grouping levels the model gave: each a path, or a path with `hideEmpty`. */
+function levels(data: AppData, from: PathFrom, raw: unknown): GroupLevel[] {
+	if (!Array.isArray(raw)) throw new ToolError("`groups` must be a list of paths.");
+	return raw.map((item, index) => {
+		if (typeof item === "object" && item !== null && !Array.isArray(item)) {
+			const level = item as Record<string, unknown>;
+			if (level.hideEmpty !== undefined && typeof level.hideEmpty !== "boolean") throw new ToolError(`groups[${index}].hideEmpty must be true or false.`);
+			return { path: onePath(data, from, level.path, `groups[${index}].path`), hideEmpty: level.hideEmpty === true };
+		}
+		return { path: onePath(data, from, item, `groups[${index}]`), hideEmpty: false };
+	});
+}
+
+/** The paths the model gave from where the analysis's paths start (see `onePath`). */
 function paths(data: AppData, from: PathFrom, raw: unknown, what: string): PathStep[][] {
 	if (!Array.isArray(raw)) throw new ToolError(`\`${what}\` must be a list of paths.`);
-	return raw.map((item, index) => {
-		const steps = typeof item === "string" ? item.split("›") : texts(item, `${what}[${index}]`);
-		if (steps.every((s) => s.trim() === "")) throw new ToolError(`${what}[${index}] needs at least one step.`);
-		const path: PathStep[] = [];
-		let ended: PathOption | null = null;
-		for (const step of steps) {
-			const wanted = step.trim();
-			if (ended) throw new ToolError(`${what}[${index}]: "${stepLabel(data, ended)}" is a text or options ${isRoleOption(ended) ? "role" : "property"}; the path ends there.`);
-			const options = nextOptions(data, from, path);
-			const fits = options.filter((o) => names(data, o, wanted));
-			if (fits.length !== 1) {
-				const known = options.map((o) => stepLabel(data, o)).join(", ") || "none";
-				throw new ToolError(`${what}[${index}]: ${fits.length > 1 ? `"${wanted}" is ambiguous` : `there is no step "${wanted}"`} here. Steps: ${known}.`);
-			}
-			path.push(fits[0]!.step);
-			if (fits[0]!.typeIds.length === 0) ended = fits[0]!;
+	return raw.map((item, index) => onePath(data, from, item, `${what}[${index}]`));
+}
+
+/** A path the model gave, each step named the way `stepLabel` reads it (see `names`); `where` says where it stands. */
+function onePath(data: AppData, from: PathFrom, item: unknown, where: string): PathStep[] {
+	const steps = typeof item === "string" ? item.split("›") : texts(item, where);
+	if (steps.every((s) => s.trim() === "")) throw new ToolError(`${where} needs at least one step.`);
+	const path: PathStep[] = [];
+	let ended: PathOption | null = null;
+	for (const step of steps) {
+		const wanted = step.trim();
+		if (ended) throw new ToolError(`${where}: "${stepLabel(data, ended)}" is a text or options ${isRoleOption(ended) ? "role" : "property"}; the path ends there.`);
+		const options = nextOptions(data, from, path);
+		const fits = options.filter((o) => names(data, o, wanted));
+		if (fits.length !== 1) {
+			const known = options.map((o) => stepLabel(data, o)).join(", ") || "none";
+			throw new ToolError(`${where}: ${fits.length > 1 ? `"${wanted}" is ambiguous` : `there is no step "${wanted}"`} here. Steps: ${known}.`);
 		}
-		return path;
-	});
+		path.push(fits[0]!.step);
+		if (fits[0]!.typeIds.length === 0) ended = fits[0]!;
+	}
+	return path;
 }
 
 /** The analysis `ref` names by id or name. */
@@ -236,7 +280,7 @@ function describeAnalysis(data: AppData, analysis: Analysis) {
 		id: analysis.id,
 		name: analysis.name,
 		...basisOf(data, analysis),
-		groupedBy: from === null ? [] : analysis.groups.map((path) => pathLabel(data, from, path)),
+		groupedBy: from === null ? [] : analysis.groups.map((level) => levelLabel(data, from, level)),
 		columns: from === null ? [] : analysis.columns.map((path) => pathLabel(data, from, path)),
 	};
 }

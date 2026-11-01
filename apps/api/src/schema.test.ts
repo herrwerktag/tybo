@@ -260,8 +260,29 @@ test("step 17 says format 12, the traits' conditions living in their roles as th
 		await wipe(sql);
 		await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 17));
 		await sql`insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 11)`;
-		assert.deepEqual(await migrateSchema(sql), [17]);
+		assert.deepEqual(await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 18)), [17]);
 		assert.deepEqual([...(await sql`select data_version from workspaces where id = 'ws'`)], [{ data_version: 12 }]);
+	} finally {
+		await sql.end({ timeout: 5 });
+	}
+});
+
+test("step 18 makes each grouping path of an analysis a level showing every row, in order", { skip: !url }, async () => {
+	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
+	try {
+		await wipe(sql);
+		await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 18));
+		await sql`insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 12)`;
+		const first = [{ propertyId: "p", direction: "forward" }];
+		const second = [{ propertyId: "q", direction: "inverse" }];
+		await sql`insert into analyses (workspace_id, id, position, name, type_id, group_paths, column_paths)
+			values ('ws', 'a', 0, 'Zwei', 'book', ${sql.json([first, second])}, ${sql.json([first])}), ('ws', 'b', 1, 'Keine', 'book', '[]', '[]')`;
+		assert.deepEqual(await migrateSchema(sql), [18]);
+		assert.deepEqual([...(await sql`select id, group_paths, column_paths from analyses order by id`)], [
+			{ id: "a", group_paths: [{ path: first, hideEmpty: false }, { path: second, hideEmpty: false }], column_paths: [first] },
+			{ id: "b", group_paths: [], column_paths: [] },
+		]);
+		assert.deepEqual([...(await sql`select data_version from workspaces where id = 'ws'`)], [{ data_version: 13 }]);
 	} finally {
 		await sql.end({ timeout: 5 });
 	}

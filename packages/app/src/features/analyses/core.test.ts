@@ -98,7 +98,7 @@ const analysis = (typeId: string | null, groups: PathStep[][], columns: PathStep
 	name: "A",
 	typeId,
 	traitId: null,
-	groups,
+	groups: groups.map((path) => ({ path, hideEmpty: false })),
 	columns,
 });
 
@@ -152,6 +152,31 @@ test("per role and process: the activities with what triggers them; activities w
 	]);
 	assert.equal(result.count, 4);
 	assert.deepEqual(result.groups[0]!.value, { label: "Entwickler", entityId: "Entwickler" });
+});
+
+test("a level hiding the rows without a value leaves them out of the whole analysis: its groups, its count, every level", () => {
+	const levels = analysis("activity", [[forward("responsible")], [forward("process")]], [[forward("trigger")]]);
+	levels.groups[0]!.hideEmpty = true;
+	const result = runAnalysis(processModel(), levels);
+	assert.deepEqual(outline(result), [
+		"Entwickler (2)",
+		"  Klärung (1)",
+		"    Umsetzen | Anforderungen geklärt",
+		"  Deployment (1)",
+		"    Deployen | Bereit zum Rollout",
+		"Manager (1)",
+		"  Klärung (1)",
+		"    Sortieren | Antrag gestellt, Antrag vorbereitet",
+	]);
+	assert.equal(result.count, 3, "Aufräumen has no role: it isn't counted either");
+
+	// A level further in hides as well; a level whose path doesn't fit hides nothing.
+	const inner = analysis("activity", [[forward("process")], [forward("trigger")]]);
+	inner.groups[1]!.hideEmpty = true;
+	assert.equal(runAnalysis(processModel(), inner).count, 3);
+	const broken = analysis("activity", [[forward("gone")]]);
+	broken.groups[0]!.hideEmpty = true;
+	assert.equal(runAnalysis(processModel(), broken).count, 4);
 });
 
 test("a row leading to several values is in each of their groups, counted once in the group above", () => {
@@ -220,14 +245,14 @@ test("analyses can be added, changed and deleted, each one undo step, and are sa
 	const first = addAnalysis(store, " Rollen ");
 	assert.deepEqual(first, { id: first.id, name: "Rollen", typeId: null, traitId: null, groups: [], columns: [] });
 	const path = [{ propertyId: "p", direction: "inverse" as const }, { propertyId: "q", direction: "forward" as const }];
-	updateAnalysis(store, first.id, { typeId: "t", groups: [path], columns: [[path[1]!]] });
+	updateAnalysis(store, first.id, { typeId: "t", groups: [{ path, hideEmpty: true }], columns: [[path[1]!]] });
 	updateAnalysis(store, first.id, { name: "  " });
 	const second = addAnalysis(store, "");
 	assert.equal(second.name, "Analysis 1", "the first number no analysis has");
 
 	const reopened = await open(storage);
 	assert.deepEqual(reopened.data.analyses, [
-		{ id: first.id, name: "Rollen", typeId: "t", traitId: null, groups: [path], columns: [[path[1]]] },
+		{ id: first.id, name: "Rollen", typeId: "t", traitId: null, groups: [{ path, hideEmpty: true }], columns: [[path[1]]] },
 		{ id: second.id, name: "Analysis 1", typeId: null, traitId: null, groups: [], columns: [] },
 	]);
 
@@ -273,7 +298,7 @@ test("analyses: data from version 6 gets none; malformed analyses and steps are 
 		}),
 	);
 	assert.deepEqual(store.data.analyses, [
-		{ id: "a", name: "Analysis 1", typeId: null, traitId: null, groups: [[{ propertyId: "gone", direction: "forward" }], []], columns: [] },
+		{ id: "a", name: "Analysis 1", typeId: null, traitId: null, groups: [{ path: [{ propertyId: "gone", direction: "forward" }], hideEmpty: false }, { path: [], hideEmpty: false }], columns: [] },
 	]);
 });
 
@@ -286,13 +311,13 @@ test("an analysis is one unit with its paths; changing one of them touches nothi
 		analyses: [{ id: "ana-notes", name: "Notizen", typeId: "type-person", traitId: null, groups: [], columns: [[{ propertyId: "p-note", direction: "forward" }]] }],
 	};
 	const after = structuredClone(before);
-	after.analyses[0]!.groups = [[{ propertyId: "p-note", direction: "forward" }]];
+	after.analyses[0]!.groups = [{ path: [{ propertyId: "p-note", direction: "forward" }], hideEmpty: false }];
 	after.analyses.push({ id: "ana-new", name: "Neu", typeId: null, traitId: null, groups: [], columns: [] });
 
 	const changes = changesBetween(before, after);
 	assert.deepEqual(changes.map((c) => `${c.kind}:${c.id}`), ["analysis:ana-notes", "analysis:ana-new"]);
 	const [changed] = changes as [Change<Analysis>];
-	assert.deepEqual(changed.after!.value.groups, [[{ propertyId: "p-note", direction: "forward" }]]);
+	assert.deepEqual(changed.after!.value.groups, [{ path: [{ propertyId: "p-note", direction: "forward" }], hideEmpty: false }]);
 });
 
 test("an options end shows labels in the options' order, ids without an option dropped", () => {
@@ -309,7 +334,7 @@ const ofTrait = (traitId: string, groups: PathStep[][], columns: PathStep[][] = 
 	name: "T",
 	typeId: null,
 	traitId,
-	groups,
+	groups: groups.map((path) => ({ path, hideEmpty: false })),
 	columns,
 });
 

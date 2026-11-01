@@ -38,6 +38,8 @@ const entity = (
 	values,
 });
 const step = (propertyId: string): PathStep[] => [{ propertyId, direction: "forward" }];
+/** A grouping level by that property, showing every row. */
+const level = (propertyId: string) => ({ path: step(propertyId), hideEmpty: false });
 const analysis = (more: Partial<Analysis> = {}): Analysis => ({ id: "an", name: "Prüfung", typeId: "activity", traitId: null, groups: [], columns: [], ...more });
 
 /** Activities with responsible roles (several), needed artifacts (several, two sharing a name) and a status. */
@@ -111,7 +113,7 @@ Die Rechnung.
 | --- | --- |
 | — | — |
 `;
-		const files = markdownFiles(analysis({ groups: [step("responsible")], columns: [step("needs"), step("status")] }));
+		const files = markdownFiles(analysis({ groups: [level("responsible")], columns: [step("needs"), step("status")] }));
 		assert.deepEqual(Object.keys(files), ["Prüfung 2026-10-21.md", "Buchhaltung.md", "Einkauf.md", "Ohne Verantwortlicher.md"]);
 		assert.equal(
 			files["Prüfung 2026-10-21.md"],
@@ -165,13 +167,18 @@ offen, mit Artefakt "Rechnung", Artefakt "Rechnung (2)"
 });
 
 test("files of groups with the same name are numbered; nested groups have their own headings in a group's file", () => {
-	const files = markdownFiles(analysis({ groups: [step("needs"), step("responsible")] }));
+	const files = markdownFiles(analysis({ groups: [level("needs"), level("responsible")] }));
 	assert.deepEqual(Object.keys(files), ["Prüfung 2026-10-21.md", "Rechnung.md", "Rechnung 2.md", "Without Benötigt.md"]);
 	assert.match(files["Rechnung 2.md"]!, /^# Rechnung\n\n## Buchhaltung\n\n### Aktivität "Rechnung prüfen"\n/);
 });
 
+test("rows a level hides are in no file: no file for the group without a value", () => {
+	const files = markdownFiles(analysis({ groups: [{ path: step("needs"), hideEmpty: true }, level("responsible")] }));
+	assert.deepEqual(Object.keys(files), ["Prüfung 2026-10-21.md", "Rechnung.md", "Rechnung 2.md"]);
+});
+
 test("a group's file starts with its entity's content and description, their headings below its title; the entity isn't listed again as named", () => {
-	const files = markdownFiles(analysis({ groups: [step("needs")], columns: [step("needs")] }));
+	const files = markdownFiles(analysis({ groups: [level("needs")], columns: [step("needs")] }));
 	assert.match(files["Rechnung.md"]!, /^# Rechnung\n\nAls PDF\.\n\nDie Rechnung\.\n\n## Aktivität "Rechnung prüfen"\n/);
 	assert.match(files["Rechnung.md"]!, /### Artefakt "Rechnung \(2\)"\n$/);
 	assert.doesNotMatch(files["Rechnung.md"]!, /### Artefakt "Rechnung"\n/);
@@ -181,7 +188,7 @@ test("a group's file starts with its entity's content and description, their hea
 		...data,
 		entities: data.entities.map((e) => (e.id === "x1" ? { ...e, content: "", description: "# Zweck\nBeleg." } : e)),
 	};
-	assert.match(markdownFiles(analysis({ groups: [step("needs")] }), headed)["Rechnung.md"]!, /^# Rechnung\n\n## Zweck\nBeleg\.\n\n## Aktivität/);
+	assert.match(markdownFiles(analysis({ groups: [level("needs")] }), headed)["Rechnung.md"]!, /^# Rechnung\n\n## Zweck\nBeleg\.\n\n## Aktivität/);
 });
 
 test("a | in a table cell is escaped; headings in code blocks stay as they are and nested headings don't go below the sixth level", () => {
@@ -197,7 +204,7 @@ test("a | in a table cell is escaped; headings in code blocks stay as they are a
 });
 
 test("deeply nested groups don't go below the sixth heading level; an analysis without a type is only its title", () => {
-	const deep = markdownFiles(analysis({ groups: Array.from({ length: 5 }, () => step("responsible")) }))["Prüfung 2026-10-21.md"]!;
+	const deep = markdownFiles(analysis({ groups: Array.from({ length: 5 }, () => level("responsible")) }))["Prüfung 2026-10-21.md"]!;
 	assert.match(deep, /^###### Buchhaltung$/m);
 	assert.match(deep, /^###### Aktivität "Rechnung prüfen"$/m);
 	assert.doesNotMatch(deep, /#######/);
@@ -208,7 +215,7 @@ test("an analysis of a trait as Markdown: the rows of every type bearing it, mix
 	setLanguage("de");
 	try {
 		const progress = progressModel();
-		const files = analysisMarkdownFiles(progress, { id: "t", name: "Offen", typeId: null, traitId: "progress", groups: [[{ traitId: "progress", roleId: "stand" }]], columns: [[{ traitId: "progress", roleId: "short" }]] }, "2026-11-01");
+		const files = analysisMarkdownFiles(progress, { id: "t", name: "Offen", typeId: null, traitId: "progress", groups: [{ path: [{ traitId: "progress", roleId: "stand" }], hideEmpty: false }], columns: [[{ traitId: "progress", roleId: "short" }]] }, "2026-11-01");
 		assert.deepEqual(files.map((f) => f.name), ["Offen 2026-11-01.md", "offen.md", "fertig.md", "Ohne Stand.md"]);
 		const open = files[1]!.contents;
 		assert.match(open, /^# offen\n\n## Pitch „Traits“\n\nBedeutungen\n\n\| Kurz \|\n\| --- \|\n\| Bedeutungen \|\n\n## Offene Frage „Wie heißen sie\?“/);

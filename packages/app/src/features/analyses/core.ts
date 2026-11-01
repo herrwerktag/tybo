@@ -35,10 +35,18 @@ export const sameStep = (a: PathStep, b: PathStep) =>
 		? isRoleStep(a) && isRoleStep(b) && a.traitId === b.traitId && a.roleId === b.roleId
 		: a.propertyId === b.propertyId && a.direction === b.direction;
 
+/** A level of an analysis's grouping: the path its groups are by, and whether the rows it leads nowhere from are left
+ * out of the whole analysis (rather than gathered in a last group without a value). */
+export interface GroupLevel {
+	path: PathStep[];
+	hideEmpty: boolean;
+}
+
 /**
  * A grouped listing of one type's entities, or of the entities of every type bearing a trait: each row is an entity,
- * sorted into nested groups by what the `groups` paths lead to from it (outermost first), with a column per path in
- * `columns`. A path is a chain of references (of a trait's roles, from a trait), and may end in a text or options one.
+ * sorted into nested groups by what the `groups` levels' paths lead to from it (outermost first), with a column per
+ * path in `columns`. A path is a chain of references (of a trait's roles, from a trait), and may end in a text or
+ * options one.
  */
 export interface Analysis {
 	id: string;
@@ -47,7 +55,7 @@ export interface Analysis {
 	typeId: string | null;
 	/** The trait whose bearing types' entities are the rows; null when the rows are a type's. */
 	traitId: string | null;
-	groups: PathStep[][];
+	groups: GroupLevel[];
 	columns: PathStep[][];
 }
 
@@ -253,17 +261,20 @@ const valueKey = (value: AnalysisValue) => (value.entityId !== null ? `entity:${
 /**
  * The analysis run on the data: every entity of the analysis's type (or of the types bearing its trait) as a row, in
  * entity order, sorted into a group per value each grouping path leads to (so in several groups when it leads to
- * several; in a last group with value null when it leads to none). Groups are in entity order, or in the order of the
- * options; texts in the order they first come up. Grouping paths that don't fit are left out.
+ * several; in a last group with value null when it leads to none — or, where the level hides those, left out of the
+ * whole analysis). Groups are in entity order, or in the order of the options; texts in the order they first come up.
+ * Grouping levels whose paths don't fit are left out.
  */
 export function runAnalysis(data: AnalysisData, analysis: Analysis): AnalysisResult {
 	const from = analysisFrom(data, analysis);
 	if (!from) return { count: 0, groups: [], rows: [] };
 	const columns = analysis.columns.map((path) => pathFollower(data, from, path));
-	const levels = groupingPaths(data, from, analysis).map((path) => pathFollower(data, from, path));
+	const fitting = groupingLevels(data, from, analysis);
+	const levels = fitting.map((level) => pathFollower(data, from, level.path));
+	const hiding = levels.filter((_, i) => fitting[i]!.hideEmpty);
 	const rowTypes = new Set(rowTypeIds(data, analysis));
 	const rows = data.entities
-		.filter((e) => rowTypes.has(e.typeId))
+		.filter((e) => rowTypes.has(e.typeId) && hiding.every((level) => level.follow(e).length > 0))
 		.map((entity): AnalysisRow => ({ entity, cells: columns.map((column) => column.follow(entity)) }));
 
 	const group = (rows: AnalysisRow[], level: number): AnalysisGroup[] => {
@@ -291,9 +302,20 @@ export function runAnalysis(data: AnalysisData, analysis: Analysis): AnalysisRes
 	return { count: rows.length, groups, rows: groups.length > 0 ? [] : rows };
 }
 
-/** The analysis's grouping paths that fit, the levels its result has. */
+/** The analysis's grouping levels whose paths fit, the levels its result has. */
+export function groupingLevels(data: PathData, from: PathFrom, analysis: Pick<Analysis, "groups">): GroupLevel[] {
+	return analysis.groups.filter(({ path }) => path.length > 0 && resolvePath(data, from, path).broken === null);
+}
+
+/** The paths of the analysis's grouping levels that fit (see `groupingLevels`). */
 export function groupingPaths(data: PathData, from: PathFrom, analysis: Pick<Analysis, "groups">): PathStep[][] {
-	return analysis.groups.filter((path) => path.length > 0 && resolvePath(data, from, path).broken === null);
+	return groupingLevels(data, from, analysis).map((level) => level.path);
+}
+
+/** A grouping level, well-formed: a path as it was before levels hid rows (version 12) shows all of them. */
+export function normalizeLevel(raw: unknown): GroupLevel {
+	if (Array.isArray(raw)) return { path: normalizePath(raw), hideEmpty: false };
+	return isObject(raw) ? { path: normalizePath(raw.path), hideEmpty: raw.hideEmpty === true } : { path: [], hideEmpty: false };
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
@@ -324,7 +346,7 @@ function normalizeAnalyses(raw: unknown): Analysis[] {
 				typeId: typeof item.typeId === "string" ? item.typeId : null,
 				// Analyses of a trait came with version 11; those before are of a type.
 				traitId: typeof item.traitId === "string" ? item.traitId : null,
-				groups: paths(item.groups),
+				groups: Array.isArray(item.groups) ? item.groups.map(normalizeLevel) : [],
 				columns: paths(item.columns),
 			},
 		];
