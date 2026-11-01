@@ -646,3 +646,77 @@ td.handle-cell {
 	text-decoration: underline;
 	text-underline-offset: 0.2em;
 }
+
+/* A property folded to one line: handle, name, what it is in short, unfold, remove. */
+.property-head {
+	grid-template-columns: auto minmax(8rem, 14rem) minmax(0, 1fr) auto auto;
+}
+
+.property-summary {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.25rem 0.5rem;
+	min-width: 0;
+	font-size: var(--text-sm);
+}
+
+.property-toggle {
+	border: none;
+	background: transparent;
+	color: var(--muted);
+	padding: 0.25rem 0.45rem;
+}
+
+.property-toggle:hover:not(:disabled) {
+	color: var(--text);
+}
+
+/* Folded, a property is just its line: no padding of a card around it. */
+.property:not(.open) {
+	padding-block: 0.4rem;
+}
+
+/* The traits a type bears, at the head of its form: links to them. */
+.type-traits {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.25rem 0.5rem;
+}
+
+.type-traits .chip {
+	text-decoration: none;
+}
+
+/* The fields every entity has, folded to a line: what they are called, the template's first line if any. */
+.builtin-head {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.75rem;
+}
+
+.builtin-summary {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem 1rem;
+	min-width: 0;
+	font-size: var(--text-sm);
+}
+
+.builtin-template {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.builtin:not(:has(.builtin-fields)) {
+	padding-block: 0.4rem;
+}
+
+.property-toggle svg {
+	display: block;
+	width: 1rem;
+	height: 1rem;
+}

@@ -1,7 +1,7 @@
 import { freeName, moveItem, ulid } from "../../shared/core/index.js";
 import { el, isRecord, refused, sharedText, type UnitDescriber } from "../../shared/ui/index.js";
 import type { DataStore, EntityType } from "../data/core.js";
-import type { DataSection } from "../data/ui.js";
+import type { DataSection, TypeNote } from "../data/ui.js";
 import { text as dataText } from "../data/texts.js";
 import {
 	addTrait,
@@ -415,6 +415,21 @@ export const TRAITS_SECTION: DataSection = {
 		draw();
 		return view;
 	},
+};
+
+/** At the head of a type's form: the traits it bears, each a link to it; none, nothing. Which of the type's fields
+ * plays each role is said at the trait, not here. */
+export const TRAIT_CHIPS: TypeNote = (store, type) => {
+	const borne = store.data.traits.filter((trait) => Object.hasOwn(trait.bindings, type.id));
+	if (borne.length === 0) return [];
+	return [
+		el(
+			"p",
+			{ className: "type-traits" },
+			el("span", { className: "setting-label" }, dataText.typeTraits),
+			...borne.map((trait) => el("a", { href: traitRoute(trait.id), className: "chip", title: text.openTrait(trait.name) }, trait.name)),
+		),
+	];
 };
 
 /** How the history tells of a trait: its roles (name and kind, an options role's values) and the types bearing it,

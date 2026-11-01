@@ -12,8 +12,8 @@ function draft(fields: Partial<DraftProperty> = {}): DraftProperty {
 	return { name: "author", kind: "text", options: [], reference: null, cardDisplay: "list", ...fields };
 }
 
-/** The properties' cards as the type form draws them, drawn anew whenever a setting asks for it. */
-function form(props: DraftProperty[], types: EntityType[] = [book, person]) {
+/** The properties' lines as the type form draws them, unfolded but `folded`, drawn anew whenever a setting asks for it. */
+function form(props: DraftProperty[], types: EntityType[] = [book, person], folded = new Set<DraftProperty>()) {
 	const view = document.createElement("div");
 	let current = props;
 	const draw = () => view.replaceChildren(...current.map((prop, i) => propertyRow(prop, i, rows)));
@@ -25,6 +25,11 @@ function form(props: DraftProperty[], types: EntityType[] = [book, person]) {
 		},
 		rerender: draw,
 		focusHandle: () => {},
+		isOpen: (prop: DraftProperty) => !folded.has(prop),
+		setOpen: (prop: DraftProperty, open: boolean) => {
+			if (open) folded.delete(prop);
+			else folded.add(prop);
+		},
 	};
 	draw();
 	return { view, props: () => current };
@@ -117,7 +122,7 @@ test("a reference's target types are tags in their colors; the select adds the o
 
 test("without any types a reference says so instead of offering a select", () => {
 	const { view } = form([draft({ kind: "reference", reference: newReference([]) })], []);
-	assert.equal(view.querySelector(".muted")?.textContent, text.noTypesOption);
+	assert.equal(view.querySelector(".property-settings .muted")?.textContent, text.noTypesOption);
 	assert.equal(labeled(view, "select", text.addReferenceType), undefined);
 });
 
@@ -168,4 +173,22 @@ test("a property is renamed in place and removed by its button", () => {
 	labeled(view, "button", text.removePropertyNamed("author"))!.click();
 	assert.deepEqual(props().map((p) => p.name), ["name"]);
 	assert.equal(view.querySelectorAll(".property").length, 1);
+});
+
+test("folded, a property is one line: its name, kind and targets in short; unfolding shows its settings", () => {
+	const prop = draft({ name: "written by", kind: "reference", reference: newReference(["person", "book"]) });
+	const status = draft({ name: "status", kind: "options", options: [{ label: "open" }, { label: "done" }] });
+	const { view } = form([prop, status], [book, person], new Set([prop, status]));
+	const lines = [...view.querySelectorAll(".property-summary")].map((s) => [...s.children].map((c) => c.textContent));
+	assert.deepEqual(lines, [
+		[text.kinds.reference, "Person", "Book"],
+		[text.kinds.options, text.optionCount(2)],
+	]);
+	assert.equal(view.querySelector("select"), null, "no settings while folded");
+	const toggle = labeled(view, "button", text.showPropertySettings("written by"))!;
+	assert.equal(toggle.ariaExpanded, "false");
+	toggle.click();
+	assert.equal(labeled(view, "button", text.showPropertySettings("written by"))!.ariaExpanded, "true");
+	assert.ok(checkbox(view, text.allowMultiple), "unfolded, the reference's settings are there");
+	assert.equal(view.querySelectorAll(".property")[1]!.querySelector("select"), null, "the other stays folded");
 });

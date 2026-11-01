@@ -1,4 +1,4 @@
-import { dragHandle, el, reorderable, sharedText } from "../../../shared/ui/index.js";
+import { dragHandle, el, icon, reorderable, sharedText } from "../../../shared/ui/index.js";
 import {
 	TYPE_COLORS,
 	changedValueCount,
@@ -13,7 +13,7 @@ import {
 	type DataStore,
 } from "../core.js";
 import { text } from "../texts.js";
-import type { DataPage } from "./page.js";
+import type { DataPage, TypeNote } from "./page.js";
 import { propertyRow, type PropertyRows } from "./property-row.js";
 
 const TYPE_MIME = "application/x-type-index";
@@ -34,11 +34,19 @@ function newDraftProperty(): DraftProperty {
 	return { name: "", kind: "text", options: [], reference: null, cardDisplay: "list" };
 }
 
+/** Whether a property is one the type's errors name (or, unnamed, one an unnamed property's error is about). */
+function isFaulty(prop: DraftProperty, errors: readonly ValidationError[]): boolean {
+	const label = prop.name.trim();
+	return errors.some((e) => (e.code === "propertyNameRequired" ? label === "" : "label" in e && e.code !== "typeNameTaken" && e.label.toLowerCase() === label.toLowerCase()));
+}
+
 /**
  * The entity types (#types): their list, to reorder, edit or delete, and the form for a new or changed one with its
- * properties. Once a type is saved, `onSaved` gets its id.
+ * properties, each folded to a line until unfolded (a new one, or one with an error, unfolds by itself) — and, for a
+ * type there is, what the features note about it (`typeNotes`). While the form is open, the list isn't shown. Once a
+ * type is saved, `onSaved` gets its id.
  */
-export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: string) => void }) {
+export function typesSection(page: DataPage, { onSaved, typeNotes = [] }: { onSaved: (typeId: string) => void; typeNotes?: readonly TypeNote[] }) {
 	const rerender = page.rerender;
 	/** The store the section shows; set on each drawing. */
 	let store!: DataStore;
@@ -51,6 +59,10 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 		typeErrors: [] as ValidationError[],
 		/** Whether the form for a new type is open; it stays hidden until asked for. */
 		creatingType: false,
+		/** The properties unfolded to show their settings. */
+		openProps: new Set<DraftProperty>(),
+		/** Whether the fields every entity has are unfolded, with the template of the content. */
+		builtinOpen: false,
 	};
 
 	/** What the properties' cards in the form work with (see `propertyRow`). */
@@ -62,6 +74,11 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 		},
 		rerender,
 		focusHandle: (key) => page.focusHandle(key),
+		isOpen: (prop) => state.openProps.has(prop) || isFaulty(prop, state.typeErrors),
+		setOpen: (prop, open) => {
+			if (open) state.openProps.add(prop);
+			else state.openProps.delete(prop);
+		},
 	};
 
 	function resetTypeForm(): void {
@@ -72,6 +89,71 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 		state.draftProps = [];
 		state.typeErrors = [];
 		state.creatingType = false;
+		state.openProps.clear();
+		state.builtinOpen = false;
+	}
+
+	/** The fields every entity has, folded to a line naming them (and the template's first line, if there is one);
+	 * unfolded, what each is and the template of the content to edit. */
+	function builtinFields(): HTMLElement {
+		const open = state.builtinOpen;
+		const toggle = el(
+			"button",
+			{
+				type: "button",
+				className: "property-toggle",
+				title: text.builtinTitle,
+				ariaLabel: text.builtinTitle,
+				ariaExpanded: String(open),
+				onclick: () => {
+					state.builtinOpen = !open;
+					page.focusHandle("builtin-toggle");
+					rerender();
+				},
+			},
+			icon(open ? "chevronUp" : "chevronDown"),
+		);
+		toggle.dataset.focusKey = "builtin-toggle";
+		const template = state.draftContentTemplate.trim().split("\n")[0] ?? "";
+		const fields = [sharedText.name, text.description, text.content, text.id].join(" · ");
+		const head = el(
+			"div",
+			{ className: "builtin-head" },
+			el("p", { className: "builtin-title" }, text.builtinTitle),
+			el("span", { className: "builtin-summary" }, open ? "" : fields, ...(!open && template ? [el("span", { className: "builtin-template" }, `${text.contentTemplate}: ${template}`)] : [])),
+			toggle,
+		);
+		if (!open) return el("div", { className: "builtin" }, head);
+		return el(
+			"div",
+			{ className: "builtin" },
+			head,
+			el(
+				"dl",
+				{ className: "builtin-fields" },
+				el("dt", {}, sharedText.name),
+				el("dd", {}, text.builtinName),
+				el("dt", {}, text.description),
+				el("dd", {}, text.builtinDescription),
+				// The template below belongs to content, so content comes last but the ID.
+				el("dt", {}, text.content),
+				el("dd", {}, text.builtinContent),
+				el("dt", {}, text.id),
+				el("dd", {}, text.builtinId),
+			),
+			el(
+				"label",
+				{ className: "field wide" },
+				el("span", {}, text.contentTemplate),
+				el("textarea", {
+					rows: 4,
+					value: state.draftContentTemplate,
+					oninput: (e) => {
+						state.draftContentTemplate = (e.target as HTMLTextAreaElement).value;
+					},
+				}),
+			),
+		);
 	}
 
 	/** Palette swatches for the type form; the current color is pressed. */
@@ -133,6 +215,7 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 				},
 			},
 			el("h3", {}, editingType ? text.editNamed(editingType.name) : text.newType),
+			...(editingType ? typeNotes.flatMap((note) => note(store, editingType)) : []),
 			el(
 				"label",
 				{ className: "field" },
@@ -147,36 +230,7 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 			),
 			colorPicker(),
 			el("h3", {}, text.properties),
-			el(
-				"div",
-				{ className: "builtin" },
-				el("p", { className: "builtin-title" }, text.builtinTitle),
-				el(
-					"dl",
-					{ className: "builtin-fields" },
-					el("dt", {}, sharedText.name),
-					el("dd", {}, text.builtinName),
-					el("dt", {}, text.description),
-					el("dd", {}, text.builtinDescription),
-					// The template below belongs to content, so content comes last but the ID.
-					el("dt", {}, text.content),
-					el("dd", {}, text.builtinContent),
-					el("dt", {}, text.id),
-					el("dd", {}, text.builtinId),
-				),
-				el(
-					"label",
-					{ className: "field wide" },
-					el("span", {}, text.contentTemplate),
-					el("textarea", {
-						rows: 4,
-						value: state.draftContentTemplate,
-						oninput: (e) => {
-							state.draftContentTemplate = (e.target as HTMLTextAreaElement).value;
-						},
-					}),
-				),
-			),
+			builtinFields(),
 			...state.draftProps.map((prop, i) => propertyRow(prop, i, propertyRows)),
 			// Below the properties, where the new one appears; the form's own buttons follow apart from it.
 			el(
@@ -185,7 +239,10 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 					type: "button",
 					className: "add-property",
 					onclick: () => {
-						state.draftProps.push(newDraftProperty());
+						const prop = newDraftProperty();
+						state.draftProps.push(prop);
+						state.openProps.add(prop);
+						page.focusHandle(`property-name:${state.draftProps.length - 1}`);
 						rerender();
 					},
 				},
@@ -315,8 +372,7 @@ export function typesSection(page: DataPage, { onSaved }: { onSaved: (typeId: st
 			"section",
 			{},
 			el("div", { className: "section-header" }, page.dataSwitch("types"), ...(editingType || state.creatingType ? [] : [createButton])),
-			...(editingType || state.creatingType ? [form] : []),
-			store.data.types.length > 0 ? list : el("p", { className: "muted" }, text.noTypesYet),
+			...(editingType || state.creatingType ? [form] : store.data.types.length > 0 ? [list] : [el("p", { className: "muted" }, text.noTypesYet)]),
 		);
 	}
 

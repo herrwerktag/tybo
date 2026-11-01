@@ -608,6 +608,28 @@ test("the settings let references on cards wrap instead of being cut off, rememb
 	assert.equal(localStorage.getItem("wrap-references"), "false");
 });
 
+test("the type form: the list steps aside while it's open; a new property stands unfolded with its name focused, one with an error unfolds", async () => {
+	const status = { id: "status", name: "Status", kind: "options", options: [{ id: "o-open", label: "open" }], reference: null, cardDisplay: "list" };
+	const root = await startApp({ version: DATA_VERSION, types: [{ id: "idea", name: "Idea", color: "#c4dafa", contentTemplate: "", properties: [status] }], entities: [], boards: [] }, "#types");
+	byText(root.querySelector(".type-item")!, "button", dataText.edit).click();
+	assert.equal(root.querySelector(".type-list"), null, "no list below the form");
+	const toggles = () => [...root.querySelectorAll<HTMLButtonElement>("#type-form .property .property-toggle")].map((b) => b.ariaExpanded);
+	assert.deepEqual(toggles(), ["false"]);
+
+	byText(root.querySelector("#type-form")!, "button", `+ ${dataText.addProperty}`).click();
+	assert.deepEqual(toggles(), ["false", "true"]);
+	const names = () => root.querySelectorAll<HTMLInputElement>(`#type-form input[placeholder="${dataText.propertyName}"]`);
+	assert.equal(document.activeElement, names()[1], "the new one's name is focused");
+
+	typeInto(names()[1]!, "status");
+	byText(root.querySelector("#type-form")!, "button", `+ ${dataText.addProperty}`).click();
+	byText(root.querySelector("#type-form")!, "button", sharedText.save).click();
+	// Saving is refused: the new one has no name, the other one's name is taken — all three unfold.
+	assert.deepEqual(toggles(), ["true", "true", "true"]);
+	byText(root.querySelector("#type-form")!, "button", sharedText.cancel).click();
+	assert.ok(root.querySelector(".type-list"), "closed, the list is back");
+});
+
 test("the type form edits options in place: a rename saves without asking, a carried one dropped asks", async () => {
 	const data = {
 		version: DATA_VERSION,
@@ -645,6 +667,10 @@ test("the type form edits options in place: a rename saves without asking, a car
 	const root = await startApp(data, "#types");
 
 	byText(root.querySelector(".type-item")!, "button", dataText.edit).click();
+	// A property stands folded to its line; its settings, the options among them, unfold below it.
+	assert.equal(root.querySelector("#type-form .option-row"), null);
+	const unfold = () => [...root.querySelectorAll<HTMLButtonElement>("#type-form .property-toggle")].find((b) => b.ariaLabel === dataText.showPropertySettings("Status"))!.click();
+	unfold();
 	const form = root.querySelector<HTMLFormElement>("#type-form")!;
 	typeInto(form.querySelectorAll<HTMLInputElement>(".option-row input")[1]!, "proposed");
 	byText(form, "button", sharedText.save).click();
@@ -662,6 +688,7 @@ test("the type form edits options in place: a rename saves without asking, a car
 
 	// Dropping the option the entity holds asks first; confirmed, the value is cleared.
 	byText(root.querySelector(".type-item")!, "button", dataText.edit).click();
+	unfold();
 	const again = root.querySelector<HTMLFormElement>("#type-form")!;
 	[...again.querySelectorAll("button")].find((b) => b.ariaLabel === dataText.removeOption("proposed"))!.click();
 	byText(root.querySelector<HTMLFormElement>("#type-form")!, "button", sharedText.save).click();
