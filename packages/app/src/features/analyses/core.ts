@@ -1,8 +1,9 @@
 import { freeName, refuseTakenName, ulid, type DataPart, type UnitKind, type AppData } from "../../shared/core/index.js";
-import { optionLabel, referencedIds, type Entity, type EntityType, type PropertyDef, type DataStore } from "../data/core.js";
+import { optionLabel, propertyReader, type Entity, type PropertyDef, type DataStore } from "../data/core.js";
+import { bearingTypes, roleReader, roleTargetTypeIds, type RoleDef, type Trait } from "../traits/core.js";
 
 /**
- * Analyses: grouped listings of one type's entities, saved with the workspace. Their part of the app's data is
+ * Analyses: grouped listings of one type's entities (or of a trait's), saved with the workspace. Their part of the app's data is
  * `analyses`, each one unit of its own.
  */
 declare module "../../shared/core/data.js" {
@@ -14,28 +15,52 @@ declare module "../../shared/core/data.js" {
 
 /** One hop from an entity: one of its own properties (`forward`), or a reference property of another type
  * pointing at it (`inverse`, to the entities holding that reference). */
-export interface PathStep {
+export interface PropertyStep {
 	propertyId: string;
 	direction: "forward" | "inverse";
 }
 
+/** One hop from an entity in an analysis of a trait: a role of a trait its type bears. */
+export interface RoleStep {
+	traitId: string;
+	roleId: string;
+}
+
+export type PathStep = PropertyStep | RoleStep;
+
+export const isRoleStep = (step: PathStep): step is RoleStep => "roleId" in step;
+
+export const sameStep = (a: PathStep, b: PathStep) =>
+	isRoleStep(a) || isRoleStep(b)
+		? isRoleStep(a) && isRoleStep(b) && a.traitId === b.traitId && a.roleId === b.roleId
+		: a.propertyId === b.propertyId && a.direction === b.direction;
+
 /**
- * A grouped listing of one type's entities: each row is an entity of `typeId`, sorted into nested groups by
- * what the `groups` paths lead to from it (outermost first), with a column per path in `columns`. A path is a
- * chain of references, and may end in a text or options property.
+ * A grouped listing of one type's entities, or of the entities of every type bearing a trait: each row is an entity,
+ * sorted into nested groups by what the `groups` paths lead to from it (outermost first), with a column per path in
+ * `columns`. A path is a chain of references (of a trait's roles, from a trait), and may end in a text or options one.
  */
 export interface Analysis {
 	id: string;
 	name: string;
-	/** The type of the entities listed as rows; null until one is picked. */
+	/** The type of the entities listed as rows; null until one is picked, or when the rows are a trait's. */
 	typeId: string | null;
+	/** The trait whose bearing types' entities are the rows; null when the rows are a type's. */
+	traitId: string | null;
 	groups: PathStep[][];
 	columns: PathStep[][];
 }
 
-/** A step a path can take from entities of some types, with what it leads to. */
-export interface PathOption {
-	step: PathStep;
+/** Where a path stands: on entities stepping over the properties of these types, or (from a trait) over the roles of
+ * these traits. */
+export type PathFrom = { typeIds: string[] } | { traitIds: string[] };
+
+/** What paths are read against. */
+export type PathData = Pick<AppData, "types" | "traits">;
+
+/** A step over a property, with what it leads to. */
+export interface PropertyPathOption {
+	step: PropertyStep;
 	prop: PropertyDef;
 	/** The type holding the property: one of the types stepped from (forward), or the referencing type (inverse). */
 	ownerTypeId: string;
@@ -43,18 +68,60 @@ export interface PathOption {
 	typeIds: string[];
 }
 
-const sameStep = (a: PathStep, b: PathStep) => a.propertyId === b.propertyId && a.direction === b.direction;
+/** A step over a role, with what it leads to. */
+export interface RolePathOption {
+	step: RoleStep;
+	trait: Trait;
+	role: RoleDef;
+	/** The types of the entities reached; empty for a text or options role, which ends the path. */
+	typeIds: string[];
+}
+
+/** A step a path can take from where it stands, with what it leads to. */
+export type PathOption = PropertyPathOption | RolePathOption;
+
+export const isRoleOption = (option: PathOption): option is RolePathOption => "role" in option;
+
+/** Where a path stands after `option`: a role leads on to the roles of the traits the entities reached bear. */
+function nextFrom(data: PathData, option: PathOption): PathFrom {
+	if (!isRoleOption(option)) return { typeIds: option.typeIds };
+	return { traitIds: data.traits.filter((t) => option.typeIds.some((id) => Object.hasOwn(t.bindings, id))).map((t) => t.id) };
+}
+
+/** Where the paths of an analysis start: its type, or its trait; null while it has neither (or it is gone). */
+export function analysisFrom(data: PathData, analysis: Pick<Analysis, "typeId" | "traitId">): PathFrom | null {
+	if (analysis.traitId !== null) return data.traits.some((t) => t.id === analysis.traitId) ? { traitIds: [analysis.traitId] } : null;
+	if (analysis.typeId !== null) return data.types.some((t) => t.id === analysis.typeId) ? { typeIds: [analysis.typeId] } : null;
+	return null;
+}
+
+/** The types of an analysis's rows: its type, or the types bearing its trait. */
+export function rowTypeIds(data: PathData, analysis: Pick<Analysis, "typeId" | "traitId">): string[] {
+	const from = analysisFrom(data, analysis);
+	if (!from) return [];
+	if ("typeIds" in from) return from.typeIds;
+	return bearingTypes(data.types, data.traits.find((t) => t.id === from.traitIds[0])!).map((t) => t.id);
+}
 
 /**
- * The steps a path can take from entities of `fromTypeIds`, in type and property order: their own properties, then
- * every reference property (of any type) that can point at one of them.
+ * The steps a path can take from where it stands, in type (trait) and property (role) order: from types, their own
+ * properties, then every reference property (of any type) that can point at one of them; from traits, their roles.
  */
-export function pathOptions(types: readonly EntityType[], fromTypeIds: readonly string[]): PathOption[] {
+export function pathOptions(data: PathData, from: PathFrom): PathOption[] {
+	if ("traitIds" in from) {
+		return data.traits
+			.filter((trait) => from.traitIds.includes(trait.id))
+			.flatMap((trait) =>
+				trait.roles.map((role): RolePathOption => ({ step: { traitId: trait.id, roleId: role.id }, trait, role, typeIds: roleTargetTypeIds(data.types, trait, role) })),
+			);
+	}
+	const { types } = data;
+	const fromTypeIds = from.typeIds;
 	const forward = types
 		.filter((type) => fromTypeIds.includes(type.id))
 		.flatMap((type) =>
 			type.properties.map(
-				(prop): PathOption => ({
+				(prop): PropertyPathOption => ({
 					step: { propertyId: prop.id, direction: "forward" },
 					prop,
 					ownerTypeId: type.id,
@@ -63,7 +130,7 @@ export function pathOptions(types: readonly EntityType[], fromTypeIds: readonly 
 			),
 		);
 	const inverse = types.flatMap((type) =>
-		type.properties.flatMap((prop): PathOption[] =>
+		type.properties.flatMap((prop): PropertyPathOption[] =>
 			prop.kind === "reference" && prop.reference?.typeIds.some((id) => fromTypeIds.includes(id))
 				? [{ step: { propertyId: prop.id, direction: "inverse" }, prop, ownerTypeId: type.id, typeIds: [type.id] }]
 				: [],
@@ -76,22 +143,30 @@ export function pathOptions(types: readonly EntityType[], fromTypeIds: readonly 
 export interface ResolvedPath {
 	/** The options of the steps up to the first that doesn't fit. */
 	options: PathOption[];
-	/** The index of the first step that doesn't fit (its property is gone, or it follows a text or options
-	 * property), or null when the whole path fits. */
+	/** The index of the first step that doesn't fit (its property or role is gone, or it follows a text or options
+	 * one), or null when the whole path fits. */
 	broken: number | null;
 }
 
-/** Reads `path` from entities of `typeId`, step by step. */
-export function resolvePath(types: readonly EntityType[], typeId: string, path: readonly PathStep[]): ResolvedPath {
+/** Reads `path` from where it starts, step by step. */
+export function resolvePath(data: PathData, start: PathFrom, path: readonly PathStep[]): ResolvedPath {
 	const options: PathOption[] = [];
-	let from = [typeId];
+	let from: PathFrom | null = start;
 	for (const [index, step] of path.entries()) {
-		const option = from.length > 0 ? pathOptions(types, from).find((o) => sameStep(o.step, step)) : undefined;
+		const option: PathOption | undefined = from ? pathOptions(data, from).find((o) => sameStep(o.step, step)) : undefined;
 		if (!option) return { options, broken: index };
 		options.push(option);
-		from = option.typeIds;
+		from = option.typeIds.length > 0 ? nextFrom(data, option) : null;
 	}
 	return { options, broken: null };
+}
+
+/** The steps a path can take after `path` (which fits), from where it starts; none when it ends in a text or options. */
+export function nextOptions(data: PathData, start: PathFrom, path: readonly PathStep[], resolved = resolvePath(data, start, path)): PathOption[] {
+	const last = resolved.options[resolved.options.length - 1];
+	if (resolved.broken !== null) return [];
+	if (!last) return pathOptions(data, start);
+	return last.typeIds.length > 0 ? pathOptions(data, nextFrom(data, last)) : [];
 }
 
 /** What a path leads to: an entity, or a text or option (`entityId` null). */
@@ -130,48 +205,38 @@ interface PathFollower {
 	rank: (value: AnalysisValue) => number;
 }
 
-/** Follows `path` from entities of `typeId`. A path that doesn't fit, or an empty one, leads to nothing. */
-function pathFollower(data: Pick<AppData, "types" | "entities">, typeId: string, path: readonly PathStep[]): PathFollower {
-	const { options, broken } = resolvePath(data.types, typeId, path);
+type AnalysisData = Pick<AppData, "types" | "entities" | "traits">;
+
+/** What a step reads on an entity: the ids of the entities it leads to, or the option ids or texts it ends in. */
+function stepReader(data: AnalysisData, option: PathOption): (entity: Entity) => string[] {
+	if (isRoleOption(option)) return roleReader(data, option.trait, option.role.id);
+	return propertyReader(data.entities, option.prop, option.ownerTypeId, option.step.direction);
+}
+
+/** Follows `path` from where it starts. A path that doesn't fit, or an empty one, leads to nothing. */
+function pathFollower(data: AnalysisData, start: PathFrom, path: readonly PathStep[]): PathFollower {
+	const { options, broken } = resolvePath(data, start, path);
 	if (broken !== null || options.length === 0) return { follow: () => [], rank: () => 0 };
 	const byId = new Map(data.entities.map((e) => [e.id, e]));
 	const order = new Map(data.entities.map((e, i) => [e.id, i]));
-	// The other side of the inverse steps' references: per referenced entity and property id, the entities referencing it.
-	const referencing = new Map<string, Map<string, string[]>>();
-	for (const option of options.filter((o) => o.step.direction === "inverse")) {
-		for (const e of data.entities) {
-			if (e.typeId !== option.ownerTypeId) continue;
-			for (const id of referencedIds(option.prop, e.values[option.prop.id])) {
-				const byProp = referencing.get(id) ?? new Map<string, string[]>();
-				byProp.set(option.prop.id, [...(byProp.get(option.prop.id) ?? []), e.id]);
-				referencing.set(id, byProp);
-			}
-		}
-	}
+	const readers = options.map((option) => stepReader(data, option));
 	const last = options[options.length - 1]!;
 	const endsInText = last.typeIds.length === 0;
 	// An options end: the held ids become labels, ranked by the option's place.
-	const optionRank = new Map(last.prop.kind === "options" ? last.prop.options.map((o, i) => [o.label, i] as const) : []);
+	const ending = isRoleOption(last) ? last.role : last.prop;
+	const optionRank = new Map(ending.kind === "options" ? ending.options.map((o, i) => [o.label, i] as const) : []);
 	const rank = (value: AnalysisValue) =>
 		value.entityId !== null ? (order.get(value.entityId) ?? Number.MAX_SAFE_INTEGER) : unknownLast(optionRank.get(value.label) ?? -1);
 	const follow = (entity: Entity): AnalysisValue[] => {
 		let ids = [entity.id];
-		for (const option of endsInText ? options.slice(0, -1) : options) {
-			const next = ids.flatMap((id) => {
-				const e = byId.get(id);
-				if (!e) return [];
-				if (option.step.direction === "inverse") return referencing.get(id)?.get(option.prop.id) ?? [];
-				return e.typeId === option.ownerTypeId ? referencedIds(option.prop, e.values[option.prop.id]) : [];
-			});
+		for (const [index, option] of options.entries()) {
+			if (endsInText && index === options.length - 1) break;
+			const next = ids.flatMap((id) => readers[index]!(byId.get(id)!));
 			ids = [...new Set(next)].filter((id) => byId.has(id) && option.typeIds.includes(byId.get(id)!.typeId));
 		}
 		if (endsInText) {
-			const texts = ids.flatMap((id) => {
-				const e = byId.get(id)!;
-				const value = e.typeId === last.ownerTypeId ? e.values[last.prop.id] : null;
-				return value === null || value === undefined ? [] : typeof value === "string" ? [value] : value;
-			});
-			const labels = last.prop.kind === "options" ? texts.flatMap((id) => optionLabel(last.prop, id) ?? []) : texts.filter((t) => t.trim() !== "");
+			const held = ids.flatMap((id) => readers[options.length - 1]!(byId.get(id)!));
+			const labels = ending.kind === "options" ? held.flatMap((id) => optionLabel(ending, id) ?? []) : held;
 			const values = [...new Set(labels)].map((label) => ({ label, entityId: null }));
 			return values.sort((a, b) => rank(a) - rank(b));
 		}
@@ -186,20 +251,19 @@ const unknownLast = (index: number) => (index < 0 ? Number.MAX_SAFE_INTEGER : in
 const valueKey = (value: AnalysisValue) => (value.entityId !== null ? `entity:${value.entityId}` : `text:${value.label}`);
 
 /**
- * The analysis run on the data: every entity of the analysis's type as a row, in entity order, sorted into a
- * group per value each grouping path leads to (so in several groups when it leads to several; in a last group
- * with value null when it leads to none). Groups are in entity order, or in the order of the options; texts in the
- * order they first come up. Grouping paths that don't fit the types are left out.
+ * The analysis run on the data: every entity of the analysis's type (or of the types bearing its trait) as a row, in
+ * entity order, sorted into a group per value each grouping path leads to (so in several groups when it leads to
+ * several; in a last group with value null when it leads to none). Groups are in entity order, or in the order of the
+ * options; texts in the order they first come up. Grouping paths that don't fit are left out.
  */
-export function runAnalysis(data: Pick<AppData, "types" | "entities">, analysis: Analysis): AnalysisResult {
-	const { typeId } = analysis;
-	if (typeId === null || !data.types.some((t) => t.id === typeId)) return { count: 0, groups: [], rows: [] };
-	const columns = analysis.columns.map((path) => pathFollower(data, typeId, path));
-	const levels = analysis.groups
-		.filter((path) => path.length > 0 && resolvePath(data.types, typeId, path).broken === null)
-		.map((path) => pathFollower(data, typeId, path));
+export function runAnalysis(data: AnalysisData, analysis: Analysis): AnalysisResult {
+	const from = analysisFrom(data, analysis);
+	if (!from) return { count: 0, groups: [], rows: [] };
+	const columns = analysis.columns.map((path) => pathFollower(data, from, path));
+	const levels = groupingPaths(data, from, analysis).map((path) => pathFollower(data, from, path));
+	const rowTypes = new Set(rowTypeIds(data, analysis));
 	const rows = data.entities
-		.filter((e) => e.typeId === typeId)
+		.filter((e) => rowTypes.has(e.typeId))
 		.map((entity): AnalysisRow => ({ entity, cells: columns.map((column) => column.follow(entity)) }));
 
 	const group = (rows: AnalysisRow[], level: number): AnalysisGroup[] => {
@@ -227,16 +291,23 @@ export function runAnalysis(data: Pick<AppData, "types" | "entities">, analysis:
 	return { count: rows.length, groups, rows: groups.length > 0 ? [] : rows };
 }
 
+/** The analysis's grouping paths that fit, the levels its result has. */
+export function groupingPaths(data: PathData, from: PathFrom, analysis: Pick<Analysis, "groups">): PathStep[][] {
+	return analysis.groups.filter((path) => path.length > 0 && resolvePath(data, from, path).broken === null);
+}
+
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
 /** A path's well-formed steps. */
 function normalizePath(raw: unknown): PathStep[] {
 	if (!Array.isArray(raw)) return [];
-	return raw.flatMap((step: unknown) =>
-		isObject(step) && typeof step.propertyId === "string" && (step.direction === "forward" || step.direction === "inverse")
+	return raw.flatMap((step: unknown): PathStep[] => {
+		if (!isObject(step)) return [];
+		if (typeof step.traitId === "string" && typeof step.roleId === "string") return [{ traitId: step.traitId, roleId: step.roleId }];
+		return typeof step.propertyId === "string" && (step.direction === "forward" || step.direction === "inverse")
 			? [{ propertyId: step.propertyId, direction: step.direction }]
-			: [],
-	);
+			: [];
+	});
 }
 
 /** The well-formed analyses, each with only well-formed paths. Steps whose property is gone stay: the analysis shows
@@ -251,6 +322,8 @@ function normalizeAnalyses(raw: unknown): Analysis[] {
 				id: item.id,
 				name: typeof item.name === "string" && item.name.trim() !== "" ? item.name : `Analysis ${i + 1}`,
 				typeId: typeof item.typeId === "string" ? item.typeId : null,
+				// Analyses of a trait came with version 11; those before are of a type.
+				traitId: typeof item.traitId === "string" ? item.traitId : null,
 				groups: paths(item.groups),
 				columns: paths(item.columns),
 			},
@@ -273,12 +346,12 @@ export const ANALYSIS_UNIT: UnitKind<AppData, Analysis> = {
 export function addAnalysis(store: DataStore, name: string): Analysis {
 	const { data } = store;
 	refuseTakenName("analysis", data.analyses, name);
-	const item: Analysis = { id: ulid(), name: name.trim() || freeName(data.analyses, (n) => `Analysis ${n}`), typeId: null, groups: [], columns: [] };
+	const item: Analysis = { id: ulid(), name: name.trim() || freeName(data.analyses, (n) => `Analysis ${n}`), typeId: null, traitId: null, groups: [], columns: [] };
 	store.change({ ...data, analyses: [...data.analyses, item] });
 	return item;
 }
 
-/** Renames the analysis or sets its type, groups or columns; an empty name is ignored, one another analysis has is
+/** Renames the analysis or sets its type or trait, groups or columns; an empty name is ignored, one another analysis has is
  * refused with a `NameTaken`. */
 export function updateAnalysis(store: DataStore, analysisId: string, patch: Partial<Omit<Analysis, "id">>): void {
 	const { data } = store;

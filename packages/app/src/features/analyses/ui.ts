@@ -1,40 +1,49 @@
-import type { EntityType, DataStore } from "../data/core.js";
+import type { DataStore } from "../data/core.js";
 import { createCardPreview, detailsPanel } from "../data/ui.js";
+import { addTrait, type Trait } from "../traits/core.js";
+import { traitForm } from "../traits/ui.js";
+import { text as traitText } from "../traits/texts.js";
 import { freeName, moveItem, nameTaken } from "../../shared/core/index.js";
 import { downloadFile, el, isRecord, listenWhileConnected, readPreference, refused, safeFileName, typeDot, writePreference, zipFiles, sharedText, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
 import {
 	addAnalysis,
+	analysisFrom,
 	deleteAnalysis,
+	groupingPaths,
+	isRoleOption,
+	nextOptions,
 	pathOptions,
 	resolvePath,
 	runAnalysis,
+	sameStep,
 	updateAnalysis,
 	type Analysis,
 	type AnalysisGroup,
 	type AnalysisRow,
 	type AnalysisValue,
+	type PathFrom,
 	type PathOption,
 	type PathStep,
 } from "./core.js";
-import { analysisMarkdownFiles, pathLabel } from "./export.js";
+import { analysisMarkdownFiles, pathLabel, stepName } from "./export.js";
 import { text } from "./texts.js";
 
-/** The analysis open in the Analyses tab. */
+/** The analysis (or trait) open in the Analyses tab. */
 const SELECTED_KEY = "analysis-selected";
 
-const sameStep = (a: PathStep, b: PathStep) => a.propertyId === b.propertyId && a.direction === b.direction;
-
 /**
- * The Analyses tab: the saved analyses in a list, the one chosen set up above (the type of its rows, the paths it
- * groups them by, the paths of its columns) and its result below — the rows in nested groups, a table per group.
+ * The Analyses tab: the saved analyses and the traits in lists, the analysis chosen set up above (the type or trait of
+ * its rows, the paths it groups them by, the paths of its columns) and its result below — the rows in nested groups, a
+ * table per group; a trait chosen shows its form instead.
  * Hovering an entity named in the result shows its card; clicking it shows its details beside, like on a board, where
  * Edit shows its form instead.
  */
 export function analysisView(store: DataStore): HTMLElement {
-	const selected = (): Analysis | undefined => {
+	const selected = (): Analysis | Trait | undefined => {
 		const id = readPreference(SELECTED_KEY);
-		return store.data.analyses.find((item) => item.id === id) ?? store.data.analyses[0];
+		return store.data.analyses.find((item) => item.id === id) ?? store.data.traits.find((item) => item.id === id) ?? store.data.analyses[0];
 	};
+	const isTrait = (item: Analysis | Trait | undefined): item is Trait => item !== undefined && "roles" in item;
 	const typeName = (id: string) => store.data.types.find((t) => t.id === id)?.name ?? "?";
 
 	const content = el("div", { className: "analysis-content" });
@@ -60,7 +69,10 @@ export function analysisView(store: DataStore): HTMLElement {
 		const focusKey = (document.activeElement as HTMLElement | null)?.dataset?.focusKey;
 		const current = selected();
 		preview.hide(); // its link is about to be replaced
-		content.replaceChildren(listSection(current), ...(current ? [setupSection(current), resultSection(current)] : []));
+		content.replaceChildren(
+			listSection(current),
+			...(isTrait(current) ? [traitForm(store, current)] : current ? [setupSection(current), resultSection(current)] : []),
+		);
 		if (!current) content.append(el("section", {}, el("p", { className: "muted" }, text.analysisEmpty)));
 		if (focusKey) content.querySelector<HTMLElement>(`[data-focus-key="${focusKey}"]`)?.focus();
 		showDetails(details.shown()); // the entity may have changed or been removed
@@ -74,7 +86,7 @@ export function analysisView(store: DataStore): HTMLElement {
 		}
 	}
 
-	function listSection(current: Analysis | undefined): HTMLElement {
+	function listSection(current: Analysis | Trait | undefined): HTMLElement {
 		const add = el(
 			"button",
 			{
@@ -89,14 +101,24 @@ export function analysisView(store: DataStore): HTMLElement {
 			},
 			text.newAnalysis,
 		);
-		return el(
-			"section",
-			{ className: "analysis-list" },
-			el("div", { className: "section-header" }, el("h2", {}, text.analyses), add),
+		const addTraitButton = el(
+			"button",
+			{
+				type: "button",
+				onclick: () => {
+					const item = addTrait(store, freeName(store.data.traits, traitText.defaultTraitName));
+					writePreference(SELECTED_KEY, item.id);
+					render();
+					view.querySelector<HTMLInputElement>(".trait-form input")?.select();
+				},
+			},
+			traitText.newTrait,
+		);
+		const entries = (items: readonly (Analysis | Trait)[]) =>
 			el(
 				"ul",
 				{},
-				...store.data.analyses.map((item) =>
+				...items.map((item) =>
 					el(
 						"li",
 						{},
@@ -115,7 +137,14 @@ export function analysisView(store: DataStore): HTMLElement {
 						),
 					),
 				),
-			),
+			);
+		return el(
+			"section",
+			{ className: "analysis-list" },
+			el("div", { className: "section-header" }, el("h2", {}, text.analyses), add),
+			entries(store.data.analyses),
+			el("div", { className: "section-header" }, el("h2", {}, traitText.traits), addTraitButton),
+			entries(store.data.traits),
 		);
 	}
 
@@ -129,14 +158,21 @@ export function analysisView(store: DataStore): HTMLElement {
 				if (!refused(name, taken ? text.analysisNameTaken(name.value.trim()) : null)) update({ name: name.value });
 			},
 		});
+		// A type's value is its id, a trait's "trait:" and its id.
 		const rowType = el(
 			"select",
 			{
 				ariaLabel: text.analysisRowType,
-				onchange: () => update({ typeId: rowType.value || null, groups: [], columns: [] }),
+				onchange: () => {
+					const [traitId] = rowType.value.startsWith("trait:") ? [rowType.value.slice(6)] : [];
+					update({ typeId: traitId === undefined ? rowType.value || null : null, traitId: traitId ?? null, groups: [], columns: [] });
+				},
 			},
 			el("option", { value: "" }, text.analysisPickType),
-			...store.data.types.map((t) => el("option", { value: t.id, selected: t.id === analysis.typeId }, t.name)),
+			el("optgroup", { label: text.analysisTypes }, ...store.data.types.map((t) => el("option", { value: t.id, selected: analysis.traitId === null && t.id === analysis.typeId }, t.name))),
+			...(store.data.traits.length > 0
+				? [el("optgroup", { label: traitText.traits }, ...store.data.traits.map((t) => el("option", { value: `trait:${t.id}`, selected: t.id === analysis.traitId }, t.name)))]
+				: []),
 		);
 		rowType.dataset.focusKey = "row-type";
 		const remove = el(
@@ -149,8 +185,7 @@ export function analysisView(store: DataStore): HTMLElement {
 			},
 			text.deleteAnalysis,
 		);
-		const typeId = analysis.typeId;
-		const known = typeId !== null && store.data.types.some((t) => t.id === typeId);
+		const from = analysisFrom(store.data, analysis);
 		return el(
 			"section",
 			{ className: "analysis-setup" },
@@ -161,12 +196,12 @@ export function analysisView(store: DataStore): HTMLElement {
 				el("label", { className: "field" }, el("span", {}, text.analysisRowType), rowType),
 				remove,
 			),
-			...(known
+			...(from
 				? [
-						pathList("groups", text.analysisGroups, text.analysisGroupsHint, text.addGroupLevel, analysis.groups, typeId, (groups) =>
+						pathList("groups", text.analysisGroups, text.analysisGroupsHint, text.addGroupLevel, analysis.groups, from, (groups) =>
 							update({ groups }),
 						),
-						pathList("columns", text.analysisColumns, text.analysisColumnsHint, text.addColumn, analysis.columns, typeId, (columns) =>
+						pathList("columns", text.analysisColumns, text.analysisColumnsHint, text.addColumn, analysis.columns, from, (columns) =>
 							update({ columns }),
 						),
 					]
@@ -181,7 +216,7 @@ export function analysisView(store: DataStore): HTMLElement {
 		hint: string,
 		addLabel: string,
 		paths: PathStep[][],
-		typeId: string,
+		from: PathFrom,
 		save: (paths: PathStep[][]) => void,
 	): HTMLElement {
 		const add = el("button", { type: "button", onclick: () => save([...paths, []]) }, `+ ${addLabel}`);
@@ -204,7 +239,7 @@ export function analysisView(store: DataStore): HTMLElement {
 					return el(
 						"li",
 						{ className: "path-row" },
-						pathEditor(`${key}:${i}`, path, typeId, set),
+						pathEditor(`${key}:${i}`, path, from, set),
 						el(
 							"div",
 							{ className: "path-actions" },
@@ -221,11 +256,12 @@ export function analysisView(store: DataStore): HTMLElement {
 
 	/** A path as a chain of selects, each offering the steps that can follow the one before; choosing a step anew
 	 * drops the steps after it, which may not fit any more. A last, empty select adds a step. */
-	function pathEditor(key: string, path: PathStep[], typeId: string, set: (path: PathStep[]) => void): HTMLElement {
-		const { options, broken } = resolvePath(store.data.types, typeId, path);
+	function pathEditor(key: string, path: PathStep[], start: PathFrom, set: (path: PathStep[]) => void): HTMLElement {
+		const resolved = resolvePath(store.data, start, path);
+		const { broken } = resolved;
 		const fitting = broken === null ? path.length : broken;
-		const select = (index: number, from: string[], current: PathStep | null) => {
-			const choices = pathOptions(store.data.types, from);
+		const select = (index: number, current: PathStep | null) => {
+			const choices = index === 0 ? pathOptions(store.data, start) : nextOptions(store.data, start, path.slice(0, index));
 			const missing = current !== null && !choices.some((c) => sameStep(c.step, current));
 			const input = el(
 				"select",
@@ -248,14 +284,10 @@ export function analysisView(store: DataStore): HTMLElement {
 			return input;
 		};
 
-		let from = [typeId];
 		const selects: HTMLElement[] = [];
-		for (const [index, step] of path.slice(0, fitting + (broken === null ? 0 : 1)).entries()) {
-			selects.push(select(index, from, step));
-			from = options[index]?.typeIds ?? [];
-		}
+		for (const [index, step] of path.slice(0, fitting + (broken === null ? 0 : 1)).entries()) selects.push(select(index, step));
 		// Another step can follow a fitting path whose last step leads to entities.
-		if (broken === null && from.length > 0 && pathOptions(store.data.types, from).length > 0) selects.push(select(path.length, from, null));
+		if (broken === null && nextOptions(store.data, start, path, resolved).length > 0) selects.push(select(path.length, null));
 		const shorten = el(
 			"button",
 			{ type: "button", className: "icon-button", title: text.removeLastStep, ariaLabel: text.removeLastStep, onclick: () => set(path.slice(0, -1)) },
@@ -271,27 +303,28 @@ export function analysisView(store: DataStore): HTMLElement {
 		);
 	}
 
-	/** How a step reads in a select: a property of the entity (and the types it leads to), or one of another type
-	 * referencing it. */
+	/** How a step reads in a select: a property or role of the entity (and the types it leads to), or a property of
+	 * another type referencing it. */
 	function stepLabel(option: PathOption | undefined): string {
 		if (!option) return text.pathMissingStep;
-		if (option.step.direction === "inverse") {
-			return option.prop.reference?.inverseLabel || text.inverseStep(typeName(option.ownerTypeId), option.prop.name);
-		}
-		return option.typeIds.length > 0 ? `${option.prop.name} → ${option.typeIds.map(typeName).join(" / ")}` : option.prop.name;
+		const name = stepName(store.data.types, option);
+		if (!isRoleOption(option) && option.step.direction === "inverse") return name;
+		return option.typeIds.length > 0 ? `${name} → ${option.typeIds.map(typeName).join(" / ")}` : name;
 	}
 
 	function resultSection(analysis: Analysis): HTMLElement {
 		const header = el("div", { className: "section-header" }, el("h2", {}, text.analysisResult));
 		const section = el("section", { className: "analysis-result" }, header);
-		const type = store.data.types.find((t) => t.id === analysis.typeId);
-		if (!type) {
+		const from = analysisFrom(store.data, analysis);
+		if (!from) {
 			section.append(el("p", { className: "muted" }, text.analysisChooseType));
 			return section;
 		}
+		const trait = store.data.traits.find((t) => t.id === analysis.traitId);
+		const basisName = trait?.name ?? typeName(analysis.typeId ?? "");
 		const result = runAnalysis(store.data, analysis);
 		if (result.count === 0) {
-			section.append(el("p", { className: "muted" }, text.analysisNoRows(type.name)));
+			section.append(el("p", { className: "muted" }, trait ? text.analysisNoTraitRows(trait.name) : text.analysisNoRows(basisName)));
 			return section;
 		}
 		const exportMarkdown = () => {
@@ -303,14 +336,14 @@ export function analysisView(store: DataStore): HTMLElement {
 		header.append(
 			el("button", { type: "button", title: text.exportAnalysisMarkdownHint, onclick: exportMarkdown }, text.exportAnalysisMarkdown),
 		);
-		const levels = analysis.groups.filter((path) => path.length > 0 && resolvePath(store.data.types, type.id, path).broken === null);
-		const headers = [type.name, ...analysis.columns.map((path) => pathLabel(store.data.types, type.id, path))];
+		const levels = groupingPaths(store.data, from, analysis);
+		const headers = [basisName, ...analysis.columns.map((path) => pathLabel(store.data, from, path))];
 		section.append(el("p", { className: "muted" }, text.analysisCount(result.count)));
-		section.append(...(result.groups.length > 0 ? groups(type, result.groups, levels, headers, 0) : [table(type, result.rows, headers)]));
+		section.append(...(result.groups.length > 0 ? groups(from, result.groups, levels, headers, 0) : [table(result.rows, headers)]));
 		return section;
 	}
 
-	function groups(type: EntityType, list: AnalysisGroup[], levels: PathStep[][], headers: string[], level: number): HTMLElement[] {
+	function groups(from: PathFrom, list: AnalysisGroup[], levels: PathStep[][], headers: string[], level: number): HTMLElement[] {
 		const heading = `h${Math.min(3 + level, 6)}` as "h3" | "h4" | "h5" | "h6";
 		return list.map((group) =>
 			el(
@@ -319,17 +352,17 @@ export function analysisView(store: DataStore): HTMLElement {
 				el(
 					heading,
 					{},
-					group.value ? valueView(group.value) : el("span", { className: "muted" }, text.analysisNoValue(pathLabel(store.data.types, type.id, levels[level]!))),
+					group.value ? valueView(group.value) : el("span", { className: "muted" }, text.analysisNoValue(pathLabel(store.data, from, levels[level]!))),
 					el("span", { className: "muted analysis-count" }, text.analysisCount(group.count)),
 				),
-				...(group.groups.length > 0 ? groups(type, group.groups, levels, headers, level + 1) : [table(type, group.rows, headers)]),
+				...(group.groups.length > 0 ? groups(from, group.groups, levels, headers, level + 1) : [table(group.rows, headers)]),
 			),
 		);
 	}
 
 	/** The rows as a table: the entity, then a cell per column. Narrow screens show each row as a card (see CSS), with its
 	 * column's name above every value. */
-	function table(type: EntityType, rows: AnalysisRow[], headers: string[]): HTMLElement {
+	function table(rows: AnalysisRow[], headers: string[]): HTMLElement {
 		const cell = (values: AnalysisValue[], label: string) => {
 			const td = el("td", {}, ...(values.length > 0 ? join(values.map(valueView)) : ["—"]));
 			td.dataset.label = label;
@@ -349,7 +382,7 @@ export function analysisView(store: DataStore): HTMLElement {
 						el(
 							"tr",
 							{},
-							cell([{ label: row.entity.name, entityId: row.entity.id }], type.name),
+							cell([{ label: row.entity.name, entityId: row.entity.id }], headers[0]!),
 							...row.cells.map((values, i) => cell(values, headers[i + 1] ?? "")),
 						),
 					),
@@ -398,8 +431,8 @@ function join(nodes: HTMLElement[]): (HTMLElement | string)[] {
 /** The Analyses tab, after the boards. */
 export const ANALYSES_PAGE: PageMaker<DataStore> = () => ({ routes: ["analysis"], label: () => text.tabAnalysis, render: analysisView });
 
-/** How the history tells of an analysis: the type of its rows, the paths it groups by and those of its columns,
- * read with the types as they are now. */
+/** How the history tells of an analysis: the type (or trait) of its rows, the paths it groups by and those of its
+ * columns, read with the types and traits as they are now. */
 export const ANALYSIS_HISTORY: UnitDescriber<DataStore> = {
 	kind: "analysis",
 	area: "view",
@@ -407,12 +440,14 @@ export const ANALYSIS_HISTORY: UnitDescriber<DataStore> = {
 	read(value, store) {
 		if (!isRecord(value) || typeof value.name !== "string" || !Array.isArray(value.groups) || !Array.isArray(value.columns)) return null;
 		const typeId = typeof value.typeId === "string" ? value.typeId : null;
-		const types = store.data.types;
-		const paths = (list: PathStep[][]) => (typeId === null ? "" : list.map((path) => pathLabel(types, typeId, path)).join(" / "));
+		const traitId = typeof value.traitId === "string" ? value.traitId : null;
+		const from = analysisFrom(store.data, { typeId, traitId });
+		const paths = (list: PathStep[][]) => (from === null ? "" : list.map((path) => pathLabel(store.data, from, path)).join(" / "));
+		const basis = traitId !== null ? store.data.traits.find((t) => t.id === traitId) : typeId !== null ? store.data.types.find((t) => t.id === typeId) : null;
 		return {
 			name: value.name,
 			fields: [
-				{ label: text.analysisRowType, text: typeId === null ? "" : (types.find((t) => t.id === typeId)?.name ?? "?") },
+				{ label: text.analysisRowType, text: basis === null ? "" : (basis?.name ?? "?") },
 				{ label: text.analysisGroups, text: paths(value.groups as PathStep[][]) },
 				{ label: text.analysisColumns, text: paths(value.columns as PathStep[][]) },
 			],

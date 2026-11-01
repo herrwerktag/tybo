@@ -2,19 +2,36 @@ import { fillPlaceholders, optionLabel, referencedIds, type Entity, type EntityT
 import type { AppData } from "../../shared/core/index.js";
 import { uniqueFileNames } from "../../shared/ui/index.js";
 import { text as dataText } from "../data/texts.js";
-import { resolvePath, runAnalysis, type Analysis, type AnalysisGroup, type AnalysisRow, type AnalysisValue, type PathStep } from "./core.js";
+import {
+	analysisFrom,
+	groupingPaths,
+	isRoleOption,
+	resolvePath,
+	rowTypeIds,
+	runAnalysis,
+	type Analysis,
+	type AnalysisGroup,
+	type AnalysisRow,
+	type AnalysisValue,
+	type PathData,
+	type PathFrom,
+	type PathOption,
+	type PathStep,
+} from "./core.js";
 import { text } from "./texts.js";
 
+/** How a step reads: a property's or role's name, an inverse one by its label or the referencing type and property. */
+export function stepName(types: readonly { id: string; name: string }[], option: PathOption): string {
+	if (isRoleOption(option)) return option.role.name;
+	if (option.step.direction === "forward") return option.prop.name;
+	return option.prop.reference?.inverseLabel || text.inverseStep(types.find((t) => t.id === option.ownerTypeId)?.name ?? "?", option.prop.name);
+}
+
 /** How a path reads as a heading: its steps' names. */
-export function pathLabel(types: readonly EntityType[], typeId: string, path: readonly PathStep[]): string {
-	const { options } = resolvePath(types, typeId, path);
+export function pathLabel(data: PathData, from: PathFrom, path: readonly PathStep[]): string {
+	const { options } = resolvePath(data, from, path);
 	if (options.length === 0) return "—";
-	const typeName = (id: string) => types.find((t) => t.id === id)?.name ?? "?";
-	return options
-		.map((o) =>
-			o.step.direction === "inverse" ? o.prop.reference?.inverseLabel || text.inverseStep(typeName(o.ownerTypeId), o.prop.name) : o.prop.name,
-		)
-		.join(" › ");
+	return options.map((o) => stepName(data.types, o)).join(" › ");
 }
 
 /**
@@ -27,14 +44,14 @@ export function pathLabel(types: readonly EntityType[], typeId: string, path: re
  * subheadings of their section.
  */
 export function analysisMarkdownFiles(
-	data: Pick<AppData, "types" | "entities">,
+	data: Pick<AppData, "types" | "entities" | "traits">,
 	analysis: Analysis,
 	date: string,
 ): { name: string; contents: string }[] {
 	const title = `# ${text.analysisExportTitle(analysis.name, date)}`;
 	const fileName = `${analysis.name} ${date}`;
-	const type = data.types.find((t) => t.id === analysis.typeId);
-	if (!type) return uniqueFileNames([{ name: fileName, contents: `${title}\n` }], "md");
+	const from = analysisFrom(data, analysis);
+	if (!from) return uniqueFileNames([{ name: fileName, contents: `${title}\n` }], "md");
 	const types = new Map(data.types.map((t) => [t.id, t]));
 	const entities = data.entities.filter((e) => types.has(e.typeId));
 	const names = uniqueNames(entities);
@@ -42,10 +59,10 @@ export function analysisMarkdownFiles(
 	const mention = (value: AnalysisValue) => (value.entityId !== null ? (mentions.get(value.entityId) ?? value.label) : value.label);
 
 	const result = runAnalysis(data, analysis);
-	const levels = analysis.groups.filter((path) => path.length > 0 && resolvePath(data.types, type.id, path).broken === null);
-	const headers = analysis.columns.map((path) => pathLabel(data.types, type.id, path));
+	const levels = groupingPaths(data, from, analysis);
+	const headers = analysis.columns.map((path) => pathLabel(data, from, path));
 	const groupLabel = (group: AnalysisGroup, level: number) =>
-		group.value ? group.value.label : text.analysisNoValue(pathLabel(data.types, type.id, levels[level]!));
+		group.value ? group.value.label : text.analysisNoValue(pathLabel(data, from, levels[level]!));
 
 	/** A row's section; the entities its columns name are added to `named`. */
 	const rowSection = (row: AnalysisRow, depth: number, named: Set<string>): string => {
@@ -59,7 +76,7 @@ export function analysisMarkdownFiles(
 			});
 			lines.push([tableRow(headers), tableRow(headers.map(() => "---")), tableRow(cells)].join("\n"));
 		}
-		const description = descriptionText(row.entity, type, mentions, depth);
+		const description = descriptionText(row.entity, types.get(row.entity.typeId)!, mentions, depth);
 		if (description) lines.push(description);
 		return lines.join("\n\n");
 	};
@@ -73,7 +90,8 @@ export function analysisMarkdownFiles(
 	const entityTexts = (entity: Entity, depth: number): string[] =>
 		[contentText(entity, depth), descriptionText(entity, types.get(entity.typeId)!, mentions, depth)].filter((t) => t !== "");
 
-	const rowIds = new Set(entities.filter((e) => e.typeId === type.id).map((e) => e.id));
+	const rowTypes = new Set(rowTypeIds(data, analysis));
+	const rowIds = new Set(entities.filter((e) => rowTypes.has(e.typeId)).map((e) => e.id));
 	/** A file: its title, its sections and then the entities they name, but for the one the file is about. */
 	const markdown = (heading: string, sections: (named: Set<string>) => string[], about?: Entity): string => {
 		const named = new Set<string>();

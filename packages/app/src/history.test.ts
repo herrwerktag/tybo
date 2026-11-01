@@ -5,11 +5,12 @@
 import { WS, byText, goTo, settle, startApp, storage } from "./test-app.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createStore } from "./features.core.js";
+import { addTrait, createStore, updateTrait } from "./features.core.js";
 import { DATA_VERSION, ulid, type HistoryEntry } from "./shared/core/index.js";
 import { text as boardText } from "./features/boards/texts.js";
 import { text as dataText } from "./features/data/texts.js";
 import { text } from "./features/history/texts.js";
+import { text as traitText } from "./features/traits/texts.js";
 
 const DUNE = ulid();
 const EMMA = ulid();
@@ -385,4 +386,24 @@ test("History: an options value shows the option's label; a text from before the
 	// The id through the option it names; the format-9 text as it was written.
 	assert.ok(units[0]!.textContent!.includes("open"));
 	assert.ok(units[1]!.textContent!.includes("pitched"));
+});
+
+test("History: a trait is told of by its roles and the types bearing it", async () => {
+	await startApp(ideas());
+	const web = await writer("web");
+	const trait = addTrait(web, "Progress");
+	updateTrait(web, trait.id, {
+		roles: [{ id: "stand", name: "Stand", kind: "options", options: [{ id: "o", label: "open" }, { id: "d", label: "done" }] }],
+		bindings: { idea: { stand: { propertyId: "status", direction: "forward", values: { "o-open": "o" } } } },
+	});
+	await web.saved();
+
+	const view = await openHistory();
+	assert.deepEqual(writeLines(view), [], "a trait, like an analysis, is no part of the data itself");
+	choose(view, text.areaFilter, "view");
+	// Made and changed before the save went out: one write.
+	assert.deepEqual(writeLines(view).map(([, sentence]) => sentence), [text.unitSentence(traitText.historyTraits(1), "Progress", text.created)]);
+	const unit = view.querySelector(".history-unit")!;
+	assert.deepEqual(labels(unit), [traitText.roles, traitText.historyTypes]);
+	assert.deepEqual([...unit.querySelectorAll(".history-changes > dd")].map((dd) => dd.textContent), [`Stand (${dataText.kinds.options}: open, done)`, "Idea"]);
 });

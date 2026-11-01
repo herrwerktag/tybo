@@ -2,6 +2,7 @@ import { NameTaken, sameName, type AppData, type DataPort } from "./shared/core/
 import { ToolError, WORKSPACE, json, object, text, type Tool, type ToolContext } from "./shared/mcp/index.js";
 import { createStore, type Store } from "./features.core.js";
 import { dataTools, describeData } from "./features/data/mcp.js";
+import { describeTraits, traitTools } from "./features/traits/mcp.js";
 import { analysisTools, describeAnalyses } from "./features/analyses/mcp.js";
 import { boardTools, describeBoards } from "./features/boards/mcp.js";
 
@@ -11,10 +12,10 @@ import { boardTools, describeBoards } from "./features/boards/mcp.js";
  */
 
 /** The features' tools, on the store of the workspace a call names, in the order the model gets them. */
-const TOOLS = [boardTools, dataTools, analysisTools];
+const TOOLS = [boardTools, dataTools, traitTools, analysisTools];
 
 /** What the features add to describe_workspace. */
-const DESCRIBES = [describeData, describeAnalyses, describeBoards];
+const DESCRIBES = [describeData, describeTraits, describeAnalyses, describeBoards];
 
 /**
  * The tools a model gets on tybo: read a workspace's types and entities, run its analyses, and make or change
@@ -93,7 +94,8 @@ function workspaceTools(port: DataPort, { open }: ToolContext<Store>, describe: 
 			description:
 				"The schema of a workspace: its entity types with their color and properties (kind, options as { id, label }, which types a reference points to, " +
 				"how cards show it, the arrow and label of its line), " +
-				"how many entities each type has, the tags in use, the saved analyses and the boards with how many cards each has. " +
+				"how many entities each type has, the tags in use, the traits (their roles, and per type bearing them what plays each role), " +
+				"the saved analyses and the boards with how many cards each has. " +
 				"Read this before creating or changing anything.",
 			inputSchema: object({ workspace: WORKSPACE }, ["workspace"]),
 			async run(args) {

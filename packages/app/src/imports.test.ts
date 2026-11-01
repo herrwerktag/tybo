@@ -20,7 +20,8 @@ import { fileURLToPath } from "node:url";
  */
 const FEATURES_BELOW: Record<string, readonly string[]> = {
 	data: [],
-	analyses: ["data"],
+	traits: ["data"],
+	analyses: ["data", "traits"],
 	boards: ["data"],
 	drawings: ["data", "boards"],
 	exports: ["data", "boards", "drawings"],

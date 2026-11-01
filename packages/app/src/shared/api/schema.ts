@@ -292,6 +292,26 @@ export const POSTGRES_MIGRATIONS: readonly Migration[] = [
 			await tx`update workspaces set data_version = 10`;
 		},
 	},
+	{
+		version: 16,
+		name: "traits",
+		async up(tx) {
+			// A trait is one row; its roles and bindings name types and properties by id, and may outlive them. An
+			// analysis's rows are a type's or a trait's (format 11).
+			await tx`create table traits (
+				workspace_id text not null references workspaces(id) on delete cascade,
+				id text not null,
+				position int not null,
+				name text,
+				roles jsonb,
+				bindings jsonb,
+				updated_at timestamptz not null default now(),
+				primary key (workspace_id, id)
+			)`;
+			await tx`alter table analyses add column trait_id text`;
+			await tx`update workspaces set data_version = 11`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */
