@@ -3,6 +3,7 @@ import { messages } from "../../shared/ui/index.js";
 /** The Boards tab's messages: the canvas, its side panel and dialogs, the board picker and the frame. */
 const en = {
 	tabBoards: "Boards",
+	onBoards: "On boards",
 	exportButton: "Export",
 	close: "Close",
 	moveBoard: (name: string) => `Move board ${name}; use the arrow keys`,
@@ -75,6 +76,7 @@ export const text = messages<typeof en>({
 	en,
 	de: {
 		tabBoards: "Boards",
+		onBoards: "Auf Boards",
 		exportButton: "Exportieren",
 		close: "Schließen",
 		moveBoard: (name) => `Board ${name} verschieben; Pfeiltasten verwenden`,

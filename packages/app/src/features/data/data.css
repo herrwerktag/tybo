@@ -720,3 +720,30 @@ td.handle-cell {
 	width: 1rem;
 	height: 1rem;
 }
+
+/* Where else the entity is shown (the boards with a card of it, say): one link a line. */
+.details-places {
+	display: grid;
+	gap: 0.25rem;
+	font-size: var(--text-md);
+}
+
+:is(.details-places, .details-id) a {
+	text-decoration: underline;
+	text-underline-offset: 0.2em;
+}
+
+/* The row a link led to (#entities/<id>): marked until another one is. */
+.entity-table tbody tr.target > td {
+	background: var(--highlight);
+}
+
+/* A referenced entity in the table leads to its own row. */
+.entity-table a.ref-tag {
+	color: var(--on-tint);
+	text-decoration: none;
+}
+
+.entity-table a.ref-tag:hover {
+	text-decoration: underline;
+}

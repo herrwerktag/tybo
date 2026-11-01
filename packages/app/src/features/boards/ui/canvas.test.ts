@@ -226,6 +226,31 @@ test("the side panel's width can be changed with its handle and is remembered; a
 	assert.equal(panel.style.getPropertyValue("--panel-width"), "");
 });
 
+test("a reference's tag on a card shows the entity it leads to: its card selected if it's on the board, else none; dragging it doesn't", async () => {
+	freshDom();
+	const store = await createStore(memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } }).port, "ws");
+	const person = store.addType("Person", [], "");
+	const book = store.addType("Book", [{ name: "Author", kind: "reference", options: [], reference: newReference([person.id]), cardDisplay: "list" }], "");
+	const frank = store.addEntity(person.id, "Frank", "", {});
+	const boardId = store.data.boards[0]!.id;
+	const dune = store.addCard(boardId, store.addEntity(book.id, "Dune", "", { [book.properties[0]!.id]: frank.id }).id, 100, 100);
+	const { view, refresh } = canvas(store, { readOnly: false, layers: [] });
+	document.body.append(view);
+	const tag = () => cardNode(view, dune.id).querySelector<HTMLElement>(`.ref-tag[data-entity-id="${frank.id}"]`)!;
+
+	dragBy(tag(), 60, 60);
+	assert.equal(details(view).hidden, true, "a drag doesn't follow the reference");
+	tag().click();
+	assert.equal(details(view).querySelector(".details-title")?.textContent, "Frank");
+	assert.deepEqual(selectedCards(view), [], "Frank has no card here, and gets none");
+	assert.equal(store.data.boards[0]!.cards.length, 1);
+
+	const card = store.addCard(boardId, frank.id, 700, 100);
+	refresh();
+	tag().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+	assert.deepEqual(selectedCards(view), [card.id], "on the board, its card is selected");
+});
+
 test("the side panel marks what isn't on the board yet, counts it per type, and can show only that", async () => {
 	freshDom();
 	const store = await createStore(memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } }).port, "ws");

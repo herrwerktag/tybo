@@ -6,6 +6,7 @@ import { DATA_VERSION } from "./shared/core/index.js";
 import { setLanguage, activeWorkspacePreference, sharedText } from "./shared/ui/index.js";
 import { text as dataText } from "./features/data/texts.js";
 import { text as boardText } from "./features/boards/texts.js";
+import { text as historyText } from "./features/history/texts.js";
 import { createStore, createWorkspaces } from "./features.core.js";
 import { render } from "./features.ui.js";
 
@@ -558,6 +559,48 @@ test("the Entities page filters by tag, remembers it, tags new entities with it,
 	goTo("#types");
 	goTo("#entities");
 	assert.equal(tagSelect().value, "classic", "remembered");
+});
+
+test("following references: a reference in the table leads to its row; the details name the boards with a card of the entity, each a link to it", async () => {
+	const ref = (id: string, typeId: string) => ({ id, name: "Author", kind: "reference", options: [], reference: { typeIds: [typeId], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" });
+	const frank = "01J00000000000000000000001";
+	const dune = "01J00000000000000000000002";
+	const data = {
+		version: DATA_VERSION,
+		types: [
+			{ id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", properties: [ref("author", "person")] },
+			{ id: "person", name: "Person", color: "#c8ebbf", contentTemplate: "", properties: [] },
+		],
+		entities: [
+			{ id: dune, typeId: "book", name: "Dune", content: "", description: "", tags: [], values: { author: frank } },
+			{ id: frank, typeId: "person", name: "Frank", content: "", description: "", tags: [], values: {} },
+		],
+		boards: [
+			{ id: "b1", name: "Bücher", cards: [{ id: "c1", entityId: dune, x: 0, y: 0, width: 200, height: 80 }] },
+			{ id: "b2", name: "Leute", cards: [{ id: "c2", entityId: frank, x: 0, y: 0, width: 200, height: 80 }] },
+		],
+		analyses: [{ id: "a", name: "Bücher", typeId: "book", traitId: null, groups: [], columns: [] }],
+	};
+	const root = await startApp(data, "#entities");
+	const link = byText<HTMLAnchorElement>(root, ".entity-table a.ref-tag", "Frank");
+	assert.equal(link.getAttribute("href"), `#entities/${frank}`);
+	goTo(link.getAttribute("href")!);
+	assert.deepEqual(rowNames(root), ["Frank"], "the type of the entity it leads to");
+	assert.equal(root.querySelector(".entity-table tr.target .name-cell")?.textContent, "Frank");
+	byText(root, ".type-chip", "Book1").click();
+	assert.deepEqual(rowNames(root), ["Dune"], "the address doesn't hold the page on its type");
+
+	goTo("#analysis");
+	byText(root, ".analysis-result .entity-link", "Dune").click();
+	const panel = root.querySelector<HTMLElement>(".analysis-view .details-panel")!;
+	assert.deepEqual([...panel.querySelectorAll(".details-places a")].map((a) => [a.textContent, a.getAttribute("href")]), [["Bücher", `#boards/b1/${dune}`]]);
+	assert.ok(byText(panel, ".details-id a", historyText.historyLink));
+	byText(panel, ".ref-tag", "Frank").click();
+	assert.deepEqual([...panel.querySelectorAll(".details-places a")].map((a) => a.textContent), ["Leute"]);
+
+	goTo(`#boards/b2/${frank}`);
+	assert.equal(root.querySelector(".canvas-card.selected .card-title")?.textContent, "Frank", "the board opened, the card selected");
+	assert.equal(root.querySelector(".details-panel .details-title")?.textContent, "Frank");
 });
 
 test("the board's side panel filters entities by tag", async () => {
