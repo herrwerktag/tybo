@@ -48,7 +48,7 @@
 
 .history-day > summary > h3 {
 	min-width: 6rem;
-	font-size: 1rem;
+	font-size: var(--text-base);
 }
 
 .history-day-summary {
@@ -56,7 +56,7 @@
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 0.35rem 1rem;
-	font-size: 0.875rem;
+	font-size: var(--text-md);
 }
 
 .history-count {
@@ -80,13 +80,13 @@
 .history-table {
 	width: 100%;
 	border-collapse: collapse;
-	font-size: 0.9rem;
+	font-size: var(--text-md);
 }
 
 .history-table th {
 	padding: 0.25rem 0.5rem;
 	text-align: left;
-	font-size: 0.75rem;
+	font-size: var(--text-xs);
 	font-weight: 600;
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
@@ -130,10 +130,10 @@
 .history-source {
 	display: inline-block;
 	padding: 0 0.5rem;
-	border-radius: 4px;
+	border-radius: var(--radius-sm);
 	background: var(--source-tint);
 	color: #1a1a1a;
-	font-size: 0.8125rem;
+	font-size: var(--text-sm);
 	font-weight: 600;
 	line-height: 1.375rem;
 }
@@ -181,7 +181,7 @@
 
 .history-session-writes {
 	color: var(--muted);
-	font-size: 0.875rem;
+	font-size: var(--text-md);
 }
 
 /* What only moved (cards on a board, entities in their list), and changes with nothing to see: there, but faint. */
@@ -200,8 +200,8 @@
 	place-items: center;
 	width: 1.375rem;
 	height: 1.375rem;
-	border-radius: 4px;
-	font-size: 0.8125rem;
+	border-radius: var(--radius-sm);
+	font-size: var(--text-sm);
 	font-weight: 700;
 	line-height: 1;
 	background: var(--chip);
@@ -231,7 +231,7 @@
 .history-noun {
 	display: block;
 	color: var(--muted);
-	font-size: 0.75rem;
+	font-size: var(--text-xs);
 }
 
 .history-tag {
@@ -251,11 +251,11 @@
 .history-collision {
 	margin-left: 0.4rem;
 	color: var(--error);
-	font-size: 0.8125rem;
+	font-size: var(--text-sm);
 }
 
 .history-more {
-	font-size: 0.8125rem;
+	font-size: var(--text-sm);
 }
 
 /* A unit's fields: the field's name small and quiet on the left, its values in boxes on the right — old struck
@@ -268,7 +268,7 @@
 }
 
 .history-changes > dt {
-	font-size: 0.6875rem;
+	font-size: var(--text-xs);
 	font-weight: 600;
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
@@ -286,7 +286,7 @@
 
 .history-value {
 	padding: 0.05rem 0.4rem;
-	border-radius: 4px;
+	border-radius: var(--radius-sm);
 	border: 1px solid var(--border);
 	background: var(--surface);
 	color: var(--text);
@@ -311,7 +311,7 @@
 .history-value.changed {
 	background: var(--highlight);
 	border-color: var(--focus);
-	font-size: 0.8125rem;
+	font-size: var(--text-sm);
 }
 
 .history-arrow {
@@ -325,7 +325,7 @@
 .history-change summary {
 	cursor: pointer;
 	color: var(--muted);
-	font-size: 0.8125rem;
+	font-size: var(--text-sm);
 }
 
 .history-changes details {

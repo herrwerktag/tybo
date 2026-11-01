@@ -27,15 +27,14 @@ main:has(.canvas-view) {
 	top: 0.75rem;
 	left: 0.75rem;
 	display: none;
-	padding: 0.1rem 0.5rem;
-	line-height: 1.4;
+	padding: 0.45rem;
 	border-color: var(--border);
-	border-radius: 6px;
-	box-shadow: 0 2px 6px rgb(0 0 0 / 0.08);
+	border-radius: var(--radius-md);
+	box-shadow: var(--shadow-sm);
 }
 
 .panel-collapsed .panel-open {
-	display: block;
+	display: inline-flex;
 }
 
 /* The side panel's drag handle goes along with the panel, the details' with the details. */
@@ -52,8 +51,8 @@ main:has(.canvas-view) {
 }
 
 .panel-toggle {
-	padding: 0.1rem 0.5rem;
-	line-height: 1.4;
+	display: inline-flex;
+	padding: 0.45rem;
 }
 
 /* Narrow screens: side panel above, canvas, details below. */
@@ -122,7 +121,7 @@ main:has(.canvas-view) {
 	gap: 0.1rem;
 	padding: 0.35rem 0.5rem;
 	border: 1px solid var(--border);
-	border-radius: 4px;
+	border-radius: var(--radius-sm);
 	background: var(--surface);
 	cursor: grab;
 	overflow-wrap: anywhere;
@@ -137,7 +136,7 @@ main:has(.canvas-view) {
 }
 
 .panel-item-note {
-	font-size: 0.85em;
+	font-size: var(--text-sm);
 }
 
 .canvas-main {
@@ -335,7 +334,7 @@ main:has(.canvas-view) {
 .view-frame {
 	box-sizing: border-box;
 	border: 2px solid var(--focus);
-	border-radius: 6px;
+	border-radius: var(--radius-md);
 }
 
 .view-frame-label {
@@ -347,10 +346,10 @@ main:has(.canvas-view) {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	font-size: 0.8rem;
+	font-size: var(--text-sm);
 	background: var(--surface);
 	border: 1px solid var(--focus);
-	border-radius: 6px 6px 0 0;
+	border-radius: var(--radius-md) var(--radius-md) 0 0;
 	cursor: move;
 	touch-action: none;
 	user-select: none;
@@ -460,10 +459,10 @@ main:has(.canvas-view) {
 	transform: translate(-50%, -50%);
 	padding: 0 0.4rem;
 	border: 1px solid var(--border-strong);
-	border-radius: 4px;
+	border-radius: var(--radius-sm);
 	background: var(--surface);
 	color: var(--text);
-	font-size: 0.75rem;
+	font-size: var(--text-xs);
 	line-height: 1.25rem;
 	white-space: nowrap;
 }
@@ -503,8 +502,8 @@ main:has(.canvas-view) {
 	white-space: nowrap;
 	background: var(--surface);
 	border: 1px solid var(--border);
-	border-radius: 6px;
-	box-shadow: 0 2px 6px rgb(0 0 0 / 0.08);
+	border-radius: var(--radius-md);
+	box-shadow: var(--shadow-sm);
 	pointer-events: auto;
 }
 
@@ -539,8 +538,8 @@ main:has(.canvas-view) {
 	background: var(--surface);
 	color: inherit;
 	border: 1px solid var(--border);
-	border-radius: 6px;
-	box-shadow: 0 6px 20px rgb(0 0 0 / 0.12);
+	border-radius: var(--radius-md);
+	box-shadow: var(--shadow-lg);
 }
 
 .canvas-dialog[open] {
@@ -572,8 +571,8 @@ main:has(.canvas-view) {
 	background: var(--surface);
 	color: inherit;
 	border: 1px solid var(--border);
-	border-radius: 6px;
-	box-shadow: 0 6px 20px rgb(0 0 0 / 0.12);
+	border-radius: var(--radius-md);
+	box-shadow: var(--shadow-lg);
 }
 
 .picker-dropdown[open] {
@@ -582,11 +581,11 @@ main:has(.canvas-view) {
 }
 
 :is(.canvas-dialog, .picker-dropdown) h2 {
-	font-size: 1rem;
+	font-size: var(--text-base);
 }
 
 :is(.canvas-dialog, .picker-dropdown) h3 {
-	font-size: 0.9rem;
+	font-size: var(--text-md);
 }
 
 .picker-list,
@@ -739,5 +738,5 @@ main:has(.canvas-view) {
 /* The card being dragged out of a reference tag, until it's let go. */
 .card-ghost {
 	pointer-events: none;
-	box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+	box-shadow: var(--shadow-xl);
 }

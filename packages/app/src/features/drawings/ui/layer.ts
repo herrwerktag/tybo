@@ -1,5 +1,5 @@
 import { GRID_SIZE, touches, type Point, type Rect } from "../../../shared/core/index.js";
-import { CLICK_TOLERANCE, el, listenWhileConnected, readPreference, svgEl, trackPointer, writePreference, sharedText } from "../../../shared/ui/index.js";
+import { CLICK_TOLERANCE, el, icon, listenWhileConnected, readPreference, svgEl, trackPointer, writePreference, sharedText } from "../../../shared/ui/index.js";
 import { text as dataText } from "../../data/texts.js";
 import type { CanvasLayer, LayerHost, LayerView } from "../../boards/ui.js";
 import {
@@ -369,7 +369,7 @@ function createDrawingLayer(host: LayerHost): LayerView {
 						renderToolbars();
 					},
 				},
-				toolsCollapsed ? "▾" : "▴",
+				icon(toolsCollapsed ? "chevronDown" : "chevronUp"),
 			),
 			// Folded, CSS shows only the current tool (the shortcut keys still switch tools).
 			...TOOLS.map(({ tool: t, icon, key }) => {

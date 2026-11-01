@@ -1,4 +1,4 @@
-import { el, tagFilter, typeDot } from "../../../shared/ui/index.js";
+import { el, icon, tagFilter, typeDot } from "../../../shared/ui/index.js";
 import { entityTags, filterEntities } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import type { CardPreview } from "../../data/ui.js";
@@ -41,7 +41,7 @@ export function entityPanel(
 				ariaLabel: text.hideEntities,
 				onclick: onHide,
 			},
-			"«",
+			icon("panelClose"),
 		);
 		const search = el("input", {
 			type: "search",

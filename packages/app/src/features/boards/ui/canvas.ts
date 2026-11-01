@@ -1,5 +1,5 @@
 import { snapToGrid, type Point, type Rect } from "../../../shared/core/index.js";
-import { CLICK_TOLERANCE, el, listenWhileConnected, readPreference, resizeHandle, trackPointer, writePreference } from "../../../shared/ui/index.js";
+import { CLICK_TOLERANCE, el, icon, listenWhileConnected, readPreference, resizeHandle, trackPointer, writePreference } from "../../../shared/ui/index.js";
 import { DEFAULT_CARD_SIZE, type Entity, type EntityType } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import { cardParts, cardSize, createCardPreview, detailsPanel } from "../../data/ui.js";
@@ -98,7 +98,7 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 			ariaExpanded: String(!panelCollapsed),
 			onclick: () => setPanelCollapsed(false),
 		},
-		"»",
+		icon("panelOpen"),
 	);
 
 	const canvasMain = el("div", { className: "canvas-main" });
