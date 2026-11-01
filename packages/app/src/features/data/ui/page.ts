@@ -88,7 +88,11 @@ function dataPageIn(
 			const [route, id] = location.hash.slice(1).split("/");
 			const section = sections.find((s) => s.route === route);
 			const target = route === "entities" && id ? decodeURIComponent(id) : null;
-			const shown = section ? section.render(current, page) : route === "types" ? types.render(current) : entities.render(current, target);
+			const shown = section
+				? section.render(current, page)
+				: route === "types"
+					? types.render(current, id ? decodeURIComponent(id) : null)
+					: entities.render(current, target);
 			return el("div", { className: "data-view" }, shown);
 		},
 		afterRender(root: HTMLElement): void {

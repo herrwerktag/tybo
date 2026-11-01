@@ -5,8 +5,8 @@ import { canvas, cardOfRoute, openBoard, type CanvasOptions } from "./canvas.js"
 
 /**
  * The Boards tab: a board's canvas, with the features' `layers`, `exports` and `entityLinks` (see `CanvasOptions`);
- * "#canvas" and "#view" are its former addresses. `#boards/<board>/<entity>` opens that board with the entity's card
- * selected and in view — once per address, so drawing the page anew doesn't jump back there.
+ * "#canvas" and "#view" are its former addresses. `#boards/<board>` opens that board, `#boards/<board>/<entity>` with
+ * the entity's card selected and in view — once per address, so drawing the page anew doesn't jump back there.
  */
 export function boardsPage(options: Omit<CanvasOptions, "readOnly">): PageMaker<BoardStore> {
 	return () => {

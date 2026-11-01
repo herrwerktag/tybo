@@ -1,5 +1,5 @@
 import { freeName, moveItem, ulid } from "../../shared/core/index.js";
-import { el, isRecord, refused, sharedText, type UnitDescriber } from "../../shared/ui/index.js";
+import { el, isRecord, refused, sharedText, type SearchSource, type UnitDescriber } from "../../shared/ui/index.js";
 import type { DataStore, EntityType } from "../data/core.js";
 import type { DataSection, TypeNote } from "../data/ui.js";
 import { text as dataText } from "../data/texts.js";
@@ -415,6 +415,19 @@ export const TRAITS_SECTION: DataSection = {
 		draw();
 		return view;
 	},
+};
+
+/** In the search: the traits, and a new one, opened with its name to type. */
+export const TRAIT_SEARCH: SearchSource<DataStore> = {
+	items: (store) => store.data.traits.map((t) => ({ label: t.name, detail: text.trait, href: traitRoute(t.id) })),
+	actions: (store) => [
+		{
+			label: text.newTrait,
+			run: () => {
+				location.hash = traitRoute(addTrait(store, freeName(store.data.traits, text.defaultTraitName)).id);
+			},
+		},
+	],
 };
 
 /** At the head of a type's form: the traits it bears, each a link to it; none, nothing. Which of the type's fields

@@ -266,7 +266,8 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 			state.selectedTypeId = typeId;
 			state.editingEntityId = null;
 		},
-		/** `target`: the entity the address names; the first time, its type is shown with its row marked. */
+		/** `target`: the entity the address names — the first time, its type is shown with its row marked — or "new",
+		 * the form for a new entity. */
 		render(current: DataStore, target: string | null = null): HTMLElement {
 			store = current;
 			const entity = target === null ? undefined : store.data.entities.find((e) => e.id === target);
@@ -278,6 +279,11 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 					state.selectedTypeId = entity.typeId;
 					state.editingEntityId = null;
 					state.creatingEntity = false;
+				} else if (target === "new") {
+					// The form for a new entity, of the type shown.
+					state.editingEntityId = null;
+					state.creatingEntity = true;
+					page.focusForm("entity");
 				}
 			}
 			if (!store.data.types.some((t) => t.id === state.selectedTypeId)) {

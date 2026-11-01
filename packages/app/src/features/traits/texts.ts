@@ -3,6 +3,7 @@ import { messages } from "../../shared/ui/index.js";
 /** The trait form's messages. */
 const en = {
 	traits: "Traits",
+	trait: "Trait",
 	newTrait: "New trait",
 	defaultTraitName: (n: number) => `Trait ${n}`,
 	traitNameTaken: (name: string) => `There is a trait "${name}" already.`,
@@ -54,6 +55,7 @@ export const text = messages<typeof en>({
 	en,
 	de: {
 		traits: "Traits",
+		trait: "Trait",
 		newTrait: "Neuer Trait",
 		defaultTraitName: (n) => `Trait ${n}`,
 		traitNameTaken: (name) => `Einen Trait „${name}“ gibt es schon.`,

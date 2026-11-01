@@ -7,6 +7,9 @@ import { setLanguage, activeWorkspacePreference, sharedText } from "./shared/ui/
 import { text as dataText } from "./features/data/texts.js";
 import { text as boardText } from "./features/boards/texts.js";
 import { text as historyText } from "./features/history/texts.js";
+import { text as analysisText } from "./features/analyses/texts.js";
+import { text as traitText } from "./features/traits/texts.js";
+import { text as exportText } from "./features/exports/texts.js";
 import { createStore, createWorkspaces } from "./features.core.js";
 import { render } from "./features.ui.js";
 
@@ -601,6 +604,80 @@ test("following references: a reference in the table leads to its row; the detai
 	goTo(`#boards/b2/${frank}`);
 	assert.equal(root.querySelector(".canvas-card.selected .card-title")?.textContent, "Frank", "the board opened, the card selected");
 	assert.equal(root.querySelector(".details-panel .details-title")?.textContent, "Frank");
+});
+
+test("the search (⌘K) finds entities, types, boards, analyses and traits by name, goes there with Enter, and offers what to make", async () => {
+	const dune = "01J00000000000000000000002";
+	const data = {
+		version: DATA_VERSION,
+		types: [{ id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", properties: [] }],
+		entities: [
+			{ id: "01J00000000000000000000001", typeId: "book", name: "Emma", content: "", description: "", tags: [], values: {} },
+			{ id: dune, typeId: "book", name: "Düne", content: "", description: "", tags: [], values: {} },
+		],
+		boards: [{ id: "b1", name: "Bücher", cards: [] }],
+		analyses: [{ id: "a1", name: "Alle Bücher", typeId: "book", traitId: null, groups: [], columns: [] }],
+		traits: [{ id: "t1", name: "Fortschritt", roles: [], bindings: {} }],
+	};
+	const root = await startApp(data, "#types");
+	const dialog = () => root.querySelector<HTMLDialogElement>(".search-dialog")!;
+	const input = () => dialog().querySelector("input")!;
+	const options = () => [...dialog().querySelectorAll(".search-option")].map((o) => o.textContent);
+	const press = (key: string, more: KeyboardEventInit = {}) => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, ...more }));
+	const typeQuery = (value: string) => {
+		input().value = value;
+		input().dispatchEvent(new Event("input"));
+	};
+
+	press("k", { metaKey: true });
+	assert.equal(dialog().open, true);
+	assert.equal(document.activeElement, input());
+	assert.deepEqual(options(), [dataText.createNewEntity, dataText.createNewType, boardText.newBoard, analysisText.newAnalysis, traitText.newTrait, exportText.exportTextButton], "empty, it offers what to make");
+
+	typeQuery("DUN");
+	assert.deepEqual(options(), ["DüneBook"], "found by name, without case and accents, with its type");
+	typeQuery("bü");
+	assert.deepEqual(options(), [`Bücher${boardText.board}`, `Alle Bücher${analysisText.analysis}`], "a name starting with it first");
+	press("ArrowDown");
+	press("Enter");
+	assert.equal(dialog().open, false);
+	assert.equal(location.hash, "#analysis/a1");
+	window.dispatchEvent(new Event("hashchange"));
+	assert.equal(root.querySelector(".analysis-setup h2")?.textContent, "Alle Bücher");
+
+	press("k", { ctrlKey: true });
+	typeQuery("düne");
+	press("Enter");
+	window.dispatchEvent(new Event("hashchange"));
+	assert.equal(location.hash, `#entities/${dune}`);
+	assert.equal(root.querySelector(".entity-table tr.target .name-cell")?.textContent, "Düne");
+
+	// A type opens its form; "New type" the form for a new one.
+	press("k", { ctrlKey: true });
+	typeQuery("book");
+	press("Enter");
+	window.dispatchEvent(new Event("hashchange"));
+	assert.equal(root.querySelector("#type-form h3")?.textContent, dataText.editNamed("Book"));
+	byText(root, "#type-form button", sharedText.cancel).click();
+	press("k", { ctrlKey: true });
+	typeQuery(dataText.createNewType);
+	press("Enter");
+	window.dispatchEvent(new Event("hashchange"));
+	assert.equal(root.querySelector("#type-form h3")?.textContent, dataText.newType);
+
+	press("k", { ctrlKey: true });
+	typeQuery(dataText.createNewEntity);
+	press("Enter");
+	window.dispatchEvent(new Event("hashchange"));
+	assert.ok(root.querySelector("#entity-form"), "the form for a new entity");
+
+	// "New board" makes one and opens it.
+	press("k", { ctrlKey: true });
+	typeQuery(boardText.newBoard);
+	press("Enter");
+	window.dispatchEvent(new Event("hashchange"));
+	await settle();
+	assert.deepEqual((await readSaved()).boards.map((b) => b.name), ["Bücher", boardText.defaultBoardName(1)]);
 });
 
 test("the board's side panel filters entities by tag", async () => {

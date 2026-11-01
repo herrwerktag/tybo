@@ -7,5 +7,6 @@ export * from "./shell.js";
 export * from "./workspace-menu.js";
 export * from "./theme.js";
 export * from "./preferences.js";
+export * from "./search.js";
 export * from "./zip.js";
 export { text as sharedText } from "./texts.js";
