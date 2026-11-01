@@ -1,16 +1,20 @@
 import { sameName, ulid, type AppData } from "../../shared/core/index.js";
 import type { DataStore, EntityType, OptionDef } from "../data/core.js";
 import { typeName, typeOf } from "../data/mcp.js";
-import { ToolError, WORKSPACE, object, record, text, type Tool, type ToolContext } from "../../shared/mcp/index.js";
+import { ToolError, WORKSPACE, object, record, text, texts, type Tool, type ToolContext } from "../../shared/mcp/index.js";
 import {
+	NEW_TRAIT,
 	addTrait,
 	bearingTypes,
+	conditionHints,
+	resolveCondition,
 	bindingChoices,
 	deleteTrait,
 	fittingBinding,
 	updateTrait,
 	validateTrait,
 	withRoles,
+	type Condition,
 	type FittingBinding,
 	type RoleBinding,
 	type RoleDef,
@@ -33,10 +37,12 @@ export function traitTools({ open, answerSaved }: ToolContext<DataStore>): Tool[
 			async run(args) {
 				const store = await open(args.workspace);
 				const name = text(args.name, "name");
-				const roles = args.roles === undefined ? [] : rolesOf(args.roles, []);
-				check(store.data, name, roles, null);
-				const bindings = args.bindings === undefined ? {} : bindingsOf(store.data, roles, args.bindings);
+				const given = args.roles === undefined ? [] : rolesOf(store.data, args.roles, [], { id: NEW_TRAIT, name });
+				check(store.data, name, given, null);
+				const bindings = args.bindings === undefined ? {} : bindingsOf(store.data, given, args.bindings);
 				const trait = addTrait(store, name);
+				// Conditions on the trait's own roles name it by its id now.
+				const roles = given.map((r) => (r.condition?.traitId === NEW_TRAIT ? { ...r, condition: { ...r.condition, traitId: trait.id } } : r));
 				updateTrait(store, trait.id, { roles, bindings });
 				return answerSaved(store, { trait: describeTrait(store.data, traitOf(store.data, trait.id)) });
 			},
@@ -53,7 +59,7 @@ export function traitTools({ open, answerSaved }: ToolContext<DataStore>): Tool[
 				const store = await open(args.workspace);
 				const trait = traitOf(store.data, args.trait);
 				const name = args.name === undefined ? trait.name : text(args.name, "name");
-				const roles = args.roles === undefined ? trait.roles : rolesOf(args.roles, trait.roles);
+				const roles = args.roles === undefined ? trait.roles : rolesOf(store.data, args.roles, trait.roles, { id: trait.id, name });
 				check(store.data, name, roles, trait.id);
 				const changed = withRoles(trait, roles);
 				const bindings = args.bindings === undefined ? changed.bindings : bindingsOf(store.data, changed.roles, args.bindings);
@@ -94,6 +100,20 @@ const ROLES = {
 				type: "array",
 				items: { type: ["string", "object"], properties: { id: { type: "string" }, label: { type: "string" } } },
 				description: "For options: the role's own values, in order; each a label or { id, label } (an id keeps — and renames — the value it has).",
+			},
+			condition: {
+				type: ["object", "null"],
+				properties: {
+					trait: { type: "string", description: "Name or id of the trait asked about; left out, this one." },
+					role: { type: "string", description: "Name or id of its options or reference role." },
+					values: { type: "array", items: { type: "string" }, description: "For an options role: the values (label or id) a target must hold one of." },
+					hasTargets: { type: "boolean", description: "For a reference role: whether a target must have targets there (true) or none (false)." },
+				},
+				required: ["role"],
+				description:
+					"For references: the targets only count when they meet it — e.g. { trait: Progress, role: Stand, values: [open] }. A target whose " +
+					"type doesn't bear that trait never meets it. Left out, a role keeps the condition it has; null removes it. Conditions may not " +
+					"lead round in a circle.",
 			},
 		},
 		required: ["name", "kind"],
@@ -138,10 +158,11 @@ export function traitOf(data: AppData, ref: unknown): Trait {
 }
 
 /** The roles the model listed: one given the id or the name of one of `current` keeps its id (and, through
- * `withRoles`, what is bound to it); options the same way. */
-function rolesOf(raw: unknown, current: readonly RoleDef[]): RoleDef[] {
+ * `withRoles`, what is bound to it); options the same way. A role given without `condition` keeps the one it has;
+ * a condition may name `self`, the trait the roles are of. */
+function rolesOf(data: AppData, raw: unknown, current: readonly RoleDef[], self: { id: string; name: string }): RoleDef[] {
 	if (!Array.isArray(raw)) throw new ToolError("`roles` must be a list.");
-	return raw.map((item, index) => {
+	const roles = raw.map((item, index): RoleDef => {
 		const given = record(item, `roles[${index}]`);
 		const was =
 			typeof given.id === "string" ? current.find((r) => r.id === given.id) : typeof given.name === "string" ? current.find((r) => sameName(r.name, given.name as string)) : undefined;
@@ -150,8 +171,41 @@ function rolesOf(raw: unknown, current: readonly RoleDef[]): RoleDef[] {
 		if (!["text", "options", "reference"].includes(kind)) throw new ToolError(`roles[${index}] needs a kind: text, options, reference.`);
 		const name = given.name === undefined ? (was?.name ?? "") : text(given.name, `roles[${index}].name`);
 		const options = kind !== "options" ? [] : given.options === undefined ? (was?.options ?? []) : optionsOf(given.options, was, index);
-		return { id: was?.id ?? ulid(), name, kind, options };
+		return { id: was?.id ?? ulid(), name, kind, options, ...(kind === "reference" && was?.condition ? { condition: was.condition } : {}) };
 	});
+	// Conditions once every role has its id, as they may name one another.
+	return roles.map((role, index) => {
+		const given = (raw[index] as Record<string, unknown>).condition;
+		if (given === undefined) return role;
+		const { condition: _, ...without } = role;
+		if (given === null) return without;
+		if (role.kind !== "reference") throw new ToolError(`roles[${index}]: only a reference role has a condition.`);
+		return { ...without, condition: conditionOf(data, record(given, `roles[${index}].condition`), roles, self, index) };
+	});
+}
+
+/** The condition the model gave a role: on a role of `self` (the trait the roles are of, read with `roles`) or of
+ * another trait, by name or id; values by label or id. */
+function conditionOf(data: AppData, given: Record<string, unknown>, roles: readonly RoleDef[], self: { id: string; name: string }, index: number): Condition {
+	const where = `roles[${index}].condition`;
+	const traitRef = given.trait === undefined ? null : text(given.trait, `${where}.trait`);
+	const isSelf = traitRef === null || traitRef === self.id || sameName(traitRef, self.name);
+	const trait = isSelf ? { id: self.id, name: self.name, roles } : traitOf(data, traitRef);
+	const wanted = text(given.role, `${where}.role`);
+	const role = trait.roles.find((r) => r.id === wanted) ?? trait.roles.find((r) => sameName(r.name, wanted));
+	const askable = trait.roles.filter((r) => r.kind !== "text").map((r) => r.name).join(", ") || "none";
+	if (!role || role.kind === "text") throw new ToolError(`${where}: ${trait.name} has no options or reference role "${wanted}". Roles: ${askable}.`);
+	if (role.kind === "reference") {
+		if (typeof given.hasTargets !== "boolean") throw new ToolError(`${where}: ${role.name} is a reference role; say \`hasTargets\`: true or false.`);
+		return { traitId: trait.id, roleId: role.id, hasTargets: given.hasTargets };
+	}
+	const values = texts(given.values, `${where}.values`).map((v) => {
+		const value = role.options.find((o) => o.id === v) ?? role.options.find((o) => sameName(o.label, v));
+		if (!value) throw new ToolError(`${where}: "${v}" isn't a value of ${role.name}. Values: ${role.options.map((o) => o.label).join(", ")}.`);
+		return value.id;
+	});
+	if (values.length === 0) throw new ToolError(`${where}: name at least one value of ${role.name}.`);
+	return { traitId: trait.id, roleId: role.id, values };
 }
 
 /** The role's values the model listed: a label keeps the id of the value of `was` with that label; `{ id, label }`
@@ -192,6 +246,8 @@ function problem(error: TraitError): string {
 			return `${error.label} has an empty value.`;
 		case "duplicateOptions":
 			return `${error.label} has a value twice.`;
+		case "conditionCycle":
+			return `The conditions lead round in a circle: ${error.label}.`;
 	}
 }
 
@@ -243,11 +299,29 @@ function fieldName(data: AppData, fits: FittingBinding): string {
 	return fits.direction === "forward" ? fits.prop.name : `${typeName(data, fits.ownerTypeId)}.${fits.prop.name}`;
 }
 
+/** A role's condition as the model reads it: the role asked about by trait and name, values by label. */
+function describeCondition(data: AppData, condition: Condition): object {
+	const asked = resolveCondition(data.traits, condition);
+	if (!asked) return { notThere: "What the condition asks about is gone; no target meets it." };
+	return {
+		trait: asked.trait.name,
+		role: asked.role.name,
+		...("values" in condition ? { values: asked.values.map((id) => asked.role.options.find((o) => o.id === id)!.label) } : { hasTargets: condition.hasTargets }),
+	};
+}
+
 function describeTrait(data: AppData, trait: Trait) {
+	const hints = conditionHints(data, trait);
 	return {
 		id: trait.id,
 		name: trait.name,
-		roles: trait.roles.map((r) => ({ id: r.id, name: r.name, kind: r.kind, ...(r.kind === "options" ? { options: r.options } : {}) })),
+		roles: trait.roles.map((r) => ({
+			id: r.id,
+			name: r.name,
+			kind: r.kind,
+			...(r.kind === "options" ? { options: r.options } : {}),
+			...(r.condition ? { condition: describeCondition(data, r.condition) } : {}),
+		})),
 		types: bearingTypes(data.types, trait).map((type) => ({
 			type: type.name,
 			roles: trait.roles.flatMap((role): object[] => {
@@ -264,7 +338,8 @@ function describeTrait(data: AppData, trait: Trait) {
 								}),
 							)
 						: undefined;
-				return [{ role: role.name, property: fieldName(data, fits), ...(values ? { values } : {}) }];
+				const without = hints.find((h) => h.typeId === type.id && h.roleId === role.id)?.typeIds.map((id) => typeName(data, id));
+				return [{ role: role.name, property: fieldName(data, fits), ...(values ? { values } : {}), ...(without ? { targetsNeverMeetingCondition: without } : {}) }];
 			}),
 		})),
 	};

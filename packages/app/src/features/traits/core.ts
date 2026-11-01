@@ -22,7 +22,16 @@ export interface RoleDef {
 	kind: RoleKind;
 	/** The role's own values, in order (an options role); empty for the others. */
 	options: OptionDef[];
+	/** A reference role's condition: it leads only to the targets meeting it. Left out when there is none. */
+	condition?: Condition;
 }
+
+/**
+ * What a target of a reference role has to meet to count: an options role of a trait (this one or another) holding
+ * one of `values` there, or a reference role of a trait having targets there (`hasTargets`) or none — those it has
+ * after its own condition. A target whose type doesn't bear that trait never meets it.
+ */
+export type Condition = { traitId: string; roleId: string; values: string[] } | { traitId: string; roleId: string; hasTargets: boolean };
 
 /** The fields every entity has, which a text role can be bound to. */
 export type BuiltInField = "name" | "content" | "description";
@@ -102,6 +111,61 @@ export function sameSource(a: RoleBinding, b: RoleBinding): boolean {
 	return a.propertyId === b.propertyId && a.direction === b.direction;
 }
 
+/** The role a condition asks about, with the values it names that are still there; null when it is gone, isn't of the
+ * kind the condition asks (values of an options role, targets of a reference role), or none of its values is left. */
+export function resolveCondition(traits: readonly Trait[], condition: Condition): { trait: Trait; role: RoleDef; values: string[] } | null {
+	const trait = traits.find((t) => t.id === condition.traitId);
+	const role = trait?.roles.find((r) => r.id === condition.roleId);
+	if (!trait || !role) return null;
+	if (!("values" in condition)) return role.kind === "reference" ? { trait, role, values: [] } : null;
+	const values = condition.values.filter((id) => role.options.some((o) => o.id === id));
+	return role.kind === "options" && values.length > 0 ? { trait, role, values } : null;
+}
+
+/**
+ * The roles a condition chain from `start` comes back to it through, as "Trait.Role" from `start` on; null when it
+ * doesn't. Each reference role has at most one condition, so a chain is a single line: it ends, or runs into a circle.
+ */
+export function conditionCycle(traits: readonly Trait[], start: { traitId: string; roleId: string }): string[] | null {
+	const roleOf = (at: { traitId: string; roleId: string }) => {
+		const trait = traits.find((t) => t.id === at.traitId);
+		const role = trait?.roles.find((r) => r.id === at.roleId);
+		return trait && role ? { trait, role } : null;
+	};
+	const label = (at: { traitId: string; roleId: string }) => {
+		const found = roleOf(at);
+		return found ? `${found.trait.name}.${found.role.name}` : "?";
+	};
+	const seen = new Set<string>();
+	const path = [label(start)];
+	let next = roleOf(start)?.role.condition;
+	while (next) {
+		if (next.traitId === start.traitId && next.roleId === start.roleId) return [...path, label(start)];
+		const key = `${next.traitId}:${next.roleId}`;
+		if (seen.has(key)) return null;
+		seen.add(key);
+		path.push(label(next));
+		const found = roleOf(next);
+		next = found?.role.kind === "reference" ? found.role.condition : undefined;
+	}
+	return null;
+}
+
+/** Per type bearing the trait and reference role with a condition, the types its targets can have that don't bear the
+ * condition's trait: such targets never count. */
+export function conditionHints(data: Pick<AppData, "types" | "traits">, trait: Trait): { typeId: string; roleId: string; typeIds: string[] }[] {
+	return bearingTypes(data.types, trait).flatMap((type) =>
+		trait.roles.flatMap((role) => {
+			const asked = role.kind === "reference" && role.condition ? resolveCondition(data.traits, role.condition) : null;
+			const fits = asked ? fittingBinding(data.types, type.id, role, trait.bindings[type.id]?.[role.id]) : null;
+			if (!asked || !fits || "field" in fits) return [];
+			const targets = fits.direction === "forward" ? (fits.prop.reference?.typeIds ?? []) : [fits.ownerTypeId];
+			const typeIds = targets.filter((id) => !Object.hasOwn(asked.trait.bindings, id));
+			return typeIds.length > 0 ? [{ typeId: type.id, roleId: role.id, typeIds }] : [];
+		}),
+	);
+}
+
 /** The types of the entities a reference role leads to, over the types bearing the trait, in type order. */
 export function roleTargetTypeIds(types: readonly EntityType[], trait: Trait, role: RoleDef): string[] {
 	if (role.kind !== "reference") return [];
@@ -116,13 +180,26 @@ export function roleTargetTypeIds(types: readonly EntityType[], trait: Trait, ro
 
 /**
  * The one place a role is read on an entity: what plays the role there, as a function of the entity — the ids of
- * the entities a reference role leads to, the ids of the role's own values an options role stands for, the texts of
- * a text role. An entity of a type not bearing the trait, or not binding the role in a way that fits, has none.
+ * the entities a reference role leads to (those meeting its condition), the ids of the role's own values an options
+ * role stands for, the texts of a text role. An entity of a type not bearing the trait, or not binding the role in a
+ * way that fits, has none.
  */
-export function roleReader(data: Pick<AppData, "types" | "entities">, trait: Trait, roleId: string): (entity: Entity) => string[] {
+export function roleReader(data: Pick<AppData, "types" | "entities" | "traits">, trait: Trait, roleId: string): (entity: Entity) => string[] {
+	return readerOf(data, trait, roleId, new Map(), new Set());
+}
+
+type Reader = (entity: Entity) => string[];
+
+/** `roleReader`, sharing the readers of the roles conditions ask about (`built`, each reading an entity once); a role
+ * met again while it is being built (a circle of conditions saved without the check) reads as none. */
+function readerOf(data: Pick<AppData, "types" | "entities" | "traits">, trait: Trait, roleId: string, built: Map<string, Reader>, building: Set<string>): Reader {
+	const key = `${trait.id}:${roleId}`;
+	const done = built.get(key);
+	if (done) return done;
 	const role = trait.roles.find((r) => r.id === roleId);
-	if (!role) return () => [];
-	const readers = new Map<string, (entity: Entity) => string[]>();
+	if (!role || building.has(key)) return () => [];
+	building.add(key);
+	const readers = new Map<string, Reader>();
 	for (const type of bearingTypes(data.types, trait)) {
 		const binding = trait.bindings[type.id]?.[role.id];
 		const fits = fittingBinding(data.types, type.id, role, binding);
@@ -137,7 +214,33 @@ export function roleReader(data: Pick<AppData, "types" | "entities">, trait: Tra
 			readers.set(type.id, (e) => read(e).flatMap((id) => (known.has(binding.values[id] ?? "") ? [binding.values[id]!] : [])));
 		} else readers.set(type.id, read);
 	}
-	return (entity) => readers.get(entity.typeId)?.(entity) ?? [];
+	const bound: Reader = (entity) => readers.get(entity.typeId)?.(entity) ?? [];
+	const meets = role.kind === "reference" && role.condition ? conditionCheck(data, role.condition, built, building) : null;
+	const memo = new Map<string, string[]>();
+	const reader: Reader = (entity) => {
+		const known = memo.get(entity.id);
+		if (known) return known;
+		const read = meets ? bound(entity).filter(meets) : bound(entity);
+		memo.set(entity.id, read);
+		return read;
+	};
+	building.delete(key);
+	built.set(key, reader);
+	return reader;
+}
+
+/** Whether the entity of an id meets `condition` (see `Condition`); nothing does when it is gone (see `resolveCondition`). */
+function conditionCheck(data: Pick<AppData, "types" | "entities" | "traits">, condition: Condition, built: Map<string, Reader>, building: Set<string>): (id: string) => boolean {
+	const asked = resolveCondition(data.traits, condition);
+	if (!asked) return () => false;
+	const read = readerOf(data, asked.trait, asked.role.id, built, building);
+	const byId = new Map(data.entities.map((e) => [e.id, e]));
+	return (id) => {
+		const target = byId.get(id);
+		if (!target || !Object.hasOwn(asked.trait.bindings, target.typeId)) return false;
+		const held = read(target);
+		return "values" in condition ? held.some((v) => asked.values.includes(v)) : held.length > 0 === condition.hasTargets;
+	};
 }
 
 /** A problem with a trait as given; the UI and the MCP each say it in their words. */
@@ -146,11 +249,13 @@ export type TraitError =
 	| { code: "traitNameTaken"; label: string }
 	| { code: "roleNameRequired" }
 	| { code: "duplicateRole"; label: string }
-	| { code: "optionsRequired" | "emptyOption" | "duplicateOptions"; label: string };
+	| { code: "optionsRequired" | "emptyOption" | "duplicateOptions"; label: string }
+	| { code: "conditionCycle"; label: string };
 
 /** The problems of a trait's name and roles; an empty list means it can be saved. `traits` are the traits there are, of
- * which the one of `selfId` is the trait itself: another one may not have its name. */
-export function validateTrait(name: string, roles: readonly Omit<RoleDef, "id">[], traits: readonly Trait[], selfId: string | null = null): TraitError[] {
+ * which the one of `selfId` is the trait itself: another one may not have its name. A new trait (`selfId` null) is
+ * named by its conditions as `NEW_TRAIT`. */
+export function validateTrait(name: string, roles: readonly RoleDef[], traits: readonly Trait[], selfId: string | null = null): TraitError[] {
 	const errors: TraitError[] = [];
 	if (name.trim() === "") errors.push({ code: "traitNameRequired" });
 	else if (nameTaken(traits, name, selfId)) errors.push({ code: "traitNameTaken", label: name.trim() });
@@ -167,8 +272,23 @@ export function validateTrait(name: string, roles: readonly Omit<RoleDef, "id">[
 		if (options.some((o) => o === "")) errors.push({ code: "emptyOption", label });
 		if (new Set(options).size !== options.length) errors.push({ code: "duplicateOptions", label });
 	}
+	// Circles of conditions, read with the roles as given; each circle once, from its first role here.
+	const id = selfId ?? NEW_TRAIT;
+	const self: Trait = { id, name: name.trim(), roles: [...roles], bindings: {} };
+	const all = [...traits.filter((t) => t.id !== id), self];
+	const circled = new Set<string>();
+	for (const role of roles) {
+		if (circled.has(role.id)) continue;
+		const cycle = conditionCycle(all, { traitId: id, roleId: role.id });
+		if (!cycle) continue;
+		errors.push({ code: "conditionCycle", label: cycle.join(" › ") });
+		for (const r of roles) if (conditionCycle(all, { traitId: id, roleId: r.id })) circled.add(r.id);
+	}
 	return errors;
 }
+
+/** How the conditions of a trait not made yet name it (see `validateTrait`). */
+export const NEW_TRAIT = "new-trait";
 
 /**
  * The trait with its roles replaced by `roles` (labels trimmed): the bindings of roles gone, or whose kind changed,
@@ -191,7 +311,13 @@ export function withRoles(trait: Trait, roles: readonly RoleDef[]): Trait {
 			),
 		]),
 	);
-	const trimmed = roles.map((r) => ({ ...r, name: r.name.trim(), options: r.kind === "options" ? r.options.map((o) => ({ ...o, label: o.label.trim() })) : [] }));
+	const trimmed = roles.map(({ condition, ...r }): RoleDef => ({
+		...r,
+		name: r.name.trim(),
+		options: r.kind === "options" ? r.options.map((o) => ({ ...o, label: o.label.trim() })) : [],
+		// Only a reference role has a condition.
+		...(r.kind === "reference" && condition ? { condition } : {}),
+	}));
 	return { ...trait, roles: trimmed, bindings };
 }
 
@@ -238,7 +364,16 @@ const KINDS: readonly RoleKind[] = ["text", "options", "reference"];
 function normalizeRole(raw: unknown): RoleDef[] {
 	if (!isObject(raw) || typeof raw.id !== "string" || typeof raw.name !== "string" || !KINDS.includes(raw.kind as RoleKind)) return [];
 	const options = raw.kind === "options" && Array.isArray(raw.options) ? raw.options.filter((o): o is OptionDef => isObject(o) && typeof o.id === "string" && typeof o.label === "string") : [];
-	return [{ id: raw.id, name: raw.name, kind: raw.kind as RoleKind, options: options.map(({ id, label }) => ({ id, label })) }];
+	const condition = raw.kind === "reference" ? normalizeCondition(raw.condition) : null;
+	return [{ id: raw.id, name: raw.name, kind: raw.kind as RoleKind, options: options.map(({ id, label }) => ({ id, label })), ...(condition ? { condition } : {}) }];
+}
+
+/** A well-formed condition (version 12 on), or null. */
+function normalizeCondition(raw: unknown): Condition | null {
+	if (!isObject(raw) || typeof raw.traitId !== "string" || typeof raw.roleId !== "string") return null;
+	if (typeof raw.hasTargets === "boolean") return { traitId: raw.traitId, roleId: raw.roleId, hasTargets: raw.hasTargets };
+	if (!Array.isArray(raw.values)) return null;
+	return { traitId: raw.traitId, roleId: raw.roleId, values: raw.values.filter((v): v is string => typeof v === "string") };
 }
 
 function normalizeBinding(raw: unknown): RoleBinding | null {

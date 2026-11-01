@@ -38,6 +38,14 @@ const en = {
 	noRolesYet: "Add a role first.",
 	historyTraits: (count: number): string => (count === 1 ? "trait" : "traits"),
 	historyTypes: "Borne by",
+	condition: "Condition",
+	noCondition: "No condition: every target counts",
+	conditionHasTargets: "has targets",
+	conditionNoTargets: "has no targets",
+	conditionValues: (role: string) => `${role} is one of`,
+	conditionCycle: (roles: string) => `The conditions would lead round in a circle: ${roles}.`,
+	conditionHint: (types: string, trait: string) => `${types} doesn't bear ${trait}: such targets never meet the condition and don't count.`,
+	conditionCount: "Only the targets meeting it count.",
 };
 
 export const text = messages<typeof en>({
@@ -79,5 +87,13 @@ export const text = messages<typeof en>({
 		noRolesYet: "Lege zuerst eine Rolle an.",
 		historyTraits: (count) => (count === 1 ? "Trait" : "Traits"),
 		historyTypes: "Getragen von",
+		condition: "Bedingung",
+		noCondition: "Keine Bedingung: jedes Ziel zählt",
+		conditionHasTargets: "hat Ziele",
+		conditionNoTargets: "hat keine Ziele",
+		conditionValues: (role) => `${role} ist einer von`,
+		conditionCycle: (roles) => `Die Bedingungen führten im Kreis: ${roles}.`,
+		conditionHint: (types, trait) => `${types} trägt ${trait} nicht: solche Ziele erfüllen die Bedingung nie und zählen nicht.`,
+		conditionCount: "Nur die Ziele, die sie erfüllen, zählen.",
 	},
 });

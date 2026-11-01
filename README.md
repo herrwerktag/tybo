@@ -6,7 +6,9 @@ Linien zwischen Karten erscheinen, dazu kommen Textboxen, Gruppen und Bilder.
 Auswertungen listen die Entitaeten eines Typs gruppiert nach dem, wohin ihre Verweise fuehren (auch ueber mehrere
 Verweise, vor- und rueckwaerts), mit frei waehlbaren Spalten; das Ergebnis laesst sich samt Beschreibungen als Markdown exportieren (mit Gruppen als ZIP mit je einer Datei pro aeusserster Gruppe).
 Traits legen eine gemeinsame Bedeutung (etwa einen Fortschritt) ueber mehrere Typen, indem jeder Typ eigene Felder
-den Rollen des Traits zuordnet; eine Auswertung auf einem Trait zeigt die Entitaeten all dieser Typen. Die Daten liegen in Arbeitsbereichen in Postgres (oder lokal in einer SQLite-Datei).
+den Rollen des Traits zuordnet; eine Auswertung auf einem Trait zeigt die Entitaeten all dieser Typen. Eine
+Verweis-Rolle kann eine Bedingung haben (etwa „blockiert durch“, solange das Ziel nicht fertig ist): Dann zaehlen nur
+die Ziele, die sie erfuellen. Die Daten liegen in Arbeitsbereichen in Postgres (oder lokal in einer SQLite-Datei).
 
 ## Aufbau
 

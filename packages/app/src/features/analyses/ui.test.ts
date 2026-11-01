@@ -192,3 +192,67 @@ test("Traits: a trait made in its form, bound to two types' statuses, gives an a
 	});
 	assert.deepEqual(saved.analyses.map(({ typeId, traitId }) => [typeId, traitId]), [[null, trait!.id]]);
 });
+
+test("Traits: a reference role's condition is set in the form, refused when it would lead round in a circle, and pointed out where targets never meet it", async () => {
+	const progress = {
+		id: "progress",
+		name: "Fortschritt",
+		roles: [{ id: "stand", name: "Stand", kind: "options", options: [{ id: "open", label: "offen" }, { id: "done", label: "fertig" }] }],
+		bindings: { question: { stand: { propertyId: "question-status", direction: "forward", values: { "question-status-offen": "open", "question-status-beantwortet": "done" } } } },
+	};
+	const blockade = {
+		id: "blockade",
+		name: "Blockade",
+		roles: [{ id: "blocked", name: "blockiert durch", kind: "reference", options: [] }],
+		bindings: { pitch: { blocked: { propertyId: "question-pitch", direction: "inverse", values: {} } } },
+	};
+	const root = await startApp(
+		{
+			version: DATA_VERSION,
+			types: [
+				{ id: "pitch", name: "Pitch", color: "#fbd9b0", contentTemplate: "", properties: [] },
+				{
+					id: "question",
+					name: "Frage",
+					color: "#d6ccf7",
+					contentTemplate: "",
+					properties: [
+						status("question-status", ["offen", "beantwortet"]),
+						{ id: "question-pitch", name: "Pitch", kind: "reference", options: [], reference: { typeIds: ["pitch"], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" },
+					],
+				},
+			],
+			entities: [],
+			boards: [],
+			traits: [progress, blockade],
+		},
+		"#analysis",
+	);
+	byText<HTMLButtonElement>(root, ".analysis-entry", "Blockade").click();
+	const form = () => root.querySelector<HTMLElement>(".trait-form")!;
+	const condition = () => [...form().querySelectorAll("select")].find((s) => s.ariaLabel === traitText.condition)!;
+	const choose = (select: HTMLSelectElement, label: string) => {
+		select.value = [...select.options].find((o) => o.textContent === label)!.value;
+		select.dispatchEvent(new Event("change"));
+	};
+	assert.equal(condition().selectedOptions[0]!.textContent, traitText.noCondition);
+
+	choose(condition(), "Fortschritt › Stand");
+	const boxes = () => [...form().querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+	assert.deepEqual(boxes().map((b) => [b.checked, b.disabled]), [[true, true], [false, false]], "the first value to start with; the last one stays");
+	boxes()[1]!.checked = true;
+	boxes()[1]!.dispatchEvent(new Event("change"));
+	await settle();
+	assert.deepEqual((await readSaved()).traits[1]!.roles[0]!.condition, { traitId: "progress", roleId: "stand", values: ["open", "done"] });
+
+	choose(condition(), "Blockade › blockiert durch");
+	assert.equal(condition().validationMessage, traitText.conditionCycle("Blockade.blockiert durch › Blockade.blockiert durch"));
+	await settle();
+	assert.deepEqual((await readSaved()).traits[1]!.roles[0]!.condition, { traitId: "progress", roleId: "stand", values: ["open", "done"] }, "nothing saved");
+
+	// The pitch's questions all bear Progress; once Frage no longer does, the form says such targets never count.
+	byText<HTMLButtonElement>(root, ".analysis-entry", "Fortschritt").click();
+	byText<HTMLButtonElement>(byText<HTMLElement>(form(), "legend", "Frage").parentElement!, "button", traitText.removeType).click();
+	byText<HTMLButtonElement>(root, ".analysis-entry", "Blockade").click();
+	assert.ok(byText(form(), "p", traitText.conditionHint("Frage", "Fortschritt")));
+});
