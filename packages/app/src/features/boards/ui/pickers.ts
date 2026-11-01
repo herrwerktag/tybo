@@ -1,5 +1,5 @@
 import { nameTaken } from "../../../shared/core/index.js";
-import { dragHandle, el, refused, reorderable, svgEl, sharedText } from "../../../shared/ui/index.js";
+import { dragHandle, el, icon, refused, reorderable, svgEl, sharedText } from "../../../shared/ui/index.js";
 
 const PICKER_MIME = "application/x-picker-index";
 /** The pickers' row actions, drawn: a pencil (rename) and a bin (delete). */
@@ -182,4 +182,4 @@ export function pickerDropdown(dialogClass: string, label: string, buttonClass: 
 	});
 	return { dialog, button };
 }
-export const pickerLabel = (name: string) => [el("span", { className: "picker-name" }, name), el("span", { ariaHidden: "true" }, "▾")];
+export const pickerLabel = (name: string) => [el("span", { className: "picker-name" }, name), icon("chevronDown")];

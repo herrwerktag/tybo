@@ -1,5 +1,6 @@
 import { exportWorkspaceOf, type DataFormat, type StoreCore, type WorkspacesOf } from "../core/index.js";
 import { downloadFile, el, safeFileName, svgEl } from "./dom.js";
+import { icon } from "./icons.js";
 import { LANGUAGES, language, setLanguage, type Language } from "./i18n.js";
 import { text } from "./texts.js";
 import { THEMES, setTheme, theme, type Theme } from "./theme.js";
@@ -341,7 +342,7 @@ export async function renderShell<D, S extends StoreCore<D>>(root: HTMLElement, 
 		);
 		return popover(
 			"settings",
-			el("button", { className: "settings-button", title: text.settings, ariaLabel: text.settings }, el("span", { ariaHidden: "true" }, "⚙")),
+			el("button", { className: "settings-button", title: text.settings, ariaLabel: text.settings }, icon("settings")),
 			text.settings,
 			el("h2", {}, text.settings),
 			el("label", { className: "field" }, el("span", {}, text.language), languageSelect),

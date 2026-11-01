@@ -1,5 +1,6 @@
 import { freeName, nameTaken, readWorkspaceFileOf, type DataFormat, type StoreCore, type WorkspacesOf } from "../core/index.js";
 import { dragHandle, el, refused, reorderable } from "./dom.js";
+import { icon } from "./icons.js";
 import { text } from "./texts.js";
 
 /** An entry of a feature in the workspace menu, after export and import (e.g. exporting the workspace as text). */
@@ -142,9 +143,9 @@ export function workspaceMenu<D, S extends StoreCore<D>>(menu: WorkspaceMenu<D, 
 	const button = el(
 		"button",
 		{ title: text.workspaces, ariaLabel: text.workspaceMenuLabel(current.name) },
-		el("span", { ariaHidden: "true" }, "▤"),
+		icon("workspaces"),
 		el("span", { className: "workspace-name" }, current.name),
-		el("span", { ariaHidden: "true" }, "▾"),
+		icon("chevronDown"),
 	);
 	return {
 		button,

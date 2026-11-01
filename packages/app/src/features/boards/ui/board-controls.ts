@@ -1,5 +1,5 @@
 import { freeName, type Rect } from "../../../shared/core/index.js";
-import { el, readPreference, writePreference } from "../../../shared/ui/index.js";
+import { el, icon, readPreference, writePreference } from "../../../shared/ui/index.js";
 import type { Board, BoardStore } from "../core.js";
 import { text } from "../texts.js";
 import type { BoardExport } from "./layer.js";
@@ -115,7 +115,7 @@ export function boardControls(
 			el("ul", { className: "picker-list" }, ...exports.map((way) => option(way.label(), way.title(), (id) => way.run(store, id)))),
 		);
 	});
-	exportButton.replaceChildren(text.exportButton, el("span", { ariaHidden: "true" }, "▾"));
+	exportButton.replaceChildren(text.exportButton, icon("chevronDown"));
 
 	function render(): void {
 		boardButton.replaceChildren(...pickerLabel(board().name));

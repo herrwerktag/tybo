@@ -15,6 +15,24 @@
 	--focus: #3b6fe0;
 	--chip: #ebebeb;
 	--ref-tag: var(--surface-inset);
+
+	/* The type scale: every text size in the app is one of these. */
+	--text-xs: 0.75rem;
+	--text-sm: 0.8125rem;
+	--text-md: 0.875rem;
+	--text-base: 1rem;
+	--text-lg: 1.125rem;
+	--text-xl: 1.5rem;
+	/* Corners: tags and controls, cards and panels, page sections. */
+	--radius-sm: 4px;
+	--radius-md: 6px;
+	--radius-lg: 8px;
+	/* Floating things: bars over the canvas, then menus and dialogs, then what's dragged or previewed. */
+	--shadow-sm: 0 2px 6px rgb(0 0 0 / 0.08);
+	--shadow-lg: 0 6px 20px rgb(0 0 0 / 0.12);
+	--shadow-xl: 0 6px 20px rgb(0 0 0 / 0.18);
+	/* Buttons, inputs and selects side by side are equally tall: this padding around a line of 1.25. */
+	--control-padding-y: 0.375rem;
 }
 
 /* Dark colors: following the system unless light is chosen in the settings, or chosen there (data-theme="dark").
@@ -124,8 +142,34 @@ main {
 
 /* Settings: only the gear, its name in the tooltip. */
 .settings-button {
-	font-size: 1.2rem;
-	line-height: 1;
+	padding: 0.4rem 0.5rem;
+}
+
+/* A drawn icon (see icons.ts): as big as the text, in its color. */
+.icon {
+	flex: none;
+	width: 1em;
+	height: 1em;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.4;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+/* The top bar's icon buttons: undo, redo and settings alike. */
+.settings-button .icon {
+	width: 1.1rem;
+	height: 1.1rem;
+}
+
+/* A chevron after a name: smaller and quieter than the name. */
+.menu-button .icon:last-child:not(:first-child),
+.picker-switch .icon,
+.export-switch .icon {
+	width: 0.75rem;
+	height: 0.75rem;
+	color: var(--muted);
 }
 
 /* Undo and redo, left of the settings. */
@@ -164,8 +208,8 @@ main {
 	padding: 1rem;
 	background: var(--surface);
 	border: 1px solid var(--border);
-	border-radius: 6px;
-	box-shadow: 0 6px 20px rgb(0 0 0 / 0.12);
+	border-radius: var(--radius-md);
+	box-shadow: var(--shadow-lg);
 }
 
 .menu-panel[hidden] {
@@ -173,11 +217,11 @@ main {
 }
 
 .menu-panel h2 {
-	font-size: 1rem;
+	font-size: var(--text-base);
 }
 
 .menu-panel h3 {
-	font-size: 0.9rem;
+	font-size: var(--text-md);
 }
 
 /* A group of menu entries (e.g. rename and delete), set off from what's above. */
@@ -303,16 +347,20 @@ main {
 
 .tab {
 	padding: 0.35rem 0.75rem;
-	border-radius: 4px;
+	border-radius: var(--radius-sm);
+	color: var(--muted);
 }
 
 .tab:hover:not(.current) {
+	color: var(--text);
 	background: var(--surface-inset);
 }
 
+/* The current tab: full contrast and a line beneath, quieter than a filled block that outshines the page. */
 .tab.current {
-	background: var(--accent);
-	color: var(--on-accent);
+	color: var(--text);
+	box-shadow: inset 0 -2px 0 var(--text);
+	border-radius: 0;
 }
 
 section {
@@ -321,7 +369,7 @@ section {
 	gap: 1rem;
 	background: var(--surface);
 	border: 1px solid var(--border);
-	border-radius: 8px;
+	border-radius: var(--radius-lg);
 	padding: 1.25rem;
 }
 
@@ -334,7 +382,7 @@ form {
 .card {
 	background: var(--surface-inset);
 	border: 1px solid var(--border);
-	border-radius: 6px;
+	border-radius: var(--radius-md);
 	padding: 1rem;
 }
 
@@ -355,12 +403,12 @@ form {
 }
 
 h2 {
-	font-size: 1.5rem;
+	font-size: var(--text-xl);
 	font-weight: 600;
 }
 
 h3 {
-	font-size: 1.1rem;
+	font-size: var(--text-lg);
 	font-weight: 600;
 }
 
@@ -368,15 +416,21 @@ input,
 select,
 textarea {
 	border: 1px solid var(--border-strong);
-	border-radius: 4px;
-	padding: 0.25rem 0.5rem;
+	border-radius: var(--radius-sm);
+	padding: var(--control-padding-y) 0.625rem;
+	line-height: 1.25;
 	background: var(--surface);
+}
+
+textarea {
+	line-height: 1.5;
 }
 
 button {
 	border: 1px solid var(--border-strong);
-	border-radius: 4px;
-	padding: 0.25rem 0.75rem;
+	border-radius: var(--radius-sm);
+	padding: var(--control-padding-y) 0.75rem;
+	line-height: 1.25;
 	background: var(--surface);
 }
 
@@ -578,13 +632,13 @@ td.inverse {
 }
 
 .markdown h4 {
-	font-size: 1.05rem;
+	font-size: var(--text-lg);
 	font-weight: 600;
 }
 
 .markdown h5,
 .markdown h6 {
-	font-size: 1rem;
+	font-size: var(--text-base);
 	font-weight: 600;
 }
 
@@ -613,14 +667,14 @@ td.inverse {
 	font-family: ui-monospace, monospace;
 	font-size: 0.85em;
 	padding: 0.05rem 0.25rem;
-	border-radius: 3px;
+	border-radius: var(--radius-sm);
 	background: var(--surface-inset);
 }
 
 .markdown pre {
 	overflow-x: auto;
 	padding: 0.5rem 0.75rem;
-	border-radius: 4px;
+	border-radius: var(--radius-sm);
 	background: var(--surface-inset);
 }
 
@@ -654,7 +708,7 @@ button.ref-tag {
 	flex-direction: column;
 	z-index: 10;
 	pointer-events: none;
-	box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+	box-shadow: var(--shadow-xl);
 }
 
 .card-preview[hidden] {
@@ -683,8 +737,8 @@ button.ref-tag {
 	grid-template-columns: minmax(0, 1fr);
 	background: var(--surface);
 	border: 1px solid var(--border-strong);
-	border-radius: 6px;
-	box-shadow: 0 2px 6px rgb(0 0 0 / 0.08);
+	border-radius: var(--radius-md);
+	box-shadow: var(--shadow-sm);
 	cursor: default;
 }
 
@@ -737,8 +791,8 @@ button.ref-tag {
 	display: inline-block;
 	max-width: 100%;
 	padding: 0 0.4rem;
-	border-radius: 4px;
-	font-size: 0.8125rem;
+	border-radius: var(--radius-sm);
+	font-size: var(--text-sm);
 	line-height: 1.375rem;
 	color: rgb(0 0 0 / 0.8);
 	overflow-wrap: anywhere;
