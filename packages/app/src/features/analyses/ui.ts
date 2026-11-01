@@ -1,9 +1,9 @@
 import type { DataStore } from "../data/core.js";
-import { createCardPreview, detailsPanel } from "../data/ui.js";
+import { createCardPreview, detailsPanel, type EntityPlaces } from "../data/ui.js";
 import { traitRoute } from "../traits/ui.js";
 import { text as traitText } from "../traits/texts.js";
 import { freeName, moveItem, nameTaken } from "../../shared/core/index.js";
-import { downloadFile, el, isRecord, listenWhileConnected, readPreference, refused, safeFileName, typeDot, writePreference, zipFiles, sharedText, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
+import { downloadFile, el, isRecord, listenWhileConnected, readPreference, refused, safeFileName, typeDot, writePreference, zipFiles, sharedText, type EntityLink, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
 import {
 	addAnalysis,
 	analysisFrom,
@@ -40,9 +40,12 @@ const SETUP_OPEN_KEY = "analysis-setup-open";
  * paths it groups them by, the paths of its columns) and its result below — the rows in nested groups, a table per
  * group. The traits themselves are kept in the Data tab.
  * Hovering an entity named in the result shows its card; clicking it shows its details beside, like on a board, where
- * Edit shows its form instead.
+ * Edit shows its form instead, and the features' `entityLinks` and `entityPlaces` lead on to their pages.
  */
-export function analysisView(store: DataStore): HTMLElement {
+export function analysisView(
+	store: DataStore,
+	{ entityLinks = [], entityPlaces = [] }: { entityLinks?: readonly EntityLink[]; entityPlaces?: readonly EntityPlaces[] } = {},
+): HTMLElement {
 	const selected = (): Analysis | undefined => {
 		const id = readPreference(SELECTED_KEY);
 		return store.data.analyses.find((item) => item.id === id) ?? store.data.analyses[0];
@@ -56,7 +59,7 @@ export function analysisView(store: DataStore): HTMLElement {
 	main.addEventListener("scroll", preview.hide, { passive: true });
 	/** The details of the entity clicked in the result; saving draws the result again (see onHistoryChange),
 	 * keeping the form until it's done. */
-	const details = detailsPanel(store, { onClose: () => showDetails(null), onSelectEntity: (id) => showDetails(id) });
+	const details = detailsPanel(store, { onClose: () => showDetails(null), onSelectEntity: (id) => showDetails(id), links: entityLinks, places: entityPlaces });
 	const view = el("div", { className: "analysis-view" }, main, details.handle, details.element);
 
 	// Every change (here, or undone and redone) shows anew, keeping focus on the control it came from; the first
@@ -485,8 +488,10 @@ function join(nodes: HTMLElement[]): (HTMLElement | string)[] {
 	return nodes.flatMap((node, i) => (i === 0 ? [node] : [", ", node]));
 }
 
-/** The Analyses tab, after the boards. */
-export const ANALYSES_PAGE: PageMaker<DataStore> = () => ({ routes: ["analysis"], label: () => text.tabAnalysis, render: analysisView });
+/** The Analyses tab, after the boards; in an entity's details, the features' `entityLinks` and `entityPlaces`. */
+export function analysesPage(parts: { entityLinks?: readonly EntityLink[]; entityPlaces?: readonly EntityPlaces[] } = {}): PageMaker<DataStore> {
+	return () => ({ routes: ["analysis"], label: () => text.tabAnalysis, render: (store) => analysisView(store, parts) });
+}
 
 /** How the history tells of an analysis: the type (or trait) of its rows, the paths it groups by and those of its
  * columns, read with the types and traits as they are now. */

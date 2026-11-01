@@ -1,8 +1,8 @@
 import { snapToGrid, type Point, type Rect } from "../../../shared/core/index.js";
-import { CLICK_TOLERANCE, el, icon, listenWhileConnected, readPreference, resizeHandle, trackPointer, writePreference } from "../../../shared/ui/index.js";
+import { CLICK_TOLERANCE, el, icon, listenWhileConnected, readPreference, resizeHandle, trackPointer, writePreference, type EntityLink } from "../../../shared/ui/index.js";
 import { DEFAULT_CARD_SIZE, type Entity, type EntityType } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
-import { cardParts, cardSize, createCardPreview, detailsPanel } from "../../data/ui.js";
+import { cardParts, cardSize, createCardPreview, detailsPanel, type EntityPlaces } from "../../data/ui.js";
 import { frameInside, referencesOffBoard, screenToWorld, visibleRect, type Board, type CanvasCard, type BoardStore } from "../core.js";
 import { text } from "../texts.js";
 import { connectDialog, newEntityDialog } from "./dialogs.js";
@@ -24,7 +24,28 @@ export interface CanvasOptions {
 	layers: readonly CanvasLayer[];
 	/** The ways to export a board, offered in the editor (see `BoardExport`). */
 	exports?: readonly BoardExport[];
+	/** Where the details lead from an entity to the features' pages (its history, say). */
+	entityLinks?: readonly EntityLink[];
 }
+
+/** The address of an entity's card on a board: the board opened, the card selected and in view. */
+export const cardRoute = (boardId: string, entityId: string) => `#boards/${encodeURIComponent(boardId)}/${encodeURIComponent(entityId)}`;
+
+/** The board and entity the address names (`#boards/<board>/<entity>`), if it does. */
+export function cardOfRoute(hash: string): { boardId: string; entityId: string } | null {
+	const [route, board, entity] = hash.slice(1).split("/");
+	return route === "boards" && board && entity ? { boardId: decodeURIComponent(board), entityId: decodeURIComponent(entity) } : null;
+}
+
+/** Opens this board the next time a canvas is made. */
+export const openBoard = (boardId: string) => writePreference(ACTIVE_BOARD_KEY, boardId);
+
+/** In an entity's details: the boards with a card of it, each a link to that card. */
+export const BOARD_PLACES: EntityPlaces = {
+	label: () => text.onBoards,
+	places: (store, entityId) =>
+		(store as BoardStore).data.boards.filter((b) => b.cards.some((c) => c.entityId === entityId)).map((b) => ({ label: b.name, href: cardRoute(b.id, entityId) })),
+};
 
 /** Instead of the canvas while there's no board: a button that creates the first one and opens it. */
 function firstBoardView(store: BoardStore, options: CanvasOptions): HTMLElement {
@@ -63,9 +84,9 @@ export function canvasView(store: BoardStore, options: CanvasOptions): HTMLEleme
 /** The board canvas (see `canvasView`), with the way to draw it anew in place: after someone else's changes were
  * taken over, it shows them and keeps this tab's pan and zoom, and what's selected as far as it's still there.
  * False when that can't be done (no board, or the one shown is gone): then the canvas has to be made anew. */
-export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLElement; refresh(): boolean } {
-	if (store.data.boards.length === 0) return { view: firstBoardView(store, options), refresh: () => false };
-	const { readOnly, layers, exports = [] } = options;
+export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLElement; refresh(): boolean; follow(entityId: string): void } {
+	if (store.data.boards.length === 0) return { view: firstBoardView(store, options), refresh: () => false, follow: () => {} };
+	const { readOnly, layers, exports = [], entityLinks = [] } = options;
 	let boardId = readPreference(ACTIVE_BOARD_KEY) ?? "";
 	const currentBoard = (): Board => store.data.boards.find((b) => b.id === boardId) ?? store.data.boards[0]!;
 	boardId = currentBoard().id;
@@ -194,7 +215,9 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 			el("button", { type: "button", className: "entity-delete", title: text.deleteEntityHint, onclick: () => deleteEntity(entity) }, text.deleteEntity),
 		],
 		onClose: () => select(null),
-		onSelectEntity: selectEntity,
+		onSelectEntity: followReference,
+		places: [BOARD_PLACES],
+		links: entityLinks,
 		// What the cards show (name, properties, lines) may have changed; renderCards shows the details again.
 		onSaved: () => {
 			redrawBoard();
@@ -325,9 +348,12 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 		);
 	}
 
-	/** Shows another entity's details, selecting its card if it's on this board. */
-	function selectEntity(entityId: string): void {
-		select(entityId, currentBoard().cards.find((c) => c.entityId === entityId)?.id ?? null);
+	/** Shows another entity's details (one a reference leads to, say), selecting its card and bringing it into view if
+	 * it's on this board; one that isn't stays off it. */
+	function followReference(entityId: string): void {
+		const card = currentBoard().cards.find((c) => c.entityId === entityId);
+		select(entityId, card?.id ?? null);
+		if (card) viewport.reveal(cardRects.get(card.id) ?? card);
 	}
 
 	/** Links the selected card's entity with another one, existing or new; the other one's card shows beside it. */
@@ -573,6 +599,21 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 			width: `${card.width}px`,
 			height: `${card.height}px`,
 		});
+		// A reference's tag, clicked (or Enter on it), shows the entity it leads to — not after it was dragged.
+		for (const tag of body?.querySelectorAll<HTMLElement>(".ref-tag[data-entity-id]") ?? []) {
+			const follow = () => followReference(tag.dataset.entityId!);
+			tag.setAttribute("role", "link");
+			tag.addEventListener("click", (e) => {
+				e.stopPropagation();
+				if (tag.dataset.dragged) delete tag.dataset.dragged;
+				else follow();
+			});
+			tag.addEventListener("keydown", (e) => {
+				if (e.key !== "Enter") return;
+				e.preventDefault();
+				follow();
+			});
+		}
 		// The viewer only looks: no moving.
 		if (readOnly) return node;
 
@@ -581,7 +622,7 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 			const entityId = tag.dataset.entityId!;
 			if (currentBoard().cards.some((c) => c.entityId === entityId)) continue;
 			tag.classList.add("ref-drag");
-			tag.addEventListener("pointerdown", (e) => dragReference(e, entityId));
+			tag.addEventListener("pointerdown", (e) => dragReference(e, entityId, tag));
 		}
 
 		header.addEventListener("pointerdown", (e) => {
@@ -623,7 +664,7 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 	 * the grid and lands where it's let go, unless that's off the canvas. The board then shows the reference as its
 	 * card display says: as a line, or still in the list.
 	 */
-	function dragReference(e: PointerEvent, entityId: string): void {
+	function dragReference(e: PointerEvent, entityId: string, tag: HTMLElement): void {
 		const entity = store.data.entities.find((x) => x.id === entityId);
 		if (e.button !== 0 || e.shiftKey || !entity) return;
 		e.preventDefault(); // no text selection
@@ -641,6 +682,7 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 				if (!ghost && Math.hypot(dx, dy) < CLICK_TOLERANCE) return;
 				if (!ghost) {
 					preview.hide();
+					tag.dataset.dragged = "true"; // the click after the drag doesn't follow the reference
 					const type = store.data.types.find((t) => t.id === entity.typeId);
 					const names = new Map(store.data.entities.map((x) => [x.id, x.name]));
 					const onBoard = (id: string) => currentBoard().cards.some((c) => c.entityId === id);
@@ -748,5 +790,5 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 		renderFrames();
 		return true;
 	}
-	return { view, refresh };
+	return { view, refresh, follow: followReference };
 }

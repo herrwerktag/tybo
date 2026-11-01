@@ -85,12 +85,15 @@ function dataPageIn(
 				types.reset(current);
 				entities.reset(current);
 			}
-			const route = location.hash.slice(1).split("/")[0];
+			const [route, id] = location.hash.slice(1).split("/");
 			const section = sections.find((s) => s.route === route);
-			const shown = section ? section.render(current, page) : route === "types" ? types.render(current) : entities.render(current);
+			const target = route === "entities" && id ? decodeURIComponent(id) : null;
+			const shown = section ? section.render(current, page) : route === "types" ? types.render(current) : entities.render(current, target);
 			return el("div", { className: "data-view" }, shown);
 		},
 		afterRender(root: HTMLElement): void {
+			// The row the address just named, in view.
+			root.querySelector<HTMLElement>(".entity-table tr.scroll-to")?.scrollIntoView({ block: "center" });
 			if (focusHandle !== null) {
 				root.querySelector<HTMLElement>(`[data-focus-key="${focusHandle}"]`)?.focus();
 				focusHandle = null;

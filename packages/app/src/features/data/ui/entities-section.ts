@@ -20,9 +20,13 @@ const ENTITY_MIME = "application/x-entity-index";
 /** The tag the Entities page is filtered by, if any. */
 const ENTITIES_TAG_KEY = "entities-tag";
 
+/** The address of an entity's row in the Entities page. */
+export const entityRoute = (entityId: string) => `#entities/${encodeURIComponent(entityId)}`;
+
 /**
  * The entities of one type (#entities) in a table, to reorder, edit or delete, and the form for a new or changed one —
- * where `entityLinks` lead from an entity to the features' pages.
+ * where `entityLinks` lead from an entity to the features' pages. A referenced entity is a link to its own row
+ * (`#entities/<id>`), which shows its type with that row marked.
  */
 export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink[]) {
 	const rerender = page.rerender;
@@ -33,6 +37,12 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 		editingEntityId: null as string | null,
 		/** Whether the form for a new entity is open; it stays hidden until asked for. */
 		creatingEntity: false,
+		/** The entity the address names, once its type was shown for it: shown once, so the type can be changed. */
+		shownTarget: null as string | null,
+		/** The row marked as the address's (see `target`). */
+		markedId: null as string | null,
+		/** Whether the marked row is still to be scrolled into view (once, when the address named it). */
+		scrollToMarked: false,
 	};
 
 	function section(): HTMLElement {
@@ -119,7 +129,7 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 		/** Referenced entities as tags in their type's color, like on the cards. */
 		const refTags = (ids: readonly string[]): HTMLElement => {
 			const tags = ids.map((id) => {
-				const tag = el("span", { className: "ref-tag" }, names.get(id) ?? "?");
+				const tag = el("a", { className: "ref-tag", href: entityRoute(id) }, names.get(id) ?? "?");
 				const color = types.get(entityTypes.get(id) ?? "")?.color;
 				if (color) tag.style.background = color;
 				return tag;
@@ -175,7 +185,7 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 					const handle = dragHandle(text.moveEntity(entity.name), `entity:${entity.id}`);
 					const row = el(
 						"tr",
-						{},
+						{ className: entity.id === state.markedId ? (state.scrollToMarked ? "target scroll-to" : "target") : "" },
 						el("td", { className: "handle-cell" }, handle),
 						el("td", { className: "name-cell" }, entity.name),
 						...type.properties.map((p) => el("td", {}, format(p, entity.values[p.id]))),
@@ -256,13 +266,27 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 			state.selectedTypeId = typeId;
 			state.editingEntityId = null;
 		},
-		render(current: DataStore): HTMLElement {
+		/** `target`: the entity the address names; the first time, its type is shown with its row marked. */
+		render(current: DataStore, target: string | null = null): HTMLElement {
 			store = current;
+			const entity = target === null ? undefined : store.data.entities.find((e) => e.id === target);
+			if (target !== state.shownTarget) {
+				state.shownTarget = target;
+				state.markedId = entity?.id ?? null;
+				state.scrollToMarked = entity !== undefined;
+				if (entity) {
+					state.selectedTypeId = entity.typeId;
+					state.editingEntityId = null;
+					state.creatingEntity = false;
+				}
+			}
 			if (!store.data.types.some((t) => t.id === state.selectedTypeId)) {
 				state.selectedTypeId = store.data.types[0]?.id ?? null;
 				state.editingEntityId = null;
 			}
-			return section();
+			const drawn = section();
+			state.scrollToMarked = false;
+			return drawn;
 		},
 	};
 }

@@ -13,7 +13,7 @@ import {
 	type DataStore,
 } from "../core.js";
 import { GRID_SIZE } from "../../../shared/core/index.js";
-import { el } from "../../../shared/ui/index.js";
+import { el, type EntityLink } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
 import { renderMarkdown } from "../../../shared/ui/index.js";
 
@@ -222,15 +222,34 @@ export function detailsBar(type: EntityType | undefined, onClose: () => void): H
 	return bar;
 }
 
+/** Where else a feature shows an entity, as links (e.g. the boards with a card of it), under a heading of its own in
+ * the details; none, no heading. */
+export interface EntityPlaces {
+	label(): string;
+	places(store: DataStore, entityId: string): { label: string; href: string }[];
+}
+
 /**
  * Easy-to-read details of an entity, for a details panel: its header (colored bar with ×, name, `actions`), then
- * description, all properties, content and ID. A referenced entity is a tag in the color of its type; clicking it
- * calls `onSelectEntity`.
+ * description, all properties, content, the features' `places` and the ID with the features' `links`. A referenced
+ * entity is a tag in the color of its type; clicking it calls `onSelectEntity`.
  */
 export function entityDetails(
 	store: DataStore,
 	entity: Entity,
-	{ actions, onClose, onSelectEntity }: { actions: HTMLElement[]; onClose: () => void; onSelectEntity: (entityId: string) => void },
+	{
+		actions,
+		onClose,
+		onSelectEntity,
+		places = [],
+		links = [],
+	}: {
+		actions: HTMLElement[];
+		onClose: () => void;
+		onSelectEntity: (entityId: string) => void;
+		places?: readonly EntityPlaces[];
+		links?: readonly EntityLink[];
+	},
 ): HTMLElement[] {
 	const types = new Map(store.data.types.map((t) => [t.id, t]));
 	const type = types.get(entity.typeId);
@@ -285,7 +304,18 @@ export function entityDetails(
 				? [section(text.properties, el("dl", { className: "details-props" }, ...rows.flatMap((row) => [el("dt", {}, row.label), value(row)])))]
 				: []),
 			...(entity.content.trim() ? [section(text.content, renderMarkdown(entity.content))] : []),
-			el("p", { className: "details-id" }, `${text.id}: `, el("span", { className: "mono" }, entity.id)),
+			...places.flatMap((where) => {
+				const found = where.places(store, entity.id);
+				if (found.length === 0) return [];
+				return [section(where.label(), el("ul", { className: "details-places" }, ...found.map((p) => el("li", {}, el("a", { href: p.href }, p.label)))))];
+			}),
+			el(
+				"p",
+				{ className: "details-id" },
+				`${text.id}: `,
+				el("span", { className: "mono" }, entity.id),
+				...links.flatMap((link) => [" · ", el("a", { href: link.href(entity.id) }, link.label())]),
+			),
 		),
 	];
 }

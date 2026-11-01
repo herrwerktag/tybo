@@ -1,7 +1,7 @@
-import { el, resizeHandle } from "../../../shared/ui/index.js";
+import { el, resizeHandle, type EntityLink } from "../../../shared/ui/index.js";
 import type { Entity, DataStore } from "../core.js";
 import { text } from "../texts.js";
-import { DETAILS_WIDTH_KEY, entityDetails } from "./entity-card.js";
+import { DETAILS_WIDTH_KEY, entityDetails, type EntityPlaces } from "./entity-card.js";
 import { showEntityEditor } from "./entity-form.js";
 
 export interface DetailsPanel {
@@ -20,8 +20,9 @@ export interface DetailsPanel {
 
 /**
  * The details of one entity beside a view: easy to read, and — with Edit, unless `readOnly` — its form in their
- * place. `actions` adds buttons after Edit. Once the form is done, the details show again; when it saved and
- * there is `onSaved`, that draws the view anew instead (and shows them from there).
+ * place. `actions` adds buttons after Edit; the features' `places` and `links` lead from the entity to their pages.
+ * Once the form is done, the details show again; when it saved and there is `onSaved`, that draws the view anew
+ * instead (and shows them from there).
  */
 export function detailsPanel(
 	store: DataStore,
@@ -31,9 +32,11 @@ export function detailsPanel(
 		onClose: () => void;
 		onSelectEntity: (entityId: string) => void;
 		onSaved?: () => void;
+		places?: readonly EntityPlaces[];
+		links?: readonly EntityLink[];
 	},
 ): DetailsPanel {
-	const { readOnly = false, actions = () => [], onClose, onSelectEntity, onSaved } = options;
+	const { readOnly = false, actions = () => [], onClose, onSelectEntity, onSaved, places = [], links = [] } = options;
 	const element = el("aside", { className: "details-panel", ariaLabel: text.details });
 	element.hidden = true;
 	const handle = resizeHandle(element, { key: DETAILS_WIDTH_KEY, side: "right", min: 16, max: 40 });
@@ -69,7 +72,7 @@ export function detailsPanel(
 			show(shownId);
 		};
 		const buttons = readOnly ? [] : [el("button", { type: "button", onclick: edit }, text.edit), ...actions(entity)];
-		element.replaceChildren(...entityDetails(store, entity, { actions: buttons, onClose, onSelectEntity }));
+		element.replaceChildren(...entityDetails(store, entity, { actions: buttons, onClose, onSelectEntity, places, links }));
 		return true;
 	}
 
