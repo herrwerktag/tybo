@@ -13,20 +13,31 @@ export interface DataPage {
 	/** After the next drawing, focuses the drag handle with this `data-focus-key`, so keyboard reordering keeps focus
 	 * on the moved item. */
 	focusHandle(key: string): void;
-	/** In place of the data pages' heading: switches between them, the entity types and the entities. */
-	dataSwitch(route: "types" | "entities"): HTMLElement;
+	/** In place of the data pages' heading: switches between them, the entity types, the entities and the features'
+	 * sections (see `DataSection`). */
+	dataSwitch(route: string): HTMLElement;
+}
+
+/** A feature's own section of the Data tab, after the entity types and the entities, e.g. the traits. */
+export interface DataSection {
+	/** Its address after the "#"; `#<route>/…` lands there too. */
+	route: string;
+	/** Its name in the switch, in the current language. */
+	label(): string;
+	/** The section, its heading the page's `dataSwitch(route)`. */
+	render(store: DataStore, page: DataPage): HTMLElement;
 }
 
 /**
  * The Data tab: the entity types with their properties (#types), and the entities of a type in a table (#entities),
- * each with its form — where the features' `entityLinks` lead from an entity to their pages. What is being edited
- * stays while the page is drawn anew; another workspace starts afresh.
+ * each with its form — where the features' `entityLinks` lead from an entity to their pages — and after them the
+ * features' `sections`. What is being edited stays while the page is drawn anew; another workspace starts afresh.
  */
-export function dataPage({ entityLinks = [] }: { entityLinks?: readonly EntityLink[] } = {}): PageMaker<DataStore> {
-	return (shell) => dataPageIn(shell, entityLinks);
+export function dataPage({ entityLinks = [], sections = [] }: { entityLinks?: readonly EntityLink[]; sections?: readonly DataSection[] } = {}): PageMaker<DataStore> {
+	return (shell) => dataPageIn(shell, entityLinks, sections);
 }
 
-function dataPageIn(shell: Shell, entityLinks: readonly EntityLink[]): Page<DataStore> {
+function dataPageIn(shell: Shell, entityLinks: readonly EntityLink[], sections: readonly DataSection[]): Page<DataStore> {
 	/** The store the page last started afresh for. */
 	let shownStore: DataStore | null = null;
 	let focusForm: "type" | "entity" | null = null;
@@ -40,9 +51,14 @@ function dataPageIn(shell: Shell, entityLinks: readonly EntityLink[]): Page<Data
 			focusHandle = key;
 		},
 		dataSwitch(route) {
-			const tab = (id: "types" | "entities", label: string) =>
-				el("a", { href: `#${id}`, className: route === id ? "current" : "" }, label);
-			const nav = el("nav", { className: "data-switch", ariaLabel: text.tabEntities }, tab("types", text.entityTypes), tab("entities", text.entities));
+			const tab = (id: string, label: string) => el("a", { href: `#${id}`, className: route === id ? "current" : "" }, label);
+			const nav = el(
+				"nav",
+				{ className: "data-switch", ariaLabel: text.tabEntities },
+				tab("types", text.entityTypes),
+				tab("entities", text.entities),
+				...sections.map((section) => tab(section.route, section.label())),
+			);
 			nav.querySelector(".current")?.setAttribute("aria-current", "page");
 			return nav;
 		},
@@ -52,7 +68,7 @@ function dataPageIn(shell: Shell, entityLinks: readonly EntityLink[]): Page<Data
 	const types = typesSection(page, { onSaved: (typeId) => entities.showType(typeId) });
 
 	return {
-		routes: ["entities", "types"],
+		routes: ["entities", "types", ...sections.map((section) => section.route)],
 		label: () => text.tabEntities,
 		render(current: DataStore): HTMLElement {
 			if (current !== shownStore) {
@@ -61,8 +77,10 @@ function dataPageIn(shell: Shell, entityLinks: readonly EntityLink[]): Page<Data
 				types.reset(current);
 				entities.reset(current);
 			}
-			const route = location.hash.slice(1).split("/")[0] === "types" ? "types" : "entities";
-			return el("div", { className: "data-view" }, route === "types" ? types.render(current) : entities.render(current));
+			const route = location.hash.slice(1).split("/")[0];
+			const section = sections.find((s) => s.route === route);
+			const shown = section ? section.render(current, page) : route === "types" ? types.render(current) : entities.render(current);
+			return el("div", { className: "data-view" }, shown);
 		},
 		afterRender(root: HTMLElement): void {
 			if (focusHandle !== null) {

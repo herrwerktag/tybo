@@ -1,8 +1,10 @@
 import { freeName, moveItem, ulid } from "../../shared/core/index.js";
 import { el, isRecord, refused, sharedText, type UnitDescriber } from "../../shared/ui/index.js";
 import type { DataStore, EntityType } from "../data/core.js";
+import type { DataSection } from "../data/ui.js";
 import { text as dataText } from "../data/texts.js";
 import {
+	addTrait,
 	bearingTypes,
 	bindingChoices,
 	conditionHints,
@@ -358,6 +360,62 @@ export function traitForm(store: DataStore, trait: Trait): HTMLElement {
 		...(others.length > 0 ? [addType] : []),
 	);
 }
+
+/** The address of a trait in the Data tab. */
+export const traitRoute = (traitId: string) => `#traits/${encodeURIComponent(traitId)}`;
+
+/** The trait the address names (`#traits/<id>`), if it does. */
+function traitOfRoute(hash: string): string | null {
+	const [route, id] = hash.slice(1).split("/");
+	return route === "traits" && id ? decodeURIComponent(id) : null;
+}
+
+/**
+ * The traits in the Data tab (#traits), beside the entity types they lay a meaning over: their list, and the form of
+ * the one the address names (`#traits/<id>`; none named: the first). Every change draws the section anew in place,
+ * keeping focus on the control it came from.
+ */
+export const TRAITS_SECTION: DataSection = {
+	route: "traits",
+	label: () => text.traits,
+	render(store, page) {
+		const view = el("section", { className: "traits-section" });
+		const draw = () => {
+			const focusKey = (document.activeElement as HTMLElement | null)?.dataset?.focusKey;
+			const id = traitOfRoute(location.hash);
+			const current = store.data.traits.find((t) => t.id === id) ?? store.data.traits[0];
+			const add = el(
+				"button",
+				{
+					type: "button",
+					className: "primary",
+					onclick: () => {
+						const item = addTrait(store, freeName(store.data.traits, text.defaultTraitName));
+						// Its address without drawing the page anew (as a hash change would), so its name stays selected.
+						history.pushState(null, "", traitRoute(item.id));
+						draw();
+						view.querySelector<HTMLInputElement>(".trait-form input")?.select();
+					},
+				},
+				text.newTrait,
+			);
+			const list = el(
+				"ul",
+				{ className: "trait-list" },
+				...store.data.traits.map((trait) =>
+					el("li", {}, el("a", { href: traitRoute(trait.id), className: "trait-entry", ariaCurrent: trait.id === current?.id ? "page" : "false" }, trait.name)),
+				),
+			);
+			const form = current ? traitForm(store, current) : el("p", { className: "muted" }, text.noTraitsYet);
+			view.replaceChildren(el("div", { className: "section-header" }, page.dataSwitch("traits"), add), el("div", { className: "traits-layout" }, list, form));
+			if (focusKey) view.querySelector<HTMLElement>(`[data-focus-key="${focusKey}"]`)?.focus();
+		};
+		// Every change (here, or undone and redone) draws anew; the first after the section is gone stops listening.
+		const stopWatching = store.onHistoryChange(() => (view.isConnected ? draw() : stopWatching()));
+		draw();
+		return view;
+	},
+};
 
 /** How the history tells of a trait: its roles (name and kind, an options role's values) and the types bearing it,
  * read with the types as they are now. */

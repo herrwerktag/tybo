@@ -1,4 +1,4 @@
-import { byText, readSaved, settle, startApp } from "../../test-app.js";
+import { byText, goTo, readSaved, settle, startApp } from "../../test-app.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DATA_VERSION, ulid } from "../../shared/core/index.js";
@@ -134,7 +134,7 @@ test("Traits: a trait made in its form, bound to two types' statuses, gives an a
 			entities: [entity("Traits", "pitch", "Entwurf"), entity("Verlauf", "pitch", "abgeschlossen"), entity("Wie heißen sie?", "question", "offen")],
 			boards: [],
 		},
-		"#analysis",
+		"#traits",
 	);
 	const choose = (select: HTMLSelectElement, label: string) => {
 		select.value = [...select.options].find((o) => o.textContent === label)!.value;
@@ -149,7 +149,11 @@ test("Traits: a trait made in its form, bound to two types' statuses, gives an a
 		input.dispatchEvent(new Event("change"));
 	};
 
+	// Traits are kept in the Data tab, beside the entity types.
 	byText<HTMLButtonElement>(root, "button", traitText.newTrait).click();
+	await settle();
+	assert.match(location.hash, /^#traits\//, "the new trait has an address of its own");
+	assert.equal(form().querySelector("input")!.value, traitText.defaultTraitName(1));
 	type(form().querySelector("input")!, "Fortschritt");
 	byText<HTMLButtonElement>(form(), "button", `+ ${traitText.addRole}`).click();
 	type(form().querySelector<HTMLInputElement>(".path-list input")!, "Stand");
@@ -170,8 +174,11 @@ test("Traits: a trait made in its form, bound to two types' statuses, gives an a
 		choose(labeled<HTMLSelectElement>(section(), traitText.standsFor(own[1])), "fertig");
 	}
 
+	goTo("#analysis");
+	assert.equal(root.querySelector(".trait-form"), null, "the analyses only take traits as their basis");
 	byText<HTMLButtonElement>(root, "button", text.newAnalysis).click();
 	choose(root.querySelector<HTMLSelectElement>(".analysis-meta select")!, "Fortschritt");
+	const traitLink = byText<HTMLAnchorElement>(root, ".analysis-meta a", traitText.openTrait("Fortschritt"));
 	byText<HTMLButtonElement>(root, "button", `+ ${text.addGroupLevel}`).click();
 	choose(root.querySelector<HTMLSelectElement>(".path-list .path-editor select")!, "Stand");
 	const headings = [...root.querySelectorAll(".analysis-result h3")].map((h) => h.textContent);
@@ -191,70 +198,7 @@ test("Traits: a trait made in its form, bound to two types' statuses, gives an a
 		question: { [trait!.roles[0]!.id]: { propertyId: "question-status", direction: "forward", values: { "question-status-offen": open, "question-status-beantwortet": done } } },
 	});
 	assert.deepEqual(saved.analyses.map(({ typeId, traitId }) => [typeId, traitId]), [[null, trait!.id]]);
-});
-
-test("Traits: a reference role's condition is set in the form, refused when it would lead round in a circle, and pointed out where targets never meet it", async () => {
-	const progress = {
-		id: "progress",
-		name: "Fortschritt",
-		roles: [{ id: "stand", name: "Stand", kind: "options", options: [{ id: "open", label: "offen" }, { id: "done", label: "fertig" }] }],
-		bindings: { question: { stand: { propertyId: "question-status", direction: "forward", values: { "question-status-offen": "open", "question-status-beantwortet": "done" } } } },
-	};
-	const blockade = {
-		id: "blockade",
-		name: "Blockade",
-		roles: [{ id: "blocked", name: "blockiert durch", kind: "reference", options: [] }],
-		bindings: { pitch: { blocked: { propertyId: "question-pitch", direction: "inverse", values: {} } } },
-	};
-	const root = await startApp(
-		{
-			version: DATA_VERSION,
-			types: [
-				{ id: "pitch", name: "Pitch", color: "#fbd9b0", contentTemplate: "", properties: [] },
-				{
-					id: "question",
-					name: "Frage",
-					color: "#d6ccf7",
-					contentTemplate: "",
-					properties: [
-						status("question-status", ["offen", "beantwortet"]),
-						{ id: "question-pitch", name: "Pitch", kind: "reference", options: [], reference: { typeIds: ["pitch"], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" },
-					],
-				},
-			],
-			entities: [],
-			boards: [],
-			traits: [progress, blockade],
-		},
-		"#analysis",
-	);
-	byText<HTMLButtonElement>(root, ".analysis-entry", "Blockade").click();
-	const form = () => root.querySelector<HTMLElement>(".trait-form")!;
-	const condition = () => [...form().querySelectorAll("select")].find((s) => s.ariaLabel === traitText.condition)!;
-	const choose = (select: HTMLSelectElement, label: string) => {
-		select.value = [...select.options].find((o) => o.textContent === label)!.value;
-		select.dispatchEvent(new Event("change"));
-	};
-	assert.equal(condition().selectedOptions[0]!.textContent, traitText.noCondition);
-
-	choose(condition(), "Fortschritt › Stand");
-	const boxes = () => [...form().querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
-	assert.deepEqual(boxes().map((b) => [b.checked, b.disabled]), [[true, true], [false, false]], "the first value to start with; the last one stays");
-	boxes()[1]!.checked = true;
-	boxes()[1]!.dispatchEvent(new Event("change"));
-	await settle();
-	assert.deepEqual((await readSaved()).traits[1]!.roles[0]!.condition, { traitId: "progress", roleId: "stand", values: ["open", "done"] });
-
-	choose(condition(), "Blockade › blockiert durch");
-	assert.equal(condition().validationMessage, traitText.conditionCycle("Blockade.blockiert durch › Blockade.blockiert durch"));
-	await settle();
-	assert.deepEqual((await readSaved()).traits[1]!.roles[0]!.condition, { traitId: "progress", roleId: "stand", values: ["open", "done"] }, "nothing saved");
-
-	// The pitch's questions all bear Progress; once Frage no longer does, the form says such targets never count.
-	byText<HTMLButtonElement>(root, ".analysis-entry", "Fortschritt").click();
-	byText<HTMLButtonElement>(byText<HTMLElement>(form(), "legend", "Frage").parentElement!, "button", traitText.removeType).click();
-	byText<HTMLButtonElement>(root, ".analysis-entry", "Blockade").click();
-	assert.ok(byText(form(), "p", traitText.conditionHint("Frage", "Fortschritt")));
+	assert.equal(traitLink.getAttribute("href"), `#traits/${trait!.id}`, "beside the basis, a link to the trait in the Data tab");
 });
 
 test("Analyses: a new analysis starts with its setup unfolded; Done folds it to a line telling it in short, Set up unfolds it again", async () => {

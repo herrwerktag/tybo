@@ -41,7 +41,7 @@ main:has(.analysis-view) {
 	grid-row: span 2;
 }
 
-/* The list beside: headings as small as the panel is narrow, the analyses and traits as plain rows. */
+/* The list beside: headings as small as the panel is narrow, the analyses as plain rows. */
 .analysis-list h2 {
 	font-size: var(--text-lg);
 }
@@ -327,4 +327,12 @@ main:has(.analysis-view) {
 /* The result under the analysis's name: a smaller heading than the name. */
 .analysis-result > .section-header h2 {
 	font-size: var(--text-lg);
+}
+
+/* Beside the basis, the link to the trait it is, kept in the Data tab; on the fields' line. */
+.trait-link {
+	padding-block: var(--control-padding-y);
+	font-size: var(--text-md);
+	text-decoration: underline;
+	text-underline-offset: 0.2em;
 }

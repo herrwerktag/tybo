@@ -1,7 +1,6 @@
 import type { DataStore } from "../data/core.js";
 import { createCardPreview, detailsPanel } from "../data/ui.js";
-import { addTrait, type Trait } from "../traits/core.js";
-import { traitForm } from "../traits/ui.js";
+import { traitRoute } from "../traits/ui.js";
 import { text as traitText } from "../traits/texts.js";
 import { freeName, moveItem, nameTaken } from "../../shared/core/index.js";
 import { downloadFile, el, isRecord, listenWhileConnected, readPreference, refused, safeFileName, typeDot, writePreference, zipFiles, sharedText, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
@@ -28,24 +27,23 @@ import {
 import { analysisMarkdownFiles, pathLabel, stepName } from "./export.js";
 import { text } from "./texts.js";
 
-/** The analysis (or trait) open in the Analyses tab. */
+/** The analysis open in the Analyses tab. */
 const SELECTED_KEY = "analysis-selected";
 /** Whether the analysis's setup is unfolded; folded, only a line telling it is left and the result moves up. */
 const SETUP_OPEN_KEY = "analysis-setup-open";
 
 /**
- * The Analyses tab: the saved analyses and the traits in lists, the analysis chosen set up above (the type or trait of
- * its rows, the paths it groups them by, the paths of its columns) and its result below — the rows in nested groups, a
- * table per group; a trait chosen shows its form instead.
+ * The Analyses tab: the saved analyses in a list, the analysis chosen set up above (the type or trait of its rows, the
+ * paths it groups them by, the paths of its columns) and its result below — the rows in nested groups, a table per
+ * group. The traits themselves are kept in the Data tab.
  * Hovering an entity named in the result shows its card; clicking it shows its details beside, like on a board, where
  * Edit shows its form instead.
  */
 export function analysisView(store: DataStore): HTMLElement {
-	const selected = (): Analysis | Trait | undefined => {
+	const selected = (): Analysis | undefined => {
 		const id = readPreference(SELECTED_KEY);
-		return store.data.analyses.find((item) => item.id === id) ?? store.data.traits.find((item) => item.id === id) ?? store.data.analyses[0];
+		return store.data.analyses.find((item) => item.id === id) ?? store.data.analyses[0];
 	};
-	const isTrait = (item: Analysis | Trait | undefined): item is Trait => item !== undefined && "roles" in item;
 	const typeName = (id: string) => store.data.types.find((t) => t.id === id)?.name ?? "?";
 
 	const content = el("div", { className: "analysis-content" });
@@ -73,7 +71,7 @@ export function analysisView(store: DataStore): HTMLElement {
 		preview.hide(); // its link is about to be replaced
 		content.replaceChildren(
 			listSection(current),
-			...(isTrait(current) ? [traitForm(store, current)] : current ? [setupSection(current), resultSection(current)] : []),
+			...(current ? [setupSection(current), resultSection(current)] : []),
 		);
 		if (!current) content.append(el("section", {}, el("p", { className: "muted" }, text.analysisEmpty)));
 		if (focusKey) content.querySelector<HTMLElement>(`[data-focus-key="${focusKey}"]`)?.focus();
@@ -88,7 +86,7 @@ export function analysisView(store: DataStore): HTMLElement {
 		}
 	}
 
-	function listSection(current: Analysis | Trait | undefined): HTMLElement {
+	function listSection(current: Analysis | undefined): HTMLElement {
 		const add = el(
 			"button",
 			{
@@ -103,50 +101,34 @@ export function analysisView(store: DataStore): HTMLElement {
 			},
 			text.newAnalysis,
 		);
-		const addTraitButton = el(
-			"button",
-			{
-				type: "button",
-				onclick: () => {
-					const item = addTrait(store, freeName(store.data.traits, traitText.defaultTraitName));
-					writePreference(SELECTED_KEY, item.id);
-					render();
-					view.querySelector<HTMLInputElement>(".trait-form input")?.select();
-				},
-			},
-			traitText.newTrait,
-		);
-		const entries = (items: readonly (Analysis | Trait)[]) =>
-			el(
-				"ul",
-				{},
-				...items.map((item) =>
+		const entries = el(
+			"ul",
+			{},
+			...store.data.analyses.map((item) =>
+				el(
+					"li",
+					{},
 					el(
-						"li",
-						{},
-						el(
-							"button",
-							{
-								type: "button",
-								className: "analysis-entry",
-								ariaCurrent: String(item.id === current?.id),
-								onclick: () => {
-									writePreference(SELECTED_KEY, item.id);
-									render();
-								},
+						"button",
+						{
+							type: "button",
+							className: "analysis-entry",
+							ariaCurrent: String(item.id === current?.id),
+							onclick: () => {
+								writePreference(SELECTED_KEY, item.id);
+								render();
 							},
-							item.name,
-						),
+						},
+						item.name,
 					),
 				),
-			);
+			),
+		);
 		return el(
 			"section",
 			{ className: "analysis-list" },
 			el("div", { className: "section-header" }, el("h2", {}, text.analyses), add),
-			entries(store.data.analyses),
-			el("div", { className: "section-header" }, el("h2", {}, traitText.traits), addTraitButton),
-			entries(store.data.traits),
+			entries,
 		);
 	}
 
@@ -222,6 +204,8 @@ export function analysisView(store: DataStore): HTMLElement {
 				{ className: "analysis-meta" },
 				el("label", { className: "field" }, el("span", {}, sharedText.name), name),
 				el("label", { className: "field" }, el("span", {}, text.analysisRowType), rowType),
+				// A trait is kept in the Data tab: a link there, to see or change what it means.
+				...(trait ? [el("a", { href: traitRoute(trait.id), className: "trait-link" }, traitText.openTrait(trait.name))] : []),
 				remove,
 			),
 			...(from
