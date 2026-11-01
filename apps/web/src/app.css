@@ -695,6 +695,7 @@ td.inverse {
 
 button.ref-tag {
 	border: none;
+	text-align: left;
 	cursor: pointer;
 }
 

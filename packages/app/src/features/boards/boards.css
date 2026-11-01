@@ -50,6 +50,10 @@ main:has(.canvas-view) {
 	gap: 0.5rem;
 }
 
+.panel-header h2 {
+	font-size: var(--text-lg);
+}
+
 .panel-toggle {
 	display: inline-flex;
 	padding: 0.45rem;
@@ -99,7 +103,16 @@ main:has(.canvas-view) {
 
 .panel-group ul {
 	display: grid;
-	gap: 0.25rem;
+}
+
+.panel-group h3 {
+	display: flex;
+	align-items: center;
+	padding-inline: 0.5rem;
+	font-size: var(--text-xs);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--muted);
 }
 
 .panel-filters {
@@ -116,27 +129,32 @@ main:has(.canvas-view) {
 	gap: 0.75rem;
 }
 
+/* The name, and at the right whether it's on the board; below the name when there's no room beside it. */
 .panel-item {
-	display: grid;
-	gap: 0.1rem;
-	padding: 0.35rem 0.5rem;
-	border: 1px solid var(--border);
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 0 0.5rem;
+	padding: 0.25rem 0.5rem;
 	border-radius: var(--radius-sm);
-	background: var(--surface);
+	font-size: var(--text-md);
 	cursor: grab;
-	overflow-wrap: anywhere;
+	overflow-wrap: break-word;
 }
 
 .panel-item:hover {
-	border-color: var(--border-strong);
-}
-
-.panel-item.placed {
 	background: var(--surface-inset);
 }
 
+/* On the board already: quieter. */
+.panel-item.placed {
+	color: var(--muted);
+}
+
 .panel-item-note {
-	font-size: var(--text-sm);
+	font-size: var(--text-xs);
+	white-space: nowrap;
 }
 
 .canvas-main {
@@ -155,6 +173,22 @@ main:has(.canvas-view) {
 .canvas-card.selected {
 	outline: 2px solid var(--focus);
 	outline-offset: 2px;
+	box-shadow: 0 0 0 6px rgb(59 111 224 / 0.18), var(--shadow-sm);
+}
+
+/* A card's × only on the card under the pointer, with focus or selected; without hover (touch) always. */
+.canvas-card .card-remove {
+	opacity: 0;
+}
+
+.canvas-card:is(:hover, :focus-within, .selected) .card-remove {
+	opacity: 1;
+}
+
+@media (hover: none) {
+	.canvas-card .card-remove {
+		opacity: 1;
+	}
 }
 
 .canvas-surface {
@@ -453,18 +487,21 @@ main:has(.canvas-view) {
 	pointer-events: none;
 }
 
-/* A small tag centered on the line, covering it so the text stands out from the line and the dots. */
+/* Quiet text centered on the line, on the canvas's own color so it cuts the line without a box around it. */
 .connector-label {
 	position: absolute;
 	transform: translate(-50%, -50%);
-	padding: 0 0.4rem;
-	border: 1px solid var(--border-strong);
+	padding: 0 0.3rem;
 	border-radius: var(--radius-sm);
-	background: var(--surface);
-	color: var(--text);
+	background: var(--surface-inset);
+	color: var(--muted);
 	font-size: var(--text-xs);
-	line-height: 1.25rem;
+	line-height: 1.125rem;
 	white-space: nowrap;
+}
+
+.focusing .connector-label.direct {
+	color: var(--text);
 }
 
 .card-resize {
@@ -497,7 +534,7 @@ main:has(.canvas-view) {
 .toolbar-group {
 	display: flex;
 	align-items: center;
-	gap: 0.25rem;
+	gap: 0.125rem;
 	padding: 0.25rem;
 	white-space: nowrap;
 	background: var(--surface);
@@ -505,6 +542,16 @@ main:has(.canvas-view) {
 	border-radius: var(--radius-md);
 	box-shadow: var(--shadow-sm);
 	pointer-events: auto;
+}
+
+/* Inside a floating bar, buttons are plain until the pointer is on them: the bar is the frame, not each button. */
+.toolbar-group button:not(.swatch, [aria-pressed="true"]) {
+	border-color: transparent;
+	background: transparent;
+}
+
+.toolbar-group button:not(.swatch, [aria-pressed="true"]):hover:not(:disabled) {
+	background: var(--surface-inset);
 }
 
 .board-controls {
@@ -721,13 +768,25 @@ main:has(.canvas-view) {
 .canvas-view .details-actions {
 	display: flex;
 	flex-wrap: wrap;
-	row-gap: 0.25rem;
+	gap: 0.25rem;
 }
 
+/* Compact, so Edit, Connect, Lay out and Delete fit on one line of the panel. */
+.canvas-view .details-actions button {
+	padding: 0.25rem 0.5rem;
+	font-size: var(--text-sm);
+}
+
+/* Delete: quiet red text, clearer under the pointer. */
 .details-actions .entity-delete {
 	margin-left: auto;
 	color: var(--error);
-	border-color: var(--error);
+	border-color: transparent;
+	background: transparent;
+}
+
+.details-actions .entity-delete:hover:not(:disabled) {
+	background: var(--error-tint);
 }
 
 /* A reference tag on a card whose entity isn't on the board: dragging it puts that card here (see the canvas). */
