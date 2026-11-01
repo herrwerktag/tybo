@@ -562,7 +562,7 @@ test("the Entities page filters by tag, remembers it, tags new entities with it,
 
 test("the board's side panel filters entities by tag", async () => {
 	const root = await startApp(tagged, "#boards");
-	const panelNames = () => [...root.querySelectorAll(".panel-list .panel-item")].map((n) => n.textContent?.trim());
+	const panelNames = () => [...root.querySelectorAll(".panel-list .panel-item > :first-child")].map((n) => n.textContent?.trim());
 	assert.equal(panelNames().length, 3);
 	choose(tagSelectIn(root.querySelector(".panel-filters"))!, "Romance");
 	assert.deepEqual(panelNames(), ["Emma"]);

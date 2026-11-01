@@ -12,8 +12,10 @@ export const ENTITY_MIME = "application/x-entity-id";
 const PANEL_TAG_KEY = "canvas-panel-tag";
 
 /**
- * The editor's side panel: the entities, by type, to drag onto the board (`board`, whose cards it counts), found by
- * name, type and tag. Hovering or focusing one shows its card beside it (`preview`). Its fold button calls `onHide`.
+ * The editor's side panel: the entities, by type, to drag onto the board (`board`), found by name, type and tag, or
+ * only those still missing there. What has no card on the board is marked, and each type says how many of its
+ * entities are missing; what is there already is quieter. Hovering or focusing one shows its card beside it
+ * (`preview`). Its fold button calls `onHide`.
  */
 export function entityPanel(
 	store: BoardStore,
@@ -23,9 +25,11 @@ export function entityPanel(
 	// Scrolling the list would leave the preview beside an entity no longer there (scrolling to a focused one doesn't).
 	element.addEventListener("wheel", preview.hide, { passive: true });
 
-	// Search and type filter for the side panel, kept for this visit only; the tag filter is remembered (see build).
+	// Search, type filter and "only missing" for the side panel, kept for this visit only; the tag filter is
+	// remembered (see build).
 	let query = "";
 	let typeId: string | null = null;
+	let onlyMissing = false;
 	let tag: string | null = null;
 	/** The list below the panel's controls; re-rendered on its own, so typing in the search keeps focus. */
 	const list = el("div", { className: "panel-list" });
@@ -71,7 +75,19 @@ export function entityPanel(
 			render();
 		});
 		tag = byTag.tag;
-		const entityFilters = el("div", { className: "panel-filters" }, search, typeFilter, ...(tags.length > 0 ? [byTag.select] : []));
+		const missingFilter = el(
+			"label",
+			{ className: "checkbox-setting panel-missing-filter" },
+			el("input", {
+				type: "checkbox",
+				onchange: (e) => {
+					onlyMissing = (e.target as HTMLInputElement).checked;
+					render();
+				},
+			}),
+			` ${text.onlyMissing}`,
+		);
+		const entityFilters = el("div", { className: "panel-filters" }, search, typeFilter, ...(tags.length > 0 ? [byTag.select] : []), missingFilter);
 		element.replaceChildren(
 			el("div", { className: "panel-header" }, el("h2", {}, dataText.entities), toggle),
 			el("p", { className: "muted" }, text.dragOntoCanvas),
@@ -83,32 +99,35 @@ export function entityPanel(
 	function render(): void {
 		if (readOnly) return; // no side panel in the viewer
 		preview.hide(); // its entity's item is about to be replaced
-		const cardCounts = new Map<string, number>();
-		for (const card of board().cards) cardCounts.set(card.entityId, (cardCounts.get(card.entityId) ?? 0) + 1);
+		const placed = new Set(board().cards.map((card) => card.entityId));
 		const matches = filterEntities(store.data.entities, { query, typeId, tag });
 		const groups = store.data.types
-			.map((type) => ({ type, entities: matches.filter((e) => e.typeId === type.id) }))
+			.map((type) => {
+				const ofType = matches.filter((e) => e.typeId === type.id);
+				const missing = ofType.filter((e) => !placed.has(e.id)).length;
+				return { type, all: ofType.length, missing, entities: onlyMissing ? ofType.filter((e) => !placed.has(e.id)) : ofType };
+			})
 			.filter((g) => g.entities.length > 0);
 
-		const empty = store.data.entities.length === 0 ? text.noEntitiesYet : text.noMatches;
+		const empty = store.data.entities.length === 0 ? text.noEntitiesYet : onlyMissing && matches.length > 0 ? text.nothingMissing : text.noMatches;
 		list.replaceChildren(
 			...(groups.length === 0 ? [el("p", { className: "muted" }, empty)] : []),
-			...groups.map(({ type, entities }) =>
+			...groups.map(({ type, all, missing, entities }) =>
 				el(
 					"div",
 					{ className: "panel-group" },
-					el("h3", {}, typeDot(type.color), type.name),
+					el("h3", {}, typeDot(type.color), type.name, ...(missing > 0 ? [el("span", { className: "panel-group-missing" }, text.missingOf(missing, all))] : [])),
 					el(
 						"ul",
 						{},
 						...entities.map((entity) => {
-							const count = cardCounts.get(entity.id) ?? 0;
+							const isPlaced = placed.has(entity.id);
 							const item = el(
 								"li",
-								{ className: count > 0 ? "panel-item placed" : "panel-item", draggable: true },
+								{ className: isPlaced ? "panel-item placed" : "panel-item", draggable: true },
 								el("span", {}, entity.name),
-								// Always on its own line below the name.
-								...(count > 0 ? [el("span", { className: "panel-item-note muted" }, text.onCanvas(count))] : []),
+								// At the right, or on its own line below a long name.
+								...(isPlaced ? [] : [el("span", { className: "panel-item-note" }, text.missing)]),
 							);
 							preview.attach(item, entity.id, { beside: true });
 							item.addEventListener("dragstart", (e) => {
