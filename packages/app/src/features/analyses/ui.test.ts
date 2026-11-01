@@ -82,10 +82,23 @@ test("Analyses: an analysis set up step by step lists the rows grouped, is saved
 		{
 			name: text.defaultAnalysisName(1),
 			typeId: "activity",
-			groups: [[{ propertyId: "role", direction: "forward" }]],
+			groups: [{ path: [{ propertyId: "role", direction: "forward" }], hideEmpty: false }],
 			columns: [[{ propertyId: "process", direction: "forward" }]],
 		},
 	]);
+
+	// The level can leave out the rows it leads nowhere from: the group without a value goes, and the count with it.
+	const hideEmpty = byText<HTMLLabelElement>(root, ".path-list label", text.onlyWithValue).querySelector("input")!;
+	hideEmpty.checked = true;
+	hideEmpty.dispatchEvent(new Event("change"));
+	assert.deepEqual([...root.querySelectorAll(".analysis-result h3")].map((h) => h.textContent), [`Developer${text.analysisCount(1)}`]);
+	assert.equal(root.querySelector(".analysis-result > p")?.textContent, text.analysisCount(1));
+	await settle();
+	assert.deepEqual((await readSaved()).analyses[0]!.groups, [{ path: [{ propertyId: "role", direction: "forward" }], hideEmpty: true }]);
+	const showAll = byText<HTMLLabelElement>(root, ".path-list label", text.onlyWithValue).querySelector("input")!;
+	showAll.checked = false;
+	showAll.dispatchEvent(new Event("change"));
+	assert.equal(root.querySelectorAll(".analysis-result h3").length, 2, "unticked, all rows are back");
 
 	// Hovering (or focusing) an entity shows its card; clicking it, its details beside, where Edit shows its form.
 	const delivery = byText<HTMLElement>(root, ".analysis-result .entity-link", "Delivery");

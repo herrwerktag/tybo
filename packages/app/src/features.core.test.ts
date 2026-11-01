@@ -218,6 +218,16 @@ test("data saved before versions existed loads without a problem, and saving goe
 	assert.equal("version" in store.data, false);
 });
 
+test("format 13 makes each grouping path of an analysis a level showing every row; columns stay paths", () => {
+	const path = [{ propertyId: "p", direction: "forward" }];
+	const raw = { version: 12, analyses: [{ id: "a", name: "A", typeId: "t", traitId: null, groups: [path, []], columns: [path] }, "nonsense"] };
+	const migrated = migrate(raw as never) as unknown as { analyses: unknown[] };
+	assert.deepEqual(migrated.analyses, [
+		{ id: "a", name: "A", typeId: "t", traitId: null, groups: [{ path, hideEmpty: false }, { path: [], hideEmpty: false }], columns: [path] },
+		"nonsense",
+	]);
+});
+
 test("migrate runs one step per version, in order, from the saved version up", () => {
 	const steps = {
 		0: (d: Record<string, unknown>) => ({ ...d, log: [...(d.log as string[]), "0→1"] }),

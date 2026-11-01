@@ -10,9 +10,11 @@ import {
 	deleteAnalysis,
 	groupingPaths,
 	isRoleOption,
+	normalizeLevel,
 	nextOptions,
 	pathOptions,
 	resolvePath,
+	rowTypeIds,
 	runAnalysis,
 	sameStep,
 	updateAnalysis,
@@ -20,6 +22,7 @@ import {
 	type AnalysisGroup,
 	type AnalysisRow,
 	type AnalysisValue,
+	type GroupLevel,
 	type PathFrom,
 	type PathOption,
 	type PathStep,
@@ -187,13 +190,15 @@ export function analysisView(store: DataStore): HTMLElement {
 		);
 		toggle.dataset.focusKey = "setup-toggle";
 		const paths = (list: PathStep[][]) => (from ? list.map((path) => pathLabel(store.data, from, path)).join(", ") : "");
+		const levels = (list: GroupLevel[]) =>
+			from ? list.map((level) => pathLabel(store.data, from, level.path) + (level.hideEmpty ? ` (${text.onlyWithValue})` : "")).join(", ") : "";
 		const trait = store.data.traits.find((t) => t.id === analysis.traitId);
 		const basis = trait?.name ?? (analysis.typeId ? typeName(analysis.typeId) : "—");
 		const summary = el(
 			"p",
 			{ className: "analysis-summary muted" },
 			el("span", {}, `${text.analysisRowType}: `, el("strong", {}, basis)),
-			...(analysis.groups.length > 0 ? [el("span", {}, `${text.analysisGroups}: ${paths(analysis.groups)}`)] : []),
+			...(analysis.groups.length > 0 ? [el("span", {}, `${text.analysisGroups}: ${levels(analysis.groups)}`)] : []),
 			...(analysis.columns.length > 0 ? [el("span", {}, `${text.analysisColumns}: ${paths(analysis.columns)}`)] : []),
 		);
 		const body = el(
@@ -210,12 +215,22 @@ export function analysisView(store: DataStore): HTMLElement {
 			),
 			...(from
 				? [
-						pathList("groups", text.analysisGroups, text.analysisGroupsHint, text.addGroupLevel, analysis.groups, from, (groups) =>
-							update({ groups }),
-						),
-						pathList("columns", text.analysisColumns, text.analysisColumnsHint, text.addColumn, analysis.columns, from, (columns) =>
-							update({ columns }),
-						),
+						pathList("groups", text.analysisGroups, text.analysisGroupsHint, text.addGroupLevel, analysis.groups, from, (groups) => update({ groups }), {
+							pathOf: (level) => level.path,
+							withPath: (level, path) => ({ ...level, path }),
+							blank: { path: [], hideEmpty: false },
+							// Whether the rows the level's path leads nowhere from are left out of the whole analysis.
+							extra: (level, set, focusKey) => {
+								const box = el("input", { type: "checkbox", checked: level.hideEmpty, onchange: () => set({ ...level, hideEmpty: box.checked }) });
+								box.dataset.focusKey = focusKey;
+								return el("label", { className: "checkbox-setting path-hide-empty", title: text.onlyWithValueHint }, box, ` ${text.onlyWithValue}`);
+							},
+						}),
+						pathList("columns", text.analysisColumns, text.analysisColumnsHint, text.addColumn, analysis.columns, from, (columns) => update({ columns }), {
+							pathOf: (path) => path,
+							withPath: (_, path) => path,
+							blank: [],
+						}),
 					]
 				: []),
 		);
@@ -229,17 +244,24 @@ export function analysisView(store: DataStore): HTMLElement {
 		);
 	}
 
-	/** The paths of the groups or the columns, each editable, movable and removable, and a button adding one. */
-	function pathList(
+	/** The groups' levels or the columns, each a path (`pathOf`) editable, movable and removable, with what `extra`
+	 * adds to it, and a button adding one (`blank`). */
+	function pathList<T>(
 		key: string,
 		title: string,
 		hint: string,
 		addLabel: string,
-		paths: PathStep[][],
+		paths: T[],
 		from: PathFrom,
-		save: (paths: PathStep[][]) => void,
+		save: (paths: T[]) => void,
+		{
+			pathOf,
+			withPath,
+			blank,
+			extra,
+		}: { pathOf: (item: T) => PathStep[]; withPath: (item: T, path: PathStep[]) => T; blank: T; extra?: (item: T, set: (item: T) => void, focusKey: string) => HTMLElement },
 	): HTMLElement {
-		const add = el("button", { type: "button", onclick: () => save([...paths, []]) }, `+ ${addLabel}`);
+		const add = el("button", { type: "button", onclick: () => save([...paths, blank]) }, `+ ${addLabel}`);
 		add.dataset.focusKey = `${key}:add`;
 		return el(
 			"fieldset",
@@ -249,8 +271,9 @@ export function analysisView(store: DataStore): HTMLElement {
 			el(
 				"ol",
 				{},
-				...paths.map((path, i) => {
-					const set = (next: PathStep[]) => save(paths.map((p, j) => (j === i ? next : p)));
+				...paths.map((item, i) => {
+					const setItem = (next: T) => save(paths.map((p, j) => (j === i ? next : p)));
+					const set = (next: PathStep[]) => setItem(withPath(item, next));
 					const button = (label: string, symbol: string, focus: string, onclick: () => void, disabled = false) => {
 						const b = el("button", { type: "button", className: "icon-button", title: label, ariaLabel: label, disabled, onclick }, symbol);
 						b.dataset.focusKey = `${key}:${i}:${focus}`;
@@ -259,10 +282,11 @@ export function analysisView(store: DataStore): HTMLElement {
 					return el(
 						"li",
 						{ className: "path-row" },
-						pathEditor(`${key}:${i}`, path, from, set),
+						pathEditor(`${key}:${i}`, pathOf(item), from, set),
 						el(
 							"div",
 							{ className: "path-actions" },
+							...(extra ? [extra(item, setItem, `${key}:${i}:extra`)] : []),
 							button(text.moveUp, "↑", "up", () => save(moveItem(paths, i, i - 1)), i === 0),
 							button(text.moveDown, "↓", "down", () => save(moveItem(paths, i, i + 1)), i === paths.length - 1),
 							button(text.removePath, "✕", "remove", () => save(paths.filter((_, j) => j !== i))),
@@ -344,7 +368,12 @@ export function analysisView(store: DataStore): HTMLElement {
 		const basisName = trait?.name ?? typeName(analysis.typeId ?? "");
 		const result = runAnalysis(store.data, analysis);
 		if (result.count === 0) {
-			section.append(el("p", { className: "muted" }, trait ? text.analysisNoTraitRows(trait.name) : text.analysisNoRows(basisName)));
+			// Rows there are, but the levels hiding those without a value left none.
+			const hiding = analysis.groups.filter((level) => level.hideEmpty).map((level) => pathLabel(store.data, from, level.path));
+			const rowTypes = new Set(rowTypeIds(store.data, analysis));
+			const hidden = hiding.length > 0 && store.data.entities.some((e) => rowTypes.has(e.typeId));
+			const message = hidden ? text.analysisAllHidden(hiding.join(", ")) : trait ? text.analysisNoTraitRows(trait.name) : text.analysisNoRows(basisName);
+			section.append(el("p", { className: "muted" }, message));
 			return section;
 		}
 		const exportMarkdown = () => {
@@ -471,12 +500,15 @@ export const ANALYSIS_HISTORY: UnitDescriber<DataStore> = {
 		const traitId = typeof value.traitId === "string" ? value.traitId : null;
 		const from = analysisFrom(store.data, { typeId, traitId });
 		const paths = (list: PathStep[][]) => (from === null ? "" : list.map((path) => pathLabel(store.data, from, path)).join(" / "));
+		// A write before grouping levels hid rows (format 12) holds bare paths.
+		const levels = value.groups.map(normalizeLevel);
+		const levelText = from === null ? "" : levels.map((level) => pathLabel(store.data, from, level.path) + (level.hideEmpty ? ` (${text.onlyWithValue})` : "")).join(" / ");
 		const basis = traitId !== null ? store.data.traits.find((t) => t.id === traitId) : typeId !== null ? store.data.types.find((t) => t.id === typeId) : null;
 		return {
 			name: value.name,
 			fields: [
 				{ label: text.analysisRowType, text: basis === null ? "" : (basis?.name ?? "?") },
-				{ label: text.analysisGroups, text: paths(value.groups as PathStep[][]) },
+				{ label: text.analysisGroups, text: levelText },
 				{ label: text.analysisColumns, text: paths(value.columns as PathStep[][]) },
 			],
 		};

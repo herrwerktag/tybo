@@ -320,6 +320,19 @@ export const POSTGRES_MIGRATIONS: readonly Migration[] = [
 			await tx`update workspaces set data_version = 12`;
 		},
 	},
+	{
+		version: 18,
+		name: "grouping levels",
+		async up(tx) {
+			// Each grouping path of an analysis becomes a level: the path, and whether it hides the rows without a
+			// value — none did before (format 13).
+			await tx`update analyses set group_paths = (
+				select coalesce(jsonb_agg(jsonb_build_object('path', level.path, 'hideEmpty', false) order by level.position), '[]'::jsonb)
+				from jsonb_array_elements(analyses.group_paths) with ordinality as level(path, position)
+			) where jsonb_typeof(group_paths) = 'array'`;
+			await tx`update workspaces set data_version = 13`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */

@@ -44,7 +44,7 @@ function state(): AppData {
 		],
 		traits: [{ id: "trait-1", name: "Kurz", roles: [{ id: "role-1", name: "Notiz", kind: "text", options: [] }], bindings: { "type-person": { "role-1": { field: "content" } } } }],
 		analyses: [
-			{ id: "ana-1", name: "Rollen", typeId: null, traitId: null, groups: [[{ propertyId: "gone", direction: "inverse" }]], columns: [] },
+			{ id: "ana-1", name: "Rollen", typeId: null, traitId: null, groups: [{ path: [{ propertyId: "gone", direction: "inverse" }], hideEmpty: false }], columns: [] },
 		],
 	};
 }

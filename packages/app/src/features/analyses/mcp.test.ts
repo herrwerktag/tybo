@@ -28,6 +28,22 @@ test("analyses are made, changed and deleted with their paths named the way run_
 	assert.deepEqual((await call("describe_workspace")).analyses, []);
 });
 
+test("a grouping level can hide the rows it leads nowhere from; run_analysis and describe_workspace say so", async () => {
+	const { call, refusal } = await withPeople();
+	await call("create_entity", { type: "Task", name: "Nobody's", values: {} });
+	const { analysis } = await call("create_analysis", { name: "Owned", type: "Task", groups: [{ path: "Owner", hideEmpty: true }] });
+	assert.deepEqual(analysis.groupedBy, [{ path: "Owner", hideEmpty: true }]);
+	const result = await call("run_analysis", { analysis: "Owned" });
+	assert.equal(result.count, 1);
+	assert.deepEqual(result.groups.map((g: { value: string | null }) => g.value), ["Ada"]);
+	assert.deepEqual((await call("describe_workspace")).analyses[0].groupedBy, [{ path: "Owner", hideEmpty: true }]);
+
+	await call("update_analysis", { analysis: "Owned", groups: [{ path: ["Owner"] }] });
+	assert.equal((await call("run_analysis", { analysis: "Owned" })).count, 2, "without hideEmpty a level shows all rows");
+	assert.match(await refusal("update_analysis", { analysis: "Owned", groups: [{ path: "Owner", hideEmpty: "yes" }] }), /groups\[0\]\.hideEmpty must be true or false/);
+	assert.match(await refusal("update_analysis", { analysis: "Owned", groups: [{ path: "Boss" }] }), /groups\[0\]\.path: there is no step "Boss"/);
+});
+
 test("run_analysis shows at most `limit` rows, keeping the groups' counts whole", async () => {
 	const { call } = await withPeople();
 	await call("create_entities", { entities: ["A", "B", "C"].map((name) => ({ type: "Task", name, values: { Owner: "Alan" } })) });
@@ -47,7 +63,7 @@ test("run_analysis answers the analysis's groups and columns by name", async () 
 	const analysis = addAnalysis(store, "Tasks by owner");
 	updateAnalysis(store, analysis.id, {
 		typeId: task!.id,
-		groups: [[{ propertyId: owner.id, direction: "forward" }]],
+		groups: [{ path: [{ propertyId: owner.id, direction: "forward" }], hideEmpty: false }],
 		columns: [[{ propertyId: owner.id, direction: "forward" }, { propertyId: person!.properties[0]!.id, direction: "forward" }]],
 	});
 	await store.saved();

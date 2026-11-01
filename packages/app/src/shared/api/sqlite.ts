@@ -292,6 +292,19 @@ export const SQLITE_MIGRATIONS: readonly Migration[] = [
 			db.exec("update workspaces set data_version = 12");
 		},
 	},
+	{
+		version: 15,
+		up(db) {
+			// As Postgres's step 18.
+			db.exec(`
+				update analyses set group_paths = (
+					select coalesce(json_group_array(json_object('path', json(level.value), 'hideEmpty', json('false'))), '[]')
+					from (select value from json_each(analyses.group_paths) order by key) as level
+				) where json_valid(group_paths) and json_type(group_paths) = 'array';
+				update workspaces set data_version = 13;
+			`);
+		},
+	},
 ];
 
 /** Runs `work` in one transaction: all of it written, or — when it throws — none of it. */

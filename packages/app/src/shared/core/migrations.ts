@@ -10,7 +10,7 @@ import { ULID_ENCODING } from "./ulid.js";
  * and sets `workspaces.data_version` to it. Saves write only the units that changed, so stored data never catches
  * up by itself: without that step, unchanged units stay in the old format under a version that says otherwise. The
  * API's tests fail as long as the step is missing. */
-export const DATA_VERSION = 12;
+export const DATA_VERSION = 13;
 
 /** A 53-bit string hash, so several seeds give enough independent bits for a ULID's 130. */
 function cyrb53(text: string, seed: number): number {
@@ -119,6 +119,17 @@ export const MIGRATIONS: Readonly<Record<number, (data: SavedData) => SavedData>
 	10: (data) => data,
 	// Version 12 gives a trait's reference roles conditions; normalize() reads a role without one as having none.
 	11: (data) => data,
+	// Version 13 makes each grouping level of an analysis its path and whether it hides the rows it leads nowhere from;
+	// a path before shows them all.
+	12: (data) => {
+		if (!Array.isArray(data.analyses)) return data;
+		const analyses = data.analyses.map((analysis) =>
+			isRecord(analysis) && Array.isArray(analysis.groups)
+				? { ...analysis, groups: analysis.groups.map((path) => (Array.isArray(path) ? { path, hideEmpty: false } : path)) }
+				: analysis,
+		);
+		return { ...data, analyses };
+	},
 };
 
 /** The version saved data says it's in; data without a (valid) version is from before versions existed. */
