@@ -1,5 +1,5 @@
 import { freeName, moveItem, ulid } from "../../shared/core/index.js";
-import { el, emptyState, isRecord, refused, sharedText, type SearchSource, type UnitDescriber } from "../../shared/ui/index.js";
+import { dragHandle, el, emptyState, isRecord, refused, reorderable, setting, sharedText, typeDot, type SearchSource, type UnitDescriber } from "../../shared/ui/index.js";
 import type { DataStore, EntityType } from "../data/core.js";
 import type { DataSection, TypeNote } from "../data/ui.js";
 import { text as dataText } from "../data/texts.js";
@@ -27,6 +27,9 @@ import {
 import { text } from "./texts.js";
 
 const KINDS: readonly RoleKind[] = ["text", "options", "reference"];
+/** Keeps roles, and a role's values, from being dragged into another list. */
+const ROLE_MIME = "application/x-trait-role-index";
+const VALUE_MIME = "application/x-trait-value-index";
 
 /** A trait's problem in the form's words. */
 function problem(error: TraitError): string {
@@ -50,6 +53,12 @@ function problem(error: TraitError): string {
 	}
 }
 
+/** A role of a trait in short, for its line in the list's entry: the values it offers, or what it is. */
+function describeRole(role: RoleDef): string {
+	const values = role.kind === "options" ? role.options.map((o) => o.label).join(" / ") : "";
+	return `${role.name}: ${values || dataText.kinds[role.kind]}`;
+}
+
 /** How a field playing a role reads in the form: a built-in field, a property, or another type's reference. */
 function fieldLabel(types: readonly EntityType[], fits: FittingBinding): string {
 	if ("field" in fits) return fits.field === "name" ? sharedText.name : fits.field === "content" ? dataText.content : dataText.description;
@@ -65,8 +74,9 @@ function keyed<T extends HTMLElement>(element: T, key: string): T {
 
 /**
  * A trait's form: its name, its roles (each a name and a kind, an options role with its values, a reference role with
- * its condition) and, per type bearing it, what plays each role there. Every change is saved as it is made, as in an analysis's setup; one the trait
- * couldn't be saved with is refused at its field.
+ * its condition) and, per type bearing it, what plays each role there. Every change is saved as it is made, as in an
+ * analysis's setup; one the trait couldn't be saved with is refused at its field. Roles are cards as a type's properties
+ * are, to reorder by their handle; the types bearing the trait follow, each with what plays the roles there.
  */
 export function traitForm(store: DataStore, trait: Trait): HTMLElement {
 	const types = store.data.types;
@@ -79,6 +89,69 @@ export function traitForm(store: DataStore, trait: Trait): HTMLElement {
 	};
 	const setRole = (index: number, role: RoleDef, input?: HTMLInputElement | HTMLSelectElement) => saveRoles(trait.roles.map((r, i) => (i === index ? role : r)), input);
 
+	/** A reference role's condition: the role asked about, then the values or whether it has targets. */
+	const conditionSetting = (role: RoleDef, index: number): HTMLElement => {
+		const condition = role.condition;
+		const asked = condition ? resolveCondition(store.data.traits, condition) : null;
+		const missing = condition !== undefined && asked === null;
+		const setCondition = (next: Condition | undefined, input?: HTMLInputElement | HTMLSelectElement) => {
+			const { condition: _, ...without } = role;
+			setRole(index, next ? { ...without, condition: next } : without, input);
+		};
+		const askable = store.data.traits.flatMap((t) => t.roles.filter((r) => r.kind !== "text").map((r) => ({ trait: t, role: r })));
+		const which = keyed(
+			el(
+				"select",
+				{
+					ariaLabel: text.condition,
+					className: missing ? "invalid" : "",
+					onchange: () => {
+						const chosen = askable.find(({ trait: t, role: r }) => `${t.id}:${r.id}` === which.value);
+						if (!chosen) return setCondition(undefined);
+						const base = { traitId: chosen.trait.id, roleId: chosen.role.id };
+						setCondition(chosen.role.kind === "options" ? { ...base, values: chosen.role.options.slice(0, 1).map((o) => o.id) } : { ...base, hasTargets: true }, which);
+					},
+				},
+				...(missing ? [el("option", { value: "missing", selected: true }, text.notThere)] : []),
+				el("option", { value: "", selected: condition === undefined }, text.noCondition),
+				...askable.map(({ trait: t, role: r }) =>
+					el("option", { value: `${t.id}:${r.id}`, selected: !missing && condition?.traitId === t.id && condition.roleId === r.id }, `${t.name} › ${r.name}`),
+				),
+			),
+			`role:${role.id}:condition`,
+		);
+		const details: HTMLElement[] = [];
+		if (asked && condition && "values" in condition) {
+			details.push(el("span", { className: "setting-label" }, text.conditionValues(asked.role.name)));
+			for (const option of asked.role.options) {
+				const held = asked.values.includes(option.id);
+				const box = keyed(
+					el("input", {
+						type: "checkbox",
+						checked: held,
+						// The last value stays: a condition without values would let nothing through.
+						disabled: held && asked.values.length === 1,
+						onchange: () => setCondition({ ...condition, values: box.checked ? [...asked.values, option.id] : asked.values.filter((v) => v !== option.id) }),
+					}),
+					`role:${role.id}:condition:${option.id}`,
+				);
+				details.push(el("label", { className: "checkbox-setting" }, box, ` ${option.label}`));
+			}
+		} else if (asked && condition && "hasTargets" in condition) {
+			const targets = keyed(
+				el(
+					"select",
+					{ ariaLabel: text.conditionHasTargets, onchange: () => setCondition({ ...condition, hasTargets: targets.value === "yes" }) },
+					el("option", { value: "yes", selected: condition.hasTargets }, text.conditionHasTargets),
+					el("option", { value: "no", selected: !condition.hasTargets }, text.conditionNoTargets),
+				),
+				`role:${role.id}:condition:targets`,
+			);
+			details.push(targets);
+		}
+		return setting(text.condition, el("div", { className: "trait-condition" }, which, ...details));
+	};
+
 	const name = keyed(
 		el("input", {
 			value: trait.name,
@@ -90,23 +163,17 @@ export function traitForm(store: DataStore, trait: Trait): HTMLElement {
 		}),
 		"trait-name",
 	);
-	const remove = el(
-		"button",
-		{
-			type: "button",
-			onclick: () => {
-				if (confirm(text.confirmDeleteTrait(trait.name))) deleteTrait(store, trait.id);
-			},
-		},
-		text.deleteTrait,
-	);
 
-	const iconButton = (label: string, symbol: string, key: string, onclick: () => void, disabled = false) =>
-		keyed(el("button", { type: "button", className: "icon-button", title: label, ariaLabel: label, disabled, onclick }, symbol), key);
-
-	const roleRow = (role: RoleDef, index: number) => {
+	const roleRow = (role: RoleDef, index: number): HTMLElement => {
+		const label = role.name.trim() || String(index + 1);
+		const handle = dragHandle(text.moveRole(label), `role:${role.id}`);
 		const roleName = keyed(
-			el("input", { value: role.name, ariaLabel: sharedText.name, onchange: () => setRole(index, { ...role, name: roleName.value }, roleName) }),
+			el("input", {
+				value: role.name,
+				placeholder: sharedText.name,
+				ariaLabel: text.roleName,
+				onchange: () => setRole(index, { ...role, name: roleName.value }, roleName),
+			}),
 			`role:${role.id}:name`,
 		);
 		const kind = keyed(
@@ -123,138 +190,128 @@ export function traitForm(store: DataStore, trait: Trait): HTMLElement {
 			),
 			`role:${role.id}:kind`,
 		);
-		// An options role's values on a line of their own, below its name and the buttons.
-		const valuesLine = () => {
-			const line = el(
-				"div",
-				{ className: "path-editor" },
-				el("span", { className: "muted" }, `${text.roleValues}:`),
-				...role.options.map((option, i) => {
-					const input = keyed(
-						el("input", {
-							value: option.label,
-							ariaLabel: text.roleValues,
-							onchange: () =>
-								setRole(index, { ...role, options: role.options.map((o, j) => (j === i ? { ...o, label: input.value } : o)) }, input),
-						}),
-						`role:${role.id}:value:${option.id}`,
-					);
-					return el(
-						"span",
-						{},
-						input,
-						iconButton(
-							text.removeValue,
-							"✕",
-							`role:${role.id}:value:${option.id}:remove`,
-							() => setRole(index, { ...role, options: role.options.filter((o) => o.id !== option.id) }),
-							role.options.length === 1,
-						),
-					);
-				}),
-				keyed(
-					el(
-						"button",
-						{
-							type: "button",
-							onclick: () =>
-								setRole(index, {
-									...role,
-									options: [...role.options, { id: ulid(), label: freeName(role.options.map((o) => ({ id: o.id, name: o.label })), text.defaultValueName) }],
-								}),
-						},
-						`+ ${text.addValue}`,
-					),
-					`role:${role.id}:add-value`,
-				),
-			);
-			line.style.flexBasis = "100%";
-			return line;
-		};
-		// A reference role's condition on a line of its own: the role asked about, then the values or whether it has targets.
-		const conditionLine = () => {
-			const condition = role.condition;
-			const asked = condition ? resolveCondition(store.data.traits, condition) : null;
-			const missing = condition !== undefined && asked === null;
-			const setCondition = (next: Condition | undefined, input?: HTMLInputElement | HTMLSelectElement) => {
-				const { condition: _, ...without } = role;
-				setRole(index, next ? { ...without, condition: next } : without, input);
-			};
-			const askable = store.data.traits.flatMap((t) => t.roles.filter((r) => r.kind !== "text").map((r) => ({ trait: t, role: r })));
-			const which = keyed(
-				el(
-					"select",
-					{
-						ariaLabel: text.condition,
-						className: missing ? "invalid" : "",
-						onchange: () => {
-							const chosen = askable.find(({ trait: t, role: r }) => `${t.id}:${r.id}` === which.value);
-							if (!chosen) return setCondition(undefined);
-							const base = { traitId: chosen.trait.id, roleId: chosen.role.id };
-							setCondition(chosen.role.kind === "options" ? { ...base, values: chosen.role.options.slice(0, 1).map((o) => o.id) } : { ...base, hasTargets: true }, which);
-						},
-					},
-					...(missing ? [el("option", { value: "missing", selected: true }, text.notThere)] : []),
-					el("option", { value: "", selected: condition === undefined }, text.noCondition),
-					...askable.map(({ trait: t, role: r }) =>
-						el("option", { value: `${t.id}:${r.id}`, selected: !missing && condition?.traitId === t.id && condition.roleId === r.id }, `${t.name} › ${r.name}`),
-					),
-				),
-				`role:${role.id}:condition`,
-			);
-			const details: HTMLElement[] = [];
-			if (asked && condition && "values" in condition) {
-				details.push(el("span", { className: "muted" }, text.conditionValues(asked.role.name)));
-				for (const option of asked.role.options) {
-					const held = asked.values.includes(option.id);
-					const box = keyed(
-						el("input", {
-							type: "checkbox",
-							checked: held,
-							// The last value stays: a condition without values would let nothing through.
-							disabled: held && asked.values.length === 1,
-							onchange: () => setCondition({ ...condition, values: box.checked ? [...asked.values, option.id] : asked.values.filter((v) => v !== option.id) }),
-						}),
-						`role:${role.id}:condition:${option.id}`,
-					);
-					details.push(el("label", {}, box, ` ${option.label}`));
-				}
-			} else if (asked && condition && "hasTargets" in condition) {
-				const targets = keyed(
-					el(
-						"select",
-						{ ariaLabel: text.conditionHasTargets, onchange: () => setCondition({ ...condition, hasTargets: targets.value === "yes" }) },
-						el("option", { value: "yes", selected: condition.hasTargets }, text.conditionHasTargets),
-						el("option", { value: "no", selected: !condition.hasTargets }, text.conditionNoTargets),
-					),
-					`role:${role.id}:condition:targets`,
+		const removeButton = keyed(
+			el(
+				"button",
+				{
+					type: "button",
+					className: "property-remove",
+					title: text.removeRole,
+					ariaLabel: text.removeRoleNamed(label),
+					onclick: () => saveRoles(trait.roles.filter((r) => r.id !== role.id)),
+				},
+				"✕",
+			),
+			`role:${role.id}:remove`,
+		);
+		// Below the line, as a property's settings: an options role's values (each to drag into another place), a
+		// reference role's condition.
+		const settings: HTMLElement[] = [];
+		if (role.kind === "options") {
+			const values = role.options.map((option, i) => {
+				const valueLabel = option.label.trim() || String(i + 1);
+				const valueHandle = dragHandle(text.moveValue(valueLabel), `role:${role.id}:value:${option.id}`);
+				const input = keyed(
+					el("input", {
+						value: option.label,
+						ariaLabel: text.roleValues,
+						onchange: () =>
+							setRole(index, { ...role, options: role.options.map((o, j) => (j === i ? { ...o, label: input.value } : o)) }, input),
+					}),
+					`role:${role.id}:value:${option.id}`,
 				);
-				details.push(targets);
-			}
-			const line = el("div", { className: "path-editor" }, el("span", { className: "muted" }, `${text.condition}:`), which, ...details);
-			line.style.flexBasis = "100%";
-			return line;
-		};
-		return el(
-			"li",
-			{ className: "path-row" },
-			el("div", { className: "path-editor" }, roleName, kind),
+				const item = el(
+					"div",
+					{ className: "option-row" },
+					valueHandle,
+					input,
+					keyed(
+						el(
+							"button",
+							{
+								type: "button",
+								className: "property-remove",
+								title: text.removeValue,
+								ariaLabel: text.removeValueNamed(valueLabel),
+								// The last value stays: a choice without values would let nothing through.
+								disabled: role.options.length === 1,
+								onclick: () => setRole(index, { ...role, options: role.options.filter((o) => o.id !== option.id) }),
+							},
+							"✕",
+						),
+						`role:${role.id}:value:${option.id}:remove`,
+					),
+				);
+				reorderable(item, valueHandle, {
+					index: i,
+					count: role.options.length,
+					mime: VALUE_MIME,
+					move: (from, to) => {
+						saveRoles(trait.roles.map((r, j) => (j === index ? { ...r, options: moveItem(r.options, from, to) } : r)));
+					},
+				});
+				return item;
+			});
+			settings.push(
+				setting(
+					text.roleValues,
+					el(
+						"div",
+						{ className: "option-list" },
+						...values,
+						keyed(
+							el(
+								"button",
+								{
+									type: "button",
+									onclick: () =>
+										setRole(index, {
+											...role,
+											options: [...role.options, { id: ulid(), label: freeName(role.options.map((o) => ({ id: o.id, name: o.label })), text.defaultValueName) }],
+										}),
+								},
+								text.addValue,
+							),
+							`role:${role.id}:add-value`,
+						),
+					),
+				),
+			);
+		}
+		if (role.kind === "reference") settings.push(conditionSetting(role, index));
+		const open = role.kind !== "text";
+		const row = el(
+			"div",
+			{ className: open ? "property open" : "property" },
 			el(
 				"div",
-				{ className: "path-actions" },
-				iconButton(text.moveUp, "↑", `role:${role.id}:up`, () => saveRoles(moveItem(trait.roles, index, index - 1)), index === 0),
-				iconButton(text.moveDown, "↓", `role:${role.id}:down`, () => saveRoles(moveItem(trait.roles, index, index + 1)), index === trait.roles.length - 1),
-				iconButton(text.removeRole, "✕", `role:${role.id}:remove`, () => saveRoles(trait.roles.filter((r) => r.id !== role.id))),
+				{ className: "property-head" },
+				handle,
+				roleName,
+				el(
+					"span",
+					{ className: "role-kind" },
+					kind,
+					...(role.kind === "options" ? [el("span", { className: "muted" }, dataText.optionCount(role.options.length))] : []),
+				),
+				removeButton,
 			),
-			...(role.kind === "options" ? [valuesLine()] : []),
-			...(role.kind === "reference" ? [conditionLine()] : []),
+			...(open ? [el("div", { className: "property-settings" }, ...settings)] : []),
 		);
+		reorderable(row, handle, {
+			index,
+			count: trait.roles.length,
+			mime: ROLE_MIME,
+			move: (from, to) => saveRoles(moveItem(trait.roles, from, to)),
+		});
+		return row;
 	};
 	const addRole = keyed(
 		el(
 			"button",
 			{
 				type: "button",
+				className: "add-property",
 				onclick: () => saveRoles([...trait.roles, { id: ulid(), name: freeName(trait.roles, text.defaultRoleName), kind: "text", options: [] }]),
 			},
 			`+ ${text.addRole}`,
@@ -306,29 +363,34 @@ export function traitForm(store: DataStore, trait: Trait): HTMLElement {
 							),
 							`binding:${type.id}:${role.id}:${own.id}`,
 						);
-						return el("label", { className: "field" }, el("span", {}, text.standsFor(own.label)), to);
+						return setting(text.standsFor(own.label), to);
 					})
 				: [];
 		const hint = hints.find((h) => h.typeId === type.id && h.roleId === role.id);
 		const asked = hint && role.condition ? resolveCondition(store.data.traits, role.condition) : null;
-		const warning = hint && asked ? [el("p", { className: "muted path-hint" }, text.conditionHint(hint.typeIds.map((id) => types.find((t) => t.id === id)?.name ?? "?").join(", "), asked.trait.name))] : [];
+		const warning = hint && asked ? [el("p", { className: "muted trait-hint" }, text.conditionHint(hint.typeIds.map((id) => types.find((t) => t.id === id)?.name ?? "?").join(", "), asked.trait.name))] : [];
 		return el(
 			"li",
-			{ className: "path-row" },
-			el("div", { className: "path-editor" }, el("label", { className: "field" }, el("span", {}, role.name), select), ...values, ...warning),
+			{ className: "property" },
+			el("div", { className: "property-settings" }, setting(role.name, select), ...values),
+			...warning,
 		);
 	};
 
 	const typeSection = (type: EntityType) =>
 		el(
-			"fieldset",
-			{ className: "path-list" },
-			el("legend", {}, type.name),
-			trait.roles.length === 0 ? el("p", { className: "muted" }, text.noRolesYet) : el("ol", {}, ...trait.roles.map((role) => bindingRow(type, role))),
-			keyed(
-				el("button", { type: "button", onclick: () => updateTrait(store, trait.id, { bindings: withType(trait, type.id, false).bindings }) }, text.removeType),
-				`type:${type.id}:remove`,
+			"div",
+			{ className: "trait-bearer" },
+			el(
+				"div",
+				{ className: "trait-bearer-head" },
+				el("h4", {}, typeDot(type.color), type.name),
+				keyed(
+					el("button", { type: "button", onclick: () => updateTrait(store, trait.id, { bindings: withType(trait, type.id, false).bindings }) }, text.removeType),
+					`type:${type.id}:remove`,
+				),
 			),
+			trait.roles.length === 0 ? el("p", { className: "muted trait-hint" }, text.noRolesYet) : el("ul", {}, ...trait.roles.map((role) => bindingRow(type, role))),
 		);
 
 	const hints = conditionHints(store.data, trait);
@@ -350,14 +412,16 @@ export function traitForm(store: DataStore, trait: Trait): HTMLElement {
 	);
 
 	return el(
-		"section",
-		{ className: "analysis-setup trait-form" },
-		el("div", { className: "analysis-meta" }, el("label", { className: "field" }, el("span", {}, sharedText.name), name), remove),
-		el("p", { className: "muted path-hint" }, text.traitHint),
-		el("fieldset", { className: "path-list" }, el("legend", {}, text.roles), el("p", { className: "muted path-hint" }, text.rolesHint), el("ol", {}, ...trait.roles.map(roleRow)), addRole),
-		...(bearing.length > 0 ? [el("p", { className: "muted path-hint" }, text.bindingsHint)] : []),
-		...bearing.map(typeSection),
-		...(others.length > 0 ? [addType] : []),
+		"div",
+		{ className: "card trait-form" },
+		// Its name reads as the details' title. The traits are deleted where they stand, in the list, as the types
+		// and the entities are.
+		el("h3", {}, trait.name),
+		el("label", { className: "field" }, el("span", {}, sharedText.name), name),
+		el("h3", {}, text.roles),
+		el("div", { className: "trait-roles" }, ...trait.roles.map(roleRow), addRole),
+		...(bearing.length > 0 ? [el("h3", {}, text.bindingTypes), ...bearing.map(typeSection)] : []),
+		...(others.length > 0 ? [el("div", { className: "trait-add-type" }, addType)] : []),
 	);
 }
 
@@ -392,12 +456,44 @@ export const TRAITS_SECTION: DataSection = {
 				view.querySelector<HTMLInputElement>(".trait-form input")?.select();
 			};
 			const add = el("button", { type: "button", className: "primary", onclick: make }, text.newTrait);
+			// Each trait as a type is listed: a card with its name and how many types bear it, its roles in short
+			// below — and, under the pointer or with the focus, the button deleting it.
 			const list = el(
 				"ul",
 				{ className: "trait-list" },
-				...store.data.traits.map((trait) =>
-					el("li", {}, el("a", { href: traitRoute(trait.id), className: "trait-entry", ariaCurrent: trait.id === current?.id ? "page" : "false" }, trait.name)),
-				),
+				...store.data.traits.map((trait) => {
+					const bearers = bearingTypes(store.data.types, trait).length;
+					return el(
+						"li",
+						{ className: trait.id === current?.id ? "trait-item current" : "trait-item" },
+						el(
+							"div",
+							{ className: "trait-item-head" },
+							el("a", { href: traitRoute(trait.id), className: "trait-entry", ariaCurrent: trait.id === current?.id ? "page" : "false", title: text.openTrait(trait.name) }, trait.name),
+							el("span", { className: "trait-item-count muted" }, `${bearers} ${dataText.historyTypes(bearers)}`),
+						),
+						el(
+							"div",
+							{ className: "actions" },
+							el(
+								"button",
+								{
+									type: "button",
+									className: "property-remove",
+									title: text.deleteTrait,
+									ariaLabel: text.deleteTrait,
+									onclick: () => {
+										if (confirm(text.confirmDeleteTrait(trait.name))) deleteTrait(store, trait.id);
+									},
+								},
+								"✕",
+							),
+						),
+						trait.roles.length > 0
+							? el("ul", { className: "trait-item-summary muted" }, ...trait.roles.map((role) => el("li", {}, describeRole(role))))
+							: el("p", { className: "trait-item-summary muted" }, text.noRoles),
+					);
+				}),
 			);
 			// None yet: what a trait is, and the button making the first.
 			const shown = current ? el("div", { className: "traits-layout" }, list, traitForm(store, current)) : emptyState(text.noTraitsYet, { label: text.newTrait, run: make });

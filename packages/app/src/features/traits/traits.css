@@ -6,26 +6,206 @@
 	align-items: start;
 }
 
+/* The traits as the types are listed: one card a trait, the one being shown marked. */
 .trait-list {
 	display: grid;
+	gap: 0.5rem;
 }
 
+/* Each trait a card, as each type: its name and how many types bear it on top, its roles in short below — and,
+   under the pointer or with the focus, the button deleting it. */
+.trait-item {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	grid-template-areas:
+		"name actions"
+		"summary summary";
+	align-items: center;
+	gap: 0.35rem 0.5rem;
+	padding: 0.5rem 0.75rem;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+}
+
+/* Marked, the chosen trait's card reads as the type being edited's (see .type-item.current). */
+.trait-item.current,
+.trait-item.current:hover {
+	background: var(--highlight);
+	border-color: var(--focus);
+}
+
+.trait-item-head {
+	grid-area: name;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.25rem 0.75rem;
+	overflow-wrap: anywhere;
+}
+
+.trait-item-count {
+	font-size: var(--text-sm);
+}
+
+/* The trait's name: a link to it, underlined the way the entities' names in the table are. */
 .trait-entry {
-	display: block;
-	padding: 0.35rem 0.5rem;
-	border-radius: var(--radius-sm);
-	color: var(--text);
+	font-weight: 600;
+	color: inherit;
 	text-decoration: none;
-	overflow-wrap: break-word;
 }
 
 .trait-entry:hover {
-	background: var(--surface-inset);
+	text-decoration: underline;
+	text-underline-offset: 0.2em;
 }
 
-.trait-entry[aria-current="page"] {
-	background: var(--highlight);
+.trait-item-summary {
+	grid-area: summary;
+	display: grid;
+	gap: 0.1rem;
+	font-size: var(--text-md);
+	overflow-wrap: anywhere;
+}
+
+.trait-item .actions {
+	grid-area: actions;
+	opacity: 0;
+}
+
+.trait-item:is(:hover, :focus-within) .actions {
+	opacity: 1;
+}
+
+/* Without hover (touch), they're always there. */
+@media (hover: none) {
+	.trait-item .actions {
+		opacity: 1;
+	}
+}
+
+/* One width for the form's fields, like the types' and the entities' forms: wide enough for long values, not across
+   a wide screen. */
+.trait-form {
+	display: grid;
+	gap: 0.75rem;
+	max-width: 48rem;
+}
+
+/* The fields span the form (or their column), as the types' and the entities' forms' fields do. */
+.trait-form .field :is(input:not([type="checkbox"]), select) {
+	max-width: none;
+}
+
+/* The form's name as the details' title. */
+.trait-form h3,
+.trait-bearer-head h4 {
+	overflow-wrap: anywhere;
+}
+
+/* A type bearing the trait: its name above the button removing it again. */
+.trait-bearer-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+}
+
+.trait-bearer-head h4 {
+	font-size: var(--text-base);
 	font-weight: 600;
+}
+
+/* The roles as the types' properties: one line each, unfolded its values or condition below. */
+.trait-roles {
+	display: grid;
+	gap: 0.5rem;
+	justify-items: stretch;
+}
+
+.trait-roles .property-head {
+	grid-template-columns: auto minmax(8rem, 14rem) minmax(0, 1fr) auto;
+}
+
+.role-kind {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.25rem 0.5rem;
+	min-width: 0;
+	font-size: var(--text-sm);
+}
+
+.trait-condition {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.25rem 0.5rem;
+	min-width: 0;
+}
+
+.trait-condition select.invalid {
+	border-color: var(--error);
+	color: var(--error);
+}
+
+/* The roles' values as a property's options: handle, name, remove; adding one below. */
+.trait-roles .option-list button {
+	justify-self: start;
+}
+
+/* A type bearing the trait: its name above what plays the roles there. */
+.trait-bearer {
+	display: grid;
+	gap: 0.5rem;
+	padding-block: 0.75rem;
+	border-top: 1px solid var(--border);
+}
+
+.trait-bearer > ul {
+	display: grid;
+	gap: 0.5rem;
+}
+
+.trait-bearer > .property {
+	padding-block: 0.5rem;
+}
+
+.trait-hint {
+	font-size: var(--text-md);
+}
+
+/* Adding a type bearing the trait: where the next one comes, a select like the roles' own. */
+.trait-add-type {
+	display: grid;
+	justify-items: start;
+}
+
+/* A role's line folds before the layout does: beside the list, the form's column is narrower than the page, and the
+   kind beside the name and the buttons no longer fits there — the kinds are as wide as the card from here on. */
+@media (max-width: 50rem) {
+	.trait-roles .property-head {
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		grid-template-areas:
+			"handle name remove"
+			"handle kind kind";
+	}
+
+	.trait-roles .property-head > .drag-handle {
+		grid-area: handle;
+	}
+
+	.trait-roles .property-head > input {
+		grid-area: name;
+	}
+
+	.trait-roles .property-head > .role-kind {
+		grid-area: kind;
+	}
+
+	.trait-roles .property-head > .property-remove {
+		grid-area: remove;
+	}
 }
 
 @media (max-width: 40rem) {

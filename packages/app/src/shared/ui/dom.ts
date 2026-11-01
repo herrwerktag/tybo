@@ -40,6 +40,11 @@ export function uniqueFileNames(files: readonly { name: string; contents: string
 	});
 }
 
+/** A small label above a control, for the settings inside a card (a property's, a role's). */
+export function setting(label: string, control: HTMLElement): HTMLElement {
+	return el("label", { className: "field" }, el("span", { className: "setting-label" }, label), control);
+}
+
 /** A small colored circle marking an entity type. */
 export function typeDot(color: string): HTMLElement {
 	const dot = el("span", { className: "type-dot", ariaHidden: "true" });

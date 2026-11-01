@@ -1,5 +1,5 @@
 import { moveItem } from "../../../shared/core/index.js";
-import { dragHandle, el, icon, reorderable } from "../../../shared/ui/index.js";
+import { dragHandle, el, icon, reorderable, setting } from "../../../shared/ui/index.js";
 import {
 	CARD_DISPLAYS,
 	LINE_ARROWS,
@@ -32,11 +32,6 @@ export interface PropertyRows {
 	setOpen: (prop: DraftProperty, open: boolean) => void;
 	/** Focuses a drag handle by its key once the form is drawn anew (see `dragHandle`). */
 	focusHandle: (key: string) => void;
-}
-
-/** A small label above a control, for the settings inside a property card. */
-function setting(label: string, control: HTMLElement): HTMLElement {
-	return el("label", { className: "field" }, el("span", { className: "setting-label" }, label), control);
 }
 
 /** The target types of a reference as tags in their colors (× removes one), and a select adding another. */
