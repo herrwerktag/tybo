@@ -2,6 +2,7 @@ import { byText, goTo, readSaved, settle, startApp } from "../../test-app.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DATA_VERSION } from "../../shared/core/index.js";
+import { sharedText } from "../../shared/ui/index.js";
 import { text as dataText } from "../data/texts.js";
 import { text } from "./texts.js";
 
@@ -89,4 +90,28 @@ test("Traits: a reference role's condition is set in the form, refused when it w
 	byText<HTMLButtonElement>(byText<HTMLElement>(form(), "legend", "Frage").parentElement!, "button", text.removeType).click();
 	goTo("#traits/blockade");
 	assert.ok(byText(form(), "p", text.conditionHint("Frage", "Fortschritt")));
+});
+
+test("Traits: a type's form shows the traits it bears as links to them", async () => {
+	const type = (id: string, name: string) => ({ id, name, color: "#c4dafa", contentTemplate: "", properties: [] });
+	const root = await startApp(
+		{
+			version: DATA_VERSION,
+			types: [type("task", "Aufgabe"), type("note", "Notiz")],
+			entities: [],
+			boards: [],
+			traits: [
+				{ id: "progress", name: "Fortschritt", roles: [], bindings: { task: {} } },
+				{ id: "blockade", name: "Blockade", roles: [], bindings: { task: {} } },
+			],
+		},
+		"#types",
+	);
+	const edit = (name: string) => byText(byText(root, ".type-name", name).closest(".type-item")!, "button", dataText.edit).click();
+	const chips = () => [...root.querySelectorAll<HTMLAnchorElement>("#type-form .type-traits a")].map((a) => [a.textContent, a.getAttribute("href")]);
+	edit("Aufgabe");
+	assert.deepEqual(chips(), [["Fortschritt", "#traits/progress"], ["Blockade", "#traits/blockade"]]);
+	byText(root, "button", sharedText.cancel).click();
+	edit("Notiz");
+	assert.deepEqual(chips(), []);
 });

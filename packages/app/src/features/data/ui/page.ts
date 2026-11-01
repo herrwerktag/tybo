@@ -1,4 +1,4 @@
-import type { DataStore } from "../core.js";
+import type { DataStore, EntityType } from "../core.js";
 import { el, type EntityLink, type Page, type PageMaker, type Shell } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
 import { entitiesSection } from "./entities-section.js";
@@ -10,13 +10,16 @@ export interface DataPage {
 	rerender(): void;
 	/** After the next drawing, scrolls this form into view and focuses it (e.g. when Edit is clicked). */
 	focusForm(form: "type" | "entity"): void;
-	/** After the next drawing, focuses the drag handle with this `data-focus-key`, so keyboard reordering keeps focus
-	 * on the moved item. */
+	/** After the next drawing, focuses the control with this `data-focus-key` (e.g. a drag handle, so keyboard
+	 * reordering keeps focus on the moved item). */
 	focusHandle(key: string): void;
 	/** In place of the data pages' heading: switches between them, the entity types, the entities and the features'
 	 * sections (see `DataSection`). */
 	dataSwitch(route: string): HTMLElement;
 }
+
+/** What a feature notes about an entity type at the head of its form, e.g. the traits it bears. */
+export type TypeNote = (store: DataStore, type: EntityType) => HTMLElement[];
 
 /** A feature's own section of the Data tab, after the entity types and the entities, e.g. the traits. */
 export interface DataSection {
@@ -30,14 +33,19 @@ export interface DataSection {
 
 /**
  * The Data tab: the entity types with their properties (#types), and the entities of a type in a table (#entities),
- * each with its form — where the features' `entityLinks` lead from an entity to their pages — and after them the
- * features' `sections`. What is being edited stays while the page is drawn anew; another workspace starts afresh.
+ * each with its form — where the features' `entityLinks` lead from an entity to their pages, and their `typeNotes` say
+ * what they know of a type — and after them the features' `sections`. What is being edited stays while the page is drawn anew; another workspace starts afresh.
  */
-export function dataPage({ entityLinks = [], sections = [] }: { entityLinks?: readonly EntityLink[]; sections?: readonly DataSection[] } = {}): PageMaker<DataStore> {
-	return (shell) => dataPageIn(shell, entityLinks, sections);
+export function dataPage(
+	parts: { entityLinks?: readonly EntityLink[]; sections?: readonly DataSection[]; typeNotes?: readonly TypeNote[] } = {},
+): PageMaker<DataStore> {
+	return (shell) => dataPageIn(shell, parts);
 }
 
-function dataPageIn(shell: Shell, entityLinks: readonly EntityLink[], sections: readonly DataSection[]): Page<DataStore> {
+function dataPageIn(
+	shell: Shell,
+	{ entityLinks = [], sections = [], typeNotes = [] }: { entityLinks?: readonly EntityLink[]; sections?: readonly DataSection[]; typeNotes?: readonly TypeNote[] },
+): Page<DataStore> {
 	/** The store the page last started afresh for. */
 	let shownStore: DataStore | null = null;
 	let focusForm: "type" | "entity" | null = null;
@@ -65,7 +73,7 @@ function dataPageIn(shell: Shell, entityLinks: readonly EntityLink[], sections: 
 	};
 	const entities = entitiesSection(page, entityLinks);
 	// A type just saved: the entities page shows its entities.
-	const types = typesSection(page, { onSaved: (typeId) => entities.showType(typeId) });
+	const types = typesSection(page, { onSaved: (typeId) => entities.showType(typeId), typeNotes });
 
 	return {
 		routes: ["entities", "types", ...sections.map((section) => section.route)],
@@ -84,7 +92,7 @@ function dataPageIn(shell: Shell, entityLinks: readonly EntityLink[], sections: 
 		},
 		afterRender(root: HTMLElement): void {
 			if (focusHandle !== null) {
-				root.querySelector<HTMLElement>(`.drag-handle[data-focus-key="${focusHandle}"]`)?.focus();
+				root.querySelector<HTMLElement>(`[data-focus-key="${focusHandle}"]`)?.focus();
 				focusHandle = null;
 			}
 			if (focusForm) {

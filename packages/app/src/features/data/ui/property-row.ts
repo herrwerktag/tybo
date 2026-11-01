@@ -1,5 +1,5 @@
 import { moveItem } from "../../../shared/core/index.js";
-import { dragHandle, el, reorderable } from "../../../shared/ui/index.js";
+import { dragHandle, el, icon, reorderable } from "../../../shared/ui/index.js";
 import {
 	CARD_DISPLAYS,
 	LINE_ARROWS,
@@ -27,6 +27,9 @@ export interface PropertyRows {
 	setProps: (props: DraftProperty[]) => void;
 	/** Draws the form anew, e.g. after a setting that shows or hides others. */
 	rerender: () => void;
+	/** Whether the property's settings are unfolded below its line. */
+	isOpen: (prop: DraftProperty) => boolean;
+	setOpen: (prop: DraftProperty, open: boolean) => void;
 	/** Focuses a drag handle by its key once the form is drawn anew (see `dragHandle`). */
 	focusHandle: (key: string) => void;
 }
@@ -89,8 +92,23 @@ function referenceTypesSetting(reference: ReferenceDef, rows: PropertyRows): HTM
 	);
 }
 
-/** A property of the type form as a card: its name, kind and how cards show it, to drag into another place or remove;
- * options and references with their own settings. */
+/** What a property is, in short, for its folded line: its kind, a reference's target types as tags in their colors, an
+ * options property's number of values. */
+function propertySummary(prop: DraftProperty, rows: PropertyRows): HTMLElement {
+	const summary = el("span", { className: "property-summary" }, el("span", { className: "muted" }, text.kinds[prop.kind]));
+	if (prop.kind === "options") summary.append(el("span", { className: "muted" }, text.optionCount(prop.options.length)));
+	if (prop.kind === "reference") {
+		for (const t of (prop.reference?.typeIds ?? []).flatMap((id) => rows.types().filter((type) => type.id === id))) {
+			const tag = el("span", { className: "ref-tag" }, t.name);
+			tag.style.background = t.color;
+			summary.append(tag);
+		}
+	}
+	return summary;
+}
+
+/** A property of the type form as a line: its name, what it is in short, a button unfolding its settings (its kind,
+ * how cards show it, options and references with their own), to drag into another place or remove. */
 export function propertyRow(prop: DraftProperty, i: number, rows: PropertyRows): HTMLElement {
 	const kindSelect = el(
 		"select",
@@ -115,6 +133,26 @@ export function propertyRow(prop: DraftProperty, i: number, rows: PropertyRows):
 			prop.name = (e.target as HTMLInputElement).value;
 		},
 	});
+	nameInput.dataset.focusKey = `property-name:${i}`;
+	const open = rows.isOpen(prop);
+	const label = prop.name.trim() || String(i + 1);
+	const toggle = el(
+		"button",
+		{
+			type: "button",
+			className: "property-toggle",
+			title: text.showPropertySettings(label),
+			ariaLabel: text.showPropertySettings(label),
+			ariaExpanded: String(open),
+			onclick: () => {
+				rows.setOpen(prop, !open);
+				rows.focusHandle(`property-toggle:${i}`);
+				rows.rerender();
+			},
+		},
+		icon(open ? "chevronUp" : "chevronDown"),
+	);
+	toggle.dataset.focusKey = `property-toggle:${i}`;
 	const removeButton = el(
 		"button",
 		{
@@ -142,12 +180,11 @@ export function propertyRow(prop: DraftProperty, i: number, rows: PropertyRows):
 			el("option", { value: display, selected: display === prop.cardDisplay }, text.cardDisplays[display]),
 		),
 	);
-	// Handle, name and remove on top; then labeled settings, two per row.
+	// One line: handle, name, what it is in short, unfold and remove. Unfolded, its settings below, two per row.
 	const row = el(
 		"div",
-		{ className: "property" },
-		el("div", { className: "property-head" }, handle, nameInput, removeButton),
-		el("div", { className: "property-settings" }, setting(text.settingType, kindSelect), setting(text.settingOnCard, displaySelect)),
+		{ className: open ? "property open" : "property" },
+		el("div", { className: "property-head" }, handle, nameInput, propertySummary(prop, rows), toggle, removeButton),
 	);
 	reorderable(row, handle, {
 		index: i,
@@ -159,6 +196,8 @@ export function propertyRow(prop: DraftProperty, i: number, rows: PropertyRows):
 			rows.rerender();
 		},
 	});
+	if (!open) return row;
+	row.append(el("div", { className: "property-settings" }, setting(text.settingType, kindSelect), setting(text.settingOnCard, displaySelect)));
 	if (prop.kind === "options") {
 		// One row per option: its label, draggable to another place, removable. Each keeps the id it has.
 		const items = prop.options.map((option, o) => {
