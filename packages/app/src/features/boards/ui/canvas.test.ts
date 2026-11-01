@@ -1,7 +1,7 @@
 import { freshDom } from "../../../shared/ui/test-dom.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { canvasView } from "./canvas.js";
+import { canvas, canvasView } from "./canvas.js";
 import { CLICK_TOLERANCE, sharedText } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
 import { text as dataText } from "../../data/texts.js";
@@ -224,6 +224,39 @@ test("the side panel's width can be changed with its handle and is remembered; a
 	assert.equal(localStorage.getItem("canvas-panel-width"), "192px");
 	handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
 	assert.equal(panel.style.getPropertyValue("--panel-width"), "");
+});
+
+test("the side panel marks what isn't on the board yet, counts it per type, and can show only that", async () => {
+	freshDom();
+	const store = await createStore(memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } }).port, "ws");
+	const idea = store.addType("Idea", [], "");
+	const boardId = store.data.boards[0]!.id;
+	const [a, b, c] = ["Alpha", "Beta", "Gamma"].map((name) => store.addEntity(idea.id, name, "", {}));
+	store.addCard(boardId, a!.id, 100, 100);
+	const { view, refresh } = canvas(store, { readOnly: false, layers: [] });
+	document.body.append(view);
+	const items = () => [...view.querySelectorAll<HTMLElement>(".panel-item")].map((i) => [i.firstElementChild!.textContent, i.querySelector(".panel-item-note")?.textContent ?? null]);
+	assert.deepEqual(items(), [
+		["Alpha", null],
+		["Beta", text.missing],
+		["Gamma", text.missing],
+	]);
+	assert.equal(view.querySelector(".panel-group h3")?.textContent, `Idea${text.missingOf(2, 3)}`);
+
+	const onlyMissing = [...view.querySelectorAll("label")].find((l) => l.textContent?.trim() === text.onlyMissing)!.querySelector("input")!;
+	onlyMissing.checked = true;
+	onlyMissing.dispatchEvent(new Event("change"));
+	assert.deepEqual(items().map(([name]) => name), ["Beta", "Gamma"]);
+
+	// Once on the board, it leaves the list of missing ones; with none left, the panel says so.
+	store.addCard(boardId, b!.id, 400, 100);
+	refresh();
+	assert.deepEqual(items().map(([name]) => name), ["Gamma"]);
+	store.addCard(boardId, c!.id, 700, 100);
+	refresh();
+	assert.deepEqual(items(), []);
+	assert.equal(view.querySelector(".panel-list .muted")?.textContent, text.nothingMissing);
+	assert.equal(view.querySelector(".panel-group-missing"), null);
 });
 
 test("hovering or focusing an entity in the side panel shows its card; dragging it or leaving hides that again", async (t) => {
