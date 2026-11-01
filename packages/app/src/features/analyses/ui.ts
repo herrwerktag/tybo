@@ -363,8 +363,15 @@ export function analysisView(store: DataStore): HTMLElement {
 	/** The rows as a table: the entity, then a cell per column. Narrow screens show each row as a card (see CSS), with its
 	 * column's name above every value. */
 	function table(rows: AnalysisRow[], headers: string[]): HTMLElement {
-		const cell = (values: AnalysisValue[], label: string) => {
-			const td = el("td", {}, ...(values.length > 0 ? join(values.map(valueView)) : ["—"]));
+		// The row's entity by name; what its columns lead to as tags in their types' colors, like on the cards.
+		const cell = (values: AnalysisValue[], label: string, asTags: boolean) => {
+			const content =
+				values.length === 0
+					? [el("span", { className: "muted" }, "—")]
+					: asTags
+						? [el("div", { className: "prop-chips" }, ...values.map((v) => valueView(v, true)))]
+						: join(values.map((v) => valueView(v)));
+			const td = el("td", {}, ...content);
 			td.dataset.label = label;
 			return td;
 		};
@@ -382,8 +389,8 @@ export function analysisView(store: DataStore): HTMLElement {
 						el(
 							"tr",
 							{},
-							cell([{ label: row.entity.name, entityId: row.entity.id }], headers[0]!),
-							...row.cells.map((values, i) => cell(values, headers[i + 1] ?? "")),
+							cell([{ label: row.entity.name, entityId: row.entity.id }], headers[0]!, false),
+							...row.cells.map((values, i) => cell(values, headers[i + 1] ?? "", true)),
 						),
 					),
 				),
@@ -391,17 +398,17 @@ export function analysisView(store: DataStore): HTMLElement {
 		);
 	}
 
-	/** An entity as a link (with its type's color) showing its card while hovered and its details when clicked, or a
-	 * text. A span acting as a button, since a <button> never wraps inline: a long name would take a line of its own
-	 * and push the comma after it onto the next. */
-	function valueView(value: AnalysisValue): HTMLElement {
+	/** An entity as a link (with its type's color as a dot, or `asTag` as a tag filled with it) showing its card while
+	 * hovered and its details when clicked, or a text (as a chip with `asTag`). A span acting as a button, since a
+	 * <button> never wraps inline: a long name would take a line of its own and push the comma after it onto the next. */
+	function valueView(value: AnalysisValue, asTag = false): HTMLElement {
 		const entity = value.entityId !== null ? store.data.entities.find((e) => e.id === value.entityId) : undefined;
-		if (!entity) return el("span", {}, value.label);
+		if (!entity) return el("span", asTag ? { className: "chip" } : {}, value.label);
 		const color = store.data.types.find((t) => t.id === entity.typeId)?.color;
 		const link = el(
 			"span",
 			{
-				className: "entity-link",
+				className: asTag ? "entity-link ref-tag" : "entity-link",
 				role: "button",
 				tabIndex: 0,
 				onclick: () => showDetails(entity.id),
@@ -411,9 +418,10 @@ export function analysisView(store: DataStore): HTMLElement {
 					showDetails(entity.id);
 				},
 			},
-			...(color ? [typeDot(color)] : []),
+			...(color && !asTag ? [typeDot(color)] : []),
 			entity.name,
 		);
+		if (color && asTag) link.style.background = color;
 		link.dataset.entityId = entity.id;
 		preview.attach(link, entity.id);
 		return link;

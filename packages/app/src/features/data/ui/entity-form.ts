@@ -58,8 +58,13 @@ export function entityForm(
 		el("h3", {}, editing ? text.editNamed(type.name) : text.newEntity(type.name)),
 		...(editing
 			? [
-					el("p", { className: "field" }, el("span", {}, text.id), el("span", { className: "mono" }, editing.id)),
-					...(links.length > 0 ? [el("p", { className: "entity-links" }, ...links.map((link) => el("a", { href: link.href(editing.id) }, link.label())))] : []),
+					// The ID and the links to the features' pages: one quiet line, the fields below matter more.
+					el(
+						"p",
+						{ className: "entity-links muted" },
+						el("span", { title: text.id }, `${text.id} `, el("span", { className: "mono" }, editing.id)),
+						...links.map((link) => el("a", { href: link.href(editing.id) }, link.label())),
+					),
 				]
 			: []),
 		el("label", { className: "field" }, el("span", {}, sharedText.name), nameInput),
@@ -108,6 +113,8 @@ export function showEntityEditor(
 /** Read-only fields for the reverse side of references (e.g. "responsible for"); edited on the other entities. */
 function inverseFields(store: DataStore, entity: Entity): HTMLElement[] {
 	const names = new Map(store.data.entities.map((e) => [e.id, e.name]));
+	const types = new Map(store.data.types.map((t) => [t.id, t]));
+	const entityTypes = entityTypeMap(store.data);
 	const found = inverseReferences(store.data, entity);
 	return inverseRelations(store.data.types, entity.typeId).map((relation) => {
 		const ids = found.find((r) => r.prop.id === relation.prop.id)?.entityIds ?? [];
@@ -117,7 +124,15 @@ function inverseFields(store: DataStore, entity: Entity): HTMLElement[] {
 			{ className: "field" },
 			el("span", {}, relation.label),
 			ids.length > 0
-				? el("span", {}, ids.map((id) => names.get(id) ?? "?").join(", "))
+				? el(
+						"div",
+						{ className: "prop-chips" },
+						...ids.map((id) => {
+							const tag = el("span", { className: "ref-tag" }, names.get(id) ?? "?");
+							tag.style.background = types.get(entityTypes.get(id) ?? "")?.color ?? "";
+							return tag;
+						}),
+					)
 				: el("span", { className: "muted" }, "—"),
 			el("span", { className: "field-hint muted" }, text.setOn(sourceType, relation.prop.name)),
 		);

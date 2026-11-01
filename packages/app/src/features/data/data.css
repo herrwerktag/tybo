@@ -233,6 +233,78 @@
 	align-items: start;
 }
 
+/* The entities' types as chips, each in its color with its count; the one shown filled with its color. */
+.type-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.375rem;
+}
+
+.type-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.125rem;
+	padding: 0.25rem 0.625rem;
+	border-color: var(--border);
+	border-radius: 999px;
+	font-size: var(--text-md);
+}
+
+.type-chip-count {
+	margin-left: 0.25rem;
+	font-size: var(--text-xs);
+	color: var(--muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.type-chip[aria-pressed="true"],
+.type-chip[aria-pressed="true"]:hover:not(:disabled) {
+	background: var(--type-color);
+	border-color: transparent;
+	color: rgb(0 0 0 / 0.85);
+	font-weight: 600;
+}
+
+.type-chip[aria-pressed="true"] :is(.type-dot, .type-chip-count) {
+	color: rgb(0 0 0 / 0.6);
+}
+
+.type-chip[aria-pressed="true"] .type-dot {
+	display: none;
+}
+
+/* A row edits its entity when clicked; its buttons show while it's under the pointer or has focus. */
+.entity-table tbody tr {
+	cursor: pointer;
+}
+
+.entity-table tbody tr:hover > td {
+	background: var(--surface-inset);
+}
+
+.entity-table .name-cell {
+	font-weight: 600;
+}
+
+.entity-table .id-cell {
+	color: var(--muted);
+}
+
+.entity-table .actions-cell .actions {
+	opacity: 0;
+}
+
+.entity-table tr:is(:hover, :focus-within) .actions {
+	opacity: 1;
+}
+
+/* Without hover (touch), they're always there. */
+@media (hover: none) {
+	.entity-table .actions-cell .actions {
+		opacity: 1;
+	}
+}
+
 /* The entity table's drag handles: a narrow column of their own. */
 td.handle-cell {
 	width: 1px;
@@ -329,6 +401,7 @@ td.handle-cell {
 }
 
 .type-item {
+	--type-color: var(--border);
 	display: grid;
 	grid-template-columns: auto minmax(0, 1fr) auto;
 	grid-template-areas:
@@ -338,12 +411,28 @@ td.handle-cell {
 	gap: 0.35rem 0.5rem;
 	padding: 0.5rem 0.75rem;
 	border: 1px solid var(--border);
+	border-left: 6px solid var(--type-color);
 	border-radius: var(--radius-md);
+}
+
+.type-item .actions {
+	opacity: 0;
+}
+
+.type-item:is(:hover, :focus-within) .actions {
+	opacity: 1;
+}
+
+@media (hover: none) {
+	.type-item .actions {
+		opacity: 1;
+	}
 }
 
 .type-item.current {
 	background: var(--highlight);
 	border-color: var(--focus);
+	border-left-color: var(--type-color);
 }
 
 .type-item > .drag-handle {
@@ -351,9 +440,17 @@ td.handle-cell {
 	margin-inline-start: -0.35rem;
 }
 
-.type-name {
+.type-head {
 	grid-area: name;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.25rem 0.75rem;
 	overflow-wrap: anywhere;
+}
+
+.type-count {
+	font-size: var(--text-sm);
 }
 
 .type-item .actions {
@@ -428,7 +525,7 @@ td.handle-cell {
 		color: var(--muted);
 	}
 
-	.entity-table td:is(.handle-cell, :nth-child(3), :last-child)::before {
+	.entity-table td:is(.handle-cell, .name-cell, .actions-cell)::before {
 		content: none;
 	}
 
@@ -438,20 +535,18 @@ td.handle-cell {
 		width: auto;
 	}
 
-	.entity-table td:nth-child(3) {
+	.entity-table td.name-cell {
 		grid-column: 2;
 		grid-row: 1;
-		font-weight: 600;
 	}
 
-	.entity-table td:last-child {
+	.entity-table td.actions-cell {
 		order: 2;
 	}
 
-	.entity-table td:nth-child(2) {
+	.entity-table td.id-cell {
 		order: 1;
 		font-size: var(--text-sm);
-		color: var(--muted);
 	}
 
 	/* Where a dragged entity will land: on the card, not on each of its values. */
@@ -468,11 +563,13 @@ td.handle-cell {
 	}
 }
 
-/* The features' links from an entity's form to their pages (its history, say). */
+/* The entity's ID and the features' links from its form to their pages (its history, say): one quiet line. */
 .entity-links {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 1rem;
+	align-items: baseline;
+	gap: 0.25rem 1rem;
+	font-size: var(--text-sm);
 }
 
 .entity-links a {
