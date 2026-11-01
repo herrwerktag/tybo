@@ -173,6 +173,48 @@ test("a reference allowing several values shows them as tags: × removes one, th
 	assert.deepEqual([...cell().querySelectorAll(".ref-tag")].map((t) => t.textContent), ["Bob"]);
 });
 
+test("empty lists say what belongs in them and offer the next step", async () => {
+	const root = await startApp({ version: DATA_VERSION, types: [], entities: [], boards: [{ id: "b", name: "Board 1", cards: [] }] }, "#entities");
+	const step = (label: string) => byText<HTMLElement>(root, ".empty-state :is(a, button)", label);
+	// No types: the entities first need one; the types page makes it.
+	assert.equal(step(dataText.createNewType).getAttribute("href"), "#types/new");
+	goTo("#types");
+	assert.ok(byText(root, ".empty-state p", dataText.noTypesYet));
+	step(dataText.createNewType).click();
+	assert.ok(root.querySelector("#type-form"));
+
+	// The board's side panel: without types, the way to one; with one, a new entity right there.
+	goTo("#boards");
+	assert.equal(step(dataText.createNewType).getAttribute("href"), "#types/new");
+
+	goTo("#analysis");
+	assert.ok(byText(root, ".empty-state p", analysisText.analysisEmpty), "New analysis is right beside it");
+
+	goTo("#traits");
+	step(traitText.newTrait).click();
+	assert.ok(root.querySelector(".trait-form"));
+});
+
+test("an empty list made so by a filter offers to reset it", async () => {
+	const data = structuredClone(tagged) as typeof tagged & { types: unknown[]; entities: unknown[] };
+	data.types = [...data.types, { id: "person", name: "Person", color: "#c8ebbf", contentTemplate: "", properties: [] }];
+	data.entities = [...data.entities, { id: "01J00000000000000000000003", typeId: "person", name: "Ada", content: "", description: "", tags: [], values: {} }];
+	const root = await startApp(data, "#entities");
+	choose(tagSelectIn(root.querySelector(".section-filters"))!, "Romance");
+	byText(root, ".type-chip", "Person1").click();
+	assert.ok(byText(root, ".empty-state p", dataText.noEntitiesWithTag("Person", "Romance")));
+	byText(root, ".empty-state button", sharedText.resetFilters).click();
+	assert.deepEqual(rowNames(root), ["Ada"]);
+
+	goTo("#boards");
+	const search = () => root.querySelector<HTMLInputElement>(".panel-filters input[type=search]")!;
+	search().value = "nothing like it";
+	search().dispatchEvent(new Event("input"));
+	byText(root, ".panel-list .empty-state button", sharedText.resetFilters).click();
+	assert.equal(root.querySelectorAll(".panel-list .panel-item").length, 4);
+	assert.equal(search().value, "");
+});
+
 test("an invalid type shows its problems and isn't saved", async () => {
 	const root = await startApp(undefined, "#types");
 	byText(root, "button", dataText.createNewType).click();

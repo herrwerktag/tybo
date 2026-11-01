@@ -1,4 +1,4 @@
-import { dragHandle, el, reorderable, tagFilter, typeDot, sharedText, type EntityLink } from "../../../shared/ui/index.js";
+import { dragHandle, el, emptyState, reorderable, tagFilter, typeDot, sharedText, type EntityLink } from "../../../shared/ui/index.js";
 import {
 	entityTags,
 	entityTypeMap,
@@ -58,7 +58,7 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 		const section = el("section", {}, header);
 		const type = store.data.types.find((t) => t.id === state.selectedTypeId);
 		if (!type) {
-			section.append(el("p", { className: "muted" }, text.createTypeFirst));
+			section.append(emptyState(text.createTypeFirst, { label: text.createNewType, href: "#types/new" }));
 			return section;
 		}
 
@@ -105,9 +105,18 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 			text.createNewEntity,
 		);
 
-		header.append(...(formOpen ? [] : [createButton]));
+		// Without entities of the type, the empty list offers the button.
+		header.append(...(formOpen || ofType.length === 0 ? [] : [createButton]));
 		section.append(el("div", { className: "section-filters" }, typeChips, ...(tags.length > 0 ? [byTag.select] : [])));
-		const empty = byTag.tag && ofType.length > 0 ? text.noEntitiesWithTag(type.name, byTag.tag) : text.noEntitiesOfType(type.name);
+		// Empty for the filter: it can be reset; empty for good (and no form open yet): a first one can be made.
+		const filtered = byTag.tag !== null && ofType.length > 0;
+		const resetTag = () => {
+			byTag.select.value = "";
+			byTag.select.dispatchEvent(new Event("change"));
+		};
+		const empty = filtered
+			? emptyState(text.noEntitiesWithTag(type.name, byTag.tag!), { label: sharedText.resetFilters, run: resetTag })
+			: emptyState(text.noEntitiesOfType(type.name), formOpen ? undefined : { label: text.createNewEntity, run: () => createButton.click() });
 		section.append(
 			...(formOpen
 				? [
@@ -120,7 +129,7 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 						}),
 					]
 				: []),
-			entities.length > 0 ? entityTable(type, entities, ofType) : el("p", { className: "muted" }, empty),
+			entities.length > 0 ? entityTable(type, entities, ofType) : empty,
 		);
 		details.show(state.detailsId);
 		state.detailsId = details.shown();
@@ -284,8 +293,8 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 			state.selectedTypeId = typeId;
 		},
 		/** `target`: the entity the address names — the first time, its type is shown with its row marked — or "new",
-		 * the form for a new entity. */
-		render(current: DataStore, target: string | null = null): HTMLElement {
+		 * the form for a new entity (of `newType`, if the address names one). */
+		render(current: DataStore, target: string | null = null, newType: string | null = null): HTMLElement {
 			store = current;
 			const entity = target === null ? undefined : store.data.entities.find((e) => e.id === target);
 			if (target !== state.shownTarget) {
@@ -296,7 +305,8 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 					state.selectedTypeId = entity.typeId;
 					state.creatingEntity = false;
 				} else if (target === "new") {
-					// The form for a new entity, of the type shown.
+					// The form for a new entity, of the type shown (or named).
+					if (newType !== null && store.data.types.some((t) => t.id === newType)) state.selectedTypeId = newType;
 					state.creatingEntity = true;
 					page.focusForm("entity");
 				}
