@@ -1,0 +1,35 @@
+/* The traits in the Data tab: their list on the left, the form of the one chosen beside it. */
+.traits-layout {
+	display: grid;
+	grid-template-columns: 16rem minmax(0, 1fr);
+	gap: 1.5rem;
+	align-items: start;
+}
+
+.trait-list {
+	display: grid;
+}
+
+.trait-entry {
+	display: block;
+	padding: 0.35rem 0.5rem;
+	border-radius: var(--radius-sm);
+	color: var(--text);
+	text-decoration: none;
+	overflow-wrap: break-word;
+}
+
+.trait-entry:hover {
+	background: var(--surface-inset);
+}
+
+.trait-entry[aria-current="page"] {
+	background: var(--highlight);
+	font-weight: 600;
+}
+
+@media (max-width: 40rem) {
+	.traits-layout {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}

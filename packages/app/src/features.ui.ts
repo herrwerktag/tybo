@@ -3,7 +3,7 @@ import type { AppData } from "./shared/core/index.js";
 import { renderShell, type UnitDescriber } from "./shared/ui/index.js";
 import type { CanvasLayer } from "./features/boards/ui.js";
 import { COPY_TYPES, ENTITY_HISTORY, TYPE_HISTORY, WRAP_REFERENCES, dataPage, deleteQuestion } from "./features/data/ui.js";
-import { TRAIT_HISTORY } from "./features/traits/ui.js";
+import { TRAITS_SECTION, TRAIT_HISTORY } from "./features/traits/ui.js";
 import { ANALYSES_PAGE, ANALYSIS_HISTORY } from "./features/analyses/ui.js";
 import { BOARD_HISTORY, CARD_HISTORY, boardsPage } from "./features/boards/ui.js";
 import { DRAWING_HISTORY, DRAWING_LAYER } from "./features/drawings/ui.js";
@@ -34,7 +34,7 @@ export function render(root: HTMLElement, workspaces: Workspaces, { viewScript }
 		format: APP_FORMAT,
 		/** The pages, their tabs in this order. */
 		pages: [
-			dataPage({ entityLinks: [HISTORY_LINK] }),
+			dataPage({ entityLinks: [HISTORY_LINK], sections: [TRAITS_SECTION] }),
 			boardsPage({ layers: CANVAS_LAYERS, exports: boardExports(viewScript) }),
 			ANALYSES_PAGE,
 			historyPage({ describers: HISTORY_DESCRIBERS }),
