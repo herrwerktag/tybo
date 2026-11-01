@@ -114,7 +114,7 @@ export function showEntityEditor(
 function inverseFields(store: DataStore, entity: Entity): HTMLElement[] {
 	const names = new Map(store.data.entities.map((e) => [e.id, e.name]));
 	const types = new Map(store.data.types.map((t) => [t.id, t]));
-	const entityTypes = new Map(store.data.entities.map((e) => [e.id, e.typeId]));
+	const entityTypes = entityTypeMap(store.data);
 	const found = inverseReferences(store.data, entity);
 	return inverseRelations(store.data.types, entity.typeId).map((relation) => {
 		const ids = found.find((r) => r.prop.id === relation.prop.id)?.entityIds ?? [];

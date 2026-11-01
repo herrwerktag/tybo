@@ -1,6 +1,7 @@
 import { dragHandle, el, reorderable, tagFilter, typeDot, sharedText, type EntityLink } from "../../../shared/ui/index.js";
 import {
 	entityTags,
+	entityTypeMap,
 	filterEntities,
 	inverseReferences,
 	inverseRelations,
@@ -114,7 +115,7 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 	function entityTable(type: EntityType, entities: Entity[], ofType: Entity[]): HTMLElement {
 		const names = new Map(store.data.entities.map((e) => [e.id, e.name]));
 		const types = new Map(store.data.types.map((t) => [t.id, t]));
-		const entityTypes = new Map(store.data.entities.map((e) => [e.id, e.typeId]));
+		const entityTypes = entityTypeMap(store.data);
 		/** Referenced entities as tags in their type's color, like on the cards. */
 		const refTags = (ids: readonly string[]): HTMLElement => {
 			const tags = ids.map((id) => {
