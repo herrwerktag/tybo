@@ -1,5 +1,5 @@
-import { snapToGrid, type Point, type Rect } from "../../../shared/core/index.js";
-import { CLICK_TOLERANCE, el, icon, listenWhileConnected, readPreference, resizeHandle, trackPointer, writePreference, type EntityLink } from "../../../shared/ui/index.js";
+import { freeName, snapToGrid, type Point, type Rect } from "../../../shared/core/index.js";
+import { CLICK_TOLERANCE, el, icon, listenWhileConnected, readPreference, resizeHandle, trackPointer, writePreference, type EntityLink, type SearchSource } from "../../../shared/ui/index.js";
 import { DEFAULT_CARD_SIZE, type Entity, type EntityType } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import { cardParts, cardSize, createCardPreview, detailsPanel, type EntityPlaces } from "../../data/ui.js";
@@ -31,11 +31,27 @@ export interface CanvasOptions {
 /** The address of an entity's card on a board: the board opened, the card selected and in view. */
 export const cardRoute = (boardId: string, entityId: string) => `#boards/${encodeURIComponent(boardId)}/${encodeURIComponent(entityId)}`;
 
-/** The board and entity the address names (`#boards/<board>/<entity>`), if it does. */
-export function cardOfRoute(hash: string): { boardId: string; entityId: string } | null {
+/** The address of a board. */
+export const boardRoute = (boardId: string) => `#boards/${encodeURIComponent(boardId)}`;
+
+/** The board the address names (`#boards/<board>`), and the entity whose card to show there (`…/<entity>`), if it does. */
+export function cardOfRoute(hash: string): { boardId: string; entityId: string | null } | null {
 	const [route, board, entity] = hash.slice(1).split("/");
-	return route === "boards" && board && entity ? { boardId: decodeURIComponent(board), entityId: decodeURIComponent(entity) } : null;
+	return route === "boards" && board ? { boardId: decodeURIComponent(board), entityId: entity ? decodeURIComponent(entity) : null } : null;
 }
+
+/** In the search: the boards, and a new one (named with the first number free), opened. */
+export const BOARD_SEARCH: SearchSource<BoardStore> = {
+	items: (store) => store.data.boards.map((b) => ({ label: b.name, detail: text.board, href: boardRoute(b.id) })),
+	actions: (store) => [
+		{
+			label: text.newBoard,
+			run: () => {
+				location.hash = boardRoute(store.addBoard(freeName(store.data.boards, text.defaultBoardName)).id);
+			},
+		},
+	],
+};
 
 /** Opens this board the next time a canvas is made. */
 export const openBoard = (boardId: string) => writePreference(ACTIVE_BOARD_KEY, boardId);

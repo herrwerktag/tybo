@@ -3,7 +3,7 @@ import { createCardPreview, detailsPanel, type EntityPlaces } from "../data/ui.j
 import { traitRoute } from "../traits/ui.js";
 import { text as traitText } from "../traits/texts.js";
 import { freeName, moveItem, nameTaken } from "../../shared/core/index.js";
-import { downloadFile, el, isRecord, listenWhileConnected, readPreference, refused, safeFileName, typeDot, writePreference, zipFiles, sharedText, type EntityLink, type PageMaker, type UnitDescriber } from "../../shared/ui/index.js";
+import { downloadFile, el, isRecord, listenWhileConnected, readPreference, refused, safeFileName, typeDot, writePreference, zipFiles, sharedText, type EntityLink, type PageMaker, type SearchSource, type UnitDescriber } from "../../shared/ui/index.js";
 import {
 	addAnalysis,
 	analysisFrom,
@@ -488,10 +488,44 @@ function join(nodes: HTMLElement[]): (HTMLElement | string)[] {
 	return nodes.flatMap((node, i) => (i === 0 ? [node] : [", ", node]));
 }
 
-/** The Analyses tab, after the boards; in an entity's details, the features' `entityLinks` and `entityPlaces`. */
+/** The address of an analysis. */
+const analysisRoute = (analysisId: string) => `#analysis/${encodeURIComponent(analysisId)}`;
+
+/** The Analyses tab, after the boards; in an entity's details, the features' `entityLinks` and `entityPlaces`.
+ * `#analysis/<id>` shows that analysis — once per address, so another one can be chosen there. */
 export function analysesPage(parts: { entityLinks?: readonly EntityLink[]; entityPlaces?: readonly EntityPlaces[] } = {}): PageMaker<DataStore> {
-	return () => ({ routes: ["analysis"], label: () => text.tabAnalysis, render: (store) => analysisView(store, parts) });
+	return () => {
+		let shownTarget: string | null = null;
+		return {
+			routes: ["analysis"],
+			label: () => text.tabAnalysis,
+			render: (store) => {
+				const [, id] = location.hash.slice(1).split("/");
+				const target = id ? decodeURIComponent(id) : null;
+				if (target !== shownTarget) {
+					shownTarget = target;
+					if (target !== null && store.data.analyses.some((a) => a.id === target)) writePreference(SELECTED_KEY, target);
+				}
+				return analysisView(store, parts);
+			},
+		};
+	};
 }
+
+/** In the search: the analyses, and a new one, opened with its setup unfolded. */
+export const ANALYSIS_SEARCH: SearchSource<DataStore> = {
+	items: (store) => store.data.analyses.map((a) => ({ label: a.name, detail: text.analysis, href: analysisRoute(a.id) })),
+	actions: (store) => [
+		{
+			label: text.newAnalysis,
+			run: () => {
+				const item = addAnalysis(store, freeName(store.data.analyses, text.defaultAnalysisName));
+				writePreference(SETUP_OPEN_KEY, "true");
+				location.hash = analysisRoute(item.id);
+			},
+		},
+	],
+};
 
 /** How the history tells of an analysis: the type (or trait) of its rows, the paths it groups by and those of its
  * columns, read with the types and traits as they are now. */

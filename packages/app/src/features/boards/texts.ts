@@ -4,6 +4,7 @@ import { messages } from "../../shared/ui/index.js";
 const en = {
 	tabBoards: "Boards",
 	onBoards: "On boards",
+	board: "Board",
 	exportButton: "Export",
 	close: "Close",
 	moveBoard: (name: string) => `Move board ${name}; use the arrow keys`,
@@ -77,6 +78,7 @@ export const text = messages<typeof en>({
 	de: {
 		tabBoards: "Boards",
 		onBoards: "Auf Boards",
+		board: "Board",
 		exportButton: "Exportieren",
 		close: "Schließen",
 		moveBoard: (name) => `Board ${name} verschieben; Pfeiltasten verwenden`,

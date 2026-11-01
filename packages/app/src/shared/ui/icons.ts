@@ -8,6 +8,8 @@ const ICONS = {
 	chevronDown: "m4.5 6.5 3.5 3.5 3.5-3.5",
 	/** Folded away upwards. */
 	chevronUp: "m4.5 9.5 3.5-3.5 3.5 3.5",
+	/** Search: a magnifying glass. */
+	search: "M3 7a4 4 0 1 0 8 0 4 4 0 1 0-8 0M10 10l3.5 3.5",
 	/** Settings: two sliders. */
 	settings: "M2.5 5h3.5m3 0h4.5M2.5 11h6.5m3 0h1.5M6 5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0M9 11a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0",
 	/** Folds a side panel away (to the left). */

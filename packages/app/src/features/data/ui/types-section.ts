@@ -93,6 +93,24 @@ export function typesSection(page: DataPage, { onSaved, typeNotes = [] }: { onSa
 		state.builtinOpen = false;
 	}
 
+	/** Opens the form on `type`, with copies of what it is to change. */
+	function startEditing(type: EntityType): void {
+		resetTypeForm();
+		state.editingTypeId = type.id;
+		state.draftName = type.name;
+		state.draftContentTemplate = type.contentTemplate;
+		state.draftColor = type.color;
+		state.draftProps = type.properties.map((p) => ({
+			...p,
+			options: p.options.map((o) => ({ ...o })),
+			reference: p.reference && { ...p.reference },
+		}));
+		page.focusForm("type");
+	}
+
+	/** The type the address names, or "new", already acted on: once per address, so the form can be closed. */
+	let shownTarget: string | null = null;
+
 	/** The fields every entity has, folded to a line naming them (and the template's first line, if there is one);
 	 * unfolded, what each is and the template of the content to edit. */
 	function builtinFields(): HTMLElement {
@@ -299,17 +317,7 @@ export function typesSection(page: DataPage, { onSaved, typeNotes = [] }: { onSa
 							{
 								type: "button",
 								onclick: () => {
-									state.editingTypeId = type.id;
-									state.draftName = type.name;
-									state.draftContentTemplate = type.contentTemplate;
-									state.draftColor = type.color;
-									state.draftProps = type.properties.map((p) => ({
-										...p,
-										options: p.options.map((o) => ({ ...o })),
-										reference: p.reference && { ...p.reference },
-									}));
-									state.typeErrors = [];
-									page.focusForm("type");
+									startEditing(type);
 									rerender();
 								},
 							},
@@ -382,8 +390,19 @@ export function typesSection(page: DataPage, { onSaved, typeNotes = [] }: { onSa
 			store = current;
 			resetTypeForm();
 		},
-		render(current: DataStore): HTMLElement {
+		/** `target`: a type the address names (its form opens), or "new" (the form for a new one) — the first time. */
+		render(current: DataStore, target: string | null = null): HTMLElement {
 			store = current;
+			if (target !== shownTarget) {
+				shownTarget = target;
+				const type = store.data.types.find((t) => t.id === target);
+				if (type) startEditing(type);
+				else if (target === "new") {
+					resetTypeForm();
+					state.creatingType = true;
+					page.focusForm("type");
+				}
+			}
 			return section();
 		},
 	};

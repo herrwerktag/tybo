@@ -5,6 +5,7 @@ import { LANGUAGES, language, setLanguage, type Language } from "./i18n.js";
 import { text } from "./texts.js";
 import { THEMES, setTheme, theme, type Theme } from "./theme.js";
 import { workspaceMenu, type NewWorkspaceOption, type WorkspaceAction } from "./workspace-menu.js";
+import { searchDialog, type SearchSource } from "./search.js";
 
 /** What a page and a setting get of the app around them. */
 export interface Shell {
@@ -41,6 +42,8 @@ export interface ShellParts<D, S> {
 	workspaceActions: readonly WorkspaceAction<S>[];
 	newWorkspaceOptions: readonly NewWorkspaceOption<D, S>[];
 	settings: readonly SettingMaker[];
+	/** What the search (⌘K) finds and offers, each feature its own; the workspace actions are offered with them. */
+	search?: readonly SearchSource<S>[];
 	/** The question before deleting the workspace named, saying what it holds. */
 	deleteQuestion(name: string, store: S): string;
 }
@@ -261,8 +264,26 @@ export async function renderShell<D, S extends StoreCore<D>>(root: HTMLElement, 
 		page.afterRender?.(root);
 	}
 
-	/** The workspace first, since every tab shows its data; then the tabs; undo, redo and settings at the right end. */
+	/** The search over the workspace (⌘K), opened anew with what the features find and offer in it now. */
+	const search = searchDialog();
+	function openSearch(): void {
+		const sources = parts.search ?? [];
+		const workspaceName = workspaces.active.name;
+		search.open(
+			sources.flatMap((source) => source.items?.(store) ?? []),
+			[
+				...sources.flatMap((source) => source.actions?.(store) ?? []),
+				...parts.workspaceActions.map((action) => ({ label: action.label(), run: () => action.run(store, workspaceName) })),
+			],
+		);
+	}
+	const searchButton = el("button", { type: "button", className: "search-button", onclick: openSearch }, icon("search"));
+
+	/** The workspace first, since every tab shows its data; then the tabs; search, undo, redo and settings at the right
+	 * end. */
 	function navBar(current: Page<S>): HTMLElement {
+		// In the language now chosen.
+		Object.assign(searchButton, { title: `${text.search} (${isMac ? "⌘K" : "Ctrl+K"})`, ariaLabel: text.search });
 		const nav = el(
 			"nav",
 			{ className: "app-nav" },
@@ -272,7 +293,8 @@ export async function renderShell<D, S extends StoreCore<D>>(root: HTMLElement, 
 				{ className: "app-tabs" },
 				...pages.map((page) => el("a", { href: `#${page.routes[0]}`, className: page === current ? "tab current" : "tab" }, page.label())),
 			),
-			el("div", { className: "nav-menus" }, historyButtons, settingsMenu()),
+			el("div", { className: "nav-menus" }, searchButton, historyButtons, settingsMenu()),
+			search.dialog,
 		);
 		nav.querySelector(".current")?.setAttribute("aria-current", "page");
 		return nav;
@@ -397,6 +419,13 @@ export async function renderShell<D, S extends StoreCore<D>>(root: HTMLElement, 
 		e.preventDefault();
 		if (redo) redoChange();
 		else undoChange();
+	});
+
+	// Ctrl/⌘+K opens the search, from anywhere — in a text field too.
+	document.addEventListener("keydown", (e) => {
+		if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "k") return;
+		e.preventDefault();
+		openSearch();
 	});
 
 	window.addEventListener("hashchange", rerender);
