@@ -245,10 +245,23 @@ test("step 16 adds the traits; the analyses there are stay of their type", { ski
 		await sql`insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 10)`;
 		await sql`insert into analyses (workspace_id, id, position, name, type_id) values ('ws', 'a', 0, 'Alle', 'book')`;
 
-		assert.deepEqual(await migrateSchema(sql), [16]);
+		assert.deepEqual(await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 17)), [16]);
 		assert.deepEqual([...(await sql`select type_id, trait_id from analyses`)], [{ type_id: "book", trait_id: null }]);
 		assert.deepEqual([...(await sql`select count(*)::int as n from traits`)], [{ n: 0 }]);
 		assert.deepEqual([...(await sql`select data_version from workspaces where id = 'ws'`)], [{ data_version: 11 }]);
+	} finally {
+		await sql.end({ timeout: 5 });
+	}
+});
+
+test("step 17 says format 12, the traits' conditions living in their roles as they are", { skip: !url }, async () => {
+	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
+	try {
+		await wipe(sql);
+		await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 17));
+		await sql`insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 11)`;
+		assert.deepEqual(await migrateSchema(sql), [17]);
+		assert.deepEqual([...(await sql`select data_version from workspaces where id = 'ws'`)], [{ data_version: 12 }]);
 	} finally {
 		await sql.end({ timeout: 5 });
 	}

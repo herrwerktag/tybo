@@ -36,7 +36,10 @@ function sample(): AppData {
 			{
 				id: "trait-1",
 				name: "Fortschritt",
-				roles: [{ id: "role-1", name: "Kurz", kind: "text", options: [] }],
+				roles: [
+					{ id: "role-1", name: "Kurz", kind: "text", options: [] },
+					{ id: "role-2", name: "verweist auf Kurzes", kind: "reference", options: [], condition: { traitId: "trait-1", roleId: "role-1", hasTargets: true } },
+				],
 				bindings: { "type-1": { "role-1": { propertyId: "prop-1", direction: "forward", values: {} } } },
 			},
 		],
@@ -67,7 +70,7 @@ async function fresh() {
 test("sqlite: the schema is made once, and survives reopening the file", async () => {
 	const { storage, path, close } = await fresh();
 	try {
-		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
 		assert.deepEqual(await storage.init(), [], "the second start has nothing left to do");
 		assert.equal(await storage.healthy(), true);
 		await storage.createWorkspace({ id: "ws", name: "Bleibt" }, 1);
@@ -192,7 +195,7 @@ test("sqlite: what was saved of stories, by any version before, is dropped; the 
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
 		const { data } = (await storage.readWorkspace("ws"))!;
 		// Null, not missing: the app makes the frame of the board's pan/zoom.
 		assert.deepEqual(
@@ -226,7 +229,7 @@ test("sqlite: step 8 drops the library and the library drawings placed on boards
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [8, 9, 10, 11, 12, 13]);
+		assert.deepEqual(await storage.init(), [8, 9, 10, 11, 12, 13, 14]);
 		await storage.close();
 		const check = new DatabaseSync(path);
 		assert.deepEqual(check.prepare("select name from sqlite_master where name = 'library_drawings'").all(), []);
@@ -401,7 +404,7 @@ test("sqlite: step 10 gives the entries written before it their format, 9", asyn
 		raw.prepare("insert into history (workspace_id, operation) values ('ws', 'create')").run();
 		raw.close();
 
-		assert.deepEqual(await storage.init(), [10, 11, 12, 13]);
+		assert.deepEqual(await storage.init(), [10, 11, 12, 13, 14]);
 		assert.deepEqual((await storage.readHistory("ws", { limit: 10 })).map((e) => e.dataVersion), [9]);
 	} finally {
 		await close();
@@ -448,7 +451,7 @@ test("sqlite: step 12 gives options their ids; entity values hold the id of thei
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [12, 13]);
+		assert.deepEqual(await storage.init(), [12, 13, 14]);
 		await storage.close();
 
 		const check = new DatabaseSync(path);
@@ -462,7 +465,7 @@ test("sqlite: step 12 gives options their ids; entity values hold the id of thei
 			rows.map((row) => [row.entity_id, row.value]),
 			[["e1", JSON.stringify(options[0]!.id)]],
 		);
-		assert.equal(check.prepare("select data_version from workspaces where id = 'ws'").get()!.data_version, 11, "format 10, and step 13 then 11");
+		assert.equal(check.prepare("select data_version from workspaces where id = 'ws'").get()!.data_version, 12, "format 10, and the steps after it on to 12");
 		check.close();
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
@@ -481,9 +484,9 @@ test("sqlite: step 13 adds the traits; the analyses there are stay of their type
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [13]);
+		assert.deepEqual(await storage.init(), [13, 14]);
 		const data = (await storage.readWorkspace("ws"))!.data;
-		assert.equal(data.version, 11);
+		assert.equal(data.version, 12);
 		assert.deepEqual(data.traits, []);
 		assert.deepEqual(data.analyses, [{ id: "a", name: "Alle", typeId: "book", traitId: null, groups: [], columns: [] }]);
 		await storage.close();

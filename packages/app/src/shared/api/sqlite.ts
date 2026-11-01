@@ -285,6 +285,13 @@ export const SQLITE_MIGRATIONS: readonly Migration[] = [
 			`);
 		},
 	},
+	{
+		version: 14,
+		up(db) {
+			// As Postgres's step 17.
+			db.exec("update workspaces set data_version = 12");
+		},
+	},
 ];
 
 /** Runs `work` in one transaction: all of it written, or — when it throws — none of it. */

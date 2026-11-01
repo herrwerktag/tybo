@@ -312,6 +312,14 @@ export const POSTGRES_MIGRATIONS: readonly Migration[] = [
 			await tx`update workspaces set data_version = 11`;
 		},
 	},
+	{
+		version: 17,
+		name: "trait conditions",
+		async up(tx) {
+			// A reference role's condition lives in the trait's roles (JSON); the rows are format 12 as they are.
+			await tx`update workspaces set data_version = 12`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */

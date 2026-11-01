@@ -124,3 +124,45 @@ test("an analysis of a trait: made with `trait`, its paths over role names, its 
 	const { analysis: ofType } = await call("update_analysis", { analysis: "Was offen ist", type: "Pitch" });
 	assert.deepEqual([ofType.type, ofType.trait, ofType.groupedBy], ["Pitch", undefined, []], "another basis empties the paths");
 });
+
+test("a reference role with a condition: only the targets meeting it count, describe_workspace tells it and the targets that never can", async () => {
+	const { call, refusal } = await withPitches();
+	await call("create_type", { name: "Regel", properties: [{ name: "Pitch", kind: "reference", targets: ["Pitch"] }] });
+	await call("create_entity", { type: "Offene Frage", name: "Erledigt?", values: { Status: "beantwortet", Pitch: "Traits" } });
+	await call("create_entity", { type: "Regel", name: "Regel 1", values: { Pitch: "Verlauf" } });
+	await call("create_trait", PROGRESS);
+	const { trait } = await call("create_trait", {
+		name: "Blockade",
+		roles: [
+			{ name: "blockiert durch", kind: "reference", condition: { trait: "Fortschritt", role: "Stand", values: ["offen", "in Arbeit"] } },
+			{ name: "hängt an Blockiertem", kind: "reference", condition: { role: "blockiert durch", hasTargets: true } },
+		],
+		bindings: [
+			{ type: "Pitch", role: "blockiert durch", property: "Offene Frage.Pitch" },
+			{ type: "Pitch", role: "hängt an Blockiertem", property: "Regel.Pitch" },
+		],
+	});
+	assert.deepEqual(trait.roles.map((r: { condition: unknown }) => r.condition), [
+		{ trait: "Fortschritt", role: "Stand", values: ["offen", "in Arbeit"] },
+		{ trait: "Blockade", role: "blockiert durch", hasTargets: true },
+	]);
+	assert.deepEqual(trait.types[0].roles[1], { role: "hängt an Blockiertem", property: "Regel.Pitch", targetsNeverMeetingCondition: ["Regel"] }, "rules don't bear Blockade");
+
+	await call("create_analysis", { name: "Blockiert", trait: "Blockade", columns: ["blockiert durch", "hängt an Blockiertem"] });
+	const result = await call("run_analysis", { analysis: "Blockiert" });
+	assert.deepEqual(result.rows.map((r: { entity: { name: string }; cells: string[][] }) => [r.entity.name, ...r.cells.map((c) => c.join(", "))]), [
+		["Traits", "Wie heißen sie?", ""],
+		["Verlauf", "", ""],
+	], "the answered question doesn't block; a rule never counts, not bearing Blockade");
+
+	assert.match(
+		await refusal("update_trait", { trait: "Blockade", roles: [{ name: "blockiert durch", kind: "reference", condition: { role: "blockiert durch", hasTargets: false } }, { name: "hängt an Blockiertem", kind: "reference" }] }),
+		/The conditions lead round in a circle: Blockade.blockiert durch › Blockade.blockiert durch/,
+	);
+	assert.match(await refusal("update_trait", { trait: "Blockade", roles: [{ name: "x", kind: "reference", condition: { trait: "Fortschritt", role: "Kurz" } }] }), /Fortschritt has no options or reference role "Kurz". Roles: Stand, Fragen/);
+	assert.match(await refusal("update_trait", { trait: "Blockade", roles: [{ name: "x", kind: "reference", condition: { trait: "Fortschritt", role: "Fragen" } }] }), /say `hasTargets`/);
+	const { trait: kept } = await call("update_trait", { trait: "Blockade", roles: [{ name: "blockiert durch", kind: "reference" }] });
+	assert.deepEqual(kept.roles[0].condition, { trait: "Fortschritt", role: "Stand", values: ["offen", "in Arbeit"] }, "a role given without a condition keeps it");
+	const { trait: cleared } = await call("update_trait", { trait: "Blockade", roles: [{ name: "blockiert durch", kind: "reference", condition: null }] });
+	assert.equal(cleared.roles[0].condition, undefined);
+});
