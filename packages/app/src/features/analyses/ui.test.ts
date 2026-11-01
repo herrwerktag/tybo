@@ -256,3 +256,18 @@ test("Traits: a reference role's condition is set in the form, refused when it w
 	byText<HTMLButtonElement>(root, ".analysis-entry", "Blockade").click();
 	assert.ok(byText(form(), "p", traitText.conditionHint("Frage", "Fortschritt")));
 });
+
+test("Analyses: a new analysis starts with its setup unfolded; Done folds it to a line telling it in short, Set up unfolds it again", async () => {
+	const root = await startApp({ version: DATA_VERSION, types: [], entities: [], boards: [] }, "#analysis");
+	byText<HTMLButtonElement>(root, "button", text.newAnalysis).click();
+	const body = () => root.querySelector<HTMLElement>(".analysis-setup-body")!;
+	assert.equal(body().hidden, false);
+	assert.equal(root.querySelector(".analysis-summary"), null);
+
+	byText<HTMLButtonElement>(root, ".analysis-setup-head button", text.hideSetup).click();
+	assert.equal(body().hidden, true);
+	assert.match(root.querySelector(".analysis-summary")?.textContent ?? "", new RegExp(text.analysisRowType));
+
+	byText<HTMLButtonElement>(root, ".analysis-setup-head button", text.showSetup).click();
+	assert.equal(body().hidden, false);
+});
