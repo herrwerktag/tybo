@@ -75,3 +75,24 @@ export const library = {
 	entities: [{ id: "01J00000000000000000000000", typeId: "book", name: "Dune", content: "", description: "", values: { author: "Herbert" } }],
 	boards: [],
 };
+
+/** The names in the entity table, top to bottom. */
+export const rowNames = (root: HTMLElement) => [...root.querySelectorAll("tbody tr .name-cell")].map((td) => td.textContent);
+/** Book entities in two sets: Dune and Emma tagged "Classic", Foundation untagged; and a board. */
+export const tagged = {
+	...library,
+	boards: [{ id: "01J0000000000000000000000B", name: "Board 1" }],
+	entities: [
+		{ ...library.entities[0]!, tags: ["Classic"] },
+		{ id: "01J00000000000000000000001", typeId: "book", name: "Foundation", content: "", description: "", tags: [], values: {} },
+		{ id: "01J00000000000000000000002", typeId: "book", name: "Emma", content: "", description: "", tags: ["classic", "Romance"], values: {} },
+	],
+};
+/** The tag filter select in `scope`, if there is one. */
+export const tagSelectIn = (scope: ParentNode | null) =>
+	[...(scope?.querySelectorAll<HTMLSelectElement>("select") ?? [])].find((s) => s.ariaLabel === sharedText.filterByTag) ?? null;
+/** Picks `value` in `select`, the way the user does. */
+export const choose = (select: HTMLSelectElement, value: string) => {
+	select.value = value;
+	select.dispatchEvent(new Event("change"));
+};

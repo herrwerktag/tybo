@@ -24,8 +24,9 @@
 - Saved format: `DATA_VERSION` and `MIGRATIONS` in `shared/core/migrations.ts`; each raise also needs a step in
   `shared/api/schema.ts` (Postgres) and `shared/api/sqlite.ts`, tested in `apps/api/src/{schema,sqlite}.test.ts`.
 - Tests in `packages/app/src/` beside the features: `features.core.test.ts` the store (saving, sync between tabs,
-  undo, migrations), `features.ui.test.ts` the whole app (shell, workspaces, data pages), `history.test.ts` the
-  history page, `workspaces.test.ts` workspaces; everything else beside its feature.
+  undo, migrations), `features.ui.test.ts` what spans features (shell, workspaces, sync, search, empty lists),
+  `history.test.ts` the history page with every feature's units, `workspaces.test.ts` workspaces; everything else
+  beside its feature (`features/<name>/**/*.test.ts`).
 
 # Workflow
 
