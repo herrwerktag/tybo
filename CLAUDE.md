@@ -17,6 +17,16 @@
 - Code moves to `shared/` only once two or more features use it.
 - Moving CSS needs byte-identical screenshots before and after.
 
+# Where things live
+
+- CSS: a feature's styles in `features/<name>/<name>.css`; the shell (top bar, menus, search, banners, empty
+  lists, drop markers, cards, tags) and some older feature styles in `apps/web/src/app.css`.
+- Saved format: `DATA_VERSION` and `MIGRATIONS` in `shared/core/migrations.ts`; each raise also needs a step in
+  `shared/api/schema.ts` (Postgres) and `shared/api/sqlite.ts`, tested in `apps/api/src/{schema,sqlite}.test.ts`.
+- Tests in `packages/app/src/` beside the features: `features.core.test.ts` the store (saving, sync between tabs,
+  undo, migrations), `features.ui.test.ts` the whole app (shell, workspaces, data pages), `history.test.ts` the
+  history page, `workspaces.test.ts` workspaces; everything else beside its feature.
+
 # Workflow
 
 Before implementing:
@@ -25,8 +35,9 @@ Before implementing:
 3. Explain your intended approach.
 
 After implementing:
-1. Run relevant tests.
-2. Run `pnpm check` (type checks of every runtime, all tests, build); there is no linter.
+1. Run relevant tests, while working only those, e.g.
+   `pnpm --filter @tybo/app exec tsx --test --test-reporter=dot 'src/features/data/**/*.test.ts'`.
+2. Run `pnpm check` (type checks of every runtime, all tests, build) once before committing; there is no linter.
 3. Review your own diff for unnecessary complexity.
 
 # Definition of done
