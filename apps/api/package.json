@@ -9,7 +9,7 @@
 		"start": "tsx --env-file-if-exists=../../.env src/index.ts",
 		"dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
 		"typecheck": "tsc --noEmit",
-		"test": "tsx --env-file-if-exists=../../.env --test --test-concurrency 1 src/*.test.ts",
+		"test": "tsx --env-file-if-exists=../../.env --test --test-reporter=dot --test-concurrency 1 src/*.test.ts",
 		"build": "tsc --noEmit"
 	},
 	"dependencies": {

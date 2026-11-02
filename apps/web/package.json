@@ -12,7 +12,7 @@
 		"dev": "vite",
 		"build": "vite build",
 		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.app.json",
-		"test": "tsx --test src/*.test.ts"
+		"test": "tsx --test --test-reporter=dot src/*.test.ts"
 	},
 	"dependencies": {
 		"@tybo/app": "workspace:*"

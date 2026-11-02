@@ -8,7 +8,7 @@
 	"scripts": {
 		"start": "tsx --env-file-if-exists=../../.env src/index.ts",
 		"typecheck": "tsc --noEmit",
-		"test": "tsx --test src/*.test.ts",
+		"test": "tsx --test --test-reporter=dot src/*.test.ts",
 		"build": "tsc --noEmit"
 	},
 	"dependencies": {
