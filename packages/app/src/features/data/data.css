@@ -307,6 +307,20 @@
 	font-weight: 600;
 }
 
+/* Tags break between words only, and references and long texts (often whole sentences) get room for a few words a
+   line, so the columns can't squeeze each other down to a word's or a letter's width. */
+.entity-table :is(.chip, .ref-tag) {
+	overflow-wrap: break-word;
+}
+
+.entity-table :is(.prop-chips:has(.ref-tag), .long-text) {
+	min-width: 12rem;
+}
+
+.entity-table .long-text {
+	display: block;
+}
+
 .entity-table .id-cell {
 	color: var(--muted);
 }
@@ -757,6 +771,48 @@ td.handle-cell {
 	border: 1px solid var(--border);
 	border-radius: var(--radius-md);
 	overflow: hidden;
+}
+
+/* Beside wide screens' table, the entities fill the screen like a board: the top bar, the switch and the type chips
+   stay, and the table scrolls under its column names. A new entity's form above the table brings back the page's
+   scrolling, so it's never squeezed. */
+@media not (max-width: 40rem) {
+	main:has(.entities-view .table-wrap):not(:has(#entity-form)) {
+		height: 100dvh;
+	}
+
+	main:has(.entities-view .table-wrap):not(:has(#entity-form)) :is(.data-view, .entities-view) {
+		min-height: 0;
+		align-self: stretch;
+	}
+
+	main:has(.entities-view .table-wrap):not(:has(#entity-form)) .data-view {
+		grid-template-rows: minmax(0, 1fr);
+	}
+
+	.entities-view > section:has(> .table-wrap) {
+		max-height: 100%;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.entities-view > section > :not(.table-wrap) {
+		flex-shrink: 0;
+	}
+
+	.entities-view .table-wrap {
+		min-height: 0;
+		overflow: auto;
+	}
+
+	/* The line under the names goes along with them (a collapsed border would stay behind). */
+	.entity-table thead th {
+		position: sticky;
+		top: 0;
+		z-index: 1;
+		background: var(--surface);
+		box-shadow: inset 0 -1px var(--border);
+	}
 }
 
 .entities-view:has(> .details-panel[hidden]) > .details-resize {

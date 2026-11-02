@@ -102,6 +102,7 @@ function dataPageIn(
 			return el("div", { className: "data-view" }, shown);
 		},
 		afterRender(root: HTMLElement): void {
+			entities.afterRender();
 			// The row the address just named, in view.
 			root.querySelector<HTMLElement>(".entity-table tr.scroll-to")?.scrollIntoView({ block: "center" });
 			if (focusHandle !== null) {
