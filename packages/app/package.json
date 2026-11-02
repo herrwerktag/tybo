@@ -14,7 +14,7 @@
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.core.json && tsc --noEmit -p tsconfig.ui.json && tsc --noEmit -p tsconfig.node.json",
-		"test": "tsx --test 'src/**/*.test.ts'",
+		"test": "tsx --test --test-reporter=dot 'src/**/*.test.ts'",
 		"build": "tsc --noEmit -p tsconfig.core.json && tsc --noEmit -p tsconfig.ui.json && tsc --noEmit -p tsconfig.node.json"
 	},
 	"dependencies": {
