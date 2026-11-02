@@ -52,6 +52,10 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 		/** Whether the marked row is still to be scrolled into view (once, when the address named it). */
 		scrollToMarked: false,
 	};
+	/** The table drawn last, and of which type: a table drawn anew in its place keeps where it was scrolled to. */
+	let shownTable: { wrap: HTMLElement; typeId: string } | null = null;
+	/** Scrolls the table just drawn to where the one it replaced was; once it's on the page (see `afterRender`). */
+	let restoreScroll: (() => void) | null = null;
 
 	function section(): HTMLElement {
 		const header = el("div", { className: "section-header" }, page.dataSwitch("entities"));
@@ -157,7 +161,9 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 			const parts = typeof value === "string" ? [value] : value;
 			if (p.kind === "reference") return refTags(parts);
 			if (p.kind === "options") return el("div", { className: "prop-chips" }, ...parts.map((id) => el("span", { className: "chip" }, optionLabel(p, id) ?? "?")));
-			return document.createTextNode(parts.join(", "));
+			const joined = parts.join(", ");
+			// A long text gets the room of a few words a line, like the references (see data.css).
+			return joined.length > 40 ? el("span", { className: "long-text" }, joined) : document.createTextNode(joined);
 		};
 
 		// Read-only columns for the reverse side of references to this type, e.g. "responsible for" on Role.
@@ -263,7 +269,15 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 		for (const row of table.querySelectorAll("tbody tr")) {
 			for (const [i, cell] of [...row.querySelectorAll("td")].entries()) cell.dataset.label = labels[i] ?? "";
 		}
-		return el("div", { className: "table-wrap" }, table);
+		const wrap = el("div", { className: "table-wrap" }, table);
+		// On wide screens the table scrolls by itself (see CSS), and a value changed or details shown draw it anew.
+		const before = shownTable?.wrap.isConnected && shownTable.typeId === type.id ? shownTable.wrap : null;
+		if (before) {
+			const { scrollTop, scrollLeft } = before;
+			restoreScroll = () => wrap.scrollTo(scrollLeft, scrollTop);
+		}
+		shownTable = { wrap, typeId: type.id };
+		return wrap;
 	}
 
 	return {
@@ -296,6 +310,7 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 		 * the form for a new entity (of `newType`, if the address names one). */
 		render(current: DataStore, target: string | null = null, newType: string | null = null): HTMLElement {
 			store = current;
+			restoreScroll = null;
 			const entity = target === null ? undefined : store.data.entities.find((e) => e.id === target);
 			if (target !== state.shownTarget) {
 				state.shownTarget = target;
@@ -315,6 +330,11 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 			const drawn = section();
 			state.scrollToMarked = false;
 			return drawn;
+		},
+		/** Once drawn on the page: the table where it was scrolled to before. */
+		afterRender(): void {
+			restoreScroll?.();
+			restoreScroll = null;
 		},
 	};
 }
