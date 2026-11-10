@@ -740,7 +740,7 @@ test("Delete in the details deletes the entity after asking, with its cards on a
 	cardNode(view, frankCard.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	const button = detailsButton(view, text.deleteEntity)!;
 	assert.ok(button.classList.contains("entity-delete"), "set apart in red");
-	assert.equal(button.previousElementSibling?.textContent, text.layOutReferences, "after Edit, Connect and Lay out");
+	assert.equal(button.previousElementSibling?.textContent, dataText.convertEntity, "after Connect, Lay out and Convert");
 
 	const asked: string[] = [];
 	let answer = false;
@@ -763,10 +763,29 @@ test("Delete in the details deletes the entity after asking, with its cards on a
 	assert.deepEqual(store.data.boards.map((b) => b.cards.length), [2, 1]);
 });
 
-test("the viewer's details have no Connect button", async () => {
+test("converting from the board keeps the selected card in place and redraws it with the new type", async () => {
+	const { store, person, dune, card, view } = await connectable();
+	const before = { ...store.data.boards[0]!.cards[0]! };
+	detailsButton(view, dataText.convertEntity)!.click();
+	const dialog = view.querySelector<HTMLDialogElement>(".conversion-dialog")!;
+	assert.ok(dialog.open);
+	const target = dialog.querySelector<HTMLSelectElement>(".conversion-target-type")!;
+	target.value = person.id;
+	target.dispatchEvent(new Event("change"));
+	dialog.querySelector<HTMLFormElement>(".conversion-form")!.requestSubmit();
+
+	assert.equal(store.data.entities.find((entity) => entity.id === dune.id)?.typeId, person.id);
+	assert.deepEqual(store.data.boards[0]!.cards[0], before);
+	assert.equal(cardNode(view, card.id).querySelector(".card-type")?.textContent, "Person");
+	assert.equal(details(view).querySelector(".details-title")?.textContent, "Dune");
+	assert.equal(dialog.open, false);
+});
+
+test("the viewer's details have no Connect, Convert or Delete button", async () => {
 	const { view, card } = await setup({ readOnly: true });
 	cardNode(view, card.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	assert.equal(detailsButton(view, "Connect"), undefined);
+	assert.equal(detailsButton(view, dataText.convertEntity), undefined);
 	assert.equal(detailsButton(view, text.deleteEntity), undefined);
 });
 

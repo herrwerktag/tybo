@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DATA_VERSION, NameTaken, isUlid } from "../../../shared/core/index.js";
-import { TYPE_COLORS } from "../core.js";
+import { TYPE_COLORS, conversionPreview, conversionTargets, newReference } from "../core.js";
 import { settle, WS, memoryStorage, open, titleDraft, referenceSetup, valueOf } from "../../../test-store.js";
 
 test("addEntities adds several entities as one change, keeping the ids given", async () => {
@@ -368,6 +368,141 @@ test("one malformed type or entity is dropped on its own — and left as it is s
 	store.addBoard("New");
 	await settle();
 	assert.ok((storage.data(WS)!.types as unknown[]).includes("not a type"));
+});
+
+test("convertEntity carries assigned values in one undoable step and keeps identity, built-ins and cards", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
+	const tag = store.addType("Tag", [], "");
+	const classic = store.addEntity(tag.id, "Classic", "", {});
+	const book = store.addType("Book", [
+		titleDraft,
+		{ name: "status", kind: "options", options: [{ label: "Draft" }, { label: "Published" }], reference: null, cardDisplay: "list" },
+		{ name: "tags", kind: "reference", options: [], reference: { ...newReference([tag.id]), multiple: true }, cardDisplay: "list" },
+	], "");
+	const article = store.addType("Article", [
+		{ name: "headline", kind: "text", options: [], reference: null, cardDisplay: "list" },
+		{ name: "phase", kind: "options", options: [{ label: "Open" }, { label: "Done" }], reference: null, cardDisplay: "list" },
+		{ name: "topics", kind: "reference", options: [], reference: { ...newReference([tag.id]), multiple: true }, cardDisplay: "list" },
+	], "");
+	const [title, status, tags] = book.properties;
+	const [headline, phase, topics] = article.properties;
+	const dune = store.addEntity(book.id, "Dune", "short", {
+		[title!.id]: " Dune ",
+		[status!.id]: status!.options[0]!.id,
+		[tags!.id]: [classic.id],
+	}, "Long details", ["keep"]);
+	const card = store.addCard(store.data.boards[0]!.id, dune.id, 120, 240);
+	await store.saved();
+	const saves = storage.saves.length;
+
+	store.convertEntity(dune.id, article.id, {
+		[title!.id]: { propertyId: headline!.id },
+		[status!.id]: { propertyId: phase!.id, optionId: phase!.options[1]!.id },
+		[tags!.id]: { propertyId: topics!.id },
+	});
+	const converted = store.data.entities.find((entity) => entity.id === dune.id)!;
+	assert.equal(converted.typeId, article.id);
+	assert.deepEqual(converted.values, { [headline!.id]: "Dune", [phase!.id]: phase!.options[1]!.id, [topics!.id]: [classic.id] });
+	assert.deepEqual(
+		{ name: converted.name, content: converted.content, description: converted.description, tags: converted.tags },
+		{ name: "Dune", content: "short", description: "Long details", tags: ["keep"] },
+	);
+	assert.deepEqual(store.data.boards[0]!.cards[0], card);
+	await store.saved();
+	assert.equal(storage.saves.length, saves + 1, "one save for entity and reference changes together");
+
+	assert.ok(store.undo());
+	assert.deepEqual(store.data.entities.find((entity) => entity.id === dune.id), dune);
+	assert.deepEqual(store.data.boards[0]!.cards[0], card);
+	assert.ok(store.redo());
+	assert.deepEqual(store.data.entities.find((entity) => entity.id === dune.id), converted);
+});
+
+test("conversion targets and preview reject cross-kind, partial, duplicate and invalid assignments", async () => {
+	const store = await open(memoryStorage());
+	const person = store.addType("Person", [], "");
+	const ada = store.addEntity(person.id, "Ada", "", {});
+	const bob = store.addEntity(person.id, "Bob", "", {});
+	const source = store.addType("Source", [
+		{ name: "original", kind: "text", options: [], reference: null, cardDisplay: "list" },
+		{ name: "other", kind: "text", options: [], reference: null, cardDisplay: "list" },
+		{ name: "choice", kind: "options", options: [{ label: "Old" }], reference: null, cardDisplay: "list" },
+		{ name: "followers", kind: "reference", options: [], reference: { ...newReference([person.id]), multiple: true }, cardDisplay: "list" },
+	], "");
+	const target = store.addType("Target", [
+		{ name: "renamed", kind: "text", options: [], reference: null, cardDisplay: "list" },
+		{ name: "status", kind: "options", options: [{ label: "New" }], reference: null, cardDisplay: "list" },
+		{ name: "empty options", kind: "options", options: [], reference: null, cardDisplay: "list" },
+		{ name: "contacts", kind: "reference", options: [], reference: { ...newReference([person.id]), multiple: true }, cardDisplay: "list" },
+		{ name: "one contact", kind: "reference", options: [], reference: newReference([person.id]), cardDisplay: "list" },
+	], "");
+	const [original, other, choice, followers] = source.properties;
+	const [renamed, status, , contacts] = target.properties;
+	const entity = store.addEntity(source.id, "Example", "", {
+		[original!.id]: "first",
+		[other!.id]: "second",
+		[choice!.id]: choice!.options[0]!.id,
+		[followers!.id]: [ada.id, bob.id],
+	});
+
+	assert.deepEqual(conversionTargets(store.data, entity.id, target.id, original!).map((p) => p.id), [renamed!.id]);
+	assert.deepEqual(conversionTargets(store.data, entity.id, target.id, choice!).map((p) => p.id), [status!.id]);
+	assert.deepEqual(conversionTargets(store.data, entity.id, target.id, followers!).map((p) => p.id), [contacts!.id], "two ids do not fit a single reference");
+	const preview = conversionPreview(store.data, entity.id, target.id, {
+		[original!.id]: { propertyId: renamed!.id },
+		[other!.id]: { propertyId: renamed!.id },
+		[choice!.id]: { propertyId: status!.id, optionId: "not-an-option" },
+		[followers!.id]: { propertyId: contacts!.id },
+	})!;
+	assert.deepEqual(preview.values, { [renamed!.id]: "first", [contacts!.id]: [ada.id, bob.id] });
+	assert.deepEqual(preview.lostValues.map(({ property }) => property.id), [other!.id, choice!.id]);
+	assert.deepEqual(preview.lostReferences, []);
+});
+
+test("conversion handles self-references against the future type and restores lost incoming references with undo", async () => {
+	const store = await open(memoryStorage());
+	const node = store.addType("Node", [], "");
+	store.updateType(node.id, "Node", [
+		{ name: "next", kind: "reference", options: [], reference: newReference([node.id]), cardDisplay: "list" },
+	], "");
+	const special = store.addType("Special", [], "");
+	store.updateType(special.id, "Special", [
+		{ name: "next", kind: "reference", options: [], reference: newReference([special.id]), cardDisplay: "list" },
+		{ name: "old", kind: "reference", options: [], reference: newReference([node.id]), cardDisplay: "list" },
+	], "");
+	const watcher = store.addType("Watcher", [
+		{ name: "only node", kind: "reference", options: [], reference: newReference([node.id]), cardDisplay: "list" },
+		{ name: "either", kind: "reference", options: [], reference: { ...newReference([node.id, special.id]), multiple: true }, cardDisplay: "list" },
+	], "");
+	const next = store.data.types.find((type) => type.id === node.id)!.properties[0]!;
+	const targetNext = store.data.types.find((type) => type.id === special.id)!.properties[0]!;
+	const onlyNode = watcher.properties[0]!;
+	const either = watcher.properties[1]!;
+	const a = store.addEntity(node.id, "A", "", { [next.id]: "" });
+	store.updateEntity(a.id, "A", "", { [next.id]: a.id });
+	const b = store.addEntity(node.id, "B", "", { [next.id]: a.id });
+	const watching = store.addEntity(watcher.id, "Watching", "", { [onlyNode.id]: a.id, [either.id]: [a.id] });
+
+	assert.deepEqual(conversionTargets(store.data, a.id, special.id, next).map((p) => p.id), [targetNext.id]);
+	const preview = conversionPreview(store.data, a.id, special.id, { [next.id]: { propertyId: targetNext.id } })!;
+	assert.deepEqual(
+		preview.lostReferences.map(({ entity, property }) => [entity.id, property.id]),
+		[
+			[b.id, next.id],
+			[watching.id, onlyNode.id],
+		],
+	);
+	store.convertEntity(a.id, special.id, { [next.id]: { propertyId: targetNext.id } });
+	assert.equal(store.data.entities.find((entity) => entity.id === a.id)?.values[targetNext.id], a.id, "self-reference fits its new type");
+	assert.equal(store.data.entities.find((entity) => entity.id === b.id)?.values[next.id], null);
+	assert.deepEqual(store.data.entities.find((entity) => entity.id === watching.id)?.values, { [onlyNode.id]: null, [either.id]: [a.id] });
+
+	assert.ok(store.undo());
+	assert.equal(store.data.entities.find((entity) => entity.id === a.id)?.typeId, node.id);
+	assert.equal(store.data.entities.find((entity) => entity.id === a.id)?.values[next.id], a.id);
+	assert.equal(store.data.entities.find((entity) => entity.id === b.id)?.values[next.id], a.id);
+	assert.deepEqual(store.data.entities.find((entity) => entity.id === watching.id)?.values, { [onlyNode.id]: a.id, [either.id]: [a.id] });
 });
 
 test("renaming or reordering options keeps every entity's value and saves only the type unit", async () => {

@@ -1,4 +1,5 @@
 import { moveItem, refuseTakenName, ulid, type AppData, type StoreCore } from "../../../shared/core/index.js";
+import { conversionPreview, type ConversionMapping } from "./conversion.js";
 import { reconcileValues } from "./normalize.js";
 import {
 	convertedValues,
@@ -151,6 +152,21 @@ export function dataOps<D extends EntityData>(core: StoreCore<D>, settle: (data:
 						: e,
 				),
 			});
+		},
+
+		/** Converts one entity in place, carrying over the compatible values assigned by property id. Its id, built-in
+		 * fields and everything built on it (cards, history) stay; invalid incoming references go in the same change. */
+		convertEntity(entityId: string, targetTypeId: string, mapping: ConversionMapping): void {
+			const preview = conversionPreview(core.data, entityId, targetTypeId, mapping);
+			if (!preview) return;
+			core.change(
+				reconciled({
+					...core.data,
+					entities: core.data.entities.map((entity) =>
+						entity.id === entityId ? { ...entity, typeId: targetTypeId, values: preview.values } : entity,
+					),
+				}),
+			);
 		},
 
 		/** Moves the entity to index `to` among the entities of its type; other types' entities keep their places. */

@@ -541,6 +541,93 @@ td.handle-cell {
 	gap: 0.25rem;
 }
 
+/* Converting an entity: source values and their destinations, with every loss visible before saving. */
+.conversion-dialog {
+	margin: auto;
+	width: min(52rem, calc(100vw - 2rem));
+	max-height: calc(100dvh - 4rem);
+	overflow-y: auto;
+	padding: 1rem;
+	background: var(--surface);
+	color: inherit;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	box-shadow: var(--shadow-lg);
+}
+
+.conversion-dialog[open],
+.conversion-form,
+.conversion-mapping {
+	display: grid;
+	gap: 0.75rem;
+}
+
+.conversion-dialog::backdrop {
+	background: rgb(0 0 0 / 0.25);
+}
+
+.conversion-dialog > header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+}
+
+.conversion-dialog h2 {
+	font-size: var(--text-base);
+}
+
+.conversion-dialog h3 {
+	font-size: var(--text-md);
+}
+
+.conversion-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(12rem, 1fr);
+	gap: 0.5rem 1rem;
+	align-items: center;
+	padding: 0.75rem;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+}
+
+.conversion-source,
+.conversion-target {
+	display: grid;
+	min-width: 0;
+	gap: 0.35rem;
+}
+
+.conversion-current-value {
+	color: var(--muted);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.conversion-note {
+	grid-column: 1 / -1;
+	color: var(--muted);
+}
+
+.conversion-loss {
+	padding: 0.75rem;
+	background: var(--error-tint);
+	border-left: 3px solid var(--error);
+}
+
+.conversion-loss ul {
+	display: grid;
+	gap: 0.25rem;
+	margin: 0.5rem 0 0;
+	padding-left: 1.25rem;
+}
+
+@media (max-width: 40rem) {
+	.conversion-row {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
 /* Narrow screens: less padding around the pages, the heading on a line of its own with the controls sharing the
    line below, and each entity as a card instead of a table row too wide to see whole: the handle and name on top,
    then every value with its column's name above it (data-label, set in entityTable), the ID, and the buttons. */
