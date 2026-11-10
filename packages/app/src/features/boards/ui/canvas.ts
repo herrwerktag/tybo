@@ -2,7 +2,7 @@ import { GRID_SIZE, freeName, snapToGrid, type Point, type Rect } from "../../..
 import { CLICK_TOLERANCE, el, icon, listenWhileConnected, readPreference, resizeHandle, trackPointer, writePreference, type EntityLink, type SearchSource } from "../../../shared/ui/index.js";
 import { DEFAULT_CARD_SIZE, type Entity, type EntityType } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
-import { cardParts, cardSize, createCardPreview, detailsPanel, type EntityPlaces } from "../../data/ui.js";
+import { cardParts, cardSize, conversionDialog, createCardPreview, detailsPanel, type EntityPlaces } from "../../data/ui.js";
 import { frameInside, referencesOffBoard, screenToWorld, visibleRect, type Board, type CanvasCard, type BoardStore, type Viewport } from "../core.js";
 import { text } from "../texts.js";
 import { connectDialog, newEntityDialog } from "./dialogs.js";
@@ -231,12 +231,14 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 	 * the selection — a finger moves no card otherwise. */
 	let selecting = false;
 	let moving = false;
+	const conversion = conversionDialog(store, { onConverted: () => redrawBoard() });
 	/** Easy-to-read details of the selected entity: description, all properties, content and ID. In the editor, Edit
 	 * shows its form there; for a card on the board, Connect links it with another entity, existing or new. */
 	const details = detailsPanel(store, {
 		readOnly,
 		actions: (entity) => [
 			...(selected?.cardId ? [connect.button(entity, selected.cardId), layOutButton(selected.cardId)] : []),
+			conversion.button(entity),
 			el("button", { type: "button", className: "entity-delete", title: text.deleteEntityHint, onclick: () => deleteEntity(entity) }, text.deleteEntity),
 		],
 		onClose: () => (narrow() ? closeDetails() : select(null)),
@@ -887,6 +889,7 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 		controls.exportDialog,
 		connect.dialog,
 		newEntity.dialog,
+		conversion.dialog,
 	);
 	// Drag handles for the widths of the side panel and the details (hidden along with them, see CSS).
 	const panelHandle = resizeHandle(panel.element, { key: PANEL_WIDTH_KEY, side: "left", min: 12, max: 32 });

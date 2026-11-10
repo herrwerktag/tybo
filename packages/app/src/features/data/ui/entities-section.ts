@@ -13,6 +13,7 @@ import {
 	type DataStore,
 } from "../core.js";
 import { text } from "../texts.js";
+import { conversionDialog } from "./conversion-dialog.js";
 import { entityForm } from "./entity-form.js";
 import { detailsPanel, type DetailsPanel } from "./details-panel.js";
 import type { EntityPlaces } from "./entity-card.js";
@@ -38,6 +39,7 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 	let store!: DataStore;
 	/** The details beside the table, and the fields of the table being edited; made anew for each workspace. */
 	let details!: DetailsPanel;
+	let conversion!: ReturnType<typeof conversionDialog>;
 	let editing!: FieldEditing;
 	const state = {
 		selectedTypeId: null as string | null,
@@ -137,7 +139,7 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 		);
 		details.show(state.detailsId);
 		state.detailsId = details.shown();
-		return el("div", { className: "entities-view" }, section, details.handle, details.element);
+		return el("div", { className: "entities-view" }, section, details.handle, details.element, conversion.dialog);
 	}
 
 	/** The entities shown (maybe filtered by a tag) of all those of the type, `ofType`, in which they're reordered. */
@@ -288,7 +290,15 @@ export function entitiesSection(page: DataPage, entityLinks: readonly EntityLink
 			state.detailsId = null;
 			state.creatingEntity = false;
 			editing = fieldEditing(store, rerender);
+			conversion = conversionDialog(store, {
+				onConverted: (entityId, targetTypeId) => {
+					state.selectedTypeId = targetTypeId;
+					state.detailsId = entityId;
+					rerender();
+				},
+			});
 			details = detailsPanel(store, {
+				actions: (entity) => [conversion.button(entity)],
 				onClose: () => {
 					state.detailsId = null;
 					rerender();

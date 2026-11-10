@@ -1,3 +1,4 @@
+export * from "./core/conversion.js";
 export * from "./core/model.js";
 export * from "./core/normalize.js";
 export * from "./core/ops.js";

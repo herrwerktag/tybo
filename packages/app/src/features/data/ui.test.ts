@@ -170,6 +170,91 @@ test("deleting an entity asks first; cancelling keeps it", async () => {
 	assert.ok(byText(root, "p", dataText.noEntitiesOfType("Book")));
 });
 
+test("an entity converts from its details, with like-named fields assigned and the target type shown", async () => {
+	const root = await startApp({
+		version: DATA_VERSION,
+		types: [
+			{
+				id: "idea", name: "Idea", color: "#c4dafa", contentTemplate: "",
+				properties: [
+					{ id: "title", name: "title", kind: "text", options: [], reference: null, cardDisplay: "list" },
+					{ id: "status", name: "status", kind: "options", options: [{ id: "old-open", label: "open" }], reference: null, cardDisplay: "list" },
+				],
+			},
+			{
+				id: "project", name: "Project", color: "#c8ebbf", contentTemplate: "",
+				properties: [
+					{ id: "title", name: "title", kind: "text", options: [], reference: null, cardDisplay: "list" },
+					{ id: "phase", name: "phase", kind: "options", options: [{ id: "new-open", label: "open" }, { id: "done", label: "done" }], reference: null, cardDisplay: "list" },
+				],
+			},
+		],
+		entities: [{ id: "01J00000000000000000000000", typeId: "idea", name: "Conversion", content: "short", description: "details", tags: ["keep"], values: { title: "Ship it", status: "old-open" } }],
+		boards: [],
+	}, "#entities");
+	stub({ confirm: () => assert.fail("a lossless conversion does not ask again") });
+	byText(root, ".name-link", "Conversion").click();
+	byText(root, ".details-actions button", dataText.convertEntity).click();
+	const dialog = root.querySelector<HTMLDialogElement>(".conversion-dialog")!;
+	assert.ok(dialog.open);
+	choose(dialog.querySelector<HTMLSelectElement>(".conversion-target-type")!, "project");
+	assert.equal(dialog.querySelector<HTMLSelectElement>(`.conversion-property-target[data-source-property="title"]`)!.value, "title");
+	choose(dialog.querySelector<HTMLSelectElement>(`.conversion-property-target[data-source-property="status"]`)!, "phase");
+	assert.equal(dialog.querySelector<HTMLSelectElement>(`.conversion-option-target[data-source-property="status"]`)!.value, "new-open", "the like-labelled option is preselected");
+	dialog.querySelector<HTMLFormElement>(".conversion-form")!.requestSubmit();
+
+	const saved = await readSaved();
+	assert.equal(saved.entities[0]?.typeId, "project");
+	assert.deepEqual(saved.entities[0]?.values, { title: "Ship it", phase: "new-open" });
+	assert.deepEqual(
+		{ content: saved.entities[0]?.content, description: saved.entities[0]?.description, tags: saved.entities[0]?.tags },
+		{ content: "short", description: "details", tags: ["keep"] },
+	);
+	assert.equal(dialog.open, false);
+	assert.ok(byText(root, ".type-chip", "Project1"));
+	assert.equal(root.querySelector(".details-title")?.textContent, "Conversion");
+});
+
+test("conversion lists every loss and cancelling its confirmation changes nothing", async () => {
+	const reference = { typeIds: ["idea"], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" };
+	const root = await startApp({
+		version: DATA_VERSION,
+		types: [
+			{ id: "idea", name: "Idea", color: "#c4dafa", contentTemplate: "", properties: [{ id: "note", name: "note", kind: "text", options: [], reference: null, cardDisplay: "list" }] },
+			{ id: "empty", name: "Empty", color: "#c8ebbf", contentTemplate: "", properties: [] },
+			{ id: "review", name: "Review", color: "#f6e8a6", contentTemplate: "", properties: [{ id: "subject", name: "subject", kind: "reference", options: [], reference, cardDisplay: "list" }] },
+		],
+		entities: [
+			{ id: "01J00000000000000000000000", typeId: "idea", name: "Conversion", content: "", description: "", tags: [], values: { note: "Keep me?" } },
+			{ id: "01J00000000000000000000001", typeId: "review", name: "Review", content: "", description: "", tags: [], values: { subject: "01J00000000000000000000000" } },
+		],
+		boards: [],
+	}, "#entities");
+	let answer = false;
+	const questions: string[] = [];
+	stub({ confirm: (message: string) => (questions.push(message), answer) });
+	byText(root, ".name-link", "Conversion").click();
+	byText(root, ".details-actions button", dataText.convertEntity).click();
+	const dialog = root.querySelector<HTMLDialogElement>(".conversion-dialog")!;
+	choose(dialog.querySelector<HTMLSelectElement>(".conversion-target-type")!, "empty");
+	assert.match(dialog.querySelector(".conversion-lost-values")!.textContent!, /note: Keep me\?/);
+	assert.match(dialog.querySelector(".conversion-lost-references")!.textContent!, /Review → subject/);
+
+	dialog.querySelector<HTMLFormElement>(".conversion-form")!.requestSubmit();
+	assert.deepEqual(questions, [dataText.confirmConversion(1, 1)]);
+	assert.ok(dialog.open, "cancelling keeps the mapping open");
+	assert.equal((await readSaved()).entities[0]?.typeId, "idea");
+	assert.equal((await readSaved()).entities[1]?.values.subject, "01J00000000000000000000000");
+
+	answer = true;
+	dialog.querySelector<HTMLFormElement>(".conversion-form")!.requestSubmit();
+	const saved = await readSaved();
+	assert.equal(saved.entities[0]?.typeId, "empty");
+	assert.deepEqual(saved.entities[0]?.values, {});
+	assert.equal(saved.entities[1]?.values.subject, null);
+	assert.equal(dialog.open, false);
+});
+
 test("a type other types refer to can't be deleted", async () => {
 	const data = structuredClone(library) as { types: unknown[]; boards: unknown[] };
 	data.types.push({ id: "review", name: "Review", properties: [{ id: "of", name: "of", kind: "reference", options: [], reference: { typeId: "book", multiple: false }, cardDisplay: "list" }] });
