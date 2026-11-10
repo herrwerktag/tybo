@@ -91,6 +91,23 @@ export function fieldEditing(store: DataStore, redraw: () => void, onSaved: () =
 		const form = el("form", { className: "field-editor", ariaLabel: label }, made.element);
 		form.dataset.field = key;
 		let done = false;
+		const cancel = () => {
+			done = true;
+			close();
+		};
+		// Where there's touch (see CSS), buttons do what Enter and Escape do: fingers have no such keys. Pressing them
+		// leaves the focus where it is, so the field isn't saved for being left before Cancel is clicked.
+		if (!made.saveOnChange) {
+			const keepFocus = (e: Event) => e.preventDefault();
+			form.append(
+				el(
+					"div",
+					{ className: "field-editor-actions" },
+					el("button", { type: "submit", className: "primary", onmousedown: keepFocus }, text.saveField),
+					el("button", { type: "button", onmousedown: keepFocus, onclick: cancel }, text.cancelField),
+				),
+			);
+		}
 		const commit = () => {
 			if (done) return;
 			const patch = made.read();
@@ -110,8 +127,7 @@ export function fieldEditing(store: DataStore, redraw: () => void, onSaved: () =
 			if (e.key === "Escape") {
 				e.preventDefault();
 				e.stopPropagation(); // closes the field, not the panel around it
-				done = true;
-				close();
+				cancel();
 			} else if (e.key === "Enter" && made.multiline && (e.metaKey || e.ctrlKey)) {
 				e.preventDefault();
 				commit();

@@ -59,7 +59,8 @@ main:has(.canvas-view) {
 	padding: 0.45rem;
 }
 
-/* Narrow screens: side panel above, canvas, details below. */
+/* Narrow screens: side panel above, then the canvas; the details lie over its lower part as a sheet (see
+   .details-panel), so the canvas keeps its size, and with it what it shows, as they come and go. */
 @media (max-width: 40rem) {
 	.canvas-view {
 		flex-direction: column;
@@ -71,17 +72,9 @@ main:has(.canvas-view) {
 		border-bottom: 1px solid var(--border);
 	}
 
-	/* With the side panel open, a selected card's details take its place: there's no room for both, and the canvas
-	   keeps its size and place instead of shrinking to a strip between them. */
-	.canvas-view:not(.panel-collapsed):has(> .details-panel:not([hidden])) > .canvas-panel {
-		display: none;
-	}
-
-	.canvas-view:not(.panel-collapsed, .read-only) > .details-panel {
-		order: -1;
-		flex-basis: 30dvh;
-		border-top: none;
-		border-bottom: 1px solid var(--border);
+	/* Pushed up to show the selected card above the details (see liftBoard). */
+	.canvas-surface {
+		transition: translate 0.15s ease-out;
 	}
 }
 
@@ -208,7 +201,8 @@ main:has(.canvas-view) {
 	box-shadow: 0 0 0 6px rgb(59 111 224 / 0.18), var(--shadow-sm);
 }
 
-/* A card's × only on the card under the pointer, with focus or selected; without hover (touch) always. */
+/* A card's × only on the card under the pointer, with focus or selected; without hover (touch) only on the selected
+   one, and nowhere else to be hit by a finger meant for the card. */
 .canvas-card .card-remove {
 	opacity: 0;
 }
@@ -218,9 +212,15 @@ main:has(.canvas-view) {
 }
 
 @media (hover: none) {
-	.canvas-card .card-remove {
-		opacity: 1;
+	.canvas-card:not(.selected) .card-remove {
+		visibility: hidden;
 	}
+}
+
+/* While a finger moves the selection (see the touch bar): its cards are marked as loose. */
+.moving-cards .canvas-card.selected {
+	outline-style: dashed;
+	cursor: move;
 }
 
 .canvas-surface {
@@ -236,6 +236,13 @@ main:has(.canvas-view) {
 
 .canvas-surface :is(input, textarea) {
 	user-select: text;
+}
+
+/* A finger on a card pans and zooms the board like one beside it (see canvasInput) — on a body long enough to
+   scroll too, which would otherwise take the finger for itself. */
+.canvas-surface .canvas-card,
+.canvas-surface .canvas-card * {
+	touch-action: none;
 }
 
 /* While a layer's tool is active (see CanvasLayer), e.g. a drawing tool, pressing the canvas uses it instead of
@@ -285,6 +292,26 @@ main:has(.canvas-view) {
 	bottom: 0.75rem;
 }
 
+/* Selecting several and moving, for fingers: top left under the boards, only where there's touch. */
+.canvas-touch {
+	position: absolute;
+	left: 0.75rem;
+	top: 4.25rem;
+}
+
+@media not (any-pointer: coarse) {
+	.toolbar-group.canvas-touch {
+		display: none;
+	}
+}
+
+@media (any-pointer: coarse) {
+	.canvas-touch button {
+		min-height: 2.25rem;
+		padding-inline: 0.75rem;
+	}
+}
+
 /* The button showing the controls kept out of the way on narrow screens; wider ones show them all. */
 .canvas-more {
 	display: none;
@@ -299,9 +326,10 @@ main:has(.canvas-view) {
 	.canvas-main {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
-		grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+		grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
 		grid-template-areas:
 			"top top"
+			"touch touch"
 			"tools tools"
 			". ."
 			"style style"
@@ -313,13 +341,14 @@ main:has(.canvas-view) {
 	.show-more .canvas-main {
 		grid-template-areas:
 			"top top"
+			"touch touch"
 			"tools tools"
 			". ."
 			"style style"
 			"zoom zoom";
 	}
 
-	.canvas-main > :is(.canvas-toolbar, .canvas-zoom) {
+	.canvas-main > :is(.canvas-toolbar, .canvas-zoom, .canvas-touch) {
 		position: relative;
 		z-index: 1;
 		inset: auto;
@@ -334,6 +363,13 @@ main:has(.canvas-view) {
 
 	.canvas-main > .canvas-zoom {
 		grid-area: zoom;
+	}
+
+	/* Under the boards, where the details' sheet doesn't cover it. */
+	.canvas-main > .canvas-touch {
+		grid-area: touch;
+		justify-self: start;
+		margin-top: 0.5rem;
 	}
 
 
