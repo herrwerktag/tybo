@@ -16,8 +16,9 @@ export function defaultViewport(): Viewport {
 	return { x: 0, y: 0, zoom: 1 };
 }
 
-export function clampZoom(zoom: number): number {
-	return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+/** `zoom` within the limits; `min` lowers the lower one (the viewer, fitting a frame too large for a small screen). */
+export function clampZoom(zoom: number, min = MIN_ZOOM): number {
+	return Math.min(MAX_ZOOM, Math.max(min, zoom));
 }
 
 /** The nearest zoom step, within the limits. */
@@ -38,9 +39,9 @@ export function screenToWorld(viewport: Viewport, sx: number, sy: number): { x: 
 	return { x: (sx - viewport.x) / viewport.zoom, y: (sy - viewport.y) / viewport.zoom };
 }
 
-/** Changes the zoom while keeping the world point under (sx, sy) in place. */
-export function zoomAt(viewport: Viewport, zoom: number, sx: number, sy: number): Viewport {
-	const z = clampZoom(zoom);
+/** Changes the zoom while keeping the world point under (sx, sy) in place; within the limits (see `clampZoom`). */
+export function zoomAt(viewport: Viewport, zoom: number, sx: number, sy: number, min = MIN_ZOOM): Viewport {
+	const z = clampZoom(zoom, min);
 	const world = screenToWorld(viewport, sx, sy);
 	return { x: sx - world.x * z, y: sy - world.y * z, zoom: z };
 }
@@ -52,9 +53,9 @@ export function visibleRect(viewport: Viewport, width: number, height: number): 
 }
 
 /** The pan/zoom showing all of `rect` as large as fits on a screen of `width` × `height`, centered, with
- * `margin` (screen px) around it; within the zoom limits. */
-export function fitRect(rect: Rect, width: number, height: number, margin = 0): Viewport {
+ * `margin` (screen px) around it; within the zoom limits (see `clampZoom`). */
+export function fitRect(rect: Rect, width: number, height: number, margin = 0, min = MIN_ZOOM): Viewport {
 	const room = (size: number) => Math.max(1, size - 2 * margin);
-	const zoom = clampZoom(Math.min(room(width) / Math.max(1, rect.width), room(height) / Math.max(1, rect.height)));
+	const zoom = clampZoom(Math.min(room(width) / Math.max(1, rect.width), room(height) / Math.max(1, rect.height)), min);
 	return { x: width / 2 - (rect.x + rect.width / 2) * zoom, y: height / 2 - (rect.y + rect.height / 2) * zoom, zoom };
 }

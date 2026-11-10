@@ -10,10 +10,10 @@ import type { ViewportControl } from "./viewport.js";
 
 /**
  * What pressing, dragging, dropping and pasting on the canvas's `surface` does, beyond its cards: Space + drag or
- * the middle button pans from anywhere; a layer's active tool takes a press; dragging the empty background frames
- * cards and layer items to select them (touch and the viewer pan instead); entities dropped from the side panel get
- * a card, and dropped or pasted files go to the layers. Registered in this order, since the earlier capture
- * listeners have to win.
+ * the middle button pans from anywhere; a layer's active tool takes a press; fingers pan and zoom, from cards too
+ * (see `onTouch`); dragging the empty background frames cards and layer items to select them (the viewer pans
+ * instead); entities dropped from the side panel get a card, and dropped or pasted files go to the layers. Registered
+ * in this order, since the earlier capture listeners have to win.
  */
 export function canvasInput(
 	store: BoardStore,
@@ -30,6 +30,8 @@ export function canvasInput(
 		selection,
 		setSelection,
 		clearSelection,
+		onTouch,
+		onTap,
 		onCardAdded,
 	}: {
 		readOnly: boolean;
@@ -51,6 +53,10 @@ export function canvasInput(
 		setSelection: (items: BoardItems) => void;
 		/** Selects nothing: no card, no layer's item. */
 		clearSelection: () => void;
+		/** A finger put on a card: true if the canvas does something else with it than pan and zoom (moves the card). */
+		onTouch: (e: PointerEvent, card: HTMLElement) => boolean;
+		/** A tap on a card (on `target` in it), or on the empty background (null). */
+		onTap: (card: HTMLElement | null, target: Element) => void;
 		/** After an entity dropped from the side panel got its card. */
 		onCardAdded: () => void;
 	},
@@ -81,15 +87,27 @@ export function canvasInput(
 
 	// With a layer's tool active, pressing anywhere on the canvas except on a card (or the frame's name or corner)
 	// uses it, e.g. starts a new drawing (in the capture phase, so it wins over panning and selecting).
-	if (!readOnly) {
-		surface.addEventListener(
-			"pointerdown",
-			(e) => {
-				if (!(e.target as Element).closest(".canvas-card, .view-frame")) [...views.values()].some((view) => view.press(e));
-			},
-			{ capture: true },
-		);
-	}
+	//
+	// Otherwise a finger on the empty background or on a card pans the board, and a second one — wherever it lands —
+	// zooms it; a tap is the click. So a card never moves under a finger that only meant to tap or pan (unless
+	// `onTouch` takes it), and its buttons, the frame and the layers' items keep their own presses.
+	surface.addEventListener(
+		"pointerdown",
+		(e) => {
+			const target = e.target as Element;
+			const onCanvas = !target.closest(".canvas-card, .view-frame");
+			if (!readOnly && onCanvas && [...views.values()].some((view) => view.press(e))) return;
+			if (e.pointerType !== "touch") return;
+			const card = target.closest<HTMLElement>(".canvas-card[data-card-id]");
+			if (!viewport.touching()) {
+				if (card ? target.closest("button, a") : target !== surface && target !== layer) return;
+				if (card && onTouch(e, card)) return e.stopPropagation();
+			}
+			e.stopPropagation();
+			viewport.touch(e, () => onTap(card, target));
+		},
+		{ capture: true },
+	);
 
 	// Any drag, pan or zoom on the canvas closes the preview.
 	surface.addEventListener("pointerdown", preview.hide, { capture: true });
@@ -129,11 +147,11 @@ export function canvasInput(
 		});
 	}
 
-	// Dragging the empty background frames cards and layer items to select them. Touch, and the viewer (which has
-	// nothing to select), pan instead.
+	// Dragging the empty background frames cards and layer items to select them. The viewer (which has nothing to
+	// select) pans instead; fingers have their own way (see above).
 	surface.addEventListener("pointerdown", (e) => {
-		if (e.button !== 0 || (e.target !== surface && e.target !== layer)) return;
-		if (readOnly || e.pointerType === "touch") pan(e);
+		if (e.button !== 0 || e.pointerType === "touch" || (e.target !== surface && e.target !== layer)) return;
+		if (readOnly) pan(e);
 		else frameSelect(e);
 	});
 

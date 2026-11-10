@@ -1,9 +1,9 @@
-import { freeName, snapToGrid, type Point, type Rect } from "../../../shared/core/index.js";
+import { GRID_SIZE, freeName, snapToGrid, type Point, type Rect } from "../../../shared/core/index.js";
 import { CLICK_TOLERANCE, el, icon, listenWhileConnected, readPreference, resizeHandle, trackPointer, writePreference, type EntityLink, type SearchSource } from "../../../shared/ui/index.js";
 import { DEFAULT_CARD_SIZE, type Entity, type EntityType } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import { cardParts, cardSize, createCardPreview, detailsPanel, type EntityPlaces } from "../../data/ui.js";
-import { frameInside, referencesOffBoard, screenToWorld, visibleRect, type Board, type CanvasCard, type BoardStore } from "../core.js";
+import { frameInside, referencesOffBoard, screenToWorld, visibleRect, type Board, type CanvasCard, type BoardStore, type Viewport } from "../core.js";
 import { text } from "../texts.js";
 import { connectDialog, newEntityDialog } from "./dialogs.js";
 import { frameEditor } from "./frame.js";
@@ -117,6 +117,9 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 		className: readOnly ? "canvas-view read-only" : panelCollapsed ? "canvas-view panel-collapsed" : "canvas-view",
 	});
 
+	/** Whether the screen is narrow (a phone): the details then lie over the board as a sheet (see CSS). */
+	const narrow = (): boolean => !!window.matchMedia?.("(max-width: 40rem)").matches;
+
 	function setPanelCollapsed(collapsed: boolean): void {
 		panelCollapsed = collapsed;
 		writePreference(PANEL_COLLAPSED_KEY, String(collapsed));
@@ -222,6 +225,12 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 
 	/** The entity shown in the details panel, and the card that was selected for it (if it's on this board). */
 	let selected: { entityId: string; cardId: string | null } | null = null;
+	/** Narrow screens: the details were closed, the selection kept (see `closeDetails`). */
+	let detailsClosed = false;
+	/** With touch (see `touchBar`): whether tapping cards selects several, and whether dragging a selected card moves
+	 * the selection — a finger moves no card otherwise. */
+	let selecting = false;
+	let moving = false;
 	/** Easy-to-read details of the selected entity: description, all properties, content and ID. In the editor, Edit
 	 * shows its form there; for a card on the board, Connect links it with another entity, existing or new. */
 	const details = detailsPanel(store, {
@@ -230,7 +239,7 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 			...(selected?.cardId ? [connect.button(entity, selected.cardId), layOutButton(selected.cardId)] : []),
 			el("button", { type: "button", className: "entity-delete", title: text.deleteEntityHint, onclick: () => deleteEntity(entity) }, text.deleteEntity),
 		],
-		onClose: () => select(null),
+		onClose: () => (narrow() ? closeDetails() : select(null)),
 		onSelectEntity: followReference,
 		places: [BOARD_PLACES],
 		links: entityLinks,
@@ -244,19 +253,86 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 		const hadGroup = group !== null;
 		group = null;
 		selected = entityId ? { entityId, cardId } : null;
+		detailsClosed = false;
+		moving = false;
 		if (entityId) deselectLayers();
 		markSelectedCards();
 		if (hadGroup) renderLayers(); // without the group's outlines
 		if (!details.open(selected?.entityId ?? null)) selected = null;
+		liftBoard();
+	}
+
+	/**
+	 * Narrow screens: while the details lie over the board, the canvas is pushed up just far enough to show the
+	 * selected card above them, as far as there's room under the controls. The pan/zoom stays as it is (or is about to
+	 * be: `at`), so closing the details shows what was seen before.
+	 */
+	function liftBoard(at: Viewport = viewport.current): void {
+		const rect = selected?.cardId ? cardRects.get(selected.cardId) : undefined;
+		let lift = 0;
+		if (rect && !details.element.hidden && narrow()) {
+			const top = canvasMain.getBoundingClientRect().top + rect.y * at.zoom + at.y;
+			const sheet = details.element.getBoundingClientRect();
+			const controls = (readOnly ? toolbar : touchBar).getBoundingClientRect().bottom;
+			lift = Math.min(top + rect.height * at.zoom + GRID_SIZE - sheet.top, top - controls - GRID_SIZE / 2, sheet.height);
+		}
+		surface.style.translate = lift > 0 ? `0 ${-Math.round(lift)}px` : "";
+	}
+
+	/** Brings a rectangle on the board into view (see `ViewportControl.reveal`), above the details lying over it. */
+	const reveal = (rect: Rect): void => liftBoard(viewport.reveal(rect));
+
+	/** Narrow screens: closes the details lying over the board; the card stays selected, and a tap on it shows them
+	 * again. */
+	function closeDetails(): void {
+		detailsClosed = true;
+		renderDetails();
 	}
 
 	const isCardSelected = (cardId: string): boolean => (group ? !!group.cards?.has(cardId) : selected?.cardId === cardId);
+	const anyCardSelected = (): boolean => (group ? !!group.cards?.size : !!selected?.cardId);
 
 	function markSelectedCards(): void {
 		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card[data-card-id]")) {
 			node.classList.toggle("selected", isCardSelected(node.dataset.cardId!));
 		}
 		markChain();
+		renderTouchBar();
+	}
+
+	/** A click or tap on a card shows its details; while selecting several, it adds the card or takes it out. */
+	function pressCard(card: CanvasCard): void {
+		if (selecting) toggleSelected("cards", card.id);
+		else select(card.entityId, card.id);
+	}
+
+	/** Selecting several cards by tapping them, one after the other; what's selected stays so, without its details. */
+	function setSelecting(on: boolean): void {
+		selecting = on;
+		if (on) setSelection(selection(), true);
+		renderTouchBar();
+	}
+
+	/** Moving what's selected by dragging one of its cards with a finger, until turned off or something else is
+	 * selected. On narrow screens the details make room for it. */
+	function setMoving(on: boolean): void {
+		moving = on && anyCardSelected();
+		if (moving) selecting = false;
+		if (moving && narrow()) closeDetails();
+		renderTouchBar();
+	}
+
+	const selectButton = el("button", { type: "button", title: text.selectCardsHint, onclick: () => setSelecting(!selecting) }, text.selectCards);
+	const moveButton = el("button", { type: "button", title: text.moveCardsHint, onclick: () => setMoving(!moving) }, text.moveCards);
+	/** Only where there's touch (see CSS), in the editor: what a finger can't tell apart by how it presses. */
+	const touchBar = el("div", { className: "toolbar-group canvas-touch", role: "group", ariaLabel: text.touchActions }, selectButton, moveButton);
+
+	function renderTouchBar(): void {
+		if (!anyCardSelected()) moving = false;
+		selectButton.ariaPressed = String(selecting);
+		moveButton.ariaPressed = String(moving);
+		moveButton.disabled = !anyCardSelected();
+		view.classList.toggle("moving-cards", moving);
 	}
 
 	/**
@@ -289,11 +365,12 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 		return items;
 	}
 
-	/** Selects these cards and items: two or more as a group, one as usual (with its details or handles). */
-	function setSelection(items: BoardItems): void {
+	/** Selects these cards and items: two or more as a group, one as usual (with its details or handles) — or, with
+	 * `asGroup`, as a group too. */
+	function setSelection(items: BoardItems, asGroup = false): void {
 		const all = Object.entries(items).flatMap(([key, ids]) => [...ids].map((id) => ({ key, id })));
 		const [one] = all;
-		if (all.length >= 2) {
+		if (all.length >= 2 || (asGroup && one)) {
 			select(null);
 			deselectLayers();
 			group = Object.fromEntries(Object.entries(items).map(([key, ids]) => [key, new Set(ids)]));
@@ -311,12 +388,12 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 		}
 	}
 
-	/** Shift+click: adds a card or a layer's item to the selection, or takes it out. */
+	/** Shift+click, or a tap while selecting several: adds a card or a layer's item to the selection, or takes it out. */
 	function toggleSelected(key: string, id: string): void {
 		const current = selection();
 		const ids = (current[key] ??= new Set());
 		if (!ids.delete(id)) ids.add(id);
-		setSelection(current);
+		setSelection(current, selecting);
 	}
 
 	/**
@@ -369,14 +446,14 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 	function followReference(entityId: string): void {
 		const card = currentBoard().cards.find((c) => c.entityId === entityId);
 		select(entityId, card?.id ?? null);
-		if (card) viewport.reveal(cardRects.get(card.id) ?? card);
+		if (card) reveal(cardRects.get(card.id) ?? card);
 	}
 
 	/** Links the selected card's entity with another one, existing or new; the other one's card shows beside it. */
 	const connect = connectDialog(store, (card) => {
 		appearing = new Set([card.id]);
 		redrawBoard();
-		viewport.reveal(cardRects.get(card.id) ?? card);
+		reveal(cardRects.get(card.id) ?? card);
 	});
 
 	/** Creates an entity of any type, with its card in the middle of the view (tagged like the side panel's filter). */
@@ -398,13 +475,16 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 			appearing = new Set([card.id]);
 			redrawBoard();
 			select(entity.id, card.id);
-			viewport.reveal(cardRects.get(card.id) ?? card);
+			reveal(cardRects.get(card.id) ?? card);
 		},
 	});
 
-	/** Shows the selected entity's details anew, keeping its open form (redrawing the board, moving a card, …). */
+	/** Shows the selected entity's details anew, keeping its open form (redrawing the board, moving a card, …) — or
+	 * none while they're closed (see `closeDetails`). */
 	function renderDetails(): void {
-		if (!details.show(selected?.entityId ?? null)) selected = null;
+		const closed = detailsClosed && store.data.entities.some((e) => e.id === selected?.entityId);
+		if (!details.show(closed ? null : (selected?.entityId ?? null)) && !closed) selected = null;
+		liftBoard();
 	}
 
 	/** Lays out the cards of the references the card lists but the board doesn't show around it (see
@@ -446,7 +526,7 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 		const all = [cardRects.get(cardId), ...cards].filter((r) => !!r);
 		const x = Math.min(...all.map((r) => r.x));
 		const y = Math.min(...all.map((r) => r.y));
-		viewport.reveal({ x, y, width: Math.max(...all.map((r) => r.x + r.width)) - x, height: Math.max(...all.map((r) => r.y + r.height)) - y });
+		reveal({ x, y, width: Math.max(...all.map((r) => r.x + r.width)) - x, height: Math.max(...all.map((r) => r.y + r.height)) - y });
 	}
 
 	/** Deletes the entity (after asking), with its cards on every board; one undo step brings all of it back. */
@@ -520,6 +600,7 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 		});
 		if (selected?.cardId && !board.cards.some((c) => c.id === selected!.cardId)) selected = { ...selected, cardId: null };
 		renderDetails(); // the entity may have changed or been removed
+		renderTouchBar();
 	}
 
 	/** Sizes measured before, by the card's HTML: a card only has to be measured again when what it shows changed. */
@@ -607,7 +688,7 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 			if ((e.target as Element).closest("button, .ref-tag")) return;
 			// Shift+click adds the card to the selection or takes it out (not in the viewer).
 			if (e.shiftKey && !readOnly) toggleSelected("cards", card.id);
-			else select(entity.id, card.id);
+			else pressCard(card);
 		});
 		Object.assign(node.style, {
 			left: `${card.x}px`,
@@ -739,6 +820,23 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 			select(null);
 			deselectLayers();
 		},
+		// A finger moves the selection only while that is turned on, and only from one of its cards.
+		onTouch: (e, node) => {
+			if (!moving || !isCardSelected(node.dataset.cardId!)) return false;
+			dragGroup(e, { cardNode: node }, selection());
+			return true;
+		},
+		// A tap is a click: on a reference's tag, a card, or the background (which keeps what's being selected).
+		onTap: (node, target) => {
+			const tag = target.closest<HTMLElement>(".ref-tag[data-entity-id]");
+			const card = node && currentBoard().cards.find((c) => c.id === node.dataset.cardId);
+			if (node && tag) followReference(tag.dataset.entityId!);
+			else if (card) pressCard(card);
+			else if (!node && !selecting) {
+				select(null);
+				deselectLayers();
+			}
+		},
 		onCardAdded: redrawBoard,
 	});
 
@@ -781,7 +879,7 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 	renderFrames();
 	canvasMain.append(
 		surface,
-		...(readOnly ? [] : [openPanelButton, ...[...views.values()].flatMap((view) => view.controls)]),
+		...(readOnly ? [] : [openPanelButton, ...[...views.values()].flatMap((view) => view.controls), touchBar]),
 		toolbar,
 		zoomBar,
 		preview.element,

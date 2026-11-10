@@ -1,12 +1,3 @@
-/* Narrow screens: the details panel is stacked below the page (see the panels in app.css). */
-@media (max-width: 40rem) {
-	.details-panel {
-		flex-basis: 45dvh;
-		border-left: none;
-		border-top: 1px solid var(--border);
-	}
-}
-
 /* Details of the selected card: description first, then every property, content and the ID. */
 .details-panel {
 	flex: 0 0 var(--panel-width, 22rem);
@@ -773,6 +764,24 @@ td.handle-cell {
 	overflow: hidden;
 }
 
+/* Narrow screens: no room beside anything. The details lie over the lower part of the screen as a sheet, on every
+   page that shows them; what's under it keeps its size and place, and is all there again once it's closed. */
+@media (max-width: 40rem) {
+	.details-panel,
+	.entities-view > .details-panel {
+		position: fixed;
+		inset: auto 0 0;
+		z-index: 3;
+		max-height: 60dvh;
+		margin: 0;
+		border: none;
+		border-top: 1px solid var(--border);
+		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+		box-shadow: var(--shadow-xl);
+		overflow: hidden;
+	}
+}
+
 /* Beside wide screens' table, the entities fill the screen like a board: the top bar, the switch and the type chips
    stay, and the table scrolls under its column names. A new entity's form above the table brings back the page's
    scrolling, so it's never squeezed. */
@@ -881,6 +890,13 @@ td.handle-cell {
 	color: var(--text);
 }
 
+/* Without hover (touch), the pencils are always there. */
+@media (hover: none) {
+	.entity-table .field-edit {
+		opacity: 1;
+	}
+}
+
 /* The editor in a value's place, as wide as there is room. */
 .field-editor {
 	display: grid;
@@ -895,6 +911,30 @@ td.handle-cell {
 
 .details-title .field-editor input {
 	font: inherit;
+}
+
+/* Save and Cancel under an open field, only where there's touch: elsewhere Enter and Escape do it. */
+.field-editor-actions {
+	display: none;
+	gap: 0.5rem;
+	font-size: var(--text-base);
+	font-weight: 400;
+}
+
+@media (any-pointer: coarse) {
+	.field-editor-actions {
+		display: flex;
+	}
+
+	.field-editor-actions button {
+		min-height: 2.25rem;
+	}
+
+	/* The details' ×: large enough for a finger. */
+	.details-panel .card-bar .card-remove {
+		padding: 0.35rem 0.9rem;
+		font-size: 1.25rem;
+	}
 }
 
 .copy-id {
