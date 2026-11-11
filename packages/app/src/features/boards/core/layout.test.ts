@@ -12,7 +12,7 @@ const points = (id: string, typeId: string): PropertyDef => ({
 	kind: "reference",
 	options: [],
 	reference: { typeIds: [typeId], multiple: true, required: false, arrow: "to", lineLabel: "", inverseLabel: "" },
-	cardDisplay: "line",
+	cardDisplay: "line", description: "",
 });
 
 // Requirement → Component → Team, and a component can use other components.

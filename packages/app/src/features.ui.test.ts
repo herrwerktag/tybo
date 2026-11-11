@@ -61,7 +61,7 @@ test("empty lists say what belongs in them and offer the next step", async () =>
 
 test("an empty list made so by a filter offers to reset it", async () => {
 	const data = structuredClone(tagged) as typeof tagged & { types: unknown[]; entities: unknown[] };
-	data.types = [...data.types, { id: "person", name: "Person", color: "#c8ebbf", contentTemplate: "", properties: [] }];
+	data.types = [...data.types, { id: "person", name: "Person", color: "#c8ebbf", contentTemplate: "", description: "", guide: "", properties: [] }];
 	data.entities = [...data.entities, { id: "01J00000000000000000000003", typeId: "person", name: "Ada", content: "", description: "", tags: [], values: {} }];
 	const root = await startApp(data, "#entities");
 	choose(tagSelectIn(root.querySelector(".section-filters"))!, "Romance");
@@ -383,14 +383,14 @@ test("drawing the page again and again starts no further timers: one watch for t
 });
 
 test("following references: a reference in the table leads to its row; the details name the boards with a card of the entity, each a link to it", async () => {
-	const ref = (id: string, typeId: string) => ({ id, name: "Author", kind: "reference", options: [], reference: { typeIds: [typeId], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" });
+	const ref = (id: string, typeId: string) => ({ id, name: "Author", kind: "reference", options: [], reference: { typeIds: [typeId], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list", description: "" });
 	const frank = "01J00000000000000000000001";
 	const dune = "01J00000000000000000000002";
 	const data = {
 		version: DATA_VERSION,
 		types: [
-			{ id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", properties: [ref("author", "person")] },
-			{ id: "person", name: "Person", color: "#c8ebbf", contentTemplate: "", properties: [] },
+			{ id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", description: "", guide: "", properties: [ref("author", "person")] },
+			{ id: "person", name: "Person", color: "#c8ebbf", contentTemplate: "", description: "", guide: "", properties: [] },
 		],
 		entities: [
 			{ id: dune, typeId: "book", name: "Dune", content: "", description: "", tags: [], values: { author: frank } },
@@ -428,7 +428,7 @@ test("the search (⌘K) finds entities, types, boards, analyses and traits by na
 	const dune = "01J00000000000000000000002";
 	const data = {
 		version: DATA_VERSION,
-		types: [{ id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", properties: [] }],
+		types: [{ id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", description: "", guide: "", properties: [] }],
 		entities: [
 			{ id: "01J00000000000000000000001", typeId: "book", name: "Emma", content: "", description: "", tags: [], values: {} },
 			{ id: dune, typeId: "book", name: "Düne", content: "", description: "", tags: [], values: {} },

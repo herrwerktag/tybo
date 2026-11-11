@@ -11,13 +11,14 @@ function colorName(color: string): string {
 	return named ? (text.colorNames[named] ?? named) : color;
 }
 
-/** How the history tells of an entity type: its color, its properties (name and kind), its template. */
+/** How the history tells of an entity type: its color, its help, its properties (name and kind) with their notes, its template. */
 export const TYPE_HISTORY: UnitDescriber<DataStore> = {
 	kind: "type",
 	area: "data",
 	noun: text.historyTypes,
 	read(value) {
 		if (!isRecord(value) || typeof value.name !== "string" || !Array.isArray(value.properties)) return null;
+		const notes = (value.properties as unknown[]).filter(isRecord).flatMap((p) => (typeof p.description === "string" && p.description !== "" ? [`${String(p.name)}: ${p.description}`] : []));
 		const properties = (value.properties as unknown[]).filter(isRecord).map((p) => `${String(p.name)} (${text.kinds[p.kind as PropertyDef["kind"]] ?? String(p.kind)})`);
 		return {
 			name: value.name,
@@ -25,7 +26,10 @@ export const TYPE_HISTORY: UnitDescriber<DataStore> = {
 			...(typeof value.id === "string" ? { type: { id: value.id, name: value.name } } : {}),
 			fields: [
 				{ label: text.color, text: typeof value.color === "string" ? colorName(value.color) : "" },
+				{ label: text.typeDescription, text: typeof value.description === "string" ? value.description : "" },
+				{ label: text.typeGuide, text: typeof value.guide === "string" ? value.guide : "", long: true },
 				{ label: text.properties, text: properties.join(", ") },
+				{ label: text.propertyDescriptions, text: notes.join("\n"), long: notes.length > 1 },
 				{ label: text.contentTemplate, text: typeof value.contentTemplate === "string" ? value.contentTemplate : "", long: true },
 			],
 		};

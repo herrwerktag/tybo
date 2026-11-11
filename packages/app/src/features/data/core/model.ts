@@ -64,6 +64,8 @@ export interface PropertyDef {
 	reference: ReferenceDef | null;
 	/** How the value appears on the entity's canvas cards. */
 	cardDisplay: CardDisplay;
+	/** A short note on the value expected (or what a reference means), shown at its field; empty means none. */
+	description: string;
 }
 
 /**
@@ -83,7 +85,7 @@ export function effectiveCardDisplay(prop: Pick<PropertyDef, "kind" | "cardDispl
 export type DraftOption = { id?: string; label: string };
 
 /** A property as edited in the type form: existing properties keep their id, new ones have none. */
-export type DraftProperty = Omit<PropertyDef, "id" | "options"> & { id?: string; options: DraftOption[] };
+export type DraftProperty = Omit<PropertyDef, "id" | "options" | "description"> & { id?: string; options: DraftOption[]; description?: string };
 
 /** The property definitions the drafts describe: labels trimmed, new properties and options given an id. */
 export function propertyDefs(drafts: DraftProperty[]): PropertyDef[] {
@@ -97,6 +99,7 @@ export function propertyDefs(drafts: DraftProperty[]): PropertyDef[] {
 				? { ...p.reference, lineLabel: p.reference.lineLabel.trim(), inverseLabel: p.reference.inverseLabel.trim() }
 				: null,
 		cardDisplay: effectiveCardDisplay(p),
+		description: (p.description ?? "").trim(),
 	}));
 }
 
@@ -108,7 +111,17 @@ export interface EntityType {
 	contentTemplate: string;
 	/** Hex color, e.g. for the top bar of the type's cards on the canvas. */
 	color: string;
+	/** What the type is for, in a sentence; empty means none. */
+	description: string;
+	/** How the type is used, at length (Markdown): typical mistakes, examples; empty means none. */
+	guide: string;
 }
+
+/** A type's help: its short description and its guide. */
+export type TypeHelp = Pick<EntityType, "description" | "guide">;
+
+/** A long help text as it is kept: as written, nothing when there is only white space. */
+export const helpText = (text: string): string => (text.trim() === "" ? "" : text);
 
 /** Soft, clearly distinct colors that dark text stays readable on. */
 export const TYPE_COLORS: readonly { name: string; value: string }[] = [

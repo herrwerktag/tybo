@@ -305,6 +305,25 @@ export const SQLITE_MIGRATIONS: readonly Migration[] = [
 			`);
 		},
 	},
+	{
+		version: 16,
+		up(db) {
+			// As Postgres's step 19.
+			db.exec(`
+				alter table entity_types add column description text not null default '';
+				alter table entity_types add column guide text not null default '';
+				alter table properties add column description text not null default '';
+				create table guides (
+					workspace_id text not null references workspaces(id) on delete cascade,
+					id text not null,
+					text text not null,
+					updated_at text not null default current_timestamp,
+					primary key (workspace_id, id)
+				);
+				update workspaces set data_version = 14;
+			`);
+		},
+	},
 ];
 
 /** Runs `work` in one transaction: all of it written, or — when it throws — none of it. */

@@ -14,7 +14,7 @@ const prop = (id: string, name: string, more: Partial<PropertyDef> = {}): Proper
 	kind: "text",
 	options: [],
 	reference: null,
-	cardDisplay: "list",
+	cardDisplay: "list", description: "",
 	...more,
 });
 const reference = (typeIds: string[]) => ({
@@ -50,15 +50,15 @@ const data: Pick<AppData, "types" | "entities" | "traits"> = {
 			id: "activity",
 			name: "Aktivität",
 			color: "#c4dafa",
-			contentTemplate: "",
+			contentTemplate: "", description: "", guide: "",
 			properties: [
 				prop("responsible", "Verantwortlicher", reference(["role"])),
 				prop("needs", "Benötigt", reference(["artifact"])),
 				prop("status", "Status", { kind: "options", options: [{ id: "o-open", label: "offen" }, { id: "o-fertig", label: "fertig" }, { id: "o-pipe", label: "in | Arbeit" }]}),
 			],
 		},
-		{ id: "role", name: "Rolle", color: "#c8ebbf", contentTemplate: "", properties: [] },
-		{ id: "artifact", name: "Artefakt", color: "#f6e8a6", contentTemplate: "", properties: [] },
+		{ id: "role", name: "Rolle", color: "#c8ebbf", contentTemplate: "", description: "", guide: "", properties: [] },
+		{ id: "artifact", name: "Artefakt", color: "#f6e8a6", contentTemplate: "", description: "", guide: "", properties: [] },
 	],
 	entities: [
 		entity(

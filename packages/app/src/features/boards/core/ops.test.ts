@@ -229,7 +229,7 @@ test("cards and viewport persist; bad canvas data falls back to empty", async ()
 
 test("the single canvas saved before boards existed becomes Board 1; its cards get ids", async () => {
 	const old = {
-		types: [{ id: "n", name: "Note", properties: [], contentTemplate: "" }],
+		types: [{ id: "n", name: "Note", properties: [], contentTemplate: "", description: "", guide: "" }],
 		entities: [{ id: "01ARYZ6S41TSV4RRFFQ69G5FAV", typeId: "n", name: "A", content: "", values: {} }],
 		canvas: {
 			cards: [{ entityId: "01ARYZ6S41TSV4RRFFQ69G5FAV", x: 1, y: 2, width: 240, height: 160 }],

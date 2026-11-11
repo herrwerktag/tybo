@@ -16,7 +16,7 @@ const card = (id: string, entityId: string) => ({ id, entityId, x: 0, y: 0, widt
 /** Two boards: Dune and a text box on "Reading" (with a name that would end the script element),
  * Herbert on "Authors". */
 const data = {
-	types: [{ id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", properties: [] }],
+	types: [{ id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", description: "", guide: "", properties: [] }],
 	entities: [
 		{ id: DUNE, typeId: "book", name: "Dune </script><b>", content: "", description: "A desert planet.", values: {} },
 		{ id: HERBERT, typeId: "book", name: "Herbert", content: "", description: "", values: {} },

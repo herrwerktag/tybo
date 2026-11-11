@@ -31,7 +31,7 @@ const noTypes: { id: string; name: string }[] = [];
 const typesOf = (...ids: string[]) => ids.map((id) => ({ id, name: id }));
 const noEntities = new Map<string, string>();
 
-const title: PropertyDef = { id: "t", name: "title", kind: "text", options: [], reference: null, cardDisplay: "list" };
+const title: PropertyDef = { id: "t", name: "title", kind: "text", options: [], reference: null, cardDisplay: "list", description: "" };
 const status: PropertyDef = {
 	id: "s",
 	name: "status",
@@ -41,7 +41,7 @@ const status: PropertyDef = {
 		{ id: "opt-pub", label: "Published" },
 	],
 	reference: null,
-	cardDisplay: "list",
+	cardDisplay: "list", description: "",
 };
 
 test("parseValue: text trims and treats empty as null", () => {
@@ -124,8 +124,8 @@ test("changedValueCount: renames and reorders are free, carried losses count", (
 	assert.equal(changedValueCount([entityOf({ t: "Emma" })], [title], [toOptions], noEntities), 1, "doesn't convert: cleared");
 });
 
-const author: PropertyDef = { id: "a", name: "author", kind: "reference", options: [], reference: { typeIds: ["person"], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" };
-const tags: PropertyDef = { id: "g", name: "tags", kind: "reference", options: [], reference: { typeIds: ["tag"], multiple: true, required: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" };
+const author: PropertyDef = { id: "a", name: "author", kind: "reference", options: [], reference: { typeIds: ["person"], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list", description: "" };
+const tags: PropertyDef = { id: "g", name: "tags", kind: "reference", options: [], reference: { typeIds: ["tag"], multiple: true, required: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list", description: "" };
 const entityTypes = new Map([
 	["p1", "person"],
 	["p2", "person"],
@@ -188,8 +188,8 @@ test("nextTypeColor picks the first unused palette color, then repeats", () => {
 });
 
 test("cardRows lists visible properties with a value, in order, with reference names", () => {
-	const hidden: PropertyDef = { ...title, id: "h", name: "internal", cardDisplay: "hidden" };
-	const type = { id: "book", name: "Book", properties: [title, hidden, status, author, tags], contentTemplate: "", color: "#dcdcdc" };
+	const hidden: PropertyDef = { ...title, id: "h", name: "internal", cardDisplay: "hidden", description: "" };
+	const type = { id: "book", name: "Book", properties: [title, hidden, status, author, tags], contentTemplate: "", description: "", guide: "", color: "#dcdcdc" };
 	const names = new Map([
 		["p1", "Frank"],
 		["t1", "Sci-fi"],
@@ -213,8 +213,8 @@ test("cardRows lists visible properties with a value, in order, with reference n
 });
 
 test("cardRows: line references are left out while their card is linked, listed otherwise", () => {
-	const asLine: PropertyDef = { ...tags, cardDisplay: "line" };
-	const type = { id: "book", name: "Book", properties: [asLine], contentTemplate: "", color: "#dcdcdc" };
+	const asLine: PropertyDef = { ...tags, cardDisplay: "line", description: "" };
+	const type = { id: "book", name: "Book", properties: [asLine], contentTemplate: "", description: "", guide: "", color: "#dcdcdc" };
 	const names = new Map([
 		["t1", "Sci-fi"],
 		["t2", "Classic"],
@@ -276,13 +276,13 @@ test("inverse references: who points at an entity, only for properties with an i
 		kind: "reference",
 		options: [],
 		reference: { typeIds: ["role"], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel },
-		cardDisplay: "list",
+		cardDisplay: "list", description: "",
 	});
 	const responsible = ref("resp", "responsible", "responsible for");
 	const reviewer = ref("rev", "reviewer", ""); // no inverse label: not shown on the role
 	const types = [
-		{ id: "role", name: "Role", properties: [], contentTemplate: "", color: "#c4dafa" },
-		{ id: "activity", name: "Activity", properties: [responsible, reviewer], contentTemplate: "", color: "#c8ebbf" },
+		{ id: "role", name: "Role", properties: [], contentTemplate: "", description: "", guide: "", color: "#c4dafa" },
+		{ id: "activity", name: "Activity", properties: [responsible, reviewer], contentTemplate: "", description: "", guide: "", color: "#c8ebbf" },
 	];
 	const entities = [
 		{ id: "r1", typeId: "role", name: "Dev", content: "", description: "", tags: [], values: {} },
@@ -321,10 +321,10 @@ test("inverse references: who points at an entity, only for properties with an i
 });
 
 test("detailRows lists every property in order, empty ones too, then reverse references", () => {
-	const hidden: PropertyDef = { ...title, id: "h", name: "internal", cardDisplay: "hidden" };
-	const asLine: PropertyDef = { ...author, cardDisplay: "line" };
-	const book = { id: "book", name: "Book", properties: [title, hidden, status, asLine], contentTemplate: "", color: "#dcdcdc" };
-	const types = [book, { id: "person", name: "Person", properties: [], contentTemplate: "", color: "#c4dafa" }];
+	const hidden: PropertyDef = { ...title, id: "h", name: "internal", cardDisplay: "hidden", description: "" };
+	const asLine: PropertyDef = { ...author, cardDisplay: "line", description: "" };
+	const book = { id: "book", name: "Book", properties: [title, hidden, status, asLine], contentTemplate: "", description: "", guide: "", color: "#dcdcdc" };
+	const types = [book, { id: "person", name: "Person", properties: [], contentTemplate: "", description: "", guide: "", color: "#c4dafa" }];
 	const dune = { id: "e", typeId: "book", name: "Dune", content: "", description: "", tags: [], values: { t: "Dune", h: "secret", a: "p1" } };
 	const names = new Map([
 		["e", "Dune"],
@@ -363,10 +363,10 @@ test("relationsOf: an entity's own references that can take one more, and every 
 		kind: "reference",
 		options: [],
 		reference: { typeIds, multiple, required: false, arrow: "from", lineLabel: "", inverseLabel },
-		cardDisplay: "line",
+		cardDisplay: "line", description: "",
 	});
-	const idea = { id: "idea", name: "Idea", properties: [ref("related", ["idea"], true)], contentTemplate: "", color: "#dcdcdc" };
-	const requirement = { id: "req", name: "Requirement", properties: [ref("source", ["idea"], false, "results in")], contentTemplate: "", color: "#dcdcdc" };
+	const idea = { id: "idea", name: "Idea", properties: [ref("related", ["idea"], true)], contentTemplate: "", description: "", guide: "", color: "#dcdcdc" };
+	const requirement = { id: "req", name: "Requirement", properties: [ref("source", ["idea"], false, "results in")], contentTemplate: "", description: "", guide: "", color: "#dcdcdc" };
 	const types = [idea, requirement];
 	const spark = { id: "i1", typeId: "idea", name: "Spark", content: "", description: "", tags: [], values: {} };
 	const other = { ...spark, id: "i2", name: "Other" };

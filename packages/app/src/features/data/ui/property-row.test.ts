@@ -5,8 +5,8 @@ import { newReference, type DraftProperty, type EntityType } from "../core.js";
 import { text } from "../texts.js";
 import { propertyRow } from "./property-row.js";
 
-const book: EntityType = { id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", properties: [] };
-const person: EntityType = { id: "person", name: "Person", color: "#c8ebbf", contentTemplate: "", properties: [] };
+const book: EntityType = { id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", description: "", guide: "", properties: [] };
+const person: EntityType = { id: "person", name: "Person", color: "#c8ebbf", contentTemplate: "", description: "", guide: "", properties: [] };
 
 function draft(fields: Partial<DraftProperty> = {}): DraftProperty {
 	return { name: "author", kind: "text", options: [], reference: null, cardDisplay: "list", ...fields };

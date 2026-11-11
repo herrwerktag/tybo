@@ -10,6 +10,7 @@ import {
 } from "../core.js";
 import { el, sharedText } from "../../../shared/ui/index.js";
 import { text } from "../texts.js";
+import { propertyHint, typeHelp } from "./type-help.js";
 
 /**
  * The form for a new entity (tagged like the filter shows, `filterTag`); one there is is changed field by field (see
@@ -44,6 +45,7 @@ export function entityForm(
 			},
 		},
 		el("h3", {}, text.newEntity(type.name)),
+		...typeHelp(type),
 		el("label", { className: "field" }, el("span", {}, sharedText.name), nameInput),
 		...fields.map((f) => f.element),
 		el("label", { className: "field" }, el("span", {}, text.tags), tagsInput),
@@ -65,7 +67,7 @@ export function entityForm(
 	);
 }
 
-/** An input for one property in the entity form, plus a function reading its raw value; `onChange` hears of each
+/** An input for one property in the entity form, with the property's note below it, plus a function reading its raw value; `onChange` hears of each
  * change of a multiple reference's tags (a select's own change event bubbles). */
 export function propertyField(
 	store: DataStore,
@@ -79,6 +81,7 @@ export function propertyField(
 		prop.name,
 		...(prop.reference?.required ? [el("span", { className: "muted" }, ` ${text.requiredSuffix}`)] : []),
 	);
+	const hint = propertyHint(prop);
 	if (prop.kind === "reference") {
 		const targetTypes = store.data.types.filter((t) => prop.reference?.typeIds.includes(t.id));
 		const targets = store.data.entities.filter((e) => targetTypes.some((t) => t.id === e.typeId));
@@ -88,7 +91,7 @@ export function propertyField(
 		const selected = new Set(current === null ? [] : typeof current === "string" ? [current] : current);
 		if (targets.length === 0) {
 			const note = el("span", { className: "muted" }, text.noEntitiesOfType(targetTypes.map((t) => t.name).join(" / ")));
-			return { prop, element: el("div", { className: "field" }, label, note), read: () => [] };
+			return { prop, element: el("div", { className: "field" }, label, note, ...hint), read: () => [] };
 		}
 		if (prop.reference?.multiple) {
 			// Like the target types in the type form: tags in their type's color (× removes one), and a select
@@ -147,7 +150,7 @@ export function propertyField(
 			draw();
 			return {
 				prop,
-				element: el("div", { className: "field" }, label, box),
+				element: el("div", { className: "field" }, label, box, ...hint),
 				read: () => chosen.map((t) => t.id),
 			};
 		}
@@ -157,7 +160,7 @@ export function propertyField(
 			el("option", { value: "" }, "—"),
 			...targets.map((t) => el("option", { value: t.id, selected: selected.has(t.id) }, targetName(t))),
 		);
-		return { prop, element: el("label", { className: "field" }, label, select), read: () => select.value };
+		return { prop, element: el("label", { className: "field" }, label, select, ...hint), read: () => select.value };
 	}
 	const currentText = typeof current === "string" ? current : "";
 	const input =
@@ -169,5 +172,5 @@ export function propertyField(
 					...prop.options.map((o) => el("option", { value: o.id, selected: o.id === currentText }, o.label)),
 				)
 			: el("input", { value: currentText });
-	return { prop, element: el("label", { className: "field" }, label, input), read: () => input.value };
+	return { prop, element: el("label", { className: "field" }, label, input, ...hint), read: () => input.value };
 }

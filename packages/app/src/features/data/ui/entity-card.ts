@@ -15,6 +15,7 @@ import {
 import { GRID_SIZE } from "../../../shared/core/index.js";
 import { el, type EntityLink } from "../../../shared/ui/index.js";
 import type { FieldEditing } from "./fields.js";
+import { typeHelp } from "./type-help.js";
 import { text } from "../texts.js";
 import { renderMarkdown } from "../../../shared/ui/index.js";
 
@@ -326,6 +327,7 @@ export function entityDetails(
 		el(
 			"div",
 			{ className: "details-body" },
+			...typeHelp(type),
 			section(text.description, editing ? editing.markdown(entity, "description", text.description, [description]) : description),
 			...(rows.length > 0 || editing
 				? [

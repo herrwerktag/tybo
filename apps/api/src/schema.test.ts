@@ -8,7 +8,7 @@ import { POSTGRES_MIGRATIONS, SchemaMismatch, migrateSchema } from "@tybo/app/ap
 const url = process.env.TEST_DATABASE_URL;
 
 /** Every table of the schema, and the library's, which only steps 4 to 10 have. */
-const ALL_TABLES = ["schema_migrations", "workspaces", "entity_types", "properties", "entities", "entity_values", "boards", "cards", "drawings", "library_drawings", "analyses", "history", "traits"];
+const ALL_TABLES = ["schema_migrations", "workspaces", "entity_types", "properties", "entities", "entity_values", "boards", "cards", "drawings", "library_drawings", "analyses", "history", "traits", "guides"];
 
 /** Takes the test database back to before any schema: none of its tables there. */
 async function wipe(sql: postgres.Sql<{}>): Promise<void> {
@@ -30,7 +30,7 @@ test("an empty database gets the whole schema, and a second run has nothing left
 	try {
 		await wipe(sql);
 		assert.deepEqual(await migrateSchema(sql), POSTGRES_MIGRATIONS.map((m) => m.version));
-		assert.deepEqual(await tables(sql), ["analyses", "boards", "cards", "drawings", "entities", "entity_types", "entity_values", "history", "properties", "schema_migrations", "traits", "workspaces"]);
+		assert.deepEqual(await tables(sql), ["analyses", "boards", "cards", "drawings", "entities", "entity_types", "entity_values", "guides", "history", "properties", "schema_migrations", "traits", "workspaces"]);
 		assert.deepEqual(await migrateSchema(sql), []);
 	} finally {
 		await sql.end({ timeout: 5 });
@@ -277,12 +277,33 @@ test("step 18 makes each grouping path of an analysis a level showing every row,
 		const second = [{ propertyId: "q", direction: "inverse" }];
 		await sql`insert into analyses (workspace_id, id, position, name, type_id, group_paths, column_paths)
 			values ('ws', 'a', 0, 'Zwei', 'book', ${sql.json([first, second])}, ${sql.json([first])}), ('ws', 'b', 1, 'Keine', 'book', '[]', '[]')`;
-		assert.deepEqual(await migrateSchema(sql), [18]);
+		assert.deepEqual(await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 19)), [18]);
 		assert.deepEqual([...(await sql`select id, group_paths, column_paths from analyses order by id`)], [
 			{ id: "a", group_paths: [{ path: first, hideEmpty: false }, { path: second, hideEmpty: false }], column_paths: [first] },
 			{ id: "b", group_paths: [], column_paths: [] },
 		]);
 		assert.deepEqual([...(await sql`select data_version from workspaces where id = 'ws'`)], [{ data_version: 13 }]);
+	} finally {
+		await sql.end({ timeout: 5 });
+	}
+});
+
+test("step 19 adds the model's help: empty on the types and properties there are, a table for the guides", { skip: !url }, async () => {
+	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
+	try {
+		await wipe(sql);
+		await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 19));
+		await sql`insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 13)`;
+		await sql`insert into entity_types (workspace_id, id, position, name, content_template, color) values ('ws', 'regel', 0, 'Regel', 'Gegeben …', '#c4dafa')`;
+		await sql`insert into properties (workspace_id, id, type_id, position, name, kind, options, card_display) values ('ws', 'quelle', 'regel', 0, 'Quelle', 'text', '[]', 'list')`;
+
+		assert.deepEqual(await migrateSchema(sql), [19]);
+		assert.deepEqual([...(await sql`select name, content_template, color, description, guide from entity_types`)], [
+			{ name: "Regel", content_template: "Gegeben …", color: "#c4dafa", description: "", guide: "" },
+		]);
+		assert.deepEqual([...(await sql`select name, kind, description from properties`)], [{ name: "Quelle", kind: "text", description: "" }]);
+		assert.deepEqual([...(await sql`select count(*)::int as n from guides`)], [{ n: 0 }]);
+		assert.deepEqual([...(await sql`select data_version from workspaces where id = 'ws'`)], [{ data_version: 14 }]);
 	} finally {
 		await sql.end({ timeout: 5 });
 	}

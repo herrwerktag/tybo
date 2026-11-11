@@ -434,7 +434,7 @@ function value(content: string, as: "old" | "new" | "plain"): HTMLElement {
 }
 
 /** The fields that changed, the field's name beside what became of it: `old → new`; a long text only as changed,
- * its old text on request. */
+ * its old text and its new one on request. */
 function changeList(changes: readonly FieldChange[]): HTMLElement {
 	return el(
 		"dl",
@@ -445,7 +445,11 @@ function changeList(changes: readonly FieldChange[]): HTMLElement {
 				"dd",
 				{},
 				...(change.long
-					? [el("span", { className: "history-value changed" }, text.changed), el("details", {}, el("summary", {}, text.oldText), el("p", { className: "history-text" }, change.before || text.empty))]
+					? [
+							el("span", { className: "history-value changed" }, text.changed),
+							el("details", {}, el("summary", {}, text.oldText), el("p", { className: "history-text" }, change.before || text.empty)),
+							el("details", {}, el("summary", {}, text.changedText), el("p", { className: "history-text" }, change.after || text.empty)),
+						]
 					: changeLine(change)),
 			),
 		]),

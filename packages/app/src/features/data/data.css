@@ -1033,3 +1033,46 @@ td.handle-cell {
 	text-decoration: underline;
 	text-underline-offset: 0.2em;
 }
+
+/* The model's help: what a type is for and its guide to unfold, where its entities are made and read; a property's
+   note at its field. */
+.type-help {
+	display: grid;
+	gap: 0.35rem;
+	justify-self: stretch;
+	padding: 0.5rem 0.75rem;
+	border-inline-start: 3px solid var(--border);
+	background: var(--surface-inset);
+	font-size: var(--text-md);
+}
+
+.type-help-guide > summary {
+	color: var(--muted);
+	font-size: var(--text-sm);
+	cursor: pointer;
+}
+
+.type-help-guide[open] > summary {
+	margin-bottom: 0.35rem;
+}
+
+.type-help-guide > .markdown {
+	max-height: 40vh;
+	overflow: auto;
+}
+
+.field-hint {
+	color: var(--muted);
+	font-size: var(--text-sm);
+	overflow-wrap: anywhere;
+}
+
+.field-with-hint {
+	display: grid;
+	gap: 0.25rem;
+}
+
+.type-description {
+	flex-basis: 100%;
+	font-size: var(--text-md);
+}

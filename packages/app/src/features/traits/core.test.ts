@@ -70,7 +70,7 @@ test("bindings outlive what they name: a property gone or of another kind reads 
 	question.properties = question.properties.filter((p) => p.id !== "q-status");
 	assert.equal(fittingBinding(data.types, "question", role("stand"), trait!.bindings.question!.stand), null);
 	assert.deepEqual(roleReader(data, trait!, "stand")(entity(data, "naming")), []);
-	question.properties.push({ id: "q-status", name: "Status", kind: "text", options: [], reference: null, cardDisplay: "list" });
+	question.properties.push({ id: "q-status", name: "Status", kind: "text", options: [], reference: null, cardDisplay: "list", description: "" });
 	assert.equal(fittingBinding(data.types, "question", role("stand"), trait!.bindings.question!.stand), null, "a text no longer fits an options role");
 });
 
@@ -107,7 +107,7 @@ test("a trait needs a name of its own, roles with names of their own, and an opt
 test("a trait is one unit of its own: binding a type changes no type, and it is saved, changed and deleted like an analysis", async () => {
 	const storage = memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } });
 	const store = await createStore(storage.port, "ws");
-	const pitch = store.addType("Pitch", [{ name: "Status", kind: "options", options: [{ label: "Entwurf" }], reference: null, cardDisplay: "list" }], "");
+	const pitch = store.addType("Pitch", [{ name: "Status", kind: "options", options: [{ label: "Entwurf" }], reference: null, cardDisplay: "list", description: "" }], "");
 	const trait = addTrait(store, "");
 	assert.equal(trait.name, "Trait 1");
 	assert.throws(() => addTrait(store, " trait 1"), NameTaken);
@@ -149,8 +149,8 @@ test("loading keeps well-formed traits only, and their bindings to what is gone;
 /** Tasks waiting on tasks, each with a status; Progress over them, and Blockade: what a task is blocked by (the tasks it
  * waits on that aren't done), what it waits on that is blocked itself, and what it waits on that is free. */
 function tasks(waits: Record<string, string[]>, open: string[]) {
-	const status: PropertyDef = { id: "t-status", name: "Status", kind: "options", options: [{ id: "t-open", label: "offen" }, { id: "t-done", label: "erledigt" }], reference: null, cardDisplay: "list" };
-	const wait: PropertyDef = { id: "t-waits", name: "wartet auf", kind: "reference", options: [], reference: { ...newReference(["task"]), multiple: true }, cardDisplay: "list" };
+	const status: PropertyDef = { id: "t-status", name: "Status", kind: "options", options: [{ id: "t-open", label: "offen" }, { id: "t-done", label: "erledigt" }], reference: null, cardDisplay: "list", description: "" };
+	const wait: PropertyDef = { id: "t-waits", name: "wartet auf", kind: "reference", options: [], reference: { ...newReference(["task"]), multiple: true }, cardDisplay: "list", description: "" };
 	const binding = { propertyId: "t-waits", direction: "forward" as const, values: {} };
 	const progressOfTasks: Trait = {
 		id: "progress",
@@ -170,7 +170,7 @@ function tasks(waits: Record<string, string[]>, open: string[]) {
 	};
 	const names = [...new Set([...Object.keys(waits), ...Object.values(waits).flat(), ...open])];
 	return {
-		types: [{ id: "task", name: "Aufgabe", properties: [status, wait], contentTemplate: "", color: "#dcdcdc" }],
+		types: [{ id: "task", name: "Aufgabe", properties: [status, wait], contentTemplate: "", description: "", guide: "", color: "#dcdcdc" }],
 		entities: names.map((name) => ({
 			id: name,
 			typeId: "task",

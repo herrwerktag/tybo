@@ -13,7 +13,7 @@ const prop = (id: string, name: string, more: Partial<PropertyDef> = {}): Proper
 	kind: "text",
 	options: [],
 	reference: null,
-	cardDisplay: "list",
+	cardDisplay: "list", description: "",
 	...more,
 });
 const reference = (typeIds: string[], more: Partial<NonNullable<PropertyDef["reference"]>> = {}) => ({
@@ -41,17 +41,17 @@ const data: Pick<AppData, "types" | "entities" | "boards"> = {
 			id: "activity",
 			name: "Aktivität",
 			color: "#c4dafa",
-			contentTemplate: "",
+			contentTemplate: "", description: "", guide: "",
 			properties: [
 				prop("responsible", "Verantwortlich", reference(["role"])),
 				prop("input", "Eingabe", reference(["artifact"], { arrow: "from", lineLabel: "liefert" })),
 				prop("informed", "Informiert", reference(["role"])),
 				prop("status", "Status", { kind: "options", options: [{ id: "o-open", label: "offen" }, { id: "o-fertig", label: "fertig" }, { id: "o-md", label: "*offen*" }]}),
-				prop("secret", "Intern", { cardDisplay: "hidden" }),
+				prop("secret", "Intern", { cardDisplay: "hidden", description: "" }),
 			],
 		},
-		{ id: "role", name: "Rolle", color: "#c8ebbf", contentTemplate: "", properties: [] },
-		{ id: "artifact", name: "Artefakt", color: "#f6e8a6", contentTemplate: "", properties: [] },
+		{ id: "role", name: "Rolle", color: "#c8ebbf", contentTemplate: "", description: "", guide: "", properties: [] },
+		{ id: "artifact", name: "Artefakt", color: "#f6e8a6", contentTemplate: "", description: "", guide: "", properties: [] },
 	],
 	entities: [
 		entity(

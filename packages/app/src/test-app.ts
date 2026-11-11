@@ -70,7 +70,7 @@ export function goTo(hash: string): void {
 /** One type (Book, with a text property "author") and one entity (Dune), as saved data. */
 export const library = {
 	types: [
-		{ id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", properties: [{ id: "author", name: "author", kind: "text", options: [], reference: null, cardDisplay: "list" }] },
+		{ id: "book", name: "Book", color: "#c4dafa", contentTemplate: "", description: "", guide: "", properties: [{ id: "author", name: "author", kind: "text", options: [], reference: null, cardDisplay: "list", description: "" }] },
 	],
 	entities: [{ id: "01J00000000000000000000000", typeId: "book", name: "Dune", content: "", description: "", values: { author: "Herbert" } }],
 	boards: [],

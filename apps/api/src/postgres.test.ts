@@ -19,8 +19,8 @@ function sample(): AppData {
 			{
 				id: "type-1",
 				name: "Person",
-				properties: [{ id: "prop-1", name: "Notiz", kind: "text", options: [], reference: null, cardDisplay: "list" }],
-				contentTemplate: "",
+				properties: [{ id: "prop-1", name: "Notiz", kind: "text", options: [], reference: null, cardDisplay: "list", description: "" }],
+				contentTemplate: "", description: "", guide: "",
 				color: "#c4dafa",
 			},
 		],
@@ -35,6 +35,7 @@ function sample(): AppData {
 				drawings: [],
 			},
 		],
+		guide: "# Methode\n\nErst die Idee, dann der Pitch.",
 		traits: [],
 		analyses: [],
 	};
@@ -192,7 +193,7 @@ test("every write goes into the history, which outlives the workspace — also o
 				["rename", null, "3", null],
 				["change", "entity", "3", "mcp"],
 				["change", "entity", "2", "web"],
-				...["type", "entity", "board", "card"].map((kind) => ["change", kind, "1", "web"]).reverse(),
+				...["type", "entity", "guide", "board", "card"].map((kind) => ["change", kind, "1", "web"]).reverse(),
 				["create", null, "0", "web"],
 			],
 		);

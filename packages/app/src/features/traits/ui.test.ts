@@ -12,7 +12,7 @@ const status = (id: string, labels: string[]) => ({
 	kind: "options",
 	options: labels.map((label) => ({ id: `${id}-${label}`, label })),
 	reference: null,
-	cardDisplay: "list",
+	cardDisplay: "list", description: "",
 });
 
 test("Traits: they are kept in the Data tab beside the entity types, the one the address names in its form, the first without", async () => {
@@ -30,7 +30,7 @@ test("Traits: they are kept in the Data tab beside the entity types, the one the
 });
 
 test("Traits: the list reads like the types': each entry shows its bearing types and roles in short, and deletes it where it stands", async () => {
-	const type = (id: string, name: string) => ({ id, name, color: "#c4dafa", contentTemplate: "", properties: [] });
+	const type = (id: string, name: string) => ({ id, name, color: "#c4dafa", contentTemplate: "", description: "", guide: "", properties: [] });
 	const progress = {
 		id: "progress",
 		name: "Fortschritt",
@@ -91,15 +91,15 @@ test("Traits: a reference role's condition is set in the form, refused when it w
 		{
 			version: DATA_VERSION,
 			types: [
-				{ id: "pitch", name: "Pitch", color: "#fbd9b0", contentTemplate: "", properties: [] },
+				{ id: "pitch", name: "Pitch", color: "#fbd9b0", contentTemplate: "", description: "", guide: "", properties: [] },
 				{
 					id: "question",
 					name: "Frage",
 					color: "#d6ccf7",
-					contentTemplate: "",
+					contentTemplate: "", description: "", guide: "",
 					properties: [
 						status("question-status", ["offen", "beantwortet"]),
-						{ id: "question-pitch", name: "Pitch", kind: "reference", options: [], reference: { typeIds: ["pitch"], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list" },
+						{ id: "question-pitch", name: "Pitch", kind: "reference", options: [], reference: { typeIds: ["pitch"], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" }, cardDisplay: "list", description: "" },
 					],
 				},
 			],
@@ -163,7 +163,7 @@ test("Traits: the roles, and an options role's values, keep their order by the h
 });
 
 test("Traits: a type's form shows the traits it bears as links to them", async () => {
-	const type = (id: string, name: string) => ({ id, name, color: "#c4dafa", contentTemplate: "", properties: [] });
+	const type = (id: string, name: string) => ({ id, name, color: "#c4dafa", contentTemplate: "", description: "", guide: "", properties: [] });
 	const root = await startApp(
 		{
 			version: DATA_VERSION,
