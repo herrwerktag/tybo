@@ -2,7 +2,7 @@ import { el } from "./dom.js";
 
 /**
  * Renders a small, common subset of Markdown as DOM nodes: headings, paragraphs, bulleted and numbered lists,
- * quotes, fenced code, horizontal rules, and inline **bold**, *italic*, `code` and [links](https://…).
+ * quotes, fenced code, horizontal rules, tables, and inline **bold**, *italic*, `code` and [links](https://…).
  * Text only ever becomes text nodes (never HTML), and links are limited to http(s) and mailto.
  * `{{name}}` placeholders become what `placeholder` returns for them; without one, or where it returns null, and in
  * code and link labels, they stay as typed.
@@ -72,8 +72,15 @@ function blocks(lines: string[], placeholder: Placeholder | undefined): HTMLElem
 			out.push(list);
 			continue;
 		}
+		if (startsTable(lines, i)) {
+			const align = cells(lines[i + 1]!).map((cell) => (cell.startsWith(":") ? (cell.endsWith(":") ? "center" : "left") : cell.endsWith(":") ? "right" : ""));
+			const rows = [cells(line)];
+			for (i += 2; i < lines.length && lines[i]!.trim() && !startsBlock(lines[i]!); i++) rows.push(cells(lines[i]!));
+			out.push(table(rows, align, placeholder));
+			continue;
+		}
 		const paragraph: string[] = [];
-		for (; i < lines.length && lines[i]!.trim() && !startsBlock(lines[i]!); i++) paragraph.push(lines[i]!.trim());
+		for (; i < lines.length && lines[i]!.trim() && !startsBlock(lines[i]!) && !startsTable(lines, i); i++) paragraph.push(lines[i]!.trim());
 		out.push(el("p", {}, ...withBreaks(paragraph, placeholder)));
 	}
 	return out;
@@ -81,6 +88,45 @@ function blocks(lines: string[], placeholder: Placeholder | undefined): HTMLElem
 
 function startsBlock(line: string): boolean {
 	return [HEADING, FENCE, RULE, QUOTE, BULLET, NUMBERED].some((pattern) => pattern.test(line));
+}
+
+const DELIMITER_ROW = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+
+/** A table starts with a header row over a delimiter row (`| --- | :-: |`) of as many cells; both have a `|`. */
+function startsTable(lines: string[], i: number): boolean {
+	const header = lines[i]!;
+	const delimiter = lines[i + 1];
+	return delimiter !== undefined && header.includes("|") && delimiter.includes("|") && DELIMITER_ROW.test(delimiter) && cells(header).length === cells(delimiter).length;
+}
+
+/** The cells of a table row: the outer `|` are optional, `\|` is a `|` in a cell. */
+function cells(line: string): string[] {
+	return line
+		.trim()
+		.replace(/^\|/, "")
+		.replace(/(?<!\\)\|$/, "")
+		.split(/(?<!\\)\|/)
+		.map((cell) => cell.trim().replace(/\\\|/g, "|"));
+}
+
+/** The header's cells decide the columns: rows with fewer cells get empty ones, extra cells are dropped. */
+function table(rows: string[][], align: string[], placeholder: Placeholder | undefined): HTMLElement {
+	const row = (tag: "th" | "td", texts: string[]) =>
+		el(
+			"tr",
+			{},
+			...align.map((textAlign, column) => {
+				const cell = el(tag, {}, ...inline(texts[column] ?? "", placeholder));
+				if (textAlign) cell.style.textAlign = textAlign;
+				return cell;
+			}),
+		);
+	const [head, ...body] = rows;
+	return el(
+		"div",
+		{ className: "table-wrap" },
+		el("table", {}, el("thead", {}, row("th", head!)), ...(body.length ? [el("tbody", {}, ...body.map((cells) => row("td", cells)))] : [])),
+	);
 }
 
 /** Lines of one paragraph or list item, kept on their own lines (as the plain-text description showed them). */
