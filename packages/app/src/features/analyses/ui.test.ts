@@ -26,7 +26,7 @@ test("Analyses: an analysis set up step by step lists the rows grouped, is saved
 		kind: "reference",
 		options: [],
 		reference: { typeIds: [typeId], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel },
-		cardDisplay: "list",
+		cardDisplay: "list", description: "",
 	});
 	// Entity ids are ULIDs (others are replaced on loading, losing the references to them).
 	const ids = { Build: ulid(), Sort: ulid(), Developer: ulid(), Delivery: ulid() };
@@ -43,9 +43,9 @@ test("Analyses: an analysis set up step by step lists the rows grouped, is saved
 		{
 			version: DATA_VERSION,
 			types: [
-				{ id: "activity", name: "Activity", color: "#c4dafa", contentTemplate: "", properties: [reference("role", "Responsible", "role"), reference("process", "Process", "process", "includes")] },
-				{ id: "role", name: "Role", color: "#f9c9c9", contentTemplate: "", properties: [] },
-				{ id: "process", name: "Process", color: "#c8ebbf", contentTemplate: "", properties: [] },
+				{ id: "activity", name: "Activity", color: "#c4dafa", contentTemplate: "", description: "", guide: "", properties: [reference("role", "Responsible", "role"), reference("process", "Process", "process", "includes")] },
+				{ id: "role", name: "Role", color: "#f9c9c9", contentTemplate: "", description: "", guide: "", properties: [] },
+				{ id: "process", name: "Process", color: "#c8ebbf", contentTemplate: "", description: "", guide: "", properties: [] },
 			],
 			entities: [
 				entity("Build", "activity", { role: ids.Developer, process: ids.Delivery }),
@@ -132,7 +132,7 @@ const status = (id: string, labels: string[]) => ({
 	kind: "options",
 	options: labels.map((label) => ({ id: `${id}-${label}`, label })),
 	reference: null,
-	cardDisplay: "list",
+	cardDisplay: "list", description: "",
 });
 
 test("Traits: a trait made in its form, bound to two types' statuses, gives an analysis across both types", async () => {
@@ -142,8 +142,8 @@ test("Traits: a trait made in its form, bound to two types' statuses, gives an a
 		{
 			version: DATA_VERSION,
 			types: [
-				{ id: "pitch", name: "Pitch", color: "#fbd9b0", contentTemplate: "", properties: [status("pitch-status", ["Entwurf", "abgeschlossen"])] },
-				{ id: "question", name: "Frage", color: "#d6ccf7", contentTemplate: "", properties: [status("question-status", ["offen", "beantwortet"])] },
+				{ id: "pitch", name: "Pitch", color: "#fbd9b0", contentTemplate: "", description: "", guide: "", properties: [status("pitch-status", ["Entwurf", "abgeschlossen"])] },
+				{ id: "question", name: "Frage", color: "#d6ccf7", contentTemplate: "", description: "", guide: "", properties: [status("question-status", ["offen", "beantwortet"])] },
 			],
 			entities: [entity("Traits", "pitch", "Entwurf"), entity("Verlauf", "pitch", "abgeschlossen"), entity("Wie heißen sie?", "question", "offen")],
 			boards: [],

@@ -2,6 +2,7 @@ import { el, icon, refused } from "../../../shared/ui/index.js";
 import { entityTypeMap, parseTags, parseValue, type DataStore, type Entity, type PropertyDef, type PropertyValue } from "../core.js";
 import { text } from "../texts.js";
 import { propertyField } from "./entity-form.js";
+import { propertyHint } from "./type-help.js";
 
 /** What an entity's field editor reads: the part of the entity it changes. */
 export type EntityPatch = Partial<Pick<Entity, "name" | "content" | "description" | "tags">> & { values?: Record<string, PropertyValue> };
@@ -208,7 +209,10 @@ export function fieldEditing(store: DataStore, redraw: () => void, onSaved: () =
 					// The field's own label is the row's already.
 					const control = made.element.querySelector<HTMLElement>("input, select, .reference-values") ?? made.element;
 					const focus = made.element.querySelector<HTMLElement>("input, select") ?? control;
-					const editor: FieldEditor = { element: control, focus, read, saveOnChange: prop.kind !== "text", keepOpen: multiple };
+					// The property's note stays with the control, as in the form for a new entity.
+					const hint = propertyHint(prop);
+					const element = hint.length > 0 ? el("div", { className: "field-with-hint" }, control, ...hint) : control;
+					const editor: FieldEditor = { element, focus, read, saveOnChange: prop.kind !== "text", keepOpen: multiple };
 					// A multiple reference saves each tag added or taken out, as the form's change.
 					changed = () => control.closest("form")?.dispatchEvent(new Event("change"));
 					return editor;

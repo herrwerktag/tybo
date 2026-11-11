@@ -25,13 +25,13 @@ const reference = (id: string, name: string, typeIds: string[], multiple = false
 	kind: "reference",
 	options: [],
 	reference: { ...newReference(typeIds), multiple },
-	cardDisplay: "list",
+	cardDisplay: "list", description: "",
 });
 const type = (id: string, name: string, properties: PropertyDef[] = []): EntityType => ({
 	id,
 	name,
 	properties,
-	contentTemplate: "",
+	contentTemplate: "", description: "", guide: "",
 	color: "#dcdcdc",
 });
 const entity = (id: string, typeId: string, values: Entity["values"] = {}): Entity => ({
@@ -57,7 +57,7 @@ function processModel(): Pick<AppData, "types" | "entities" | "traits"> {
 				reference("responsible", "Verantwortlicher", ["role"]),
 				reference("process", "Prozess", ["process"]),
 				reference("leadsTo", "führt zu", ["state"], true),
-				{ id: "status", name: "Status", kind: "options", options: [{ id: "o-neu", label: "neu" }, { id: "o-fertig", label: "fertig" }], reference: null, cardDisplay: "list" },
+				{ id: "status", name: "Status", kind: "options", options: [{ id: "o-neu", label: "neu" }, { id: "o-fertig", label: "fertig" }], reference: null, cardDisplay: "list", description: "" },
 			]),
 			type("role", "Rolle"),
 			type("process", "Prozess"),
@@ -307,6 +307,7 @@ test("an analysis is one unit with its paths; changing one of them touches nothi
 		types: [],
 		entities: [],
 		boards: [],
+		guide: "",
 		traits: [],
 		analyses: [{ id: "ana-notes", name: "Notizen", typeId: "type-person", traitId: null, groups: [], columns: [[{ propertyId: "p-note", direction: "forward" }]] }],
 	};

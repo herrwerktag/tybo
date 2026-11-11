@@ -5,10 +5,11 @@
 import { WS, byText, goTo, settle, startApp, storage } from "./test-app.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addTrait, createStore, updateTrait } from "./features.core.js";
+import { addTrait, createStore, setGuide, updateTrait } from "./features.core.js";
 import { DATA_VERSION, ulid, type HistoryEntry } from "./shared/core/index.js";
 import { text as boardText } from "./features/boards/texts.js";
 import { text as dataText } from "./features/data/texts.js";
+import { text as guideText } from "./features/guides/texts.js";
 import { text } from "./features/history/texts.js";
 import { text as traitText } from "./features/traits/texts.js";
 
@@ -23,8 +24,8 @@ const ideas = () => ({
 			id: "idea",
 			name: "Idea",
 			color: "#c4dafa",
-			contentTemplate: "",
-			properties: [{ id: "status", name: "Status", kind: "options", options: [{ id: "o-open", label: "open" }, { id: "o-pitched", label: "pitched" }], reference: null, cardDisplay: "list" }],
+			contentTemplate: "", description: "", guide: "",
+			properties: [{ id: "status", name: "Status", kind: "options", options: [{ id: "o-open", label: "open" }, { id: "o-pitched", label: "pitched" }], reference: null, cardDisplay: "list", description: "" }],
 		},
 	],
 	entities: [
@@ -313,7 +314,7 @@ test("History: a long write shows its first units, the rest on request", async (
 
 test("History: the type filter keeps to one entity type — its entities, their cards, the type itself", async () => {
 	const saved = ideas();
-	saved.types.push({ id: "book", name: "Book", color: "#c8ebbf", contentTemplate: "", properties: [] });
+	saved.types.push({ id: "book", name: "Book", color: "#c8ebbf", contentTemplate: "", description: "", guide: "", properties: [] });
 	await startApp(saved);
 	const web = await writer("web");
 	web.addEntity("book", "Dune", "", {});
@@ -406,4 +407,29 @@ test("History: a trait is told of by its roles and the types bearing it", async 
 	const unit = view.querySelector(".history-unit")!;
 	assert.deepEqual(labels(unit), [traitText.roles, traitText.historyTypes]);
 	assert.deepEqual([...unit.querySelectorAll(".history-changes > dd")].map((dd) => dd.textContent), [`Stand (${dataText.kinds.options}: open, done)`, "Idea"]);
+});
+
+test("History: the workspace's guide changed by an agent is an entry of its own, with the text before to unfold", async () => {
+	await startApp({ ...ideas(), guide: "Erst die Idee." });
+	const agent = await writer("mcp");
+	setGuide(agent, "Erst der Pitch.");
+	await agent.saved();
+
+	const view = await openHistory();
+	assert.deepEqual(writeLines(view), [[text.sourceMcp, text.unitSentence(guideText.historyGuides(1), guideText.historyGuideName, text.changed)]]);
+	const unit = view.querySelector(".history-unit")!;
+	assert.deepEqual(labels(unit), [guideText.historyGuideText]);
+	assert.equal(byText(unit, "summary", text.changedText).closest("details")!.querySelector(".history-text")!.textContent, "Erst der Pitch.");
+	assert.equal(byText(unit, "summary", text.oldText).closest("details")!.querySelector(".history-text")!.textContent, "Erst die Idee.");
+});
+
+test("History: a type's help is told of with the type — its description, its guide, its properties' notes", async () => {
+	await startApp(ideas());
+	const web = await writer("web");
+	const idea = web.data.types[0]!;
+	web.updateType(idea.id, idea.name, [{ ...idea.properties[0]!, description: "Wie weit sie ist." }], idea.contentTemplate, undefined, { description: "Ein Einfall.", guide: "Kurz halten." });
+	await web.saved();
+
+	const view = await openHistory();
+	assert.deepEqual(labels(view.querySelector(".history-unit")!), [dataText.typeDescription, dataText.typeGuide, dataText.propertyDescriptions]);
 });

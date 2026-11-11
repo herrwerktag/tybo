@@ -1,0 +1,23 @@
+/* The Guide tab: the workspace's guide as a page to read, as wide as a text reads well. */
+.guide-view {
+	display: grid;
+	align-content: start;
+	gap: 1rem;
+	width: 100%;
+	max-width: 48rem;
+	margin-inline: auto;
+	padding: 1.5rem 1rem;
+}
+
+.guide-text {
+	font-size: var(--text-base);
+}
+
+#guide-form textarea {
+	font-family: ui-monospace, monospace;
+	font-size: var(--text-md);
+}
+
+.guide-hint {
+	font-size: var(--text-sm);
+}

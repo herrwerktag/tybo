@@ -16,8 +16,10 @@ function sample(): AppData {
 			{
 				id: "type-1",
 				name: "Person",
-				properties: [{ id: "prop-1", name: "Notiz", kind: "text", options: [], reference: null, cardDisplay: "list" }],
+				properties: [{ id: "prop-1", name: "Notiz", kind: "text", options: [], reference: null, cardDisplay: "list", description: "Was auffällt." }],
 				contentTemplate: "",
+				description: "Wer mitarbeitet.",
+				guide: "## Verwendung\n\nEine Person je Mensch.",
 				color: "#c4dafa",
 			},
 		],
@@ -32,6 +34,7 @@ function sample(): AppData {
 				drawings: [{ id: "draw-star", kind: "textbox", x: 40, y: 40.5, width: 96, height: 48, color: "#f6e8a6", text: "★", textSize: "l" }],
 			},
 		],
+		guide: "# Methode\n\nErst die Idee, dann der Pitch.",
 		traits: [
 			{
 				id: "trait-1",
@@ -70,7 +73,7 @@ async function fresh() {
 test("sqlite: the schema is made once, and survives reopening the file", async () => {
 	const { storage, path, close } = await fresh();
 	try {
-		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
 		assert.deepEqual(await storage.init(), [], "the second start has nothing left to do");
 		assert.equal(await storage.healthy(), true);
 		await storage.createWorkspace({ id: "ws", name: "Bleibt" }, 1);
@@ -195,7 +198,7 @@ test("sqlite: what was saved of stories, by any version before, is dropped; the 
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
 		const { data } = (await storage.readWorkspace("ws"))!;
 		// Null, not missing: the app makes the frame of the board's pan/zoom.
 		assert.deepEqual(
@@ -229,7 +232,7 @@ test("sqlite: step 8 drops the library and the library drawings placed on boards
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [8, 9, 10, 11, 12, 13, 14, 15]);
+		assert.deepEqual(await storage.init(), [8, 9, 10, 11, 12, 13, 14, 15, 16]);
 		await storage.close();
 		const check = new DatabaseSync(path);
 		assert.deepEqual(check.prepare("select name from sqlite_master where name = 'library_drawings'").all(), []);
@@ -404,7 +407,7 @@ test("sqlite: step 10 gives the entries written before it their format, 9", asyn
 		raw.prepare("insert into history (workspace_id, operation) values ('ws', 'create')").run();
 		raw.close();
 
-		assert.deepEqual(await storage.init(), [10, 11, 12, 13, 14, 15]);
+		assert.deepEqual(await storage.init(), [10, 11, 12, 13, 14, 15, 16]);
 		assert.deepEqual((await storage.readHistory("ws", { limit: 10 })).map((e) => e.dataVersion), [9]);
 	} finally {
 		await close();
@@ -451,7 +454,7 @@ test("sqlite: step 12 gives options their ids; entity values hold the id of thei
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [12, 13, 14, 15]);
+		assert.deepEqual(await storage.init(), [12, 13, 14, 15, 16]);
 		await storage.close();
 
 		const check = new DatabaseSync(path);
@@ -465,7 +468,7 @@ test("sqlite: step 12 gives options their ids; entity values hold the id of thei
 			rows.map((row) => [row.entity_id, row.value]),
 			[["e1", JSON.stringify(options[0]!.id)]],
 		);
-		assert.equal(check.prepare("select data_version from workspaces where id = 'ws'").get()!.data_version, 13, "format 10, and the steps after it on to 13");
+		assert.equal(check.prepare("select data_version from workspaces where id = 'ws'").get()!.data_version, 14, "format 10, and the steps after it on to 14");
 		check.close();
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
@@ -484,9 +487,9 @@ test("sqlite: step 13 adds the traits; the analyses there are stay of their type
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [13, 14, 15]);
+		assert.deepEqual(await storage.init(), [13, 14, 15, 16]);
 		const data = (await storage.readWorkspace("ws"))!.data;
-		assert.equal(data.version, 13);
+		assert.equal(data.version, 14);
 		assert.deepEqual(data.traits, []);
 		assert.deepEqual(data.analyses, [{ id: "a", name: "Alle", typeId: "book", traitId: null, groups: [], columns: [] }]);
 		await storage.close();
@@ -512,9 +515,9 @@ test("sqlite: step 15 makes each grouping path of an analysis a level showing ev
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [15]);
+		assert.deepEqual(await storage.init(), [15, 16]);
 		const data = (await storage.readWorkspace("ws"))!.data;
-		assert.equal(data.version, 13);
+		assert.equal(data.version, 14);
 		assert.deepEqual(
 			data.analyses.map((a) => [a.id, a.groups, a.columns]),
 			[
@@ -522,6 +525,59 @@ test("sqlite: step 15 makes each grouping path of an analysis a level showing ev
 				["b", [], []],
 			],
 		);
+		await storage.close();
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("sqlite: step 16 adds the model's help — empty on what is there, nothing else changed; a guide written is one row, an emptied one none", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "tybo-sqlite-"));
+	const path = join(dir, "test.sqlite");
+	try {
+		const db = new DatabaseSync(path);
+		db.exec("pragma foreign_keys = on");
+		for (const migration of SQLITE_MIGRATIONS.slice(0, 15)) migration.up(db);
+		db.exec("pragma user_version = 15");
+		db.exec("insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 13)");
+		db.exec("insert into entity_types (workspace_id, id, position, name, content_template, color) values ('ws', 'regel', 0, 'Regel', 'Gegeben …', '#c4dafa')");
+		db.exec(`insert into properties (workspace_id, id, type_id, position, name, kind, options, reference, card_display) values ('ws', 'quelle', 'regel', 0, 'Quelle', 'text', '[]', null, 'list')`);
+		db.exec(`insert into entities (workspace_id, id, type_id, position, name, content, description, tags) values ('ws', 'e', 'regel', 0, 'Namen sind eindeutig', '', 'Gegeben …', '[]')`);
+		db.exec(`insert into entity_values (workspace_id, entity_id, property_id, position, value) values ('ws', 'e', 'quelle', 0, '"Pitch"')`);
+		db.close();
+
+		const storage = sqliteStorage(path);
+		assert.deepEqual(await storage.init(), [16]);
+		const { data } = (await storage.readWorkspace("ws"))!;
+		assert.equal(data.version, 14);
+		assert.equal(data.guide, "");
+		assert.deepEqual(data.types, [
+			{
+				id: "regel",
+				name: "Regel",
+				properties: [{ id: "quelle", name: "Quelle", kind: "text", options: [], reference: null, cardDisplay: "list", description: "" }],
+				contentTemplate: "Gegeben …",
+				color: "#c4dafa",
+				description: "",
+				guide: "",
+			},
+		]);
+		assert.deepEqual(data.entities, [{ id: "e", typeId: "regel", name: "Namen sind eindeutig", content: "", description: "Gegeben …", tags: [], values: { quelle: "Pitch" } }]);
+
+		const { version: _version, ...before } = data;
+		await storage.writeChanges("ws", changesBetween(before, { ...before, guide: "Erst die Idee." }));
+		assert.equal((await storage.readWorkspace("ws"))!.data.guide, "Erst die Idee.");
+		await storage.writeChanges("ws", changesBetween({ ...before, guide: "Erst die Idee." }, { ...before, guide: "Erst der Pitch." }));
+		assert.equal((await storage.readWorkspace("ws"))!.data.guide, "Erst der Pitch.");
+		await storage.writeChanges("ws", changesBetween({ ...before, guide: "Erst der Pitch." }, before));
+		assert.equal((await storage.readWorkspace("ws"))!.data.guide, "");
+		const history = await storage.readHistory("ws", { limit: 10 });
+		const text = (stand: unknown) => (stand as { value: { text: string } } | null)?.value.text ?? null;
+		assert.deepEqual(history.map((entry) => [entry.kind, text(entry.before), text(entry.after)]), [
+			["guide", "Erst der Pitch.", null],
+			["guide", "Erst die Idee.", "Erst der Pitch."],
+			["guide", null, "Erst die Idee."],
+		]);
 		await storage.close();
 	} finally {
 		rmSync(dir, { recursive: true, force: true });

@@ -17,8 +17,8 @@ function state(): AppData {
 			{
 				id: "type-person",
 				name: "Person",
-				properties: [{ id: "p-note", name: "Notiz", kind: "text", options: [], reference: null, cardDisplay: "list" }],
-				contentTemplate: "",
+				properties: [{ id: "p-note", name: "Notiz", kind: "text", options: [], reference: null, cardDisplay: "list", description: "" }],
+				contentTemplate: "", description: "", guide: "",
 				color: "#c4dafa",
 			},
 		],
@@ -42,6 +42,7 @@ function state(): AppData {
 				],
 			},
 		],
+		guide: "",
 		traits: [{ id: "trait-1", name: "Kurz", roles: [{ id: "role-1", name: "Notiz", kind: "text", options: [] }], bindings: { "type-person": { "role-1": { field: "content" } } } }],
 		analyses: [
 			{ id: "ana-1", name: "Rollen", typeId: null, traitId: null, groups: [{ path: [{ propertyId: "gone", direction: "inverse" }], hideEmpty: false }], columns: [] },

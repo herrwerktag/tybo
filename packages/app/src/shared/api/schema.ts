@@ -333,6 +333,24 @@ export const POSTGRES_MIGRATIONS: readonly Migration[] = [
 			await tx`update workspaces set data_version = 13`;
 		},
 	},
+	{
+		version: 19,
+		name: "model help",
+		async up(tx) {
+			// The model's help (format 14): what a type is for and how it is used, what a property expects — none
+			// before — and the workspace's guide, one row where there is one.
+			await tx`alter table entity_types add column description text not null default '', add column guide text not null default ''`;
+			await tx`alter table properties add column description text not null default ''`;
+			await tx`create table guides (
+				workspace_id text not null references workspaces(id) on delete cascade,
+				id text not null,
+				text text not null,
+				updated_at timestamptz not null default now(),
+				primary key (workspace_id, id)
+			)`;
+			await tx`update workspaces set data_version = 14`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */

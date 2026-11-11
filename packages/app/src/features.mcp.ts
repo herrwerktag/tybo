@@ -2,6 +2,7 @@ import { NameTaken, sameName, type AppData, type DataPort } from "./shared/core/
 import { ToolError, WORKSPACE, json, object, text, type Tool, type ToolContext } from "./shared/mcp/index.js";
 import { createStore, type Store } from "./features.core.js";
 import { dataTools, describeData } from "./features/data/mcp.js";
+import { describeGuide, guideTools } from "./features/guides/mcp.js";
 import { describeTraits, traitTools } from "./features/traits/mcp.js";
 import { analysisTools, describeAnalyses } from "./features/analyses/mcp.js";
 import { boardTools, describeBoards } from "./features/boards/mcp.js";
@@ -12,10 +13,10 @@ import { boardTools, describeBoards } from "./features/boards/mcp.js";
  */
 
 /** The features' tools, on the store of the workspace a call names, in the order the model gets them. */
-const TOOLS = [boardTools, dataTools, traitTools, analysisTools];
+const TOOLS = [boardTools, dataTools, guideTools, traitTools, analysisTools];
 
 /** What the features add to describe_workspace. */
-const DESCRIBES = [describeData, describeTraits, describeAnalyses, describeBoards];
+const DESCRIBES = [describeGuide, describeData, describeTraits, describeAnalyses, describeBoards];
 
 /**
  * The tools a model gets on tybo: read a workspace's types and entities, run its analyses, and make or change
@@ -92,8 +93,9 @@ function workspaceTools(port: DataPort, { open }: ToolContext<Store>, describe: 
 		{
 			name: "describe_workspace",
 			description:
-				"The schema of a workspace: its entity types with their color and properties (kind, options as { id, label }, which types a reference points to, " +
-				"how cards show it, the arrow and label of its line), " +
+				"The schema of a workspace and how to work with it: its `guide` (the workspace's method, in full), its entity types with their `description` " +
+				"(what the type is for), their `guide` (how to use it, in full), their color and properties (kind, `description` of what is expected, " +
+				"options as { id, label }, which types a reference points to, how cards show it, the arrow and label of its line), " +
 				"how many entities each type has, the tags in use, the traits (their roles, and per type bearing them what plays each role), " +
 				"the saved analyses and the boards with how many cards each has. " +
 				"Read this before creating or changing anything.",

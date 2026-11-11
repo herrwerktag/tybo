@@ -8,7 +8,10 @@ Verweise, vor- und rueckwaerts), mit frei waehlbaren Spalten; das Ergebnis laess
 Traits legen eine gemeinsame Bedeutung (etwa einen Fortschritt) ueber mehrere Typen, indem jeder Typ eigene Felder
 den Rollen des Traits zuordnet; eine Auswertung auf einem Trait zeigt die Entitaeten all dieser Typen. Eine
 Verweis-Rolle kann eine Bedingung haben (etwa „blockiert durch“, solange das Ziel nicht fertig ist): Dann zaehlen nur
-die Ziele, die sie erfuellen. Die Daten liegen in Arbeitsbereichen in Postgres (oder lokal in einer SQLite-Datei).
+die Ziele, die sie erfuellen. Jeder Arbeitsbereich kann seine Arbeitsweise selbst erklaeren (Modellhilfe): eine Anleitung
+in Markdown (Seite „Anleitung“), je Typ eine Kurzbeschreibung und eine Anleitung, je Eigenschaft eine Erlaeuterung —
+zu lesen, wo Entitaeten angelegt und bearbeitet werden, und fuer Agenten ueber `describe_workspace`.
+Die Daten liegen in Arbeitsbereichen in Postgres (oder lokal in einer SQLite-Datei).
 
 ## Aufbau
 
@@ -23,7 +26,7 @@ pnpm-Monorepo mit TypeScript:
 
 ### Features
 
-Ein Feature liegt mit den Schichten, die es hat, in einem Ordner unter `packages/app/src/features/` (bisher: `data` für Typen und Entitäten, `traits`, `analyses`, `boards`, `drawings`, `exports`, `history` für den Verlauf):
+Ein Feature liegt mit den Schichten, die es hat, in einem Ordner unter `packages/app/src/features/` (bisher: `data` für Typen und Entitäten, `guides` für die Anleitung des Arbeitsbereichs, `traits`, `analyses`, `boards`, `drawings`, `exports`, `history` für den Verlauf):
 `core.ts` (Modell, Store-Funktionen, Einheit und Datenteil), `ui.ts` (Seite), `api.ts` (Speicherung in Postgres
 und SQLite), `mcp.ts` (Werkzeuge), `texts.ts` (Texte en/de), eigenes CSS und die Tests daneben. Die Laufzeit folgt
 dem Namen: `core` ohne DOM, `ui` im Browser, `api` und `mcp` in Node (je eine tsconfig prueft das).
@@ -138,7 +141,8 @@ Format der API ab (etwa ein Tab mit einer aelteren App), antwortet sie mit 409 u
 
 `apps/mcp` ist ein MCP-Server, ueber den ein LLM-Client (Claude Code, Claude Desktop, …) mit den Daten arbeitet:
 Arbeitsbereiche und ihr Schema lesen, Entitaeten suchen (auch die ohne Pflicht-Referenz) und ansehen, Typen und
-Entitaeten anlegen und aendern (auch viele Entitaeten auf einmal, als eine Aenderung), Traits anlegen und aendern,
+Entitaeten anlegen und aendern (auch viele Entitaeten auf einmal, als eine Aenderung), die Anleitung des Arbeitsbereichs
+ersetzen (`update_workspace_guide`; die Hilfetexte der Typen und Eigenschaften mit `create_type`/`update_type`), Traits anlegen und aendern,
 Auswertungen anlegen, aendern und ausfuehren, Entitaeten als Karten auf ein Board legen (ohne Positionen geschichtet in Spalten entlang der Verweise,
 je Typ ein eigener Bereich, so sortiert, dass sich moeglichst wenige Linien kreuzen; ein Board des Namens wird
 angelegt, wenn es keins gibt). Was Daten wegnimmt, braucht `confirm: true`: Entitaeten, Traits und Auswertungen loeschen, Eigenschaften

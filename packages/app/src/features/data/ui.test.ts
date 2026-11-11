@@ -45,7 +45,7 @@ test("a type with a property, then an entity of it, can be created through the f
 test("types and entities are reordered with their drag handles' arrow keys; focus stays on the moved one", async () => {
 	const root = await startApp({
 		...library,
-		types: [...library.types, { id: "film", name: "Film", color: "#c8ebbf", contentTemplate: "", properties: [] }],
+		types: [...library.types, { id: "film", name: "Film", color: "#c8ebbf", contentTemplate: "", description: "", guide: "", properties: [] }],
 		entities: [
 			...library.entities,
 			{ id: "01J00000000000000000000001", typeId: "book", name: "Emma", content: "", description: "", values: {} },
@@ -105,11 +105,11 @@ test("the forms for a new type and a new entity are hidden until asked for, and 
 });
 
 test("a reference allowing several values shows them as tags: × removes one, the select adds another", async () => {
-	const members = { id: "members", name: "members", kind: "reference", options: [], reference: { typeIds: ["person"], multiple: true }, cardDisplay: "list" };
+	const members = { id: "members", name: "members", kind: "reference", options: [], reference: { typeIds: ["person"], multiple: true }, cardDisplay: "list", description: "" };
 	const root = await startApp({
 		types: [
-			{ id: "team", name: "Team", color: "#c8ebbf", contentTemplate: "", properties: [members] },
-			{ id: "person", name: "Person", color: "#c4dafa", contentTemplate: "", properties: [] },
+			{ id: "team", name: "Team", color: "#c8ebbf", contentTemplate: "", description: "", guide: "", properties: [members] },
+			{ id: "person", name: "Person", color: "#c4dafa", contentTemplate: "", description: "", guide: "", properties: [] },
 		],
 		entities: [
 			{ id: "01J00000000000000000000000", typeId: "team", name: "Core", content: "", description: "", values: { members: ["01J00000000000000000000001"] } },
@@ -175,17 +175,17 @@ test("an entity converts from its details, with like-named fields assigned and t
 		version: DATA_VERSION,
 		types: [
 			{
-				id: "idea", name: "Idea", color: "#c4dafa", contentTemplate: "",
+				id: "idea", name: "Idea", color: "#c4dafa", contentTemplate: "", description: "", guide: "",
 				properties: [
-					{ id: "title", name: "title", kind: "text", options: [], reference: null, cardDisplay: "list" },
-					{ id: "status", name: "status", kind: "options", options: [{ id: "old-open", label: "open" }], reference: null, cardDisplay: "list" },
+					{ id: "title", name: "title", kind: "text", options: [], reference: null, cardDisplay: "list", description: "" },
+					{ id: "status", name: "status", kind: "options", options: [{ id: "old-open", label: "open" }], reference: null, cardDisplay: "list", description: "" },
 				],
 			},
 			{
-				id: "project", name: "Project", color: "#c8ebbf", contentTemplate: "",
+				id: "project", name: "Project", color: "#c8ebbf", contentTemplate: "", description: "", guide: "",
 				properties: [
-					{ id: "title", name: "title", kind: "text", options: [], reference: null, cardDisplay: "list" },
-					{ id: "phase", name: "phase", kind: "options", options: [{ id: "new-open", label: "open" }, { id: "done", label: "done" }], reference: null, cardDisplay: "list" },
+					{ id: "title", name: "title", kind: "text", options: [], reference: null, cardDisplay: "list", description: "" },
+					{ id: "phase", name: "phase", kind: "options", options: [{ id: "new-open", label: "open" }, { id: "done", label: "done" }], reference: null, cardDisplay: "list", description: "" },
 				],
 			},
 		],
@@ -220,9 +220,9 @@ test("conversion lists every loss and cancelling its confirmation changes nothin
 	const root = await startApp({
 		version: DATA_VERSION,
 		types: [
-			{ id: "idea", name: "Idea", color: "#c4dafa", contentTemplate: "", properties: [{ id: "note", name: "note", kind: "text", options: [], reference: null, cardDisplay: "list" }] },
-			{ id: "empty", name: "Empty", color: "#c8ebbf", contentTemplate: "", properties: [] },
-			{ id: "review", name: "Review", color: "#f6e8a6", contentTemplate: "", properties: [{ id: "subject", name: "subject", kind: "reference", options: [], reference, cardDisplay: "list" }] },
+			{ id: "idea", name: "Idea", color: "#c4dafa", contentTemplate: "", description: "", guide: "", properties: [{ id: "note", name: "note", kind: "text", options: [], reference: null, cardDisplay: "list", description: "" }] },
+			{ id: "empty", name: "Empty", color: "#c8ebbf", contentTemplate: "", description: "", guide: "", properties: [] },
+			{ id: "review", name: "Review", color: "#f6e8a6", contentTemplate: "", description: "", guide: "", properties: [{ id: "subject", name: "subject", kind: "reference", options: [], reference, cardDisplay: "list", description: "" }] },
 		],
 		entities: [
 			{ id: "01J00000000000000000000000", typeId: "idea", name: "Conversion", content: "", description: "", tags: [], values: { note: "Keep me?" } },
@@ -257,7 +257,7 @@ test("conversion lists every loss and cancelling its confirmation changes nothin
 
 test("a type other types refer to can't be deleted", async () => {
 	const data = structuredClone(library) as { types: unknown[]; boards: unknown[] };
-	data.types.push({ id: "review", name: "Review", properties: [{ id: "of", name: "of", kind: "reference", options: [], reference: { typeId: "book", multiple: false }, cardDisplay: "list" }] });
+	data.types.push({ id: "review", name: "Review", properties: [{ id: "of", name: "of", kind: "reference", options: [], reference: { typeId: "book", multiple: false }, cardDisplay: "list", description: "" }] });
 	const root = await startApp(data, "#types");
 	const alerts: string[] = [];
 	stub({ alert: (message: string) => void alerts.push(message), confirm: () => assert.fail("shouldn't ask to confirm") });
@@ -313,8 +313,8 @@ test("the Entities page filters by tag, remembers it, tags new entities with it,
 });
 
 test("the type form: the list steps aside while it's open; a new property stands unfolded with its name focused, one with an error unfolds", async () => {
-	const status = { id: "status", name: "Status", kind: "options", options: [{ id: "o-open", label: "open" }], reference: null, cardDisplay: "list" };
-	const root = await startApp({ version: DATA_VERSION, types: [{ id: "idea", name: "Idea", color: "#c4dafa", contentTemplate: "", properties: [status] }], entities: [], boards: [] }, "#types");
+	const status = { id: "status", name: "Status", kind: "options", options: [{ id: "o-open", label: "open" }], reference: null, cardDisplay: "list", description: "" };
+	const root = await startApp({ version: DATA_VERSION, types: [{ id: "idea", name: "Idea", color: "#c4dafa", contentTemplate: "", description: "", guide: "", properties: [status] }], entities: [], boards: [] }, "#types");
 	byText(root.querySelector(".type-item")!, "button", dataText.edit).click();
 	assert.equal(root.querySelector(".type-list"), null, "no list below the form");
 	const toggles = () => [...root.querySelectorAll<HTMLButtonElement>("#type-form .property .property-toggle")].map((b) => b.ariaExpanded);
@@ -342,7 +342,7 @@ test("the type form edits options in place: a rename saves without asking, a car
 				id: "idea",
 				name: "Idea",
 				color: "#c4dafa",
-				contentTemplate: "",
+				contentTemplate: "", description: "", guide: "",
 				properties: [
 					{
 						id: "status",
@@ -353,7 +353,7 @@ test("the type form edits options in place: a rename saves without asking, a car
 							{ id: "o-pitched", label: "pitched" },
 						],
 						reference: null,
-						cardDisplay: "list",
+						cardDisplay: "list", description: "",
 					},
 				],
 			},
@@ -399,4 +399,83 @@ test("the type form edits options in place: a rename saves without asking, a car
 	await settle();
 	assert.deepEqual(questions, [dataText.confirmChangedValues(1)]);
 	assert.equal((await readSaved()).entities[0]!.values.status, null);
+});
+
+/** A workspace whose type Regel says what it is for and how it is used, its Status what its values mean. */
+const withHelp = () => ({
+	version: DATA_VERSION,
+	types: [
+		{
+			id: "regel", name: "Regel", color: "#c4dafa", contentTemplate: "",
+			description: "Was im System immer gilt.",
+			guide: "## Verwendung\n\nEine Regel je Aussage.\n\n## Beispiel\n\nNamen sind **eindeutig**.",
+			properties: [
+				{ id: "status", name: "Status", kind: "options", options: [{ id: "draft", label: "Entwurf" }, { id: "valid", label: "gültig" }], reference: null, cardDisplay: "list", description: "Entwürfe werden noch nicht als verbindliche Systemregel gelesen." },
+				{ id: "quelle", name: "Quelle", kind: "text", options: [], reference: null, cardDisplay: "list", description: "" },
+			],
+		},
+	],
+	entities: [{ id: "01J00000000000000000000000", typeId: "regel", name: "Namen sind eindeutig", content: "", description: "", tags: [], values: { status: "draft" } }],
+	boards: [],
+});
+
+test("the form for a new entity shows what its type is for, its guide to unfold, and each property's note at its field", async () => {
+	const root = await startApp(withHelp(), "#entities");
+	byText(root, "button", dataText.createNewEntity).click();
+	const form = root.querySelector<HTMLFormElement>("#entity-form")!;
+	assert.equal(form.querySelector(".type-help-description")?.textContent, "Was im System immer gilt.");
+	const guide = form.querySelector<HTMLDetailsElement>(".type-help-guide")!;
+	assert.equal(guide.open, false, "the long guide doesn't crowd the form");
+	assert.equal(guide.querySelector("summary")?.textContent, dataText.typeGuideOf("Regel"));
+	assert.equal(guide.querySelector(".markdown strong")?.textContent, "eindeutig", "the whole guide, formatted");
+	assert.deepEqual([...form.querySelectorAll(".field-hint")].map((hint) => [hint.closest(".field")!.querySelector("span")!.textContent, hint.textContent]), [
+		["Status", "Entwürfe werden noch nicht als verbindliche Systemregel gelesen."],
+	]);
+});
+
+test("a field edited on its own shows its property's note; the details show the type's help, the guide staying unfolded", async () => {
+	const root = await startApp(withHelp(), "#entities");
+	byText<HTMLElement>(root, "tbody .editable", "Entwurf").click();
+	assert.equal(root.querySelector("tbody form .field-hint")?.textContent, "Entwürfe werden noch nicht als verbindliche Systemregel gelesen.");
+	root.querySelector("tbody form")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+	assert.equal(root.querySelector(".field-hint"), null, "not in every row: only where the value is entered");
+
+	byText(root, ".name-link", "Namen sind eindeutig").click();
+	const panel = () => root.querySelector<HTMLElement>(".entities-view .details-panel")!;
+	assert.equal(panel().querySelector(".type-help-description")?.textContent, "Was im System immer gilt.");
+	const guide = panel().querySelector<HTMLDetailsElement>(".type-help-guide")!;
+	guide.open = true;
+	guide.dispatchEvent(new Event("toggle"));
+	// A field opened draws the details anew: the guide read meanwhile stays open, the note stands at the field.
+	byText<HTMLElement>(panel(), ".editable", "Entwurf").click();
+	assert.equal(panel().querySelector<HTMLDetailsElement>(".type-help-guide")!.open, true);
+	assert.equal(panel().querySelector("form .field-hint")?.textContent, "Entwürfe werden noch nicht als verbindliche Systemregel gelesen.");
+	panel().querySelector("form")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+	const shown = panel().querySelector<HTMLDetailsElement>(".type-help-guide")!;
+	shown.open = false;
+	shown.dispatchEvent(new Event("toggle"));
+});
+
+test("the type form keeps a type's description and guide and each property's note; the list shows the description", async () => {
+	const root = await startApp(withHelp(), "#types");
+	assert.equal(root.querySelector(".type-description")?.textContent, "Was im System immer gilt.");
+	byText(root, ".type-item button", dataText.edit).click();
+	const form = () => root.querySelector<HTMLFormElement>("#type-form")!;
+	const description = form().querySelector<HTMLInputElement>(`input[placeholder="${dataText.typeDescriptionHint}"]`)!;
+	const guide = form().querySelector<HTMLTextAreaElement>(`textarea[placeholder="${dataText.typeGuideHint}"]`)!;
+	assert.equal(description.value, "Was im System immer gilt.");
+	assert.match(guide.value, /^## Verwendung/);
+	typeInto(description, " Was immer gilt. ");
+	typeInto(guide, "Kurz.");
+	form().querySelectorAll<HTMLElement>(".property-toggle")[2]!.click(); // after the built-in fields' and Status's
+	const note = form().querySelector<HTMLInputElement>(`input[placeholder="${dataText.propertyDescriptionHint}"]`)!;
+	assert.equal(note.value, "");
+	typeInto(note, "Woher die Regel stammt.");
+	byText(form(), "button", sharedText.save).click();
+
+	const [regel] = (await readSaved()).types;
+	assert.equal(regel!.description, "Was immer gilt.");
+	assert.equal(regel!.guide, "Kurz.");
+	assert.deepEqual(regel!.properties.map((p) => p.description), ["Entwürfe werden noch nicht als verbindliche Systemregel gelesen.", "Woher die Regel stammt."]);
+	assert.deepEqual((await readSaved()).entities[0]!.values, { status: "draft" });
 });

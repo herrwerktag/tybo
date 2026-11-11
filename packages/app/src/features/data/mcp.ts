@@ -26,6 +26,7 @@ import {
 	type PropertyKind,
 	type PropertyValue,
 	type NewEntity,
+	type TypeHelp,
 	type ValidationError,
 	type DataStore,
 } from "./core.js";
@@ -97,13 +98,15 @@ export function dataTools({ open, answerSaved }: ToolContext<DataStore>): Tool[]
 			description:
 				"Creates an entity type. Properties are text, options (with their `options`, each a label or `{ id, label }`) or references (with `targets`: names of " +
 				"the types they point to, `multiple` for several, `required` for at least one, `inverseLabel` for how the referenced entities show the reference). " +
-				"A reference to the type itself is added afterwards with update_type. Without a `color`, the type gets the first one no other type has.",
+				"A reference to the type itself is added afterwards with update_type. Without a `color`, the type gets the first one no other type has. " +
+				"Say what the type is for in `description`, how to use it in `guide`, and what a property expects in its `description`.",
 			inputSchema: object(
 				{
 					workspace: WORKSPACE,
 					name: { type: "string" },
 					properties: { type: "array", items: PROPERTY },
 					contentTemplate: { type: "string", description: "Description new entities of the type start with." },
+					...TYPE_HELP,
 					color: COLOR,
 				},
 				["workspace", "name"],
@@ -114,14 +117,14 @@ export function dataTools({ open, answerSaved }: ToolContext<DataStore>): Tool[]
 				const properties = drafts(store.data, args.properties ?? [], []);
 				check(store.data, name, properties, null);
 				const template = args.contentTemplate === undefined ? "" : text(args.contentTemplate, "contentTemplate");
-				const type = store.addType(name, properties, template, ...(args.color === undefined ? [] : [colorOf(args.color)]));
+				const type = store.addType(name, properties, template, args.color === undefined ? undefined : colorOf(args.color), helpOf(args));
 				return answerSaved(store, { type: describeType(store.data, type) });
 			},
 		},
 		{
 			name: "update_type",
 			description:
-				"Changes an entity type: its name, its color, its content template, or its properties. `properties` replaces the whole list: a " +
+				"Changes an entity type: its name, its color, its content template, its help (`description`, `guide`), or its properties. `properties` replaces the whole list: a " +
 				"property keeps its values when it is listed with its id (or its current name), and what isn't given of it stays as it " +
 				"is; a property left out is removed, together with its values on all entities — which needs `confirm: true`. An option is " +
 				"kept — and can be renamed — by its id (`{ id, label }`); a label alone keeps the option with that label. Changes that " +
@@ -133,6 +136,7 @@ export function dataTools({ open, answerSaved }: ToolContext<DataStore>): Tool[]
 					name: { type: "string" },
 					properties: { type: "array", items: { ...PROPERTY, properties: { id: { type: "string" }, ...PROPERTY.properties }, required: [] } },
 					contentTemplate: { type: "string" },
+					...TYPE_HELP,
 					color: COLOR,
 					confirm: { type: "boolean", description: "Needed when the change would change or clear values: properties or options entities hold, left out." },
 				},
@@ -164,7 +168,7 @@ export function dataTools({ open, answerSaved }: ToolContext<DataStore>): Tool[]
 					);
 				}
 				const template = args.contentTemplate === undefined ? type.contentTemplate : text(args.contentTemplate, "contentTemplate");
-				store.updateType(type.id, name, after, template, args.color === undefined ? undefined : colorOf(args.color));
+				store.updateType(type.id, name, after, template, args.color === undefined ? undefined : colorOf(args.color), helpOf(args));
 				return answerSaved(store, { type: describeType(store.data, typeOf(store.data, type.id)) });
 			},
 		},
@@ -302,6 +306,7 @@ const PROPERTY = {
 	properties: {
 		name: { type: "string" },
 		kind: { type: "string", enum: ["text", "options", "reference"] },
+		description: { type: "string", description: "A short note on the value expected or what the reference means, shown at its field; empty for none." },
 		options: {
 			type: "array",
 			items: { type: ["string", "object"], properties: { id: { type: "string" }, label: { type: "string" } } },
@@ -324,6 +329,20 @@ const PROPERTY = {
 	},
 	required: ["name", "kind"],
 };
+/** A type's help as create_type and update_type take it. */
+const TYPE_HELP = {
+	description: { type: "string", description: "What the type is for, in a sentence; shown where its entities are made and read. Empty for none." },
+	guide: { type: "string", description: "How the type is used, at length (Markdown): when to make one, typical mistakes, an example. Empty for none." },
+};
+
+/** The help a call gives of a type: what it leaves out isn't named (and stays as it is). */
+function helpOf(args: Record<string, unknown>): Partial<TypeHelp> {
+	return {
+		...(args.description === undefined ? {} : { description: text(args.description, "description") }),
+		...(args.guide === undefined ? {} : { guide: text(args.guide, "guide") }),
+	};
+}
+
 const COLOR = { type: "string", enum: TYPE_COLORS.map((c) => c.name), description: "The color of the type's cards." };
 
 /** The palette color `raw` names (ignoring case), as the type form offers them. */
@@ -368,6 +387,8 @@ function describeType(data: AppData, type: EntityType) {
 	return {
 		id: type.id,
 		name: type.name,
+		description: type.description,
+		guide: type.guide,
 		// A color from before the palette, or chosen otherwise, as its value.
 		color: TYPE_COLORS.find((c) => c.value === type.color.toLowerCase())?.name ?? type.color,
 		properties: type.properties.map((p) => ({
@@ -386,6 +407,7 @@ function describeType(data: AppData, type: EntityType) {
 					}
 				: {}),
 			cardDisplay: p.cardDisplay,
+			description: p.description,
 		})),
 		contentTemplate: type.contentTemplate,
 	};
@@ -544,6 +566,7 @@ function drafts(data: AppData, raw: unknown, current: readonly PropertyDef[]): D
 			options: given.options === undefined ? (was?.options ?? []) : optionDrafts(given.options, was, index),
 			reference,
 			cardDisplay,
+			description: given.description === undefined ? (was?.description ?? "") : text(given.description, "description"),
 		};
 		return was ? { ...draft, id: was.id } : draft;
 	});

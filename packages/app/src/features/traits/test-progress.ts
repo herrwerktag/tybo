@@ -11,7 +11,7 @@ const options = (id: string, name: string, labels: Record<string, string>): Prop
 	kind: "options",
 	options: Object.entries(labels).map(([id, label]): OptionDef => ({ id, label })),
 	reference: null,
-	cardDisplay: "list",
+	cardDisplay: "list", description: "",
 });
 const reference = (id: string, name: string, typeIds: string[], multiple = false): PropertyDef => ({
 	id,
@@ -19,10 +19,10 @@ const reference = (id: string, name: string, typeIds: string[], multiple = false
 	kind: "reference",
 	options: [],
 	reference: { ...newReference(typeIds), multiple },
-	cardDisplay: "list",
+	cardDisplay: "list", description: "",
 });
-const textProperty = (id: string, name: string): PropertyDef => ({ id, name, kind: "text", options: [], reference: null, cardDisplay: "list" });
-const type = (id: string, name: string, properties: PropertyDef[]): EntityType => ({ id, name, properties, contentTemplate: "", color: "#dcdcdc" });
+const textProperty = (id: string, name: string): PropertyDef => ({ id, name, kind: "text", options: [], reference: null, cardDisplay: "list", description: "" });
+const type = (id: string, name: string, properties: PropertyDef[]): EntityType => ({ id, name, properties, contentTemplate: "", description: "", guide: "", color: "#dcdcdc" });
 const entity = (id: string, typeId: string, name: string, values: Entity["values"] = {}, content = ""): Entity => ({
 	id,
 	typeId,

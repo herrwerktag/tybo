@@ -140,7 +140,7 @@ test("loads data saved with the old number/boolean/date kinds as text", async ()
 		kind: "text",
 		options: [],
 		reference: null,
-		cardDisplay: "list",
+		cardDisplay: "list", description: "",
 	});
 	assert.equal(store.data.entities[0]?.values.p, "42");
 });

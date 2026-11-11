@@ -192,7 +192,17 @@ export function propertyRow(prop: DraftProperty, i: number, rows: PropertyRows):
 		},
 	});
 	if (!open) return row;
-	row.append(el("div", { className: "property-settings" }, setting(text.settingType, kindSelect), setting(text.settingOnCard, displaySelect)));
+	const descriptionInput = el("input", {
+		value: prop.description ?? "",
+		placeholder: text.propertyDescriptionHint,
+		oninput: (e) => {
+			prop.description = (e.target as HTMLInputElement).value;
+		},
+	});
+	row.append(
+		el("div", { className: "property-settings" }, setting(text.settingType, kindSelect), setting(text.settingOnCard, displaySelect)),
+		setting(text.propertyDescription, descriptionInput),
+	);
 	if (prop.kind === "options") {
 		// One row per option: its label, draggable to another place, removable. Each keeps the id it has.
 		const items = prop.options.map((option, o) => {

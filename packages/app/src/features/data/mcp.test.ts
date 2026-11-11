@@ -84,6 +84,30 @@ test("update_type keeps listed properties with their values, removes the ones le
 	assert.deepEqual((await call("get_entity", { entity: "Ada" })).values, {});
 });
 
+test("update_type changes a type's description and guide and a property's note; what isn't given stays, and so do the entities", async () => {
+	const { call } = await withPeople();
+	await call("update_type", { type: "Person", description: "Wer mitarbeitet.", guide: "## Verwendung\n\nEine Person je Mensch." });
+	await call("update_type", { type: "Person", properties: [{ name: "Role", description: "Die Rolle im Team." }] });
+	const before = (await call("describe_workspace")).types[0];
+	assert.equal(before.description, "Wer mitarbeitet.");
+	assert.equal(before.guide, "## Verwendung\n\nEine Person je Mensch.");
+	assert.equal(before.properties[0].description, "Die Rolle im Team.");
+	const ada = await call("get_entity", { entity: "Ada" });
+
+	// Only the description: the guide, the note, the options and the color stay as they are.
+	const { type } = await call("update_type", { type: "Person", description: "Wer am Projekt mitarbeitet." });
+	const { entities: _count, ...described } = before; // describe_workspace counts the entities too
+	assert.deepEqual(type, { ...described, description: "Wer am Projekt mitarbeitet." });
+	// A property listed without its note keeps it; an empty one takes it away.
+	await call("update_type", { type: "Person", name: "Person", properties: [{ name: "Role" }] });
+	assert.equal((await call("describe_workspace")).types[0].properties[0].description, "Die Rolle im Team.");
+	await call("update_type", { type: "Person", guide: "", properties: [{ name: "Role", description: "" }] });
+	const after = (await call("describe_workspace")).types[0];
+	assert.equal(after.guide, "");
+	assert.equal(after.properties[0].description, "");
+	assert.deepEqual(await call("get_entity", { entity: "Ada" }), ada);
+});
+
 test("a type gets its color, and a reference its arrow and line label, as the type form gives them", async () => {
 	const { call, refusal, storage } = await withPeople();
 	const { type } = await call("create_type", {
@@ -102,7 +126,7 @@ test("a type gets its color, and a reference its arrow and line label, as the ty
 		inverseLabel: "",
 		arrow: "from",
 		lineLabel: "checks",
-		cardDisplay: "line",
+		cardDisplay: "line", description: "",
 	});
 	const store = await createStore(storage.port, "Projekt");
 	assert.equal(store.data.types[2]!.color, "#b9e4df");

@@ -12,8 +12,8 @@ function state(): AppData {
 	const type: EntityType = {
 		id: "type-person",
 		name: "Person",
-		properties: [{ id: "p-note", name: "Notiz", kind: "text", options: [], reference: null, cardDisplay: "list" }],
-		contentTemplate: "",
+		properties: [{ id: "p-note", name: "Notiz", kind: "text", options: [], reference: null, cardDisplay: "list", description: "" }],
+		contentTemplate: "", description: "", guide: "",
 		color: "#c4dafa",
 	};
 	const entity = (id: string, note: string | null): Entity => ({
@@ -132,7 +132,7 @@ test("a type is one unit with its properties; a board is one without its cards a
 	const type = after.types[0]!;
 	type.properties = [
 		...type.properties,
-		{ id: "p-status", name: "Status", kind: "text", options: [], reference: null, cardDisplay: "list" },
+		{ id: "p-status", name: "Status", kind: "text", options: [], reference: null, cardDisplay: "list", description: "" },
 	];
 	after.boards[0]!.viewport = { x: 12, y: 34, zoom: 0.5 };
 	// Cards and drawings changing is not the board changing:

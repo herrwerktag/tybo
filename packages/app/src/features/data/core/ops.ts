@@ -5,12 +5,14 @@ import {
 	convertedValues,
 	nextTypeColor,
 	parseTags,
+	helpText,
 	propertyDefs,
 	type DraftProperty,
 	type Entity,
 	type EntityData,
 	type EntityType,
 	type PropertyValue,
+	type TypeHelp,
 } from "./model.js";
 
 /** An entity to add with `addEntities`; without an id it gets a new one. */
@@ -32,13 +34,14 @@ export function dataOps<D extends EntityData>(core: StoreCore<D>, settle: (data:
 	const reconciled = (data: D): D => settle(reconcileValues(data));
 
 	return {
-		/** Without a color, the type gets the first palette color no other type uses. A name another type has is
-		 * refused with a `NameTaken`. */
+		/** Without a color, the type gets the first palette color no other type uses; without `help`, none. A name
+		 * another type has is refused with a `NameTaken`. */
 		addType(
 			name: string,
 			properties: DraftProperty[],
 			contentTemplate: string,
 			color = nextTypeColor(core.data.types.map((t) => t.color)),
+			help: Partial<TypeHelp> = {},
 		): EntityType {
 			refuseTakenName("type", core.data.types, name);
 			const type: EntityType = {
@@ -47,14 +50,16 @@ export function dataOps<D extends EntityData>(core: StoreCore<D>, settle: (data:
 				properties: propertyDefs(properties),
 				contentTemplate,
 				color,
+				description: (help.description ?? "").trim(),
+				guide: helpText(help.guide ?? ""),
 			};
 			core.change({ ...core.data, types: [...core.data.types, type] });
 			return type;
 		},
 
-		/** Existing entities keep their content when the template changes. Without a color, the type keeps its own. A
-		 * name another type has is refused with a `NameTaken`. */
-		updateType(typeId: string, name: string, properties: DraftProperty[], contentTemplate: string, color?: string): void {
+		/** Existing entities keep their content when the template changes. Without a color, the type keeps its own; what
+		 * `help` doesn't give stays too. A name another type has is refused with a `NameTaken`. */
+		updateType(typeId: string, name: string, properties: DraftProperty[], contentTemplate: string, color?: string, help: Partial<TypeHelp> = {}): void {
 			refuseTakenName("type", core.data.types, name, typeId);
 			const current = core.data.types.find((t) => t.id === typeId);
 			const updated: EntityType = {
@@ -63,6 +68,8 @@ export function dataOps<D extends EntityData>(core: StoreCore<D>, settle: (data:
 				properties: propertyDefs(properties),
 				contentTemplate,
 				color: color ?? current?.color ?? nextTypeColor(core.data.types.map((t) => t.color)),
+				description: (help.description ?? current?.description ?? "").trim(),
+				guide: helpText(help.guide ?? current?.guide ?? ""),
 			};
 			// Values a changed kind can carry over (a text that is an option's label) change with the type; what
 			// doesn't follow is `reconciled`'s to clear. Entities whose values stay equal produce no change.

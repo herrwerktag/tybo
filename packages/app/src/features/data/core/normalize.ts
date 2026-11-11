@@ -79,6 +79,8 @@ export function normalizeEntityData(data: EntityData): EntityData {
 			...type,
 			color: colorFor(type.color),
 			contentTemplate: typeof type.contentTemplate === "string" ? type.contentTemplate : "",
+			description: typeof type.description === "string" ? type.description : "",
+			guide: typeof type.guide === "string" ? type.guide : "",
 			properties: type.properties.map(({ showOnCard, ...prop }: PropertyDef & { showOnCard?: unknown }) => ({
 				...prop,
 				kind: PROPERTY_KINDS.includes(prop.kind) ? prop.kind : "text",
@@ -87,6 +89,7 @@ export function normalizeEntityData(data: EntityData): EntityData {
 					: [],
 				reference: prop.reference ? normalizeReference(prop.reference) : null,
 				cardDisplay: cardDisplayFor(prop, showOnCard),
+				description: typeof prop.description === "string" ? prop.description : "",
 			})),
 		})),
 		entities: data.entities.map((entity) => {

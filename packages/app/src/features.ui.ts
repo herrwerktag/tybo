@@ -3,6 +3,7 @@ import type { AppData } from "./shared/core/index.js";
 import { renderShell, type UnitDescriber } from "./shared/ui/index.js";
 import type { CanvasLayer } from "./features/boards/ui.js";
 import { COPY_TYPES, DATA_SEARCH, ENTITY_HISTORY, TYPE_HISTORY, WRAP_REFERENCES, dataPage, deleteQuestion } from "./features/data/ui.js";
+import { GUIDE_HISTORY, guidePage } from "./features/guides/ui.js";
 import { TRAITS_SECTION, TRAIT_CHIPS, TRAIT_HISTORY, TRAIT_SEARCH } from "./features/traits/ui.js";
 import { ANALYSIS_HISTORY, ANALYSIS_SEARCH, analysesPage } from "./features/analyses/ui.js";
 import { BOARD_HISTORY, BOARD_PLACES, BOARD_SEARCH, CARD_HISTORY, boardsPage } from "./features/boards/ui.js";
@@ -11,6 +12,7 @@ import { TEXT_EXPORT, boardExports, renderStandaloneView } from "./features/expo
 import { HISTORY_LINK, historyPage } from "./features/history/ui.js";
 
 export * from "./features/data/ui.js";
+export * from "./features/guides/ui.js";
 export * from "./features/traits/ui.js";
 export * from "./features/analyses/ui.js";
 export * from "./features/boards/ui.js";
@@ -22,7 +24,7 @@ export * from "./features/history/ui.js";
 export const CANVAS_LAYERS: readonly CanvasLayer[] = [DRAWING_LAYER];
 
 /** How the features' units are told of in the history (see `UnitDescriber`). */
-export const HISTORY_DESCRIBERS: readonly UnitDescriber<Store>[] = [TYPE_HISTORY, ENTITY_HISTORY, TRAIT_HISTORY, ANALYSIS_HISTORY, BOARD_HISTORY, CARD_HISTORY, DRAWING_HISTORY];
+export const HISTORY_DESCRIBERS: readonly UnitDescriber<Store>[] = [TYPE_HISTORY, ENTITY_HISTORY, GUIDE_HISTORY, TRAIT_HISTORY, ANALYSIS_HISTORY, BOARD_HISTORY, CARD_HISTORY, DRAWING_HISTORY];
 
 /**
  * The app in the browser, put together of the shell and the features' parts: a feature joins with a line here, and
@@ -37,6 +39,7 @@ export function render(root: HTMLElement, workspaces: Workspaces, { viewScript }
 			dataPage({ entityLinks: [HISTORY_LINK], entityPlaces: [BOARD_PLACES], sections: [TRAITS_SECTION], typeNotes: [TRAIT_CHIPS] }),
 			boardsPage({ layers: CANVAS_LAYERS, exports: boardExports(viewScript), entityLinks: [HISTORY_LINK] }),
 			analysesPage({ entityLinks: [HISTORY_LINK], entityPlaces: [BOARD_PLACES] }),
+			guidePage(),
 			historyPage({ describers: HISTORY_DESCRIBERS }),
 		],
 		workspaceActions: [TEXT_EXPORT],

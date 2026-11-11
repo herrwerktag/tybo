@@ -8,15 +8,15 @@ export const TYPE_STORAGE: UnitStorage<EntityType, { types: Rows; properties: Ro
 	table: "entity_types",
 	async readPostgres(queries, ws) {
 		const [types, properties] = await Promise.all([
-			queries`select id, name, content_template, color from entity_types where workspace_id = ${ws} order by position, id`,
-			queries`select id, type_id, name, kind, options, reference, card_display from properties where workspace_id = ${ws} order by type_id, position, id`,
+			queries`select id, name, content_template, color, description, guide from entity_types where workspace_id = ${ws} order by position, id`,
+			queries`select id, type_id, name, kind, options, reference, card_display, description from properties where workspace_id = ${ws} order by type_id, position, id`,
 		]);
 		return { types, properties };
 	},
 	readSqlite: (all) => ({
-		types: all("select id, name, content_template, color from entity_types where workspace_id = ? order by position, id"),
+		types: all("select id, name, content_template, color, description, guide from entity_types where workspace_id = ? order by position, id"),
 		properties: all(
-			"select id, type_id, name, kind, options, reference, card_display from properties where workspace_id = ? order by type_id, position, id",
+			"select id, type_id, name, kind, options, reference, card_display, description from properties where workspace_id = ? order by type_id, position, id",
 		).map((row) => ({ ...row, options: parsed(row.options), reference: parsed(row.reference) })),
 	}),
 	assemble(data, { types, properties }) {
@@ -27,24 +27,28 @@ export const TYPE_STORAGE: UnitStorage<EntityType, { types: Rows; properties: Ro
 			options: property.options ?? [],
 			reference: property.reference ?? null,
 			cardDisplay: property.card_display,
+			description: property.description,
 		}));
 		return {
 			...data,
-			types: types.map(({ id, name, content_template, color }) => ({
+			types: types.map(({ id, name, content_template, color, description, guide }) => ({
 				id,
 				name,
 				properties: propertiesOf.get(id) ?? [],
 				contentTemplate: content_template,
 				color,
+				description,
+				guide,
 			})),
 		};
 	},
 	async writePostgres(tx, ws, { value: type, position }) {
-		await tx`insert into entity_types (workspace_id, id, position, name, content_template, color, updated_at)
-			values (${ws}, ${type.id}, ${position}, ${type.name}, ${type.contentTemplate}, ${type.color}, now())
+		await tx`insert into entity_types (workspace_id, id, position, name, content_template, color, description, guide, updated_at)
+			values (${ws}, ${type.id}, ${position}, ${type.name}, ${type.contentTemplate}, ${type.color}, ${type.description ?? ""}, ${type.guide ?? ""}, now())
 			on conflict (workspace_id, id) do update set
 				position = excluded.position, name = excluded.name,
-				content_template = excluded.content_template, color = excluded.color, updated_at = now()`;
+				content_template = excluded.content_template, color = excluded.color,
+				description = excluded.description, guide = excluded.guide, updated_at = now()`;
 		const properties = type.properties ?? [];
 		// Properties the type no longer has lose their rows — their values go with them, the tables'
 		// references take care of what hangs below a property (or its type) going away.
@@ -53,23 +57,24 @@ export const TYPE_STORAGE: UnitStorage<EntityType, { types: Rows; properties: Ro
 			await tx`delete from properties
 				where workspace_id = ${ws} and type_id = ${type.id} and id <> all(${properties.map((p) => p.id)})`;
 		for (const [index, property] of properties.entries()) {
-			await tx`insert into properties (workspace_id, id, type_id, position, name, kind, options, reference, card_display)
+			await tx`insert into properties (workspace_id, id, type_id, position, name, kind, options, reference, card_display, description)
 				values (${ws}, ${property.id}, ${type.id}, ${index}, ${property.name}, ${property.kind},
-					${jsonbParameter(tx, property.options)}, ${jsonbParameter(tx, property.reference)}, ${property.cardDisplay})
+					${jsonbParameter(tx, property.options)}, ${jsonbParameter(tx, property.reference)}, ${property.cardDisplay}, ${property.description ?? ""})
 				on conflict (workspace_id, id) do update set
 					type_id = excluded.type_id, position = excluded.position, name = excluded.name,
 					kind = excluded.kind, options = excluded.options, reference = excluded.reference,
-					card_display = excluded.card_display`;
+					card_display = excluded.card_display, description = excluded.description`;
 		}
 	},
 	writeSqlite(run, ws, { value: type, position }) {
 		run(
-			`insert into entity_types (workspace_id, id, position, name, content_template, color, updated_at)
-			values (?, ?, ?, ?, ?, ?, current_timestamp)
+			`insert into entity_types (workspace_id, id, position, name, content_template, color, description, guide, updated_at)
+			values (?, ?, ?, ?, ?, ?, ?, ?, current_timestamp)
 			on conflict (workspace_id, id) do update set
 				position = excluded.position, name = excluded.name,
-				content_template = excluded.content_template, color = excluded.color, updated_at = current_timestamp`,
-			ws, type.id, position, plain(type.name), plain(type.contentTemplate), plain(type.color),
+				content_template = excluded.content_template, color = excluded.color,
+				description = excluded.description, guide = excluded.guide, updated_at = current_timestamp`,
+			ws, type.id, position, plain(type.name), plain(type.contentTemplate), plain(type.color), type.description ?? "", type.guide ?? "",
 		);
 		const properties = type.properties ?? [];
 		run(
@@ -78,14 +83,14 @@ export const TYPE_STORAGE: UnitStorage<EntityType, { types: Rows; properties: Ro
 		);
 		for (const [index, property] of properties.entries()) {
 			run(
-				`insert into properties (workspace_id, id, type_id, position, name, kind, options, reference, card_display)
-				values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				`insert into properties (workspace_id, id, type_id, position, name, kind, options, reference, card_display, description)
+				values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				on conflict (workspace_id, id) do update set
 					type_id = excluded.type_id, position = excluded.position, name = excluded.name,
 					kind = excluded.kind, options = excluded.options, reference = excluded.reference,
-					card_display = excluded.card_display`,
+					card_display = excluded.card_display, description = excluded.description`,
 				ws, property.id, type.id, index, plain(property.name), plain(property.kind),
-				json(property.options), json(property.reference), plain(property.cardDisplay),
+				json(property.options), json(property.reference), plain(property.cardDisplay), property.description ?? "",
 			);
 		}
 	},

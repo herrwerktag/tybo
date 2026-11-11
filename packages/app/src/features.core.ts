@@ -22,12 +22,14 @@ import {
 	type UnitStands,
 } from "./shared/core/index.js";
 import { ENTITY_UNIT, TYPE_UNIT, dataOps, keepWellFormed, normalizeEntityData, reconcileValues } from "./features/data/core.js";
+import { GUIDE_PART, GUIDE_UNIT } from "./features/guides/core.js";
 import { TRAITS_PART, TRAIT_UNIT } from "./features/traits/core.js";
 import { ANALYSES_PART, ANALYSIS_UNIT } from "./features/analyses/core.js";
 import { BOARD_UNIT, CARD_UNIT, boardOps, keepViewports, normalizeBoards, pruneCards, storedBoards, type BoardList } from "./features/boards/core.js";
 import { DRAWING_LIST, DRAWING_UNIT } from "./features/drawings/core.js";
 
 export * from "./features/data/core.js";
+export * from "./features/guides/core.js";
 export * from "./features/traits/core.js";
 export * from "./features/analyses/core.js";
 export * from "./features/boards/core.js";
@@ -39,10 +41,10 @@ export * from "./features/drawings/core.js";
  */
 
 /** The kinds of unit of the app's data, parents before the children naming them. */
-export const UNIT_KINDS: readonly UnitKind<AppData, any>[] = [TYPE_UNIT, ENTITY_UNIT, TRAIT_UNIT, ANALYSIS_UNIT, BOARD_UNIT, CARD_UNIT, DRAWING_UNIT];
+export const UNIT_KINDS: readonly UnitKind<AppData, any>[] = [TYPE_UNIT, ENTITY_UNIT, GUIDE_UNIT, TRAIT_UNIT, ANALYSIS_UNIT, BOARD_UNIT, CARD_UNIT, DRAWING_UNIT];
 
 /** The features' own parts of the app's data (see `DataPart`). */
-export const DATA_PARTS: readonly DataPart[] = [TRAITS_PART, ANALYSES_PART];
+export const DATA_PARTS: readonly DataPart[] = [GUIDE_PART, TRAITS_PART, ANALYSES_PART];
 
 /** The features' own lists on each board, next to its cards (see `BoardList`). */
 export const BOARD_LISTS: readonly BoardList[] = [DRAWING_LIST];
@@ -50,7 +52,7 @@ export const BOARD_LISTS: readonly BoardList[] = [DRAWING_LIST];
 /** What the features' parts make of the app's data. */
 export type FeatureData = Omit<AppData, "types" | "entities" | "boards">;
 
-/** The features' parts of saved data as the storage holds them: each a list, an empty one where there's none. */
+/** The features' parts of saved data as the storage holds them: each a list (the guide a text), an empty one where there's none. */
 export function storedFeatureData(data: object): FeatureData {
 	return storedParts(DATA_PARTS, data as Record<string, unknown>) as unknown as FeatureData;
 }

@@ -31,7 +31,7 @@ function describeProperty(p: PropertyDef, types: EntityType[]): string {
 }
 
 function newDraftProperty(): DraftProperty {
-	return { name: "", kind: "text", options: [], reference: null, cardDisplay: "list" };
+	return { name: "", kind: "text", options: [], reference: null, cardDisplay: "list", description: "" };
 }
 
 /** Whether a property is one the type's errors name (or, unnamed, one an unnamed property's error is about). */
@@ -54,6 +54,8 @@ export function typesSection(page: DataPage, { onSaved, typeNotes = [] }: { onSa
 		editingTypeId: null as string | null,
 		draftName: "",
 		draftContentTemplate: "",
+		draftDescription: "",
+		draftGuide: "",
 		draftColor: "",
 		draftProps: [] as DraftProperty[],
 		typeErrors: [] as ValidationError[],
@@ -85,6 +87,8 @@ export function typesSection(page: DataPage, { onSaved, typeNotes = [] }: { onSa
 		state.editingTypeId = null;
 		state.draftName = "";
 		state.draftContentTemplate = "";
+		state.draftDescription = "";
+		state.draftGuide = "";
 		state.draftColor = nextTypeColor(store.data.types.map((t) => t.color));
 		state.draftProps = [];
 		state.typeErrors = [];
@@ -99,6 +103,8 @@ export function typesSection(page: DataPage, { onSaved, typeNotes = [] }: { onSa
 		state.editingTypeId = type.id;
 		state.draftName = type.name;
 		state.draftContentTemplate = type.contentTemplate;
+		state.draftDescription = type.description;
+		state.draftGuide = type.guide;
 		state.draftColor = type.color;
 		state.draftProps = type.properties.map((p) => ({
 			...p,
@@ -218,15 +224,16 @@ export function typesSection(page: DataPage, { onSaved, typeNotes = [] }: { onSa
 					}));
 					state.typeErrors = validateType(state.draftName, props, store.data.types, editingType?.id ?? null);
 					if (state.typeErrors.length > 0) return rerender();
+					const help = { description: state.draftDescription, guide: state.draftGuide };
 
 					if (editingType) {
 						const entities = store.data.entities.filter((en) => en.typeId === editingType.id);
 						const changed = changedValueCount(entities, editingType.properties, propertyDefs(props), entityTypeMap(store.data));
 						if (changed > 0 && !confirm(text.confirmChangedValues(changed))) return;
-						store.updateType(editingType.id, state.draftName, props, state.draftContentTemplate, state.draftColor);
+						store.updateType(editingType.id, state.draftName, props, state.draftContentTemplate, state.draftColor, help);
 						onSaved(editingType.id);
 					} else {
-						onSaved(store.addType(state.draftName, props, state.draftContentTemplate, state.draftColor).id);
+						onSaved(store.addType(state.draftName, props, state.draftContentTemplate, state.draftColor, help).id);
 					}
 					resetTypeForm();
 					rerender();
@@ -247,6 +254,32 @@ export function typesSection(page: DataPage, { onSaved, typeNotes = [] }: { onSa
 				}),
 			),
 			colorPicker(),
+			// The type's help: what it is for (shown wherever its entities are made and read), and how it is used.
+			el(
+				"label",
+				{ className: "field" },
+				el("span", {}, text.typeDescription),
+				el("input", {
+					value: state.draftDescription,
+					placeholder: text.typeDescriptionHint,
+					oninput: (e) => {
+						state.draftDescription = (e.target as HTMLInputElement).value;
+					},
+				}),
+			),
+			el(
+				"label",
+				{ className: "field wide" },
+				el("span", {}, text.typeGuide),
+				el("textarea", {
+					rows: 4,
+					value: state.draftGuide,
+					placeholder: text.typeGuideHint,
+					oninput: (e) => {
+						state.draftGuide = (e.target as HTMLTextAreaElement).value;
+					},
+				}),
+			),
 			el("h3", {}, text.properties),
 			builtinFields(),
 			...state.draftProps.map((prop, i) => propertyRow(prop, i, propertyRows)),
@@ -301,6 +334,7 @@ export function typesSection(page: DataPage, { onSaved, typeNotes = [] }: { onSa
 						{ className: "type-head" },
 						el("strong", { className: "type-name" }, type.name),
 						el("span", { className: "type-count muted" }, `${count} ${text.historyEntities(count)}`),
+						...(type.description ? [el("span", { className: "type-description muted" }, type.description)] : []),
 					),
 					type.properties.length > 0
 						? el(
