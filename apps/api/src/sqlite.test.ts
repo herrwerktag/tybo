@@ -31,6 +31,7 @@ function sample(): AppData {
 				cards: [{ id: "card-1", entityId: "ent-1", x: 1.25, y: -2, width: 240, height: 160 }],
 				viewport: { x: 0, y: 0, zoom: 1.5 },
 				viewFrame: { x: -12.5, y: 0, width: 1280, height: 720 },
+				chain: { steps: 2, direction: "forward" },
 				drawings: [{ id: "draw-star", kind: "textbox", x: 40, y: 40.5, width: 96, height: 48, color: "#f6e8a6", text: "★", textSize: "l" }],
 			},
 		],
@@ -73,7 +74,7 @@ async function fresh() {
 test("sqlite: the schema is made once, and survives reopening the file", async () => {
 	const { storage, path, close } = await fresh();
 	try {
-		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+		assert.deepEqual(await storage.init(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
 		assert.deepEqual(await storage.init(), [], "the second start has nothing left to do");
 		assert.equal(await storage.healthy(), true);
 		await storage.createWorkspace({ id: "ws", name: "Bleibt" }, 1);
@@ -198,19 +199,19 @@ test("sqlite: what was saved of stories, by any version before, is dropped; the 
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+		assert.deepEqual(await storage.init(), [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
 		const { data } = (await storage.readWorkspace("ws"))!;
-		// Null, not missing: the app makes the frame of the board's pan/zoom.
+		// Null, not missing: the app makes the frame of the board's pan/zoom, and reads the chain's reach as all of it.
 		assert.deepEqual(
-			data.boards.map((b) => [b.id, b.viewFrame, Object.keys(b).sort()]),
+			data.boards.map((b) => [b.id, b.viewFrame, b.chain, Object.keys(b).sort()]),
 			[
-				["on", null, ["cards", "drawings", "id", "name", "viewFrame", "viewport"]],
-				["null", null, ["cards", "drawings", "id", "name", "viewFrame", "viewport"]],
+				["on", null, null, ["cards", "chain", "drawings", "id", "name", "viewFrame", "viewport"]],
+				["null", null, null, ["cards", "chain", "drawings", "id", "name", "viewFrame", "viewport"]],
 			],
 		);
 		await storage.close();
 		const columns = (new DatabaseSync(path).prepare("pragma table_info(boards)").all() as { name: string }[]).map((c) => c.name);
-		assert.deepEqual(columns.sort(), ["id", "name", "position", "updated_at", "view_frame", "viewport", "workspace_id"]);
+		assert.deepEqual(columns.sort(), ["chain", "id", "name", "position", "updated_at", "view_frame", "viewport", "workspace_id"]);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -232,7 +233,7 @@ test("sqlite: step 8 drops the library and the library drawings placed on boards
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [8, 9, 10, 11, 12, 13, 14, 15, 16]);
+		assert.deepEqual(await storage.init(), [8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
 		await storage.close();
 		const check = new DatabaseSync(path);
 		assert.deepEqual(check.prepare("select name from sqlite_master where name = 'library_drawings'").all(), []);
@@ -342,7 +343,7 @@ test("sqlite: a deleted workspace's history stays, ending with everything it hel
 	}
 });
 
-test("sqlite: a board that only panned or zoomed leaves no entry in the history; one renamed with it does", async () => {
+test("sqlite: a board that only panned, zoomed or changed its chain's reach leaves no entry in the history; one renamed with it does", async () => {
 	const { storage, close } = await fresh();
 	try {
 		await storage.init();
@@ -354,9 +355,11 @@ test("sqlite: a board that only panned or zoomed leaves no entry in the history;
 
 		const panned = structuredClone(base);
 		panned.boards[0]!.viewport = { x: 120, y: -40, zoom: 2 };
+		panned.boards[0]!.chain = { steps: null, direction: "backward" };
 		assert.deepEqual(await storage.writeChanges("ws", changesBetween(base, panned)), { version: "2", collided: [] }, "saved all the same");
 		assert.deepEqual((await storage.readWorkspace("ws"))?.data.boards[0]!.viewport, { x: 120, y: -40, zoom: 2 });
-		assert.equal(await entries(), before, "no entry for pan and zoom");
+		assert.deepEqual((await storage.readWorkspace("ws"))?.data.boards[0]!.chain, { steps: null, direction: "backward" });
+		assert.equal(await entries(), before, "no entry for pan, zoom and reach");
 
 		const renamed = structuredClone(panned);
 		renamed.boards[0]!.name = "Neu";
@@ -364,7 +367,10 @@ test("sqlite: a board that only panned or zoomed leaves no entry in the history;
 		await storage.writeChanges("ws", changesBetween(panned, renamed));
 		const [entry] = await storage.readHistory("ws", { limit: 1 });
 		assert.equal(entry!.kind, "board");
-		assert.deepEqual(entry!.after, { value: { id: "board-1", name: "Neu", viewport: { x: 0, y: 0, zoom: 1 }, viewFrame: base.boards[0]!.viewFrame }, position: 0 });
+		assert.deepEqual(entry!.after, {
+			value: { id: "board-1", name: "Neu", viewport: { x: 0, y: 0, zoom: 1 }, viewFrame: base.boards[0]!.viewFrame, chain: { steps: null, direction: "backward" } },
+			position: 0,
+		});
 		assert.equal(await entries(), before + 1);
 	} finally {
 		await close();
@@ -407,7 +413,7 @@ test("sqlite: step 10 gives the entries written before it their format, 9", asyn
 		raw.prepare("insert into history (workspace_id, operation) values ('ws', 'create')").run();
 		raw.close();
 
-		assert.deepEqual(await storage.init(), [10, 11, 12, 13, 14, 15, 16]);
+		assert.deepEqual(await storage.init(), [10, 11, 12, 13, 14, 15, 16, 17]);
 		assert.deepEqual((await storage.readHistory("ws", { limit: 10 })).map((e) => e.dataVersion), [9]);
 	} finally {
 		await close();
@@ -454,7 +460,7 @@ test("sqlite: step 12 gives options their ids; entity values hold the id of thei
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [12, 13, 14, 15, 16]);
+		assert.deepEqual(await storage.init(), [12, 13, 14, 15, 16, 17]);
 		await storage.close();
 
 		const check = new DatabaseSync(path);
@@ -468,7 +474,7 @@ test("sqlite: step 12 gives options their ids; entity values hold the id of thei
 			rows.map((row) => [row.entity_id, row.value]),
 			[["e1", JSON.stringify(options[0]!.id)]],
 		);
-		assert.equal(check.prepare("select data_version from workspaces where id = 'ws'").get()!.data_version, 14, "format 10, and the steps after it on to 14");
+		assert.equal(check.prepare("select data_version from workspaces where id = 'ws'").get()!.data_version, 15, "format 10, and the steps after it on to 15");
 		check.close();
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
@@ -487,9 +493,9 @@ test("sqlite: step 13 adds the traits; the analyses there are stay of their type
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [13, 14, 15, 16]);
+		assert.deepEqual(await storage.init(), [13, 14, 15, 16, 17]);
 		const data = (await storage.readWorkspace("ws"))!.data;
-		assert.equal(data.version, 14);
+		assert.equal(data.version, 15);
 		assert.deepEqual(data.traits, []);
 		assert.deepEqual(data.analyses, [{ id: "a", name: "Alle", typeId: "book", traitId: null, groups: [], columns: [] }]);
 		await storage.close();
@@ -515,9 +521,9 @@ test("sqlite: step 15 makes each grouping path of an analysis a level showing ev
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [15, 16]);
+		assert.deepEqual(await storage.init(), [15, 16, 17]);
 		const data = (await storage.readWorkspace("ws"))!.data;
-		assert.equal(data.version, 14);
+		assert.equal(data.version, 15);
 		assert.deepEqual(
 			data.analyses.map((a) => [a.id, a.groups, a.columns]),
 			[
@@ -547,9 +553,9 @@ test("sqlite: step 16 adds the model's help — empty on what is there, nothing 
 		db.close();
 
 		const storage = sqliteStorage(path);
-		assert.deepEqual(await storage.init(), [16]);
+		assert.deepEqual(await storage.init(), [16, 17]);
 		const { data } = (await storage.readWorkspace("ws"))!;
-		assert.equal(data.version, 14);
+		assert.equal(data.version, 15);
 		assert.equal(data.guide, "");
 		assert.deepEqual(data.types, [
 			{
@@ -578,6 +584,35 @@ test("sqlite: step 16 adds the model's help — empty on what is there, nothing 
 			["guide", "Erst die Idee.", "Erst der Pitch."],
 			["guide", null, "Erst die Idee."],
 		]);
+		await storage.close();
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("sqlite: step 17 gives boards their chain's reach — null on what is there, read as all of it; a reach written is kept", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "tybo-sqlite-"));
+	const path = join(dir, "test.sqlite");
+	try {
+		const db = new DatabaseSync(path);
+		db.exec("pragma foreign_keys = on");
+		for (const migration of SQLITE_MIGRATIONS.slice(0, 16)) migration.up(db);
+		db.exec("pragma user_version = 16");
+		db.exec("insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 14)");
+		db.exec(`insert into boards (workspace_id, id, position, name, viewport, view_frame) values ('ws', 'b', 0, 'Brett', '{"x":0,"y":0,"zoom":1}', null)`);
+		db.close();
+
+		const storage = sqliteStorage(path);
+		assert.deepEqual(await storage.init(), [17]);
+		const { data } = (await storage.readWorkspace("ws"))!;
+		assert.equal(data.version, 15);
+		assert.equal(data.boards[0]!.chain, null);
+
+		const { version: _version, ...before } = data;
+		const after = structuredClone(before);
+		after.boards[0]!.chain = { steps: 1, direction: "forward" };
+		await storage.writeChanges("ws", changesBetween(before, after));
+		assert.deepEqual((await storage.readWorkspace("ws"))!.data.boards[0]!.chain, { steps: 1, direction: "forward" });
 		await storage.close();
 	} finally {
 		rmSync(dir, { recursive: true, force: true });

@@ -1,14 +1,15 @@
 import type { Rect, UnitKind, AppData } from "../../../shared/core/index.js";
-import type { Board, CanvasCard } from "./model.js";
+import type { Board, CanvasCard, ChainReach } from "./model.js";
 import type { Viewport } from "./viewport.js";
 
-/** A board itself — `name`, `viewport` and its frame, without its cards and the features' lists. Those are units
- * of their own, so someone panning a board and someone moving a card never address the same one. */
+/** A board itself — `name`, `viewport`, its frame and its chain's reach, without its cards and the features' lists.
+ * Those are units of their own, so someone panning a board and someone moving a card never address the same one. */
 export interface BoardMeta {
 	id: string;
 	name: string;
 	viewport: Viewport;
 	viewFrame: Rect;
+	chain: ChainReach;
 }
 
 /** A kind of unit of the app's data. */
@@ -18,7 +19,7 @@ type AppUnit<T extends { id: string }> = UnitKind<AppData, T>;
  * address the same one. */
 export const BOARD_UNIT: AppUnit<BoardMeta> = {
 	kind: "board",
-	lists: (data) => [{ items: data.boards.map(({ id, name, viewport, viewFrame }): BoardMeta => ({ id, name, viewport, viewFrame })) }],
+	lists: (data) => [{ items: data.boards.map(({ id, name, viewport, viewFrame, chain }): BoardMeta => ({ id, name, viewport, viewFrame, chain })) }],
 	withList: (data, metas) => {
 		const held = new Map(data.boards.map((board) => [board.id, board]));
 		// What else a board holds (its cards, its lists) stays; a new board gets it from the kinds that own it.

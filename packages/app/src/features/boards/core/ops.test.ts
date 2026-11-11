@@ -359,6 +359,7 @@ test("stories saved before version 8 are left out; a board saved before frames g
 		cards: [],
 		viewport: { x: -100, y: 50, zoom: 2 },
 		viewFrame: { x: 50, y: -25, width: width / 2, height: height / 2 },
+		chain: { steps: null, direction: "both" },
 		...noLists,
 	});
 	assert.deepEqual(framed, {
@@ -367,6 +368,7 @@ test("stories saved before version 8 are left out; a board saved before frames g
 		cards: [],
 		viewport: { x: 0, y: 0, zoom: 1 },
 		viewFrame: { x: 10, y: 20, width: 320, height: 180 },
+		chain: { steps: null, direction: "both" },
 		...noLists,
 	});
 });
@@ -384,6 +386,42 @@ test("pan and zoom aren't undone, and undo keeps the current view; changes that 
 	assert.deepEqual(firstBoard(store).cards, []);
 	assert.deepEqual(firstBoard(store).viewport, { x: 10, y: 20, zoom: 2 });
 	assert.equal(store.history.canUndo, false);
+});
+
+test("a board's chain reach is saved, but neither undone nor undoing; undo keeps the reach as it is", async () => {
+	const storage = memoryStorage();
+	const store = await open(storage);
+	const board = firstBoard(store);
+	assert.deepEqual(board.chain, { steps: null, direction: "both" }, "a new board reaches the whole chain, both ways");
+	store.setChainReach(board.id, { steps: 2, direction: "forward" });
+	assert.equal(store.history.canUndo, false);
+
+	store.renameBoard(board.id, "Renamed");
+	store.setChainReach(board.id, { steps: 1, direction: "backward" });
+	store.undo();
+	assert.equal(firstBoard(store).name, board.name);
+	assert.deepEqual(firstBoard(store).chain, { steps: 1, direction: "backward" });
+	assert.deepEqual((await open(storage)).data.boards[0]!.chain, { steps: 1, direction: "backward" });
+});
+
+test("a board's chain reach is read as far as it's well-formed: else all steps, both ways", async () => {
+	const board = (chain: unknown) => ({ id: "b", name: "B", cards: [], viewport: { x: 0, y: 0, zoom: 1 }, drawings: [], chain });
+	const saved = {
+		version: DATA_VERSION,
+		types: [],
+		entities: [],
+		boards: [board({ steps: 3, direction: "backward" }), board({ steps: 0, direction: "up" }), board({ steps: 1.5 }), board(null), board("far")],
+	};
+	assert.deepEqual(
+		(await open(memoryStorage(saved))).data.boards.map((b) => b.chain),
+		[
+			{ steps: 3, direction: "backward" },
+			{ steps: null, direction: "both" },
+			{ steps: null, direction: "both" },
+			{ steps: null, direction: "both" },
+			{ steps: null, direction: "both" },
+		],
+	);
 });
 
 test("addLinkedEntity creates an entity the card's entity references, with its card beside it, in one undo step", async () => {

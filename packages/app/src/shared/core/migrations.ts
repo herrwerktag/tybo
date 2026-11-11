@@ -10,7 +10,7 @@ import { ULID_ENCODING } from "./ulid.js";
  * and sets `workspaces.data_version` to it. Saves write only the units that changed, so stored data never catches
  * up by itself: without that step, unchanged units stay in the old format under a version that says otherwise. The
  * API's tests fail as long as the step is missing. */
-export const DATA_VERSION = 14;
+export const DATA_VERSION = 15;
 
 /** A 53-bit string hash, so several seeds give enough independent bits for a ULID's 130. */
 function cyrb53(text: string, seed: number): number {
@@ -142,6 +142,9 @@ export const MIGRATIONS: Readonly<Record<number, (data: SavedData) => SavedData>
 		});
 		return { guide: "", ...data, types };
 	},
+	// Version 15 gives boards the reach of a selected card's chain; normalizeBoard() reads a board without one as
+	// reaching the whole chain, both ways, as it did.
+	14: (data) => data,
 };
 
 /** The version saved data says it's in; data without a (valid) version is from before versions existed. */

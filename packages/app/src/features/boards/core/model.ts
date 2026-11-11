@@ -42,6 +42,20 @@ export function frameInside(rect: Rect): Rect {
 	return { x: rect.x + (rect.width - width) / 2, y: rect.y + (rect.height - height) / 2, width, height };
 }
 
+/** Which way a chain follows the lines: as their arrows point, against them, or both; a line without an arrow
+ * either way. */
+export type ChainDirection = "forward" | "backward" | "both";
+export const CHAIN_DIRECTIONS: readonly ChainDirection[] = ["forward", "backward", "both"];
+
+/** How far the chain of a selected card reaches: `steps` lines at most (null: all of them), in `direction`. */
+export interface ChainReach {
+	steps: number | null;
+	direction: ChainDirection;
+}
+
+/** The whole chain, both ways: a board's reach until it's set, as before there was one. */
+export const defaultChainReach = (): ChainReach => ({ steps: null, direction: "both" });
+
 /** A named canvas with its own cards and pan/zoom. The features add their lists to it (see `BoardList`). */
 export interface Board {
 	id: string;
@@ -52,6 +66,8 @@ export interface Board {
 	viewport: Viewport;
 	/** The board's frame, always there: the viewer shows the board in it. In a frame's shape (see frameShape). */
 	viewFrame: Rect;
+	/** How far a selected card's chain reaches; saved like the pan/zoom, outside the undo history. */
+	chain: ChainReach;
 }
 
 /**

@@ -831,6 +831,34 @@ main:has(.canvas-view) {
 	font-variant-numeric: tabular-nums;
 }
 
+/* The selected card's chain, before the zoom in its bar: which way, how many steps, and what that shows; set apart
+   from the zoom by a line. */
+.chain-reach {
+	display: flex;
+	align-items: center;
+	gap: 0.125rem;
+	margin-right: 0.25rem;
+	padding-right: 0.375rem;
+	border-right: 1px solid var(--border);
+}
+
+.chain-reach[hidden] {
+	display: none;
+}
+
+.chain-steps {
+	width: 6rem;
+	margin: 0 0.375rem;
+	accent-color: var(--focus);
+}
+
+.chain-label {
+	min-width: 8.5rem;
+	color: var(--muted);
+	font-size: 0.85em;
+	font-variant-numeric: tabular-nums;
+}
+
 /* Deleting the entity: set apart at the right end of the details' actions, in red; on a line of its own when they
    don't fit on one. */
 .canvas-view .details-actions {

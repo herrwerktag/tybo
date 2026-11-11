@@ -202,7 +202,7 @@ test("the viewer only looks: no remove buttons, and dragging doesn't move cards"
 test("the zoom buttons go one 10% step in or out", async () => {
 	const { view } = await setup();
 	const zoom = view.querySelector<HTMLElement>(".canvas-zoom")!;
-	const [out, , zoomIn] = zoom.children as unknown as HTMLButtonElement[];
+	const [out, zoomIn] = zoom.querySelectorAll<HTMLButtonElement>(":scope > button");
 	zoomIn!.click();
 	zoomIn!.click();
 	assert.equal(zoom.querySelector(".zoom-label")?.textContent, "120%");
@@ -569,6 +569,69 @@ test("selecting a card fades the board but its chain: the cards linked to it eit
 	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 	assert.ok(!board.classList.contains("focusing"));
 	assert.equal(view.querySelectorAll(".direct").length, 0);
+});
+
+test("next to the zoom, the selected card's chain reaches as far and as the board says: steps up to its depth, a direction", async () => {
+	freshDom();
+	const store = await createStore(memoryDataPort({ ws: { version: DATA_VERSION, types: [], entities: [], boards: [] } }).port, "ws");
+	const step = store.addType("Step", [], "");
+	store.updateType(step.id, "Step", [
+		{ name: "next", kind: "reference", options: [], reference: { ...newReference([step.id]), arrow: "to" }, cardDisplay: "line" },
+	], "");
+	const next = store.data.types[0]!.properties[0]!.id;
+	const boardId = store.data.boards[0]!.id;
+	// a → b → c → d
+	const [d, c, b, a] = ["d", "c", "b", "a"].reduce<string[]>((ids, name) => [...ids, store.addEntity(step.id, name, "", ids.length ? { [next]: ids.at(-1)! } : {}).id], []);
+	const cards = [a, b, c, d].map((id, i) => store.addCard(boardId, id!, i * 300, 0));
+	const view = canvasView(store, { readOnly: false, layers: [] });
+	document.body.append(view);
+	const bar = view.querySelector<HTMLElement>(".canvas-zoom .chain-reach")!;
+	const slider = bar.querySelector<HTMLInputElement>("input[type=range]")!;
+	const [forward, , both] = bar.querySelectorAll<HTMLButtonElement>("button");
+	const inChain = () => cards.filter((card) => cardNode(view, card.id).classList.contains("in-chain")).map((card) => store.data.entities.find((e) => e.id === card.entityId)!.name);
+	const selectCard = (i: number) => cardNode(view, cards[i]!.id).querySelector("header")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	const setSteps = (value: number) => {
+		slider.value = String(value);
+		slider.dispatchEvent(new Event("input", { bubbles: true }));
+	};
+	assert.ok(bar.hidden, "only while a card is selected");
+
+	// From b, the chain is two steps deep: one step and all.
+	selectCard(1);
+	assert.ok(!bar.hidden);
+	assert.deepEqual([slider.min, slider.max, slider.value], ["1", "2", "2"]);
+	assert.equal(bar.querySelector(".chain-label")?.textContent, text.chainShown(null, 4));
+	assert.equal(both!.ariaPressed, "true");
+	const undo = store.history.canUndo;
+	setSteps(1);
+	assert.deepEqual(inChain(), ["a", "b", "c"]);
+	assert.equal(bar.querySelector(".chain-label")?.textContent, text.chainShown(1, 3));
+	assert.deepEqual(store.data.boards[0]!.chain, { steps: 1, direction: "both" });
+	assert.equal(store.history.canUndo, undo, "no step to undo");
+
+	// Along the arrows from b: c, and with all steps d too, but never a.
+	forward!.click();
+	assert.deepEqual(inChain(), ["b", "c"]);
+	setSteps(2);
+	assert.deepEqual(inChain(), ["b", "c", "d"]);
+	assert.deepEqual(store.data.boards[0]!.chain, { steps: null, direction: "forward" });
+	assert.equal(forward!.ariaPressed, "true");
+
+	// From a, the chain is three steps deep; set to all, it reaches all of them.
+	selectCard(0);
+	assert.deepEqual([slider.max, slider.value], ["3", "3"]);
+	setSteps(2);
+	selectCard(1);
+	assert.deepEqual([slider.max, slider.value], ["2", "2"], "two steps, from a card only that deep, are all of them");
+	assert.deepEqual(inChain(), ["b", "c", "d"]);
+
+	// From d, along the arrows, there's nothing: only one step to choose.
+	selectCard(3);
+	assert.ok(slider.disabled);
+	assert.deepEqual(inChain(), ["d"]);
+
+	document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+	assert.ok(bar.hidden);
 });
 
 test("Connect links an existing entity, found by name, and the other way round too", async () => {

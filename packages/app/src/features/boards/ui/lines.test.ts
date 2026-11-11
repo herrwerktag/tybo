@@ -4,18 +4,38 @@ import { test } from "node:test";
 import { createStore } from "../../../features.core.js";
 import { memoryDataPort } from "../../../memory-port.js";
 import { DATA_VERSION } from "../../../shared/core/index.js";
-import { boardLinks, chainOf } from "./lines.js";
+import { boardLinks, chainSteps, type Edge } from "./lines.js";
 
-test("a card's chain is every card linked to it by lines, either way and through others", () => {
-	const edges: [string, string][] = [
-		["a", "b"],
-		["c", "b"],
-		["c", "d"],
-		["x", "y"],
+test("a card's chain, both ways, is every card linked to it by lines, through others, with how many lines away", () => {
+	const edges: Edge[] = [
+		{ from: "a", to: "b", arrow: "to" },
+		{ from: "c", to: "b", arrow: "to" },
+		{ from: "c", to: "d", arrow: "to" },
+		{ from: "x", to: "y", arrow: "to" },
 	];
-	assert.deepEqual([...chainOf("a", edges)].sort(), ["a", "b", "c", "d"]);
-	assert.deepEqual([...chainOf("y", edges)].sort(), ["x", "y"]);
-	assert.deepEqual([...chainOf("alone", edges)], ["alone"]);
+	assert.deepEqual([...chainSteps("a", edges, "both")], [["a", 0], ["b", 1], ["c", 2], ["d", 3]]);
+	assert.deepEqual([...chainSteps("y", edges, "both")], [["y", 0], ["x", 1]]);
+	assert.deepEqual([...chainSteps("alone", edges, "both")], [["alone", 0]]);
+});
+
+test("a chain one way follows the arrows as drawn, or goes against them; a line without an arrow goes either way", () => {
+	// X references its source (the arrow at the source) and its target: the board shows source → X → target. Y → target too.
+	const edges: Edge[] = [
+		{ from: "x", to: "source", arrow: "from" },
+		{ from: "x", to: "target", arrow: "to" },
+		{ from: "y", to: "target", arrow: "to" },
+	];
+	assert.deepEqual([...chainSteps("source", edges, "forward")], [["source", 0], ["x", 1], ["target", 2]]);
+	assert.deepEqual([...chainSteps("target", edges, "backward")], [["target", 0], ["x", 1], ["y", 1], ["source", 2]]);
+	assert.deepEqual([...chainSteps("x", edges, "backward")], [["x", 0], ["source", 1]]);
+
+	// a → b, then b – c without an arrow: against the arrows from b, c is in the chain as well as a.
+	const loose: Edge[] = [
+		{ from: "a", to: "b", arrow: "to" },
+		{ from: "b", to: "c", arrow: "none" },
+	];
+	assert.deepEqual([...chainSteps("b", loose, "backward")], [["b", 0], ["a", 1], ["c", 1]]);
+	assert.deepEqual([...chainSteps("b", loose, "forward")], [["b", 0], ["c", 1]]);
 });
 
 test("a board has a line per reference shown as a line, to every other card of the entity it names", async () => {

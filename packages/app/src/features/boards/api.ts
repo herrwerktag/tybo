@@ -5,50 +5,55 @@ import { BOARD_UNIT, CARD_UNIT, type BoardMeta, type CanvasCard } from "./core.j
 /** How a kind of unit of the app's data is kept. */
 type AppStorage<T extends { id: string }, R> = UnitStorage<T, R, AppData>;
 
-/** Whether two stands of a board differ in nothing but its viewport — same place, same name, same frame. */
-function onlyViewport(before: UnitStand<BoardMeta> | null, after: UnitStand<BoardMeta> | null): boolean {
+/** Whether two stands of a board differ in nothing but its viewport and its chain's reach — same place, same name,
+ * same frame. */
+function onlyView(before: UnitStand<BoardMeta> | null, after: UnitStand<BoardMeta> | null): boolean {
 	if (before === null || after === null || before.position !== after.position) return false;
-	const { viewport: _was, ...was } = before.value;
-	const { viewport: _now, ...now } = after.value;
+	const { viewport: _was, chain: _wasChain, ...was } = before.value;
+	const { viewport: _now, chain: _nowChain, ...now } = after.value;
 	return jsonEqual(was, now);
 }
 
 export const BOARD_STORAGE: AppStorage<BoardMeta, Rows> = {
 	unit: BOARD_UNIT,
 	table: "boards",
-	readPostgres: (queries, ws) => queries`select id, name, viewport, view_frame from boards where workspace_id = ${ws} order by position, id`,
+	readPostgres: (queries, ws) => queries`select id, name, viewport, view_frame, chain from boards where workspace_id = ${ws} order by position, id`,
 	readSqlite: (all) =>
-		all("select id, name, viewport, view_frame from boards where workspace_id = ? order by position, id").map((row) => ({
+		all("select id, name, viewport, view_frame, chain from boards where workspace_id = ? order by position, id").map((row) => ({
 			...row,
 			viewport: parsed(row.viewport),
 			view_frame: parsed(row.view_frame),
+			chain: parsed(row.chain),
 		})),
-	// The frame is null on boards saved before frames (JSON keeps a null, unlike a missing value, so a save's
-	// `before` still matches): the app makes it of the board's pan/zoom. Cards and drawings are put in by their own kinds.
+	// The frame is null on boards saved before frames, the chain's reach on boards saved before it (JSON keeps a null,
+	// unlike a missing value, so a save's `before` still matches): the app makes the frame of the board's pan/zoom, and
+	// reads the reach as the whole chain. Cards and drawings are put in by their own kinds.
 	assemble: (data, boards) => ({
 		...data,
-		boards: boards.map(({ id, name, viewport, view_frame }) => ({ id, name, viewport, viewFrame: view_frame ?? null }) as AppData["boards"][number]),
+		boards: boards.map(
+			({ id, name, viewport, view_frame, chain }) => ({ id, name, viewport, viewFrame: view_frame ?? null, chain: chain ?? null }) as AppData["boards"][number],
+		),
 	}),
 	async writePostgres(tx, ws, { value: board, position }) {
-		await tx`insert into boards (workspace_id, id, position, name, viewport, view_frame, updated_at)
+		await tx`insert into boards (workspace_id, id, position, name, viewport, view_frame, chain, updated_at)
 			values (${ws}, ${board.id}, ${position}, ${board.name}, ${jsonbParameter(tx, board.viewport)},
-				${jsonbParameter(tx, board.viewFrame ?? null)}, now())
+				${jsonbParameter(tx, board.viewFrame ?? null)}, ${jsonbParameter(tx, board.chain ?? null)}, now())
 			on conflict (workspace_id, id) do update set
 				position = excluded.position, name = excluded.name, viewport = excluded.viewport, view_frame = excluded.view_frame,
-				updated_at = now()`;
+				chain = excluded.chain, updated_at = now()`;
 	},
 	writeSqlite(run, ws, { value: board, position }) {
 		run(
-			`insert into boards (workspace_id, id, position, name, viewport, view_frame, updated_at)
-			values (?, ?, ?, ?, ?, ?, current_timestamp)
+			`insert into boards (workspace_id, id, position, name, viewport, view_frame, chain, updated_at)
+			values (?, ?, ?, ?, ?, ?, ?, current_timestamp)
 			on conflict (workspace_id, id) do update set
 				position = excluded.position, name = excluded.name, viewport = excluded.viewport, view_frame = excluded.view_frame,
-				updated_at = current_timestamp`,
-			ws, board.id, position, plain(board.name), json(board.viewport), json(board.viewFrame ?? null),
+				chain = excluded.chain, updated_at = current_timestamp`,
+			ws, board.id, position, plain(board.name), json(board.viewport), json(board.viewFrame ?? null), json(board.chain ?? null),
 		);
 	},
-	// Pan and zoom are saved, but they are no part of the undo history either, and would flood this one.
-	quiet: onlyViewport,
+	// Pan, zoom and the chain's reach are saved, but they are no part of the undo history either, and would flood this one.
+	quiet: onlyView,
 };
 
 export const CARD_STORAGE: AppStorage<CanvasCard, Rows> = {

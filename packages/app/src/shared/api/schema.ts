@@ -351,6 +351,16 @@ export const POSTGRES_MIGRATIONS: readonly Migration[] = [
 			await tx`update workspaces set data_version = 14`;
 		},
 	},
+	{
+		version: 20,
+		name: "chain reach",
+		async up(tx) {
+			// How far a selected card's chain reaches (format 15); null in rows from before: the app reads those boards
+			// as reaching the whole chain, both ways.
+			await tx`alter table boards add column chain jsonb`;
+			await tx`update workspaces set data_version = 15`;
+		},
+	},
 ];
 
 /** Whether a table of that name is there, asked without a statement that would only say so in a notice. */

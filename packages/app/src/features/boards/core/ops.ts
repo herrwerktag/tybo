@@ -10,7 +10,7 @@ import {
 	type DataStore,
 	type Relation,
 } from "../../data/core.js";
-import { freeSpot, frameShape, placeAround, placeBeside, type Board, type BoardList, type CanvasCard } from "./model.js";
+import { freeSpot, frameShape, placeAround, placeBeside, type Board, type BoardList, type CanvasCard, type ChainReach } from "./model.js";
 import { boardName, newBoard } from "./normalize.js";
 import { clampZoom, type Viewport } from "./viewport.js";
 
@@ -255,6 +255,11 @@ export function boardOps(core: StoreCore<AppData>, lists: readonly BoardList[]) 
 		/** Pan and zoom are saved, but not part of the undo history. */
 		setViewport(boardId: string, viewport: Viewport): void {
 			core.changeQuietly(withBoard(boardId, (b) => ({ ...b, viewport: { ...viewport, zoom: clampZoom(viewport.zoom) } })));
+		},
+
+		/** How far a selected card's chain reaches: saved like pan and zoom, not part of the undo history. */
+		setChainReach(boardId: string, chain: ChainReach): void {
+			core.changeQuietly(withBoard(boardId, (b) => ({ ...b, chain })));
 		},
 
 		/** Moves or resizes the board's own frame, in a frame's shape (see frameShape). */

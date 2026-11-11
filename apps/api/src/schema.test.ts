@@ -297,13 +297,29 @@ test("step 19 adds the model's help: empty on the types and properties there are
 		await sql`insert into entity_types (workspace_id, id, position, name, content_template, color) values ('ws', 'regel', 0, 'Regel', 'Gegeben …', '#c4dafa')`;
 		await sql`insert into properties (workspace_id, id, type_id, position, name, kind, options, card_display) values ('ws', 'quelle', 'regel', 0, 'Quelle', 'text', '[]', 'list')`;
 
-		assert.deepEqual(await migrateSchema(sql), [19]);
+		assert.deepEqual(await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 20)), [19]);
 		assert.deepEqual([...(await sql`select name, content_template, color, description, guide from entity_types`)], [
 			{ name: "Regel", content_template: "Gegeben …", color: "#c4dafa", description: "", guide: "" },
 		]);
 		assert.deepEqual([...(await sql`select name, kind, description from properties`)], [{ name: "Quelle", kind: "text", description: "" }]);
 		assert.deepEqual([...(await sql`select count(*)::int as n from guides`)], [{ n: 0 }]);
 		assert.deepEqual([...(await sql`select data_version from workspaces where id = 'ws'`)], [{ data_version: 14 }]);
+	} finally {
+		await sql.end({ timeout: 5 });
+	}
+});
+
+test("step 20 gives boards their chain's reach: null on the boards there are", { skip: !url }, async () => {
+	const sql = postgres(url!, { connect_timeout: 5, onnotice: () => {} });
+	try {
+		await wipe(sql);
+		await migrateSchema(sql, POSTGRES_MIGRATIONS.filter((m) => m.version < 20));
+		await sql`insert into workspaces (id, position, name, data_version) values ('ws', 0, 'Alt', 14)`;
+		await sql`insert into boards (workspace_id, id, position, name, viewport) values ('ws', 'b', 0, 'Brett', '{"x":0,"y":0,"zoom":1}')`;
+
+		assert.deepEqual(await migrateSchema(sql), [20]);
+		assert.deepEqual([...(await sql`select id, name, chain from boards`)], [{ id: "b", name: "Brett", chain: null }]);
+		assert.deepEqual([...(await sql`select data_version from workspaces where id = 'ws'`)], [{ data_version: 15 }]);
 	} finally {
 		await sql.end({ timeout: 5 });
 	}
