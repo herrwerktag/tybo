@@ -61,6 +61,10 @@ const en = {
 	zoomOut: "Zoom out",
 	zoomIn: "Zoom in",
 	resetView: "Reset view",
+	chainReach: "How far the selected card's chain reaches",
+	chainDirection: { forward: "Along the arrows", backward: "Against the arrows", both: "Both ways" },
+	chainShown: (steps: number | null, cards: number) =>
+		`${steps === null ? "All steps" : steps === 1 ? "1 step" : `${steps} steps`} · ${cards === 1 ? "1 card" : `${cards} cards`}`,
 	exportBoard: "Export this board",
 	boardFrame: "Board frame",
 	frameHandle: "Drag to move the frame, click to look at it",
@@ -139,6 +143,10 @@ export const text = messages<typeof en>({
 		zoomOut: "Verkleinern",
 		zoomIn: "Vergrößern",
 		resetView: "Ansicht zurücksetzen",
+		chainReach: "Wie weit die Kette der gewählten Karte reicht",
+		chainDirection: { forward: "In Pfeilrichtung", backward: "Gegen die Pfeilrichtung", both: "In beide Richtungen" },
+		chainShown: (steps, cards) =>
+			`${steps === null ? "Alle Schritte" : steps === 1 ? "1 Schritt" : `${steps} Schritte`} · ${cards === 1 ? "1 Karte" : `${cards} Karten`}`,
 		exportBoard: "Dieses Board exportieren",
 		boardFrame: "Board-Ausschnitt",
 		frameHandle: "Ziehen verschiebt den Ausschnitt, Klicken zeigt ihn",

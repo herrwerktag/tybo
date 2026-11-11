@@ -1,5 +1,14 @@
 import { ulid, type Rect, type AppData } from "../../../shared/core/index.js";
-import { frameShape, storedLists, type Board, type BoardList, type CanvasCard } from "./model.js";
+import {
+	CHAIN_DIRECTIONS,
+	defaultChainReach,
+	frameShape,
+	storedLists,
+	type Board,
+	type BoardList,
+	type CanvasCard,
+	type ChainReach,
+} from "./model.js";
 import { clampZoom, defaultViewport, visibleRect, type Viewport } from "./viewport.js";
 
 /** How large a screen is taken where none is at hand: the frame of a board saved before frames shows that much,
@@ -21,17 +30,25 @@ export const boardName = (n: number): string => `Board ${n}`;
 /** A board without cards, its features' `lists` empty too. */
 export function newBoard(name: string, lists: readonly BoardList[]): Board {
 	const viewFrame = visibleRect(defaultViewport(), REFERENCE_SCREEN.width, REFERENCE_SCREEN.height);
-	return { id: ulid(), name, cards: [], viewport: defaultViewport(), viewFrame, ...readLists(lists) } as unknown as Board;
+	return { id: ulid(), name, cards: [], viewport: defaultViewport(), viewFrame, chain: defaultChainReach(), ...readLists(lists) } as unknown as Board;
 }
 
 function normalizeViewport(v: Partial<Viewport> | null | undefined): Viewport {
 	return v && isNumber(v.x) && isNumber(v.y) && isNumber(v.zoom) ? { x: v.x, y: v.y, zoom: clampZoom(v.zoom) } : defaultViewport();
 }
 
+/** A saved reach, as far as it's well-formed: whole steps from one on (else all of them), a known direction (else both). */
+function normalizeChain(v: unknown): ChainReach {
+	if (!isObject(v)) return defaultChainReach();
+	const steps = Number.isInteger(v.steps) && (v.steps as number) >= 1 ? (v.steps as number) : null;
+	const direction = CHAIN_DIRECTIONS.find((d) => d === v.direction) ?? "both";
+	return { steps, direction };
+}
+
 /**
  * Keeps only well-formed cards and viewport, and its features' `lists` as they read them; anything else falls back
  * to defaults. Cards and boards saved without an id get one. A board saved before frames gets its frame of its
- * pan/zoom. What was saved of stories is left out.
+ * pan/zoom, one saved before chain reaches the whole chain. What was saved of stories is left out.
  */
 function normalizeBoard(board: Partial<Board> | undefined, fallbackName: string, lists: readonly BoardList[]): Board {
 	const cards = Array.isArray(board?.cards)
@@ -55,6 +72,7 @@ function normalizeBoard(board: Partial<Board> | undefined, fallbackName: string,
 				? { x: viewFrame.x, y: viewFrame.y, width: viewFrame.width, height: viewFrame.height }
 				: visibleRect(viewport, REFERENCE_SCREEN.width, REFERENCE_SCREEN.height),
 		),
+		chain: normalizeChain(board?.chain),
 		...readLists(lists, board),
 	} as unknown as Board;
 }
@@ -90,9 +108,15 @@ export function pruneCards<D extends Pick<AppData, "boards" | "entities">>(data:
 	return { ...data, boards: data.boards.map((b) => ({ ...b, cards: b.cards.filter((c) => entities.has(c.entityId)) })) };
 }
 
-/** The boards of `snapshot` (from the undo history) with the pan and zoom they have in `current`: undo and redo
- * leave the view as it is. */
+/** The boards of `snapshot` (from the undo history) with the pan, zoom and chain's reach they have in `current`: undo
+ * and redo leave the view as it is. */
 export function keepViewports<D extends Pick<AppData, "boards">>(snapshot: D, current: D): D {
-	const viewports = new Map(current.boards.map((b) => [b.id, b.viewport]));
-	return { ...snapshot, boards: snapshot.boards.map((b) => ({ ...b, viewport: viewports.get(b.id) ?? b.viewport })) };
+	const views = new Map(current.boards.map((b) => [b.id, b]));
+	return {
+		...snapshot,
+		boards: snapshot.boards.map((b) => {
+			const now = views.get(b.id);
+			return now ? { ...b, viewport: now.viewport, chain: now.chain } : b;
+		}),
+	};
 }

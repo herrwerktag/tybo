@@ -36,6 +36,7 @@ function state(): AppData {
 				],
 				viewport: { x: 0, y: 0, zoom: 1 },
 				viewFrame: { x: 0.5, y: -24, width: 960, height: 540 },
+				chain: { steps: 1, direction: "both" },
 				drawings: [
 					{ id: "draw-box", kind: "textbox", x: 0, y: 0, width: 5.5, height: 5.25, color: "#4a4a4a", text: "", textSize: "m" },
 					{ id: "draw-star", kind: "textbox", x: 40, y: 40.5, width: 96, height: 48, color: "#f6e8a6", text: "★", textSize: "l" },

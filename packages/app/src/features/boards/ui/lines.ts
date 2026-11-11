@@ -1,7 +1,7 @@
 import type { AppData, Rect } from "../../../shared/core/index.js";
 import { el, svgEl } from "../../../shared/ui/index.js";
 import { effectiveCardDisplay, referencedIds, type LineArrow } from "../../data/core.js";
-import { connector, nearest, type Board } from "../core.js";
+import { connector, nearest, type Board, type ChainDirection } from "../core.js";
 
 /** The connector lines' color (as in the stylesheet), for a gradient's end at a card whose type has no color. */
 const LINE_COLOR = "#8a8a8a";
@@ -48,16 +48,33 @@ export function boardLinks(data: Pick<AppData, "entities" | "types">, board: Boa
 	});
 }
 
-/** The cards linked by `edges` (see connectorLines' draw) to this one, either way and through others, with it. */
-export function chainOf(cardId: string, edges: readonly (readonly [string, string])[]): Set<string> {
-	const chain = new Set([cardId]);
-	for (const id of chain) {
-		for (const [from, to] of edges) {
-			if (from === id) chain.add(to);
-			if (to === id) chain.add(from);
+/** A drawn line: the card whose reference it shows, the card it leads to, and where its arrow is (see `Link`). */
+export interface Edge {
+	from: string;
+	to: string;
+	arrow: LineArrow;
+}
+
+/**
+ * The cards linked by `edges` to this one, through others, with how many lines away each is (it itself 0): following
+ * the lines as their arrows point (`forward`), against them (`backward`) or either way (`both`). A line without an
+ * arrow is followed either way.
+ */
+export function chainSteps(cardId: string, edges: readonly Edge[], direction: ChainDirection): Map<string, number> {
+	const steps = new Map([[cardId, 0]]);
+	const forward = direction !== "backward";
+	const backward = direction !== "forward";
+	for (const [id, step] of steps) {
+		for (const { from, to, arrow } of edges) {
+			// Where the line starts and ends as drawn: "from" puts the arrowhead on the referencing card.
+			const [tail, head] = arrow === "from" ? [to, from] : [from, to];
+			const either = arrow === "none";
+			const next =
+				tail === id && (forward || either) ? head : head === id && (backward || either) ? tail : null;
+			if (next !== null && !steps.has(next)) steps.set(next, step + 1);
 		}
 	}
-	return chain;
+	return steps;
 }
 
 /** The lines between the cards on a canvas: an SVG under the cards, and their labels (property names) at the lines'
@@ -69,17 +86,17 @@ export function connectorLines() {
 	const gradientPrefix = `connector-gradient-${++canvasCount}`;
 
 	/** Draws the lines of `links` between the cards where they are now (`cardRects`); answers them as the cards they link. */
-		function draw(links: readonly Link[], cardRects: ReadonlyMap<string, Rect>): [string, string][] {
+	function draw(links: readonly Link[], cardRects: ReadonlyMap<string, Rect>): Edge[] {
 		const lines: SVGElement[] = [];
 		const gradients: SVGElement[] = [];
 		const tags: HTMLElement[] = [];
-		const edges: [string, string][] = [];
+		const edges: Edge[] = [];
 		for (const { fromCardId, targetCardIds, label, fromColor, color, arrow } of links) {
 			const from = cardRects.get(fromCardId);
 			const to = from && nearest(from, targetCardIds.flatMap((id) => cardRects.get(id) ?? []));
 			if (!from || !to) continue;
 			const toCardId = targetCardIds.find((id) => cardRects.get(id) === to)!;
-			edges.push([fromCardId, toCardId]);
+			edges.push({ from: fromCardId, to: toCardId, arrow });
 			// "from" draws the same curve the other way round, so the arrowhead lands on this card.
 			const shape = arrow === "from" ? connector(to, from) : connector(from, to, arrow === "to");
 			const { path, mid, start, end } = shape;

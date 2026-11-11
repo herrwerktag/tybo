@@ -3,16 +3,31 @@ import { CLICK_TOLERANCE, el, icon, listenWhileConnected, readPreference, resize
 import { DEFAULT_CARD_SIZE, type Entity, type EntityType } from "../../data/core.js";
 import { text as dataText } from "../../data/texts.js";
 import { cardParts, cardSize, conversionDialog, createCardPreview, detailsPanel, type EntityPlaces } from "../../data/ui.js";
-import { frameInside, referencesOffBoard, screenToWorld, visibleRect, type Board, type CanvasCard, type BoardStore, type Viewport } from "../core.js";
+import {
+	CHAIN_DIRECTIONS,
+	frameInside,
+	referencesOffBoard,
+	screenToWorld,
+	visibleRect,
+	type Board,
+	type BoardStore,
+	type CanvasCard,
+	type ChainDirection,
+	type ChainReach,
+	type Viewport,
+} from "../core.js";
 import { text } from "../texts.js";
 import { connectDialog, newEntityDialog } from "./dialogs.js";
 import { frameEditor } from "./frame.js";
 import { boardControls } from "./board-controls.js";
-import { boardLinks, chainOf, connectorLines, type Link } from "./lines.js";
+import { boardLinks, chainSteps, connectorLines, type Edge, type Link } from "./lines.js";
 import { canvasInput } from "./input.js";
 import { entityPanel } from "./panel.js";
 import type { BoardExport, BoardItems, CanvasLayer } from "./layer.js";
 import { viewportControl } from "./viewport.js";
+
+/** The chain's directions as their buttons show them: with the arrows, against them, both ways. */
+const CHAIN_ARROWS: Record<ChainDirection, string> = { forward: "→", backward: "←", both: "↔" };
 
 const PANEL_COLLAPSED_KEY = "canvas-panel-collapsed";
 /** The widths of the side panel and the details panel, if changed by dragging. */
@@ -199,6 +214,7 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 	function show(): void {
 		viewport.show();
 		group = null;
+		shownReach = null;
 		deselectLayers();
 		renderBoardControls();
 		renderPanel();
@@ -337,13 +353,60 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 		view.classList.toggle("moving-cards", moving);
 	}
 
+	/** The export's own reach of the chain, changed there without saving; the editor's is the board's. */
+	let shownReach: ChainReach | null = null;
+	const chainReach = (): ChainReach => shownReach ?? currentBoard().chain;
+
+	function setChainReach(reach: ChainReach): void {
+		if (readOnly) shownReach = reach;
+		else store.setChainReach(boardId, reach);
+		markChain();
+	}
+
+	const directionButtons = CHAIN_DIRECTIONS.map((direction) =>
+		el(
+			"button",
+			{ type: "button", title: text.chainDirection[direction], ariaLabel: text.chainDirection[direction], onclick: () => setChainReach({ ...chainReach(), direction }) },
+			CHAIN_ARROWS[direction],
+		),
+	);
+	/** From one step to the chain's depth from the selected card, which stands for all of them. */
+	const stepsInput = el("input", {
+		type: "range",
+		className: "chain-steps",
+		min: "1",
+		step: "1",
+		ariaLabel: text.chainReach,
+		title: text.chainReach,
+		oninput: () => {
+			const steps = Number(stepsInput.value);
+			setChainReach({ ...chainReach(), steps: steps >= Number(stepsInput.max) ? null : steps });
+		},
+	});
+	const chainLabel = el("span", { className: "chain-label" });
+	/** Next to the zoom, while one card is selected: how far its chain reaches, and which way. */
+	const chainBar = el("div", { className: "chain-reach", role: "group", ariaLabel: text.chainReach }, ...directionButtons, stepsInput, chainLabel);
+
 	/**
-	 * With one card selected, everything on the board fades but its chain: the cards linked to it and their lines,
-	 * and what the layers keep in focus with it. Its own lines (and their labels) stand out further, as `direct`.
+	 * With one card selected, everything on the board fades but its chain: the cards linked to it as far and as the
+	 * board's reach says (see `chainSteps`) and the lines between them, and what the layers keep in focus with it. Its
+	 * own lines (and their labels) stand out further, as `direct`.
 	 */
 	function markChain(): void {
 		const cardId = !group ? selected?.cardId : null;
-		const chain = cardId ? chainOf(cardId, edges) : null;
+		const reach = chainReach();
+		const steps = cardId ? chainSteps(cardId, edges, reach.direction) : null;
+		const depth = steps ? Math.max(...steps.values()) : 0;
+		const shown = reach.steps === null ? depth : Math.min(reach.steps, depth);
+		const chain = steps ? new Set([...steps].filter(([, step]) => step <= shown).map(([id]) => id)) : null;
+		chainBar.hidden = chain === null;
+		if (chain) {
+			for (const [i, button] of directionButtons.entries()) button.ariaPressed = String(CHAIN_DIRECTIONS[i] === reach.direction);
+			stepsInput.max = String(Math.max(depth, 1));
+			stepsInput.value = String(Math.max(shown, 1));
+			stepsInput.disabled = depth <= 1;
+			chainLabel.textContent = text.chainShown(shown < depth ? shown : null, chain.size);
+		}
 		layer.classList.toggle("focusing", chain !== null);
 		views.forEach((view) => view.focus(cardId ?? null));
 		for (const node of layer.querySelectorAll<HTMLElement>(".canvas-card[data-card-id]")) {
@@ -562,7 +625,7 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 	/** Cards that just came onto the board, so they fade in. */
 	let appearing = new Set<string>();
 	/** The lines drawn, as the cards they link (see drawConnectors). */
-	let edges: [string, string][] = [];
+	let edges: Edge[] = [];
 
 	/** After the board's cards changed: draws them anew, and the side panel that tells which are on the board. */
 	function redrawBoard(): void {
@@ -867,6 +930,7 @@ export function canvas(store: BoardStore, options: CanvasOptions): { view: HTMLE
 	const zoomBar = el(
 		"div",
 		{ className: "toolbar-group canvas-zoom" },
+		chainBar,
 		el("button", { type: "button", ariaLabel: text.zoomOut, title: text.zoomOut, onclick: () => viewport.zoomStep(-1) }, "−"),
 		zoomLabel,
 		el("button", { type: "button", ariaLabel: text.zoomIn, title: text.zoomIn, onclick: () => viewport.zoomStep(1) }, "+"),

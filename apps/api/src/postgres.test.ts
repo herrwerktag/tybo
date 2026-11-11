@@ -32,6 +32,7 @@ function sample(): AppData {
 				cards: [{ id: "card-1", entityId: "ent-1", x: 1, y: 2, width: 240, height: 160 }],
 				viewport: { x: 0, y: 0, zoom: 1 },
 				viewFrame: { x: -12.5, y: 0, width: 1280, height: 720 },
+				chain: { steps: 3, direction: "backward" },
 				drawings: [],
 			},
 		],

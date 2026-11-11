@@ -85,5 +85,5 @@ test("a workspace saved before the model's help loads unchanged, its help empty 
 	const imported = prepareImport(before)!;
 	assert.equal(imported.guide, "");
 	assert.deepEqual(imported.types, store.data.types);
-	assert.equal(DATA_VERSION, 14);
+	assert.equal(DATA_VERSION, 15);
 });

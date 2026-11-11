@@ -79,3 +79,40 @@ test("an exported view shows its board read-only in its language, and a click on
 	setLanguage("en");
 });
 
+
+test("an exported view has the chain's reach too: it starts with the board's and changes it without saving", async () => {
+	const ids = ["01J00000000000000000000011", "01J00000000000000000000012", "01J00000000000000000000013"];
+	const reference = { typeIds: ["step"], multiple: false, required: false, arrow: "to", lineLabel: "", inverseLabel: "" };
+	const next = { id: "next", name: "next", kind: "reference", options: [], reference, cardDisplay: "line", description: "" };
+	// a → b → c, the board reaching one step.
+	const chained = {
+		types: [{ id: "step", name: "Step", color: "#c4dafa", contentTemplate: "", description: "", guide: "", properties: [next] }],
+		entities: ids.map((id, i) => ({ id, typeId: "step", name: "abc"[i], content: "", description: "", values: ids[i + 1] ? { next: ids[i + 1] } : {} })),
+		boards: [
+			{
+				id: "flow",
+				name: "Flow",
+				cards: ids.map((id, i) => ({ ...card(`c${i}`, id), x: i * 300 })),
+				viewport,
+				chain: { steps: 1, direction: "both" },
+				drawings: [],
+			},
+		],
+	} as unknown as AppData;
+	const html = standaloneViewHtml("", chained, "flow", "en");
+	const inChain = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>(".canvas-card.in-chain")].map((c) => c.dataset.cardId);
+
+	let root = await openExport(html);
+	root.querySelector<HTMLElement>('.canvas-card[data-card-id="c0"]')!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	const slider = root.querySelector<HTMLInputElement>(".chain-reach input[type=range]")!;
+	assert.deepEqual([slider.value, slider.max], ["1", "2"]);
+	assert.deepEqual(inChain(root), ["c0", "c1"]);
+	slider.value = "2";
+	slider.dispatchEvent(new Event("input", { bubbles: true }));
+	assert.deepEqual(inChain(root), ["c0", "c1", "c2"]);
+
+	// Opened again, it reaches one step, as the board does.
+	root = await openExport(html);
+	root.querySelector<HTMLElement>('.canvas-card[data-card-id="c0"]')!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	assert.deepEqual(inChain(root), ["c0", "c1"]);
+});

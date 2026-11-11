@@ -324,6 +324,16 @@ export const SQLITE_MIGRATIONS: readonly Migration[] = [
 			`);
 		},
 	},
+	{
+		version: 17,
+		up(db) {
+			// As Postgres's step 20.
+			db.exec(`
+				alter table boards add column chain text;
+				update workspaces set data_version = 15;
+			`);
+		},
+	},
 ];
 
 /** Runs `work` in one transaction: all of it written, or — when it throws — none of it. */
