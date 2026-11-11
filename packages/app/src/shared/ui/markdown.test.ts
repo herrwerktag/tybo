@@ -29,6 +29,34 @@ test("quotes, rules and fenced code", () => {
 	assert.equal(html("```\n# not a heading\n  *x*\n```"), "<pre><code># not a heading\n  *x*</code></pre>");
 });
 
+test("tables: a header, its alignment from the delimiter row, and inline formatting in cells", () => {
+	assert.equal(
+		html("| Typ | Anzahl | Status |\n| :-- | --: | :-: |\n| **Idee** | 26 | `offen` |"),
+		'<div class="table-wrap"><table><thead><tr><th style="text-align: left;">Typ</th><th style="text-align: right;">Anzahl</th><th style="text-align: center;">Status</th></tr></thead>' +
+			'<tbody><tr><td style="text-align: left;"><strong>Idee</strong></td><td style="text-align: right;">26</td><td style="text-align: center;"><code>offen</code></td></tr></tbody></table></div>',
+	);
+});
+
+test("tables: outer pipes are optional, \\| is a pipe, rows get the header's cells, a header alone has no body", () => {
+	assert.equal(
+		html("a | b\n--- | ---\nx \\| y\n1 | 2 | 3"),
+		'<div class="table-wrap"><table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>x | y</td><td></td></tr><tr><td>1</td><td>2</td></tr></tbody></table></div>',
+	);
+	assert.equal(html("| a |\n| - |"), '<div class="table-wrap"><table><thead><tr><th>a</th></tr></thead></table></div>');
+});
+
+test("tables end at a blank line or another block, and may follow a paragraph or sit in a quote", () => {
+	const table = (body: string) => `<div class="table-wrap"><table><thead><tr><th>a</th><th>b</th></tr></thead><tbody>${body}</tbody></table></div>`;
+	assert.equal(html("Intro\n| a | b |\n|---|---|\n| 1 | 2 |\n\nAfter"), `<p>Intro</p>${table("<tr><td>1</td><td>2</td></tr>")}<p>After</p>`);
+	assert.equal(html("| a | b |\n|---|---|\n| 1 | 2 |\n- item"), `${table("<tr><td>1</td><td>2</td></tr>")}<ul><li>item</li></ul>`);
+	assert.equal(html("> | a | b |\n> |---|---|\n> | 1 | 2 |"), `<blockquote>${table("<tr><td>1</td><td>2</td></tr>")}</blockquote>`);
+});
+
+test("without a delimiter row of as many cells, pipes stay text", () => {
+	assert.equal(html("Eingang | Ausgang\nrot | grün"), "<p>Eingang | Ausgang<br>rot | grün</p>");
+	assert.equal(html("| a | b |\n| --- |"), "<p>| a | b |<br>| --- |</p>");
+});
+
 test("links open in a new tab; only http(s) and mailto become links", () => {
 	assert.equal(html("[site](https://example.com)"), '<p><a href="https://example.com" target="_blank" rel="noopener noreferrer">site</a></p>');
 	assert.equal(html("[bad](javascript:void0)"), "<p><span>bad</span></p>");
@@ -54,4 +82,5 @@ test("placeholders become the resolver's nodes, also in lists and bold; unknown 
 	assert.equal(withValues("`{{Owner}}`"), "<p><code>{{Owner}}</code></p>");
 	assert.equal(withValues("[{{Owner}}](https://x.de)"), '<p><a href="https://x.de" target="_blank" rel="noopener noreferrer">{{Owner}}</a></p>');
 	assert.equal(html("By {{Owner}}"), "<p>By {{Owner}}</p>");
+	assert.equal(withValues("| By |\n| -- |\n| {{Owner}} |"), '<div class="table-wrap"><table><thead><tr><th>By</th></tr></thead><tbody><tr><td>Ann</td></tr></tbody></table></div>');
 });

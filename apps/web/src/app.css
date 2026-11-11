@@ -838,6 +838,11 @@ td.inverse {
 	color: var(--focus);
 }
 
+/* Words in a table cell break only where they must, so a wide table scrolls instead of squeezing its columns. */
+.markdown table {
+	overflow-wrap: break-word;
+}
+
 button.ref-tag {
 	border: none;
 	text-align: left;
