@@ -1,0 +1,733 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-11T08:31:10.272Z",
+  "title": "Design System: tybo",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "neutral",
+        "displayName": "Tinte",
+        "canonical": "#1a1a1a",
+        "oklch": "oklch(21.8% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "graphite-muted": {
+        "role": "neutral",
+        "displayName": "Graphit",
+        "canonical": "#666666",
+        "oklch": "oklch(51% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Haarlinie",
+        "canonical": "#d4d4d4",
+        "oklch": "oklch(87% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "hairline-strong": {
+        "role": "neutral",
+        "displayName": "Kräftige Haarlinie",
+        "canonical": "#999999",
+        "oklch": "oklch(68.3% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Papier",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "table-felt": {
+        "role": "neutral",
+        "displayName": "Tischfilz",
+        "canonical": "#f6f6f6",
+        "oklch": "oklch(97.3% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "accent-ink": {
+        "role": "primary",
+        "displayName": "Tinte (Akzent)",
+        "canonical": "#222222",
+        "oklch": "oklch(25.2% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "accent-ink-hover": {
+        "role": "primary",
+        "displayName": "Tinte, Hover",
+        "canonical": "#444444",
+        "oklch": "oklch(38.7% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "on-accent": {
+        "role": "neutral",
+        "displayName": "Auf Tinte",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "selection-wash": {
+        "role": "secondary",
+        "displayName": "Auswahlschimmer",
+        "canonical": "#eef3ff",
+        "oklch": "oklch(96.4% 0.017 267.8)",
+        "tonalRamp": [
+          "oklch(15% 0.006 267.8)",
+          "oklch(27% 0.009 267.8)",
+          "oklch(39% 0.013 267.8)",
+          "oklch(51% 0.017 267.8)",
+          "oklch(63% 0.013 267.8)",
+          "oklch(75% 0.008 267.8)",
+          "oklch(86% 0.006 267.8)",
+          "oklch(95% 0.006 267.8)"
+        ]
+      },
+      "signal-red": {
+        "role": "neutral",
+        "displayName": "Signalrot",
+        "canonical": "#b00020",
+        "oklch": "oklch(47.8% 0.193 23.6)",
+        "tonalRamp": [
+          "oklch(15% 0.108 23.6)",
+          "oklch(27% 0.167 23.6)",
+          "oklch(39% 0.241 23.6)",
+          "oklch(51% 0.303 23.6)",
+          "oklch(63% 0.228 23.6)",
+          "oklch(75% 0.154 23.6)",
+          "oklch(86% 0.108 23.6)",
+          "oklch(95% 0.108 23.6)"
+        ]
+      },
+      "signal-red-tint": {
+        "role": "neutral",
+        "displayName": "Signalrot, Tönung",
+        "canonical": "#fdecec",
+        "oklch": "oklch(95.7% 0.018 17.5)",
+        "tonalRamp": [
+          "oklch(15% 0.006 17.5)",
+          "oklch(27% 0.01 17.5)",
+          "oklch(39% 0.014 17.5)",
+          "oklch(51% 0.018 17.5)",
+          "oklch(63% 0.014 17.5)",
+          "oklch(75% 0.009 17.5)",
+          "oklch(86% 0.006 17.5)",
+          "oklch(95% 0.006 17.5)"
+        ]
+      },
+      "focus-blue": {
+        "role": "secondary",
+        "displayName": "Fokusblau",
+        "canonical": "#3b6fe0",
+        "oklch": "oklch(56.9% 0.181 263.2)",
+        "tonalRamp": [
+          "oklch(15% 0.102 263.2)",
+          "oklch(27% 0.157 263.2)",
+          "oklch(39% 0.226 263.2)",
+          "oklch(51% 0.285 263.2)",
+          "oklch(63% 0.215 263.2)",
+          "oklch(75% 0.145 263.2)",
+          "oklch(86% 0.102 263.2)",
+          "oklch(95% 0.102 263.2)"
+        ]
+      },
+      "option-chip": {
+        "role": "neutral",
+        "displayName": "Optionsgrau",
+        "canonical": "#ebebeb",
+        "oklch": "oklch(94% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "ink-dark": {
+        "role": "neutral",
+        "displayName": "Tinte (dunkel)",
+        "canonical": "#e6e6e6",
+        "oklch": "oklch(92.5% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "graphite-muted-dark": {
+        "role": "neutral",
+        "displayName": "Graphit (dunkel)",
+        "canonical": "#a0a0a0",
+        "oklch": "oklch(70.6% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "hairline-dark": {
+        "role": "neutral",
+        "displayName": "Haarlinie (dunkel)",
+        "canonical": "#3a3a3a",
+        "oklch": "oklch(34.8% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "hairline-strong-dark": {
+        "role": "neutral",
+        "displayName": "Kräftige Haarlinie (dunkel)",
+        "canonical": "#6a6a6a",
+        "oklch": "oklch(52.4% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "paper-dark": {
+        "role": "neutral",
+        "displayName": "Papier (dunkel)",
+        "canonical": "#1e1e1e",
+        "oklch": "oklch(23.5% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "table-felt-dark": {
+        "role": "neutral",
+        "displayName": "Tischfilz (dunkel)",
+        "canonical": "#141414",
+        "oklch": "oklch(19.1% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      },
+      "selection-wash-dark": {
+        "role": "secondary",
+        "displayName": "Auswahlschimmer (dunkel)",
+        "canonical": "#23304a",
+        "oklch": "oklch(31% 0.05 263.4)",
+        "tonalRamp": [
+          "oklch(15% 0.028 263.4)",
+          "oklch(27% 0.043 263.4)",
+          "oklch(39% 0.063 263.4)",
+          "oklch(51% 0.079 263.4)",
+          "oklch(63% 0.06 263.4)",
+          "oklch(75% 0.04 263.4)",
+          "oklch(86% 0.028 263.4)",
+          "oklch(95% 0.028 263.4)"
+        ]
+      },
+      "signal-red-dark": {
+        "role": "neutral",
+        "displayName": "Signalrot (dunkel)",
+        "canonical": "#ff7a8a",
+        "oklch": "oklch(73.8% 0.162 14.5)",
+        "tonalRamp": [
+          "oklch(15% 0.091 14.5)",
+          "oklch(27% 0.14 14.5)",
+          "oklch(39% 0.202 14.5)",
+          "oklch(51% 0.254 14.5)",
+          "oklch(63% 0.192 14.5)",
+          "oklch(75% 0.13 14.5)",
+          "oklch(86% 0.091 14.5)",
+          "oklch(95% 0.091 14.5)"
+        ]
+      },
+      "focus-blue-dark": {
+        "role": "secondary",
+        "displayName": "Fokusblau (dunkel)",
+        "canonical": "#6f97f2",
+        "oklch": "oklch(68.7% 0.142 265)",
+        "tonalRamp": [
+          "oklch(15% 0.079 265)",
+          "oklch(27% 0.122 265)",
+          "oklch(39% 0.177 265)",
+          "oklch(51% 0.222 265)",
+          "oklch(63% 0.168 265)",
+          "oklch(75% 0.113 265)",
+          "oklch(86% 0.079 265)",
+          "oklch(95% 0.079 265)"
+        ]
+      },
+      "type-red": {
+        "role": "tertiary",
+        "displayName": "Typfarbe Rot",
+        "canonical": "#f9c9c9",
+        "oklch": "oklch(87.8% 0.055 18.2)",
+        "tonalRamp": [
+          "oklch(15% 0.031 18.2)",
+          "oklch(27% 0.047 18.2)",
+          "oklch(39% 0.068 18.2)",
+          "oklch(51% 0.086 18.2)",
+          "oklch(63% 0.065 18.2)",
+          "oklch(75% 0.044 18.2)",
+          "oklch(86% 0.031 18.2)",
+          "oklch(95% 0.031 18.2)"
+        ]
+      },
+      "type-orange": {
+        "role": "tertiary",
+        "displayName": "Typfarbe Orange",
+        "canonical": "#fbd9b0",
+        "oklch": "oklch(90.4% 0.066 72.1)",
+        "tonalRamp": [
+          "oklch(15% 0.037 72.1)",
+          "oklch(27% 0.057 72.1)",
+          "oklch(39% 0.082 72.1)",
+          "oklch(51% 0.103 72.1)",
+          "oklch(63% 0.078 72.1)",
+          "oklch(75% 0.052 72.1)",
+          "oklch(86% 0.037 72.1)",
+          "oklch(95% 0.037 72.1)"
+        ]
+      },
+      "type-yellow": {
+        "role": "tertiary",
+        "displayName": "Typfarbe Gelb",
+        "canonical": "#f6e8a6",
+        "oklch": "oklch(92.7% 0.085 97.6)",
+        "tonalRamp": [
+          "oklch(15% 0.048 97.6)",
+          "oklch(27% 0.074 97.6)",
+          "oklch(39% 0.106 97.6)",
+          "oklch(51% 0.134 97.6)",
+          "oklch(63% 0.101 97.6)",
+          "oklch(75% 0.068 97.6)",
+          "oklch(86% 0.048 97.6)",
+          "oklch(95% 0.048 97.6)"
+        ]
+      },
+      "type-green": {
+        "role": "tertiary",
+        "displayName": "Typfarbe Grün",
+        "canonical": "#c8ebbf",
+        "oklch": "oklch(90.3% 0.069 139.3)",
+        "tonalRamp": [
+          "oklch(15% 0.039 139.3)",
+          "oklch(27% 0.06 139.3)",
+          "oklch(39% 0.087 139.3)",
+          "oklch(51% 0.109 139.3)",
+          "oklch(63% 0.082 139.3)",
+          "oklch(75% 0.056 139.3)",
+          "oklch(86% 0.039 139.3)",
+          "oklch(95% 0.039 139.3)"
+        ]
+      },
+      "type-teal": {
+        "role": "tertiary",
+        "displayName": "Typfarbe Petrol",
+        "canonical": "#b9e4df",
+        "oklch": "oklch(88.7% 0.045 187.7)",
+        "tonalRamp": [
+          "oklch(15% 0.025 187.7)",
+          "oklch(27% 0.039 187.7)",
+          "oklch(39% 0.056 187.7)",
+          "oklch(51% 0.071 187.7)",
+          "oklch(63% 0.053 187.7)",
+          "oklch(75% 0.036 187.7)",
+          "oklch(86% 0.025 187.7)",
+          "oklch(95% 0.025 187.7)"
+        ]
+      },
+      "type-blue": {
+        "role": "tertiary",
+        "displayName": "Typfarbe Blau",
+        "canonical": "#c4dafa",
+        "oklch": "oklch(88.2% 0.05 257.7)",
+        "tonalRamp": [
+          "oklch(15% 0.028 257.7)",
+          "oklch(27% 0.043 257.7)",
+          "oklch(39% 0.063 257.7)",
+          "oklch(51% 0.079 257.7)",
+          "oklch(63% 0.06 257.7)",
+          "oklch(75% 0.04 257.7)",
+          "oklch(86% 0.028 257.7)",
+          "oklch(95% 0.028 257.7)"
+        ]
+      },
+      "type-violet": {
+        "role": "tertiary",
+        "displayName": "Typfarbe Violett",
+        "canonical": "#d6ccf7",
+        "oklch": "oklch(86.7% 0.06 295.8)",
+        "tonalRamp": [
+          "oklch(15% 0.033 295.8)",
+          "oklch(27% 0.052 295.8)",
+          "oklch(39% 0.075 295.8)",
+          "oklch(51% 0.094 295.8)",
+          "oklch(63% 0.071 295.8)",
+          "oklch(75% 0.048 295.8)",
+          "oklch(86% 0.033 295.8)",
+          "oklch(95% 0.033 295.8)"
+        ]
+      },
+      "type-pink": {
+        "role": "tertiary",
+        "displayName": "Typfarbe Rosa",
+        "canonical": "#f4c6e3",
+        "oklch": "oklch(87.5% 0.064 340.4)",
+        "tonalRamp": [
+          "oklch(15% 0.036 340.4)",
+          "oklch(27% 0.055 340.4)",
+          "oklch(39% 0.08 340.4)",
+          "oklch(51% 0.101 340.4)",
+          "oklch(63% 0.076 340.4)",
+          "oklch(75% 0.051 340.4)",
+          "oklch(86% 0.036 340.4)",
+          "oklch(95% 0.036 340.4)"
+        ]
+      },
+      "type-gray": {
+        "role": "tertiary",
+        "displayName": "Typfarbe Grau",
+        "canonical": "#dcdcdc",
+        "oklch": "oklch(89.4% 0 89.9)",
+        "tonalRamp": [
+          "oklch(15% 0 89.9)",
+          "oklch(27% 0 89.9)",
+          "oklch(39% 0 89.9)",
+          "oklch(51% 0 89.9)",
+          "oklch(63% 0 89.9)",
+          "oklch(75% 0 89.9)",
+          "oklch(86% 0 89.9)",
+          "oklch(95% 0 89.9)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Überschrift eines Seitenabschnitts."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Unterüberschrift, Überschriften in Beschreibungen."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Bedienelemente, Felder, Tabellen."
+      },
+      "body-dense": {
+        "displayName": "Body dicht",
+        "purpose": "Menüüberschriften, dichte Listen."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Tags, Details, Hinweise."
+      },
+      "overline": {
+        "displayName": "Overline",
+        "purpose": "Gruppenüberschriften in Suche und Listen, in Großbuchstaben."
+      },
+      "prose": {
+        "displayName": "Prosa",
+        "purpose": "Markdown-Beschreibungen."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "IDs, Code, Technisches."
+      }
+    },
+    "shadows": [
+      {
+        "name": "shadow-sm",
+        "value": "0 2px 6px rgb(0 0 0 / 0.08)",
+        "purpose": "Karten und Leisten über dem Board."
+      },
+      {
+        "name": "shadow-lg",
+        "value": "0 6px 20px rgb(0 0 0 / 0.12)",
+        "purpose": "Menüpanels."
+      },
+      {
+        "name": "shadow-xl",
+        "value": "0 6px 20px rgb(0 0 0 / 0.18)",
+        "purpose": "Suchdialog, Kartenvorschau."
+      },
+      {
+        "name": "selected",
+        "value": "0 0 0 6px rgb(59 111 224 / 0.18), 0 2px 6px rgb(0 0 0 / 0.08)",
+        "purpose": "Gewählte Karte, zusammen mit 2px Fokusring."
+      },
+      {
+        "name": "tint-shade-dark",
+        "value": "inset 0 0 0 100vmax rgb(0 0 0 / 0.22)",
+        "purpose": "Dämpft Typfarben im Dunkelmodus."
+      }
+    ],
+    "motion": [
+      {
+        "name": "pan-ease",
+        "value": "translate 0.15s ease-out",
+        "purpose": "Panels und Leisten gleiten an ihren Platz."
+      },
+      {
+        "name": "card-appear",
+        "value": "350ms ease-out (opacity 0 → 1)",
+        "purpose": "Neue Karten blenden ein."
+      },
+      {
+        "name": "connector-flow",
+        "value": "0.6s linear infinite (dashoffset 21 → 0)",
+        "purpose": "Linien der gewählten Karte laufen in Flussrichtung."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "animation: none",
+        "purpose": "Bei prefers-reduced-motion entfallen Einblenden und Linienfluss."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "narrow",
+        "value": "40rem"
+      },
+      {
+        "name": "no-hover",
+        "value": "(hover: none)"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Standardbutton: Papier, kräftige Haarlinie, Hover auf Tischfilz.",
+      "html": "<button class=\"ds-btn\">Abbrechen</button>",
+      "css": ".ds-btn{font:inherit;font-size:1rem;line-height:1.25;color:var(--text, #1a1a1a);background:var(--surface, #fff);border:1px solid var(--border-strong, #999);border-radius:var(--radius-sm, 4px);padding:var(--control-padding-y, 0.375rem) 0.75rem;cursor:pointer}.ds-btn:hover{background:var(--surface-inset, #f6f6f6)}.ds-btn:focus-visible{outline:2px solid var(--focus, #3b6fe0);outline-offset:1px}.ds-btn:disabled{opacity:.4;cursor:not-allowed}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Ein Primärbutton pro Zusammenhang: Tinte mit heller Schrift.",
+      "html": "<button class=\"ds-btn-primary\">Neue Entität</button>",
+      "css": ".ds-btn-primary{font:inherit;font-size:1rem;line-height:1.25;color:var(--on-accent, #fff);background:var(--accent, #222);border:1px solid var(--accent, #222);border-radius:var(--radius-sm, 4px);padding:var(--control-padding-y, 0.375rem) 0.75rem;cursor:pointer}.ds-btn-primary:hover{background:var(--accent-hover, #444)}.ds-btn-primary:focus-visible{outline:2px solid var(--focus, #3b6fe0);outline-offset:1px}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Feld mit Beschriftung darüber, gleich hoch wie ein Button.",
+      "html": "<label class=\"ds-field\"><span>Name</span><input class=\"ds-input\" value=\"Schnellsuche\"></label>",
+      "css": ".ds-field{display:grid;gap:.25rem;font-size:1rem;color:var(--text, #1a1a1a)}.ds-input{font:inherit;line-height:1.25;color:inherit;background:var(--surface, #fff);border:1px solid var(--border-strong, #999);border-radius:var(--radius-sm, 4px);padding:var(--control-padding-y, 0.375rem) .625rem;max-width:36rem}.ds-input:focus-visible{outline:2px solid var(--focus, #3b6fe0);outline-offset:1px}"
+    },
+    {
+      "name": "Tabs",
+      "kind": "nav",
+      "refersTo": "tab",
+      "description": "Reiter der Top-Bar; der aktuelle mit Strich statt gefülltem Block.",
+      "html": "<nav class=\"ds-tabs\"><a class=\"ds-tab ds-current\" href=\"#\">Daten</a><a class=\"ds-tab\" href=\"#\">Boards</a><a class=\"ds-tab\" href=\"#\">Auswertungen</a><a class=\"ds-tab\" href=\"#\">Verlauf</a></nav>",
+      "css": ".ds-tabs{display:flex;gap:.25rem;padding:.5rem 1rem;background:var(--surface, #fff);border-bottom:1px solid var(--border, #d4d4d4)}.ds-tab{padding:.35rem .75rem;border-radius:var(--radius-sm, 4px);color:var(--muted, #666);text-decoration:none}.ds-tab:hover:not(.ds-current){color:var(--text, #1a1a1a);background:var(--surface-inset, #f6f6f6)}.ds-tab:focus-visible{outline:2px solid var(--focus, #3b6fe0);outline-offset:1px}.ds-current{color:var(--text, #1a1a1a);box-shadow:inset 0 -2px 0 var(--text, #1a1a1a);border-radius:0}"
+    },
+    {
+      "name": "Tags",
+      "kind": "chip",
+      "refersTo": "ref-tag",
+      "description": "Option in Grau, Verweis in der Farbe des Zieltyps: eine Form.",
+      "html": "<div class=\"ds-tags\"><span class=\"ds-chip\">in Arbeit</span><button class=\"ds-ref\" style=\"background:#c4dafa\">Entitätstyp</button><button class=\"ds-ref\" style=\"background:#b9e4df\">Ein leerer Typname wird abgelehnt</button></div>",
+      "css": ".ds-tags{display:flex;flex-wrap:wrap;gap:.35rem}.ds-chip,.ds-ref{display:inline-block;padding:0 .4rem;border:none;border-radius:var(--radius-sm, 4px);font:inherit;font-size:.8125rem;line-height:1.375rem;color:rgb(0 0 0 / .8);box-shadow:var(--tint-shade, none)}.ds-chip{background:var(--chip, #ebebeb)}.ds-ref{cursor:pointer;text-align:left}.ds-ref:hover{filter:brightness(.96)}.ds-ref:focus-visible{outline:2px solid var(--focus, #3b6fe0);outline-offset:1px}"
+    },
+    {
+      "name": "Section",
+      "kind": "card",
+      "refersTo": "section",
+      "description": "Weißer Abschnitt auf dem Tischfilz, flach, Haarlinie.",
+      "html": "<div class=\"ds-felt\"><section class=\"ds-section\"><h2>Entitäten</h2><p class=\"ds-muted\">25 Ideen, 29 Pitches</p></section></div>",
+      "css": ".ds-felt{background:var(--surface-inset, #f6f6f6);padding:1rem}.ds-section{display:grid;gap:1rem;background:var(--surface, #fff);border:1px solid var(--border, #d4d4d4);border-radius:var(--radius-lg, 8px);padding:1.25rem;color:var(--text, #1a1a1a)}.ds-section h2{margin:0;font-size:1.5rem;font-weight:600}.ds-section p{margin:0}.ds-muted{color:var(--muted, #666);font-size:.875rem}"
+    },
+    {
+      "name": "Board Card",
+      "kind": "custom",
+      "refersTo": "canvas-card",
+      "description": "Signatur: Karte auf dem Punktraster, Kopf in der Typfarbe, 24px-Raster.",
+      "html": "<div class=\"ds-board\"><article class=\"ds-card\" tabindex=\"0\"><header><div class=\"ds-bar\" style=\"background:#fbd9b0\"><span>Pitch</span><button aria-label=\"Entfernen\">×</button></div><div class=\"ds-name\">Schnellsuche über den ganzen Arbeitsbereich</div></header><div class=\"ds-props\"><span class=\"ds-chip\">abgeschlossen</span><span class=\"ds-chip\" style=\"background:#f6e8a6\">Zu etwas springen, dessen Namen ich kenne</span></div></article></div>",
+      "css": ".ds-board{background-color:var(--surface-inset, #f6f6f6);background-image:radial-gradient(circle,var(--border-strong, #999) 1px,transparent 1px);background-size:24px 24px;padding:2rem}.ds-card{width:16rem;background:var(--surface, #fff);border:1px solid var(--border-strong, #999);border-radius:var(--radius-md, 6px);box-shadow:var(--shadow-sm, 0 2px 6px rgb(0 0 0 / .08));overflow:hidden;color:var(--text, #1a1a1a)}.ds-card:focus-visible{outline:2px solid var(--focus, #3b6fe0);outline-offset:2px;box-shadow:0 0 0 6px rgb(59 111 224 / .18)}.ds-card header{box-shadow:0 1px 0 var(--border, #d4d4d4)}.ds-bar{display:flex;justify-content:space-between;align-items:center;height:23px;padding-left:.5rem;font-size:.8125rem;color:rgb(0 0 0 / .8);box-shadow:var(--tint-shade, none)}.ds-bar button{border:none;background:transparent;padding:0 .35rem;opacity:0;cursor:pointer;color:inherit}.ds-card:hover .ds-bar button,.ds-card:focus-within .ds-bar button{opacity:1}.ds-bar button:hover{background:rgb(0 0 0 / .08)}.ds-name{padding:12px .5rem 11px;line-height:24px;font-weight:600}.ds-props{padding:12px .5rem;display:grid;justify-items:start}.ds-chip{margin:2px 0;padding:0 .4rem;border-radius:var(--radius-sm, 4px);font-size:.8125rem;line-height:20px;background:var(--chip, #ebebeb);color:rgb(0 0 0 / .8);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
+    },
+    {
+      "name": "Menu Panel",
+      "kind": "custom",
+      "refersTo": "menu-panel",
+      "description": "Panel unter einem Top-Bar-Menü, schwebender Schatten.",
+      "html": "<div class=\"ds-menu\"><button class=\"ds-item ds-on\">Tybo</button><button class=\"ds-item\">Kori</button><button class=\"ds-item\">Jotano</button><div class=\"ds-actions\"><button class=\"ds-item\">Umbenennen</button><button class=\"ds-item\">Löschen</button></div></div>",
+      "css": ".ds-menu{display:grid;gap:.15rem;width:max-content;min-width:16rem;padding:1rem;background:var(--surface, #fff);border:1px solid var(--border, #d4d4d4);border-radius:var(--radius-md, 6px);box-shadow:var(--shadow-lg, 0 6px 20px rgb(0 0 0 / .12));color:var(--text, #1a1a1a)}.ds-item{font:inherit;text-align:left;border:none;background:transparent;padding:.35rem .5rem;border-radius:var(--radius-sm, 4px);color:inherit;cursor:pointer}.ds-item:hover{background:var(--surface-inset, #f6f6f6)}.ds-item:focus-visible{outline:2px solid var(--focus, #3b6fe0);outline-offset:1px}.ds-on{background:var(--highlight, #eef3ff);font-weight:600}.ds-actions{display:grid;margin-top:.6rem;padding-top:.5rem;border-top:1px solid var(--border, #d4d4d4)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Der Kartentisch",
+    "overview": "tybo ist ein Tisch, auf dem Karten liegen. Der Tisch selbst ist grau und still: eine leicht abgesetzte Fläche mit einem feinen Punktraster, darauf weiße Blätter (Seitenabschnitte, Karten, Menüs) mit Haarlinien. Farbe liegt nur auf den Karten, und zwar als Typfarbe: Ein Reiter in Rot heißt „Idee“, ein Verweis in Blau „Konzept“. Wer auf den Tisch schaut, erkennt am Farbton, was wohin gehört, bevor er ein Wort gelesen hat.\n\nDas System ist ruhig, dicht und sachlich. Es ist ein Werkzeug für lange Sitzungen und für das Nachlesen dessen, was ein Agent geschrieben hat. Deshalb trägt die Oberfläche keine eigene Farbe, keine Verläufe und keine Dekoration. Akzent ist fast schwarze Tinte, Hervorhebung ein blasses Blau, Fokus ein klares Blau. Was nur Rauschen ist (Kartenverschiebungen, Umsortierungen, rückwärtige Verweise), tritt in Grau zurück. Wo der Bestand bisher entschieden hat, entschied er fürs Leisere: ein Strich unter dem Reiter statt eines gefüllten Blocks, gedämpfte Typfarben im Dunkelmodus, ruhigere Karten und Linien.\n\nBewegung hat nur eine Aufgabe: Fluss zeigen. Die Linien der gewählten Karte laufen gestrichelt in Verweisrichtung, neue Karten blenden kurz ein. Bei `prefers-reduced-motion` entfällt beides.",
+    "keyCharacteristics": [
+      "Graue Tischfläche, weiße Blätter, Haarlinien statt Schatten bei allem, was nicht schwebt.",
+      "Farbe trägt Bedeutung: neun pastellige Typfarben, sonst nur Fehlerrot und Fokusblau.",
+      "Dicht: Bedienhöhe einer Zeile mit 1,25 Zeilenhöhe, kleine Schriftstufen, Tabellen statt Fließtext.",
+      "Systemschrift, keine Webfonts.",
+      "Hell, dunkel oder nach System, mit denselben Rollen."
+    ],
+    "rules": [
+      {
+        "name": "The Meaning-Only Color Rule",
+        "body": "Farbe auf der Oberfläche bedeutet immer etwas: ein Typ, ein Fehler, ein Fokus. Eine Farbe, die nur schmückt, gibt es nicht.",
+        "section": "colors"
+      },
+      {
+        "name": "The Shared Tag Rule",
+        "body": "Auswahlwerte und Verweise teilen eine Tag-Form: grau für eine Option, die Farbe des Zieltyps für einen Verweis. Wo immer ein Verweis erscheint (Karte, Tabelle, Auswertung, Verlauf, Detailpanel), sieht er gleich aus.",
+        "section": "colors"
+      },
+      {
+        "name": "The Six Steps Rule",
+        "body": "Jede Textgröße der App ist eine der sechs Stufen `--text-xs` bis `--text-xl`. Eine neue Größe braucht einen Grund, der für die ganze App gilt.",
+        "section": "typography"
+      },
+      {
+        "name": "The Equal Height Rule",
+        "body": "Buttons, Felder und Auswahllisten nebeneinander sind gleich hoch: 0.375rem Polster um eine Zeile mit 1,25 Zeilenhöhe.",
+        "section": "layout"
+      },
+      {
+        "name": "The Only-What-Floats Rule",
+        "body": "Ein Schatten heißt: Das liegt über der Fläche. Ein Abschnitt, eine Tabelle oder ein Feld bekommt nie einen.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** zeige, zu welchem Typ etwas gehört, mit seiner Typfarbe: Kopf, Verweis-Tag oder Typpunkt.",
+      "**Do** baue Übersichten als Tabellen mit festen Spalten; lass Unwichtiges in Graphit oder blass zurücktreten.",
+      "**Do** nimm Farben, Größen, Radien und Schatten nur aus den Variablen in `apps/web/src/app.css` (`--text-*`, `--radius-*`, `--shadow-*`, Farbrollen), damit der Dunkelmodus von selbst mitkommt.",
+      "**Do** markiere den aktuellen Zustand leise: Strich unter dem Reiter, Auswahlschimmer, Fokusring.",
+      "**Do** halte Bewegung kurz (0.15–0.35s, ease-out) und schalte sie bei `prefers-reduced-motion` ab.",
+      "**Do** prüfe jede neue Ansicht hell, dunkel und unter 40rem."
+    ],
+    "donts": [
+      "**Don't** färbe Flächen, Buttons oder Überschriften ohne Bedeutung; keine bunten Dashboards.",
+      "**Don't** nutze Verläufe, große Hero-Flächen, Glas- oder Glow-Effekte. Der einzige Verlauf ist der von Typfarbe zu Typfarbe auf einer gewählten Linie.",
+      "**Don't** gib Abschnitten, Tabellen oder Feldern einen Schatten.",
+      "**Don't** füge Webfonts, zusätzliche Schriftgewichte oder Textgrößen außerhalb der sechs Stufen hinzu.",
+      "**Don't** schreib Übersichten als Sätze, wo eine Zeile mit Tags reicht."
+    ]
+  }
+}
