@@ -129,6 +129,8 @@ test("the vault has a handbook, a folder per type with a note per entity, and an
 			"Projekt X/Aktivität/Prüfung (Aktivität).md",
 			"Projekt X/Indizes/Verwaltung.md",
 			"Projekt X/Indizes/Finanzen.md",
+			"Projekt X/Boards/Übersicht.canvas",
+			"Projekt X/Boards/Abläufe.canvas",
 		],
 	);
 });
@@ -162,6 +164,10 @@ test("the handbook has the guide and per type what it is for, how it is used and
 			"## Indizes",
 			"- [[Verwaltung]]",
 			"- [[Finanzen]]",
+			"",
+			"## Boards",
+			"- [[Übersicht.canvas]]",
+			"- [[Abläufe.canvas]]",
 			"",
 		].join("\n"),
 	);
@@ -208,19 +214,22 @@ test("references are links in the frontmatter, a list where several are allowed,
 	);
 });
 
-test("an index links the entities lying in a group of its name on any board, by type", () => {
+test("an index links the entities lying in a group of its name on any board, by type, and embeds those boards", () => {
 	const notes = vault(data);
-	assert.equal(notes.get("Projekt X/Indizes/Verwaltung.md"), ["# Verwaltung", "", "## Rolle", "- [[Buchhaltung]]", "", "## Aktivität", "- [[Rechnung prüfen]]", ""].join("\n"));
-	assert.equal(notes.get("Projekt X/Indizes/Finanzen.md"), ["# Finanzen", "", "## Rolle", "- [[Buchhaltung]]", ""].join("\n"));
+	assert.equal(
+		notes.get("Projekt X/Indizes/Verwaltung.md"),
+		["# Verwaltung", "", "## Rolle", "- [[Buchhaltung]]", "", "## Aktivität", "- [[Rechnung prüfen]]", "", "## Boards", "![[Übersicht.canvas]]", "![[Abläufe.canvas]]", ""].join("\n"),
+	);
+	assert.equal(notes.get("Projekt X/Indizes/Finanzen.md"), ["# Finanzen", "", "## Rolle", "- [[Buchhaltung]]", "", "## Boards", "![[Übersicht.canvas]]", ""].join("\n"));
 });
 
-test("every link names exactly one note of the vault, and none leads out of it", () => {
+test("every link names exactly one note of the vault by its name, wherever the folder lies, and none leads out of it", () => {
 	const notes = vault(data);
-	const names = [...notes.keys()].map((path) => path.slice(path.lastIndexOf("/") + 1, -".md".length).toLocaleLowerCase());
+	const names = [...notes.keys()].map((path) => path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, "").toLocaleLowerCase());
 	assert.equal(new Set(names).size, names.length);
 	for (const contents of notes.values()) {
 		for (const [, link] of contents.matchAll(/\[\[([^\]]+)\]\]/g)) assert.ok(names.includes(link!.toLocaleLowerCase()), link!);
-		assert.doesNotMatch(contents, /https?:|#boards|#data/);
+		assert.doesNotMatch(contents, /https?:|#boards|#data|Projekt X\//);
 	}
 });
 
@@ -239,6 +248,7 @@ test("names clash neither with the handbook nor with each other, and lose what O
 			"Projekt X/Rolle/Verwaltung.md",
 			"Projekt X/Indizes/Verwaltung (Index).md",
 			"Projekt X/Indizes/Gruppe 1.md",
+			"Projekt X/Boards/B.canvas",
 		],
 	);
 	assert.match(vault(clashing).get("Projekt X/Rolle/Verwaltung.md")!, /^\*\*Index:\*\* \[\[Verwaltung \(Index\)\]\]$/m);
@@ -252,4 +262,35 @@ test("a property named like the type key keeps its value; the type is left out t
 		boards: [],
 	};
 	assert.equal(vault(typed).get("Projekt X/Rolle/Buchhaltung.md"), ["---", 'Typ: "intern"', "---", ""].join("\n"));
+});
+
+test("a board is a canvas: its cards show the entities' notes in place, with its groups, text boxes and lines", () => {
+	const drawn = {
+		...data,
+		boards: [
+			board(
+				"b",
+				"Übersicht",
+				[card("c1", "r1", 480, 0), card("c3", "a1", 0, 0), card("gone", "missing", 0, 480)],
+				[
+					area("small", "", 0, 0, 240, 168),
+					area("g", "Verwaltung", -24, -24, 960, 480),
+					{ id: "t", kind: "textbox" as const, x: 0, y: 600, width: 240, height: 96, color: "#f6e8a6", text: "Notiz", textSize: "m" as const },
+					{ id: "i", kind: "image" as const, x: 0, y: 800, width: 100, height: 100, src: "data:image/png;base64," },
+				],
+			),
+		],
+	};
+	drawn.types = [data.types[0]!, { ...data.types[1]!, properties: data.types[1]!.properties.map((p) => (p.id === "responsible" ? { ...p, cardDisplay: "line" as const } : p)) }];
+	const canvas = JSON.parse(vault(drawn).get("Projekt X/Boards/Übersicht.canvas")!);
+	assert.deepEqual(canvas.nodes, [
+		{ id: "area-g", type: "group", x: -24, y: -24, width: 960, height: 480, label: "Verwaltung", color: "#c4dafa" },
+		{ id: "area-small", type: "group", x: 0, y: 0, width: 240, height: 168, color: "#c4dafa" },
+		{ id: "text-t", type: "text", x: 0, y: 600, width: 240, height: 96, text: "Notiz", color: "#f6e8a6" },
+		{ id: "card-c1", type: "text", text: "![[Buchhaltung]]", x: 480, y: 0, width: 240, height: 168, color: "#c8ebbf" },
+		{ id: "card-c3", type: "text", text: "![[Rechnung prüfen]]", x: 0, y: 0, width: 240, height: 168, color: "#c4dafa" },
+	]);
+	assert.deepEqual(canvas.edges, [
+		{ id: "line-1", fromNode: "card-c3", toNode: "card-c1", fromSide: "right", toSide: "left", fromEnd: "none", toEnd: "arrow", label: "Verantwortlich" },
+	]);
 });

@@ -3,6 +3,7 @@ import type {} from "../../guides/core.js"; // the workspace's guide, `AppData["
 import { fillPlaceholders, optionLabel, referencedIds, uniqueNames, type Entity, type EntityType, type PropertyDef } from "../../data/core.js";
 import { areaContents, isArea } from "../../drawings/core.js";
 import { text } from "../texts.js";
+import { boardCanvas } from "./obsidian-canvas.js";
 import { propertyKind } from "./text-export.js";
 
 type VaultData = Pick<AppData, "types" | "entities" | "boards" | "guide">;
@@ -11,9 +12,10 @@ type VaultData = Pick<AppData, "types" | "entities" | "boards" | "guide">;
  * A workspace as a folder of Markdown notes for an Obsidian vault, under a folder of the workspace's name: a
  * handbook with the workspace's guide and what each type is for, a folder per type with a note per entity, and a
  * folder of indexes, one per group name (areas named alike on several boards make one), linking the entities with a
- * card lying in such a group. An entity's properties are its note's frontmatter, references as links; its text
- * starts with a line of its tags and a line linking its indexes. Obsidian resolves `[[name]]` across the whole
- * vault, so every note has a name of its own; nothing links outside the folder.
+ * card lying in such a group and embedding the boards it lies on, and a folder of the boards as canvases (see
+ * boardCanvas). An entity's properties are its note's frontmatter, references as links; its text starts with a line
+ * of its tags and a line linking its indexes. Obsidian resolves `[[name]]` across the whole vault, so every note has
+ * a name of its own; nothing links outside the folder, and nothing depends on where in the vault it lies.
  */
 export function obsidianVault(name: string, data: VaultData): { name: string; contents: string }[] {
 	const types = new Map(data.types.map((t) => [t.id, t]));
@@ -27,10 +29,14 @@ export function obsidianVault(name: string, data: VaultData): { name: string; co
 
 	const folderName = uniquer();
 	const indexesFolder = folderName(text.obsidianIndexes);
+	const boardsFolder = folderName(text.obsidianBoards);
 	const folders = new Map(data.types.map((t) => [t.id, folderName(vaultName(t.name))]));
+	const canvasName = uniquer();
+	const canvases = new Map(data.boards.map((b) => [b.id, `${canvasName(vaultName(b.name))}.canvas`]));
 
-	// The groups by name (ignoring case), in board order, with the entities that have a card in one of them.
-	const groups = new Map<string, { name: string; entityIds: Set<string> }>();
+	// The groups by name (ignoring case), in board order, with the entities that have a card in one of them and the
+	// boards they lie on.
+	const groups = new Map<string, { name: string; entityIds: Set<string>; canvases: Set<string> }>();
 	let unnamed = 0;
 	for (const board of data.boards) {
 		const areas = board.drawings.filter(isArea);
@@ -38,8 +44,9 @@ export function obsidianVault(name: string, data: VaultData): { name: string; co
 		for (const area of areas) {
 			const groupName = area.text.replace(/\s+/g, " ").trim() || `${text.groupFallbackName} ${++unnamed}`;
 			const key = groupName.toLocaleLowerCase();
-			const group = groups.get(key) ?? { name: groupName, entityIds: new Set<string>() };
+			const group = groups.get(key) ?? { name: groupName, entityIds: new Set<string>(), canvases: new Set<string>() };
 			groups.set(key, group);
+			group.canvases.add(canvases.get(board.id)!);
 			const { cardIds } = areaContents(area, cards, areas);
 			for (const card of cards) if (cardIds.has(card.id)) group.entityIds.add(card.entityId);
 		}
@@ -47,19 +54,26 @@ export function obsidianVault(name: string, data: VaultData): { name: string; co
 	const indexes = [...groups.values()].map((group) => ({ ...group, note: noteName(vaultName(group.name), text.obsidianIndex) }));
 
 	return [
-		{ name: `${root}/${handbook}.md`, contents: handbookNote(name, data, types, indexes) },
+		{ name: `${root}/${handbook}.md`, contents: handbookNote(name, data, types, indexes, [...canvases.values()]) },
 		...entities.map((e) => ({
 			name: `${root}/${folders.get(e.typeId)!}/${notes.get(e.id)!}.md`,
 			contents: entityNote(types.get(e.typeId)!, e, notes, indexes.filter((i) => i.entityIds.has(e.id)).map((i) => i.note)),
 		})),
 		...indexes.map((index) => ({
 			name: `${root}/${indexesFolder}/${index.note}.md`,
-			contents: indexNote(index.name, data.types, entities.filter((e) => index.entityIds.has(e.id)), notes),
+			contents: indexNote(index, data.types, entities.filter((e) => index.entityIds.has(e.id)), notes),
 		})),
+		...data.boards.map((b) => ({ name: `${root}/${boardsFolder}/${canvases.get(b.id)!}`, contents: boardCanvas(data, b, (id) => notes.get(id)) })),
 	];
 }
 
-function handbookNote(name: string, data: VaultData, types: ReadonlyMap<string, EntityType>, indexes: readonly { note: string }[]): string {
+function handbookNote(
+	name: string,
+	data: VaultData,
+	types: ReadonlyMap<string, EntityType>,
+	indexes: readonly { note: string }[],
+	canvases: readonly string[],
+): string {
 	const sections = [`# ${name}`];
 	if (data.guide.trim() !== "") sections.push(data.guide.trim());
 	sections.push(`## ${text.obsidianTypes}`);
@@ -77,6 +91,7 @@ function handbookNote(name: string, data: VaultData, types: ReadonlyMap<string, 
 		sections.push(parts.join("\n\n"));
 	}
 	if (indexes.length > 0) sections.push([`## ${text.obsidianIndexes}`, ...indexes.map((i) => `- [[${i.note}]]`)].join("\n"));
+	if (canvases.length > 0) sections.push([`## ${text.obsidianBoards}`, ...canvases.map((c) => `- [[${c}]]`)].join("\n"));
 	return `${sections.join("\n\n")}\n`;
 }
 
@@ -117,12 +132,18 @@ function entityNote(type: EntityType, entity: Entity, notes: ReadonlyMap<string,
 	return `${front.join("\n")}\n${rest === "" ? "" : `${rest}\n`}`;
 }
 
-function indexNote(name: string, types: readonly EntityType[], members: readonly Entity[], notes: ReadonlyMap<string, string>): string {
+function indexNote(
+	{ name, canvases }: { name: string; canvases: ReadonlySet<string> },
+	types: readonly EntityType[],
+	members: readonly Entity[],
+	notes: ReadonlyMap<string, string>,
+): string {
 	const sections = [`# ${name}`];
 	for (const type of types) {
 		const ofType = members.filter((e) => e.typeId === type.id);
 		if (ofType.length > 0) sections.push([`## ${type.name}`, ...ofType.map((e) => `- [[${notes.get(e.id)!}]]`)].join("\n"));
 	}
+	sections.push([`## ${text.obsidianBoards}`, ...[...canvases].map((c) => `![[${c}]]`)].join("\n"));
 	return `${sections.join("\n\n")}\n`;
 }
 
