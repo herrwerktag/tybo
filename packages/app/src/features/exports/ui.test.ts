@@ -90,3 +90,26 @@ test("the workspace menu exports the workspace as a text file", async () => {
 	assert.equal(downloads[0]?.type, "text/plain;charset=utf-8");
 	assert.match(await downloads[0]!.text(), /^## Book "Dune"$/m);
 });
+
+test("the workspace menu exports the workspace for Obsidian as a ZIP of notes", async () => {
+	const root = await startApp(library);
+	const downloads: Blob[] = [];
+	const names: string[] = [];
+	const createObjectURL = URL.createObjectURL;
+	const click = HTMLAnchorElement.prototype.click;
+	URL.createObjectURL = (blob: Blob) => (downloads.push(blob), "blob:export");
+	HTMLAnchorElement.prototype.click = function () {
+		names.push(this.download);
+	};
+	try {
+		root.querySelector<HTMLButtonElement>(`button[title="${text.exportObsidian}"]`)!.click();
+	} finally {
+		URL.createObjectURL = createObjectURL;
+		HTMLAnchorElement.prototype.click = click;
+	}
+	assert.equal(downloads[0]?.type, "application/zip");
+	assert.match(names[0]!, /\.zip$/);
+	const zip = new TextDecoder().decode(await downloads[0]!.arrayBuffer());
+	assert.match(zip, /\/Handbook\.md/);
+	assert.match(zip, /\/Book\/Dune\.md/);
+});

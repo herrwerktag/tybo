@@ -1,6 +1,6 @@
 import { messages } from "../../shared/ui/index.js";
 
-/** The exports' messages: the board as an HTML file or for draw.io, the workspace as text. */
+/** The exports' messages: the board as an HTML file or for draw.io, the workspace as text or for Obsidian. */
 const en = {
 	// Text export
 	exportTextButton: "Export as text",
@@ -10,6 +10,18 @@ const en = {
 		"This document is an extract of a data model and its data: first the entity types with their properties, then one section per entity with its data. A reference names the other entity by its type and name, e.g. Role \"Accounting\"; that entity's section has the same heading. References are listed on both sides. A property that isn't listed has no value.",
 	textExportTypes: "Entity types",
 	textExportReferencedVia: (property: string) => `Referenced by (via "${property}")`,
+
+	// Obsidian export
+	exportObsidianButton: "Export for Obsidian",
+	exportObsidian: "Download this workspace as a folder of linked notes (ZIP) to put into an Obsidian vault",
+	obsidianHandbook: "Handbook",
+	obsidianIndexes: "Indexes",
+	obsidianIndex: "Index",
+	obsidianTags: "Tags",
+	obsidianTypes: "Entity types",
+	obsidianProperties: "Properties",
+	obsidianTypeKey: "type",
+	obsidianUnnamed: "Unnamed",
 
 	// Board exports
 	exportView: "Download this board as an HTML file that shows it like here, without the server",
@@ -29,6 +41,17 @@ export const text = messages<typeof en>({
 			"Dieses Dokument ist ein Abzug aus einem Datenmodell und seinen Daten: zuerst die Entitätstypen mit ihren Eigenschaften, dann ein Abschnitt pro Entität mit ihren Daten. Eine Referenz nennt die andere Entität mit Typ und Name, z. B. Rolle „Buchhaltung“; ihr Abschnitt hat dieselbe Überschrift. Referenzen stehen auf beiden Seiten. Fehlt eine Eigenschaft, hat sie keinen Wert.",
 		textExportTypes: "Entitätstypen",
 		textExportReferencedVia: (property) => `Referenziert von (über „${property}“)`,
+
+		exportObsidianButton: "Für Obsidian exportieren",
+		exportObsidian: "Diesen Arbeitsbereich als Ordner verlinkter Notizen (ZIP) herunterladen, für einen Obsidian-Vault",
+		obsidianHandbook: "Handbuch",
+		obsidianIndexes: "Indizes",
+		obsidianIndex: "Index",
+		obsidianTags: "Tags",
+		obsidianTypes: "Entitätstypen",
+		obsidianProperties: "Eigenschaften",
+		obsidianTypeKey: "Typ",
+		obsidianUnnamed: "Unbenannt",
 
 		exportView: "Dieses Board als HTML-Datei herunterladen, die es wie hier zeigt, ohne Server",
 		exportViewButton: "Als HTML-Datei",

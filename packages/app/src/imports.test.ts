@@ -25,7 +25,7 @@ const FEATURES_BELOW: Record<string, readonly string[]> = {
 	analyses: ["data", "traits"],
 	boards: ["data"],
 	drawings: ["data", "boards"],
-	exports: ["data", "boards", "drawings"],
+	exports: ["data", "guides", "boards", "drawings"],
 	history: [],
 };
 

@@ -450,7 +450,7 @@ test("the search (⌘K) finds entities, types, boards, analyses and traits by na
 	press("k", { metaKey: true });
 	assert.equal(dialog().open, true);
 	assert.equal(document.activeElement, input());
-	assert.deepEqual(options(), [dataText.createNewEntity, dataText.createNewType, boardText.newBoard, analysisText.newAnalysis, traitText.newTrait, exportText.exportTextButton], "empty, it offers what to make");
+	assert.deepEqual(options(), [dataText.createNewEntity, dataText.createNewType, boardText.newBoard, analysisText.newAnalysis, traitText.newTrait, exportText.exportTextButton, exportText.exportObsidianButton], "empty, it offers what to make");
 
 	typeQuery("DUN");
 	assert.deepEqual(options(), ["DüneBook"], "found by name, without case and accents, with its type");
