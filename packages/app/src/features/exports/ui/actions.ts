@@ -2,6 +2,7 @@ import type { BoardStore } from "../../boards/core.js";
 import { downloadFile, language, safeFileName, zipFiles, type WorkspaceAction } from "../../../shared/ui/index.js";
 import type { BoardExport } from "../../boards/ui.js";
 import { boardDrawioFiles } from "./drawio-export.js";
+import { obsidianVault } from "./obsidian-export.js";
 import { text } from "../texts.js";
 import { standaloneViewHtml } from "./standalone.js";
 import { workspaceText } from "./text-export.js";
@@ -42,5 +43,15 @@ export const TEXT_EXPORT: WorkspaceAction<BoardStore> = {
 	run(store, name) {
 		const date = new Date().toISOString().slice(0, 10);
 		downloadFile(`${safeFileName(name)} ${date}.txt`, workspaceText(name, store.data, date), "text/plain;charset=utf-8");
+	},
+};
+
+/** In the workspace menu: the workspace as a ZIP of linked notes to put into an Obsidian vault. */
+export const OBSIDIAN_EXPORT: WorkspaceAction<BoardStore> = {
+	label: () => text.exportObsidianButton,
+	title: () => text.exportObsidian,
+	run(store, name) {
+		const date = new Date().toISOString().slice(0, 10);
+		downloadFile(`${safeFileName(name)} ${date}.zip`, zipFiles(obsidianVault(name, store.data)), "application/zip");
 	},
 };

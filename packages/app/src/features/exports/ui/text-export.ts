@@ -37,17 +37,20 @@ export function workspaceText(name: string, data: Pick<AppData, "types" | "entit
 	return `${sections.join("\n\n")}\n`;
 }
 
+/** What a property holds, e.g. "options (open, done)" or "reference → Role (multiple)". */
+export function propertyKind(prop: PropertyDef, types: ReadonlyMap<string, EntityType>): string {
+	let kind = dataText.kinds[prop.kind];
+	if (prop.kind === "options" && prop.options.length > 0) kind += ` (${prop.options.map((o) => o.label).join(", ")})`;
+	if (prop.kind === "reference" && prop.reference) {
+		kind += ` → ${prop.reference.typeIds.flatMap((id) => types.get(id)?.name ?? []).join(", ")}`;
+		if (prop.reference.multiple) kind += ` ${dataText.multipleSuffix}`;
+		if (prop.reference.required) kind += ` ${dataText.requiredSuffix}`;
+	}
+	return kind;
+}
+
 function typeSection(type: EntityType, types: ReadonlyMap<string, EntityType>): string {
-	const lines = type.properties.map((prop) => {
-		let kind = dataText.kinds[prop.kind];
-		if (prop.kind === "options" && prop.options.length > 0) kind += ` (${prop.options.map((o) => o.label).join(", ")})`;
-		if (prop.kind === "reference" && prop.reference) {
-			kind += ` → ${prop.reference.typeIds.flatMap((id) => types.get(id)?.name ?? []).join(", ")}`;
-			if (prop.reference.multiple) kind += ` ${dataText.multipleSuffix}`;
-			if (prop.reference.required) kind += ` ${dataText.requiredSuffix}`;
-		}
-		return `- ${prop.name}: ${kind}`;
-	});
+	const lines = type.properties.map((prop) => `- ${prop.name}: ${propertyKind(prop, types)}`);
 	return [`### ${type.name}`, ...(lines.length > 0 ? lines : [`- ${dataText.noProperties}`])].join("\n");
 }
 

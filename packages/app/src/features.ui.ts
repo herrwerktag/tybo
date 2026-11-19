@@ -8,7 +8,7 @@ import { TRAITS_SECTION, TRAIT_CHIPS, TRAIT_HISTORY, TRAIT_SEARCH } from "./feat
 import { ANALYSIS_HISTORY, ANALYSIS_SEARCH, analysesPage } from "./features/analyses/ui.js";
 import { BOARD_HISTORY, BOARD_PLACES, BOARD_SEARCH, CARD_HISTORY, boardsPage } from "./features/boards/ui.js";
 import { DRAWING_HISTORY, DRAWING_LAYER } from "./features/drawings/ui.js";
-import { TEXT_EXPORT, boardExports, renderStandaloneView } from "./features/exports/ui.js";
+import { OBSIDIAN_EXPORT, TEXT_EXPORT, boardExports, renderStandaloneView } from "./features/exports/ui.js";
 import { HISTORY_LINK, historyPage } from "./features/history/ui.js";
 
 export * from "./features/data/ui.js";
@@ -42,7 +42,7 @@ export function render(root: HTMLElement, workspaces: Workspaces, { viewScript }
 			guidePage(),
 			historyPage({ describers: HISTORY_DESCRIBERS }),
 		],
-		workspaceActions: [TEXT_EXPORT],
+		workspaceActions: [TEXT_EXPORT, OBSIDIAN_EXPORT],
 		search: [DATA_SEARCH, BOARD_SEARCH, ANALYSIS_SEARCH, TRAIT_SEARCH],
 		newWorkspaceOptions: [COPY_TYPES],
 		settings: [WRAP_REFERENCES],
